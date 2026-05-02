@@ -1,0 +1,6 @@
+=== M-Chat-1 tsc --noEmit (2026-04-26 final v4) ===
+
+(no output — clean compile)
+
+Exit code: 0
+RESULT: PASS

@@ -1,0 +1,41 @@
+-- =============================================================================
+-- Sprint 2o.0 — Step 5b2 — HR4 DDL drops (final prospect/customer separation)
+-- =============================================================================
+-- Date:        2026-04-23
+-- Sprint chain: 5b1a (relax NOT NULL + PK swap) → 5b1c → 5b1d → 5b1e (PSO
+--               consumer retarget + tag-block ripout) → 5b2 (this file).
+--
+-- Rationale (point-of-no-return):
+--   Steps 5b1a–5b1e migrated every PSO-side consumer of the deprecated-pending-
+--   drop columns off the marketing-only tables. This migration drops those
+--   columns physically, finalizing HR4 prospect/customer separation at the
+--   schema level.
+--
+--   After this runs:
+--     - contact_activities is unambiguously marketing-only (prospect_id keyed;
+--       no client_contacts reach-through possible).
+--     - contact_tag_assignments is unambiguously marketing-only (prospect_id
+--       in the PK; no client_contacts reach-through possible).
+--     - PSO activity timeline lives in pso_contact_activities exclusively
+--       (created in migration 0022).
+--     - PSO tags do not exist (by design — Dean confirmed in 5b1e pre-flight).
+--
+-- Rollback note:
+--   This migration is the point-of-no-return for HR4 column drops. It is NOT
+--   automatically reversible. To roll back manually:
+--     ALTER TABLE contact_activities       ADD COLUMN contact_id varchar(36)
+--       REFERENCES client_contacts(id) ON DELETE CASCADE;
+--     ALTER TABLE contact_tag_assignments  ADD COLUMN contact_id varchar(36)
+--       REFERENCES client_contacts(id) ON DELETE CASCADE;
+--   The pre-drop columns carried no values (Step 5a TRUNCATEd both tables),
+--   so any re-add starts at NULL and must be backfilled from a separate source.
+--
+-- Idempotency:
+--   IF EXISTS makes both DROPs safe against pre-/post-/re-run states. Postgres
+--   auto-drops the column's FK constraint AND any index that references the
+--   column when DROP COLUMN runs — no CASCADE keyword needed, no separate
+--   DROP CONSTRAINT / DROP INDEX statements required.
+-- =============================================================================
+
+ALTER TABLE contact_activities       DROP COLUMN IF EXISTS contact_id;
+ALTER TABLE contact_tag_assignments  DROP COLUMN IF EXISTS contact_id;

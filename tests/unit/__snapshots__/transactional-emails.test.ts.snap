@@ -1,0 +1,388 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`sendInviteEmail rendered HTML > matches snapshot of rendered HTML 1`] = `
+"<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>Snapshot Org</title>
+  <!--[if mso]><style>body,table,td{font-family:Arial,Helvetica,sans-serif!important}</style><![endif]-->
+</head>
+<body style="margin:0;padding:0;background-color:#f8f9fa;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">
+  <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#f8f9fa;">You've been invited to Snapshot Org</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8f9fa;">
+    <tr><td align="center" style="padding:40px 16px 32px;">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+
+        <tr><td align="center" style="padding-bottom:32px;">
+          <table role="presentation" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding-right:10px;vertical-align:middle;">
+                <div style="width:32px;height:32px;border-radius:8px;background:#1a1a2e;text-align:center;line-height:32px;">
+                  <span style="color:#fff;font-size:14px;font-weight:700;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">C</span>
+                </div>
+              </td>
+              <td style="vertical-align:middle;">
+                <span style="font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:18px;font-weight:700;color:#1a1a2e;letter-spacing:-0.3px;">Cherry<span style="font-weight:400;">Works</span></span>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+
+        <tr><td>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;border:1px solid #e5e5ec;overflow:hidden;">
+            <tr><td style="padding:40px 40px 36px;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+              
+    <p style="font-size:20px;font-weight:700;color:#1a1a2e;margin:0 0 4px;">You're invited</p>
+    <p style="font-size:14px;color:#8b8da3;margin:0 0 28px;">Join Snapshot Org on CherryWorks Pro</p>
+
+    <p style="font-size:15px;color:#555770;line-height:1.7;margin:0 0 8px;">
+      Hi Snapshot User,
+    </p>
+    <p style="font-size:15px;color:#555770;line-height:1.7;margin:0 0 24px;">
+      <strong style="color:#1a1a2e;">Snapshot Org</strong> has invited you to CherryWorks Pro. An account has been created for you with the credentials below.
+    </p>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8f9fa;border-radius:8px;margin:24px 0;">
+    <tr><td style="padding:20px 24px;">
+      
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+    <td style="padding:6px 0;color:#8b8da3;font-size:13px;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;white-space:nowrap;vertical-align:top;width:120px;">Email</td>
+    <td style="padding:6px 0 6px 12px;color:#1a1a2e;font-size:14px;font-weight:600;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">snapshot@example.com</td>
+  </tr><tr>
+    <td style="padding:6px 0;color:#8b8da3;font-size:13px;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;white-space:nowrap;vertical-align:top;width:120px;">Password</td>
+    <td style="padding:6px 0 6px 12px;color:#1a1a2e;font-size:14px;font-weight:600;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"><code style="font-family:'Inter',system-ui,sans-serif;font-size:13px;background:#e8e8ee;padding:3px 10px;border-radius:4px;color:#1a1a2e;">Snap-Pass-123</code></td>
+  </tr>
+      </table>
+    </td></tr>
+  </table>
+
+    <p style="font-size:13px;color:#8b8da3;line-height:1.6;margin:0 0 28px;">
+      You'll be asked to set a new password on first login, then complete a quick profile setup.
+    </p>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr><td align="center"><a href="https://app.example.com/login" style="display:inline-block;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:14px;font-weight:600;color:#ffffff;background:#1a1a2e;padding:12px 28px;border-radius:8px;text-decoration:none;transition:none;">Log In to CherryWorks Pro</a></td></tr>
+    </table>
+
+    <hr style="border:none;border-top:1px solid #e5e5ec;margin:28px 0;">
+
+    <p style="font-size:12px;color:#8b8da3;margin:0;text-align:center;">
+      If you didn't expect this invitation, please contact your administrator.
+    </p>
+  
+            </td></tr>
+          </table>
+        </td></tr>
+
+        <tr><td style="padding:24px 0 0;text-align:center;">
+          <p style="font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:12px;color:#8b8da3;margin:0;line-height:1.5;">
+            Sent by Snapshot Org via <span style="color:#1a1a2e;font-weight:600;">CherryWorks Pro</span>
+          </p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"
+`;
+
+exports[`sendPasswordResetEmail rendered HTML > matches snapshot of rendered HTML 1`] = `
+"<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>CherryWorks Pro</title>
+  <!--[if mso]><style>body,table,td{font-family:Arial,Helvetica,sans-serif!important}</style><![endif]-->
+</head>
+<body style="margin:0;padding:0;background-color:#f8f9fa;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">
+  <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#f8f9fa;">Reset your CherryWorks Pro password</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8f9fa;">
+    <tr><td align="center" style="padding:40px 16px 32px;">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+
+        <tr><td align="center" style="padding-bottom:32px;">
+          <table role="presentation" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding-right:10px;vertical-align:middle;">
+                <div style="width:32px;height:32px;border-radius:8px;background:#1a1a2e;text-align:center;line-height:32px;">
+                  <span style="color:#fff;font-size:14px;font-weight:700;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">C</span>
+                </div>
+              </td>
+              <td style="vertical-align:middle;">
+                <span style="font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:18px;font-weight:700;color:#1a1a2e;letter-spacing:-0.3px;">Cherry<span style="font-weight:400;">Works</span></span>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+
+        <tr><td>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;border:1px solid #e5e5ec;overflow:hidden;">
+            <tr><td style="padding:40px 40px 36px;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+              
+    <p style="font-size:20px;font-weight:700;color:#1a1a2e;margin:0 0 4px;">Password Reset</p>
+    <p style="font-size:14px;color:#8b8da3;margin:0 0 28px;">We received a request to reset your password</p>
+
+    <p style="font-size:15px;color:#555770;line-height:1.7;margin:0 0 24px;">
+      Click the button below to set a new password. This link will expire in 1 hour.
+    </p>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr><td align="center"><a href="https://app.example.com/reset?token=snapshot-token" style="display:inline-block;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:14px;font-weight:600;color:#ffffff;background:#1a1a2e;padding:12px 28px;border-radius:8px;text-decoration:none;transition:none;">Reset Password</a></td></tr>
+    </table>
+
+    <hr style="border:none;border-top:1px solid #e5e5ec;margin:28px 0;">
+
+    <p style="font-size:12px;color:#8b8da3;margin:0;text-align:center;">
+      If you didn't request a password reset, you can safely ignore this email.
+    </p>
+  
+            </td></tr>
+          </table>
+        </td></tr>
+
+        <tr><td style="padding:24px 0 0;text-align:center;">
+          <p style="font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:12px;color:#8b8da3;margin:0;line-height:1.5;">
+            Sent by CherryWorks Pro via <span style="color:#1a1a2e;font-weight:600;">CherryWorks Pro</span>
+          </p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"
+`;
+
+exports[`sendRejectionEmail rendered HTML > matches snapshot of rendered HTML 1`] = `
+"<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>CherryWorks Pro</title>
+  <!--[if mso]><style>body,table,td{font-family:Arial,Helvetica,sans-serif!important}</style><![endif]-->
+</head>
+<body style="margin:0;padding:0;background-color:#f8f9fa;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">
+  <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#f8f9fa;">Your expense EXP-0001 needs revision</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8f9fa;">
+    <tr><td align="center" style="padding:40px 16px 32px;">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+
+        <tr><td align="center" style="padding-bottom:32px;">
+          <table role="presentation" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding-right:10px;vertical-align:middle;">
+                <div style="width:32px;height:32px;border-radius:8px;background:#1a1a2e;text-align:center;line-height:32px;">
+                  <span style="color:#fff;font-size:14px;font-weight:700;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">C</span>
+                </div>
+              </td>
+              <td style="vertical-align:middle;">
+                <span style="font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:18px;font-weight:700;color:#1a1a2e;letter-spacing:-0.3px;">Cherry<span style="font-weight:400;">Works</span></span>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+
+        <tr><td>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;border:1px solid #e5e5ec;overflow:hidden;">
+            <tr><td style="padding:40px 40px 36px;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+              
+    <p style="font-size:20px;font-weight:700;color:#1a1a2e;margin:0 0 4px;">Expense Returned</p>
+    <p style="font-size:14px;color:#8b8da3;margin:0 0 28px;">Action required — please review and resubmit</p>
+
+    <p style="font-size:15px;color:#555770;line-height:1.7;margin:0 0 16px;">
+      Hi Snapshot User,
+    </p>
+    <p style="font-size:15px;color:#555770;line-height:1.7;margin:0 0 16px;">
+      Your expense <strong style="color:#1a1a2e;">EXP-0001</strong> has been rejected by Snapshot Reviewer.
+    </p>
+
+    <div style="background:#fef2f2;border-left:4px solid #ef4444;padding:12px 16px;border-radius:4px;margin:0 0 24px;">
+      <p style="font-size:13px;font-weight:600;color:#991b1b;margin:0 0 4px;">Reason:</p>
+      <p style="font-size:14px;color:#991b1b;margin:0;line-height:1.6;">Snapshot reason text.</p>
+    </div>
+
+    <p style="font-size:15px;color:#555770;line-height:1.7;margin:0 0 24px;">
+      Please review the feedback, make the necessary changes, and resubmit.
+    </p>
+
+    <hr style="border:none;border-top:1px solid #e5e5ec;margin:28px 0;">
+
+    <p style="font-size:12px;color:#8b8da3;margin:0;text-align:center;">
+      This is an automated notification from CherryWorks Pro.
+    </p>
+  
+            </td></tr>
+          </table>
+        </td></tr>
+
+        <tr><td style="padding:24px 0 0;text-align:center;">
+          <p style="font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:12px;color:#8b8da3;margin:0;line-height:1.5;">
+            Sent by CherryWorks Pro via <span style="color:#1a1a2e;font-weight:600;">CherryWorks Pro</span>
+          </p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"
+`;
+
+exports[`sendTimesheetApprovedEmail rendered HTML > matches snapshot of rendered HTML 1`] = `
+"<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>CherryWorks Pro</title>
+  <!--[if mso]><style>body,table,td{font-family:Arial,Helvetica,sans-serif!important}</style><![endif]-->
+</head>
+<body style="margin:0;padding:0;background-color:#f8f9fa;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">
+  <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#f8f9fa;">Your week of 2026-04-13 was approved</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8f9fa;">
+    <tr><td align="center" style="padding:40px 16px 32px;">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+
+        <tr><td align="center" style="padding-bottom:32px;">
+          <table role="presentation" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding-right:10px;vertical-align:middle;">
+                <div style="width:32px;height:32px;border-radius:8px;background:#1a1a2e;text-align:center;line-height:32px;">
+                  <span style="color:#fff;font-size:14px;font-weight:700;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">C</span>
+                </div>
+              </td>
+              <td style="vertical-align:middle;">
+                <span style="font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:18px;font-weight:700;color:#1a1a2e;letter-spacing:-0.3px;">Cherry<span style="font-weight:400;">Works</span></span>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+
+        <tr><td>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;border:1px solid #e5e5ec;overflow:hidden;">
+            <tr><td style="padding:40px 40px 36px;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+              
+    <p style="font-size:20px;font-weight:700;color:#1a1a2e;margin:0 0 4px;">Timesheet Approved</p>
+    <p style="font-size:14px;color:#8b8da3;margin:0 0 28px;">Your week is now locked in</p>
+
+    <p style="font-size:15px;color:#555770;line-height:1.7;margin:0 0 16px;">
+      Hi Snapshot User,
+    </p>
+    <p style="font-size:15px;color:#555770;line-height:1.7;margin:0 0 16px;">
+      Your timesheet for the <strong style="color:#1a1a2e;">week of 2026-04-13</strong> has been approved by Snapshot Approver.
+    </p>
+
+    <div style="background:#ecfdf5;border-left:4px solid #10b981;padding:12px 16px;border-radius:4px;margin:0 0 24px;">
+      <p style="font-size:14px;color:#065f46;margin:0;line-height:1.6;">No further action is needed on your part. Thanks for getting your hours in.</p>
+    </div>
+
+    <hr style="border:none;border-top:1px solid #e5e5ec;margin:28px 0;">
+
+    <p style="font-size:12px;color:#8b8da3;margin:0;text-align:center;">
+      This is an automated notification from CherryWorks Pro.
+    </p>
+  
+            </td></tr>
+          </table>
+        </td></tr>
+
+        <tr><td style="padding:24px 0 0;text-align:center;">
+          <p style="font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:12px;color:#8b8da3;margin:0;line-height:1.5;">
+            Sent by CherryWorks Pro via <span style="color:#1a1a2e;font-weight:600;">CherryWorks Pro</span>
+          </p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"
+`;
+
+exports[`sendTimesheetReopenedEmail rendered HTML > matches snapshot of rendered HTML 1`] = `
+"<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>CherryWorks Pro</title>
+  <!--[if mso]><style>body,table,td{font-family:Arial,Helvetica,sans-serif!important}</style><![endif]-->
+</head>
+<body style="margin:0;padding:0;background-color:#f8f9fa;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">
+  <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#f8f9fa;">Your week of 2026-04-13 was re-opened</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8f9fa;">
+    <tr><td align="center" style="padding:40px 16px 32px;">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+
+        <tr><td align="center" style="padding-bottom:32px;">
+          <table role="presentation" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding-right:10px;vertical-align:middle;">
+                <div style="width:32px;height:32px;border-radius:8px;background:#1a1a2e;text-align:center;line-height:32px;">
+                  <span style="color:#fff;font-size:14px;font-weight:700;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">C</span>
+                </div>
+              </td>
+              <td style="vertical-align:middle;">
+                <span style="font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:18px;font-weight:700;color:#1a1a2e;letter-spacing:-0.3px;">Cherry<span style="font-weight:400;">Works</span></span>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+
+        <tr><td>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;border:1px solid #e5e5ec;overflow:hidden;">
+            <tr><td style="padding:40px 40px 36px;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+              
+    <p style="font-size:20px;font-weight:700;color:#1a1a2e;margin:0 0 4px;">Timesheet Re-opened</p>
+    <p style="font-size:14px;color:#8b8da3;margin:0 0 28px;">Your week is editable again</p>
+
+    <p style="font-size:15px;color:#555770;line-height:1.7;margin:0 0 16px;">
+      Hi Snapshot User,
+    </p>
+    <p style="font-size:15px;color:#555770;line-height:1.7;margin:0 0 16px;">
+      Your timesheet for the <strong style="color:#1a1a2e;">week of 2026-04-13</strong> has been re-opened by Snapshot Reopener. You can now make changes and resubmit it for approval.
+    </p>
+
+    <div style="background:#fffbeb;border-left:4px solid #f59e0b;padding:12px 16px;border-radius:4px;margin:0 0 24px;">
+         <p style="font-size:13px;font-weight:600;color:#92400e;margin:0 0 4px;">Note from Snapshot Reopener:</p>
+         <p style="font-size:14px;color:#92400e;margin:0;line-height:1.6;">Snapshot reason text.</p>
+       </div>
+
+    <hr style="border:none;border-top:1px solid #e5e5ec;margin:28px 0;">
+
+    <p style="font-size:12px;color:#8b8da3;margin:0;text-align:center;">
+      This is an automated notification from CherryWorks Pro.
+    </p>
+  
+            </td></tr>
+          </table>
+        </td></tr>
+
+        <tr><td style="padding:24px 0 0;text-align:center;">
+          <p style="font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:12px;color:#8b8da3;margin:0;line-height:1.5;">
+            Sent by CherryWorks Pro via <span style="color:#1a1a2e;font-weight:600;">CherryWorks Pro</span>
+          </p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"
+`;

@@ -1,0 +1,103 @@
+=== M-Chat-1 schema parity (raw SQL output) — 2026-04-26 ===
+
+─── Q1: brands.chat_* columns (information_schema) ───
+SELECT column_name, data_type, is_nullable, column_default
+FROM information_schema.columns
+WHERE table_name='brands' AND column_name LIKE 'chat_%'
+ORDER BY column_name;
+
+column_name,data_type,is_nullable,column_default
+chat_enabled,boolean,YES,false
+chat_persona_name,text,YES,
+chat_system_prompt,text,YES,
+chat_welcome_message,text,YES,
+
+
+─── Q2: marketing_chat_* tables (information_schema) ───
+SELECT table_name FROM information_schema.tables
+WHERE table_schema='public' AND table_name LIKE 'marketing_chat_%'
+ORDER BY table_name;
+
+table_name
+marketing_chat_conversations
+marketing_chat_messages
+
+
+─── Q3: marketing_chat_conversations columns (information_schema) ───
+SELECT column_name, data_type, is_nullable
+FROM information_schema.columns
+WHERE table_name='marketing_chat_conversations' ORDER BY ordinal_position;
+
+column_name,data_type,is_nullable
+id,character varying,NO
+org_id,character varying,NO
+brand_id,character varying,NO
+prospect_id,character varying,YES
+session_token,text,NO
+status,USER-DEFINED,NO
+summary,text,YES
+started_at,timestamp without time zone,NO
+last_message_at,timestamp without time zone,NO
+ended_at,timestamp without time zone,YES
+tokens_in_total,integer,NO
+tokens_out_total,integer,NO
+
+
+─── Q4: marketing_chat_messages columns (information_schema) ───
+SELECT column_name, data_type, is_nullable
+FROM information_schema.columns
+WHERE table_name='marketing_chat_messages' ORDER BY ordinal_position;
+
+column_name,data_type,is_nullable
+id,character varying,NO
+conversation_id,character varying,NO
+role,USER-DEFINED,NO
+content,text,NO
+model,text,YES
+tokens_in,integer,YES
+tokens_out,integer,YES
+created_at,timestamp without time zone,NO
+
+
+─── Q5: chat enums (pg_enum) ───
+SELECT t.typname AS enum_name, e.enumlabel AS label, e.enumsortorder
+FROM pg_type t JOIN pg_enum e ON t.oid = e.enumtypid
+WHERE t.typname IN ('marketing_chat_conversation_status','marketing_chat_message_role')
+ORDER BY t.typname, e.enumsortorder;
+
+enum_name,label,enumsortorder
+marketing_chat_conversation_status,active,1
+marketing_chat_conversation_status,ended,2
+marketing_chat_conversation_status,abandoned,3
+marketing_chat_message_role,user,1
+marketing_chat_message_role,assistant,2
+marketing_chat_message_role,system,3
+
+
+─── Q6: chat indexes (pg_indexes) ───
+SELECT indexname, indexdef FROM pg_indexes
+WHERE tablename IN ('marketing_chat_conversations','marketing_chat_messages')
+ORDER BY tablename, indexname;
+
+indexname,indexdef
+marketing_chat_conv_brand_session_uniq,"CREATE UNIQUE INDEX marketing_chat_conv_brand_session_uniq ON public.marketing_chat_conversations USING btree (brand_id, session_token)"
+marketing_chat_conv_org_brand_idx,"CREATE INDEX marketing_chat_conv_org_brand_idx ON public.marketing_chat_conversations USING btree (org_id, brand_id)"
+marketing_chat_conv_prospect_idx,CREATE INDEX marketing_chat_conv_prospect_idx ON public.marketing_chat_conversations USING btree (prospect_id) WHERE (prospect_id IS NOT NULL)
+marketing_chat_conversations_pkey,CREATE UNIQUE INDEX marketing_chat_conversations_pkey ON public.marketing_chat_conversations USING btree (id)
+marketing_chat_messages_pkey,CREATE UNIQUE INDEX marketing_chat_messages_pkey ON public.marketing_chat_messages USING btree (id)
+marketing_chat_msg_conv_created_idx,"CREATE INDEX marketing_chat_msg_conv_created_idx ON public.marketing_chat_messages USING btree (conversation_id, created_at)"
+
+
+─── Q7: foreign keys on chat tables (pg_catalog) ───
+conname,definition
+marketing_chat_conversations_brand_id_brands_id_fk,FOREIGN KEY (brand_id) REFERENCES brands(id)
+marketing_chat_conversations_org_id_orgs_id_fk,FOREIGN KEY (org_id) REFERENCES orgs(id)
+marketing_chat_conversations_prospect_id_marketing_prospects_id,FOREIGN KEY (prospect_id) REFERENCES marketing_prospects(id) ON DELETE SET NULL
+marketing_chat_messages_conversation_id_marketing_chat_conversa,FOREIGN KEY (conversation_id) REFERENCES marketing_chat_conversations(id) ON DELETE CASCADE
+
+
+─── VERDICT ───
+All 4 brands.chat_* columns present, both chat tables present with all FKs and indexes,
+both pgEnums present with correct labels.
+Migration 0026-marketing-chat-mvp.sql is fully idempotent (re-runnable no-op).
+RESULT: PASS

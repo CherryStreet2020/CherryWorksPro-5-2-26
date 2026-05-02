@@ -1,0 +1,53 @@
+=== M-Chat-1 HR4 sweep — 2026-04-26 (final) ===
+
+Sweep scope per spec: server/storage.ts, server/marketing/**,
+server/routes/marketing/**, server/lib/**, server/marketing-chat.test.ts,
+server/storage-chat.{ts,test.ts}
+
+─── Q1: chat-only files — accounting/finance table refs ───
+(must be ZERO writes; doc/comment refs OK. Search pattern includes
+the strings: invoices, ledger_entries, payments, transactions,
+accounts_receivable, accounts_payable, chart_of_accounts.)
+
+server/routes/marketing/chat.ts:23: *    NEVER touches client_contacts / clients / invoices / etc. Verified
+server/marketing/chat-knowledge/cherryworkspro.md:5:CherryWorks Pro is the all-in-one operating system for services firms. We bring together time tracking, project management, invoicing, expenses, payments, accounting, and a built-in marketing OS — so the people running a firm spend less time stitching tools together and more time billing the work. Multi-brand support means a single org can run several distinct businesses (e.g. CherryWorks Pro and Cherry Street Consulting) under one login.
+server/marketing/chat-knowledge/cherryworkspro.md:11:- **Invoicing** — branded PDFs, custom themes, ACH and card payments via Stripe, scheduled and recurring invoices, partial payments, and automatic dunning reminders.
+server/marketing/chat-knowledge/cherryworkspro.md:16:- **Multi-brand & multi-entity** — run several brands or legal entities under one org with brand-scoped invoices, contacts, themes, and reports.
+server/marketing/chat-knowledge/cherryworkspro.md:17:- **Customer portal** — clients log in to a branded portal to view invoices, pay, sign estimates, and download receipts.
+server/marketing/chat-knowledge/cherryworkspro.md:25:- **Starter** — best for solo founders and freelancers. Time tracking, simple invoices, expenses, and one bank account.
+server/marketing/chat-knowledge/cherryworkspro.md:36:- **QuickBooks** — moves accounting + invoicing into a system designed for services. Better project profitability, time-billing native, no chart-of-accounts hairball. We import customers, invoices, and historical payments.
+server/marketing/chat-knowledge/cherryworkspro.md:39:- **Wave** — when free hits its limit (no time tracking, no GL, no projects), CherryWorks Pro is the natural step up. Free trial, full export of your invoices and contacts when you migrate.
+server/marketing/chat-knowledge/cherryworkspro.md:42:- **Scoro** — the closest competitor on breadth. We migrate Scoro's contacts, projects, time, and invoices, and our pricing is meaningfully simpler — no per-module surcharges.
+
+    All matches above are doc strings / comments inside chat-knowledge.md and
+    a single contract comment in chat.ts (line 22-23). Zero db.insert/db.update
+    calls against accounting tables in any chat code path.
+
+─── Q2: storage.ts chat block (lines 8038–8400) — accounting refs ───
+(no non-chat-table writes inside the M-Chat-1 storage block — clean)
+
+─── Q3: chat soft-capture targets only marketing_prospects ───
+server/routes/marketing/chat.ts:22: * 3) HR4: lead capture writes ONLY to `marketing_prospects`. The route
+server/routes/marketing/chat.ts:270:          const { id: prospectId } = await storage.softCreateProspectFromChat({
+
+─── Q4: chat tables actually written by chat code ───
+(chat.ts and storage-chat.ts go through the IStorage interface, not direct db.insert)
+
+
+─── Q5: storage.ts chat methods present ───
+8052:  async getBrandBySlugForChat(slug: string): Promise<{
+8085:  async getOrCreateChatConversation(params: {
+8143:  async appendChatMessage(params: {
+8182:  async getConversationMessages(
+8200:  async linkConversationToProspect(
+8225:  async softCreateProspectFromChat(params: {
+
+─── VERDICT ───
+Chat code paths write only to:
+  • marketing_chat_conversations  (chat persistence)
+  • marketing_chat_messages       (chat persistence)
+  • marketing_prospects           (soft lead capture, leadSource='chatbot')
+  • brands.cherry_persona_seed_at (one-shot seed at boot, NOT a chat req path)
+
+ZERO writes to invoices/payments/ledger/transactions/accounts_* in chat code.
+RESULT: PASS

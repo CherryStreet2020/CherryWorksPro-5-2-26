@@ -1,0 +1,152 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Account deactivation email (production renderer) > matches a stable snapshot (catches silent layout regressions) 1`] = `
+"<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>Acme Inc</title>
+  <!--[if mso]><style>body,table,td{font-family:Arial,Helvetica,sans-serif!important}</style><![endif]-->
+</head>
+<body style="margin:0;padding:0;background-color:#f8f9fa;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">
+  
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8f9fa;">
+    <tr><td align="center" style="padding:40px 16px 32px;">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+
+        <tr><td align="center" style="padding-bottom:32px;">
+          <table role="presentation" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding-right:10px;vertical-align:middle;">
+                <div style="width:32px;height:32px;border-radius:8px;background:#1a1a2e;text-align:center;line-height:32px;">
+                  <span style="color:#fff;font-size:14px;font-weight:700;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">C</span>
+                </div>
+              </td>
+              <td style="vertical-align:middle;">
+                <span style="font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:18px;font-weight:700;color:#1a1a2e;letter-spacing:-0.3px;">Cherry<span style="font-weight:400;">Works</span></span>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+
+        <tr><td>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;border:1px solid #e5e5ec;overflow:hidden;">
+            <tr><td style="padding:40px 40px 36px;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+              
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8f9fa;border-radius:8px;margin:24px 0;">
+    <tr><td style="padding:20px 24px;">
+      <h2 style="font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:20px;font-weight:700;color:#1a1a2e;margin:0 0 12px;letter-spacing:-0.2px;">Account Deactivated</h2>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        
+            <p style="color:#555;">Your account has been deactivated and your personal data removed.</p>
+            <p style="margin-top:8px;color:#555;">If you believe this was an error, contact your organization administrator.</p>
+          
+      </table>
+    </td></tr>
+  </table>
+        
+            </td></tr>
+          </table>
+        </td></tr>
+
+        <tr><td style="padding:24px 0 0;text-align:center;">
+          <p style="font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:12px;color:#8b8da3;margin:0;line-height:1.5;">
+            Sent by Acme Inc via <span style="color:#1a1a2e;font-weight:600;">CherryWorks Pro</span>
+          </p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"
+`;
+
+exports[`Account deletion-scheduled email (production renderer) > matches a stable snapshot (catches silent layout regressions) 1`] = `
+"<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>Acme Inc</title>
+  <!--[if mso]><style>body,table,td{font-family:Arial,Helvetica,sans-serif!important}</style><![endif]-->
+</head>
+<body style="margin:0;padding:0;background-color:#f8f9fa;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">
+  
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8f9fa;">
+    <tr><td align="center" style="padding:40px 16px 32px;">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+
+        <tr><td align="center" style="padding-bottom:32px;">
+          <table role="presentation" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding-right:10px;vertical-align:middle;">
+                <div style="width:32px;height:32px;border-radius:8px;background:#1a1a2e;text-align:center;line-height:32px;">
+                  <span style="color:#fff;font-size:14px;font-weight:700;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">C</span>
+                </div>
+              </td>
+              <td style="vertical-align:middle;">
+                <span style="font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:18px;font-weight:700;color:#1a1a2e;letter-spacing:-0.3px;">Cherry<span style="font-weight:400;">Works</span></span>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+
+        <tr><td>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;border:1px solid #e5e5ec;overflow:hidden;">
+            <tr><td style="padding:40px 40px 36px;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+              
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8f9fa;border-radius:8px;margin:24px 0;">
+    <tr><td style="padding:20px 24px;">
+      <h2 style="font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:20px;font-weight:700;color:#1a1a2e;margin:0 0 12px;letter-spacing:-0.2px;">Account Deletion Scheduled</h2>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        
+            <tr>
+    <td style="padding:6px 0;color:#8b8da3;font-size:13px;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;white-space:nowrap;vertical-align:top;width:120px;">Scheduled Deletion Date</td>
+    <td style="padding:6px 0 6px 12px;color:#1a1a2e;font-size:14px;font-weight:600;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">January 1, 2030</td>
+  </tr>
+            <p style="margin-top:16px;color:#555;">Your account and all organization data will be permanently deleted on <strong>January 1, 2030</strong>.</p>
+            <p style="margin-top:8px;color:#555;">To cancel, log in before that date and visit <strong>Settings</strong>.</p>
+          
+      </table>
+    </td></tr>
+  </table>
+        
+            </td></tr>
+          </table>
+        </td></tr>
+
+        <tr><td style="padding:24px 0 0;text-align:center;">
+          <p style="font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:12px;color:#8b8da3;margin:0;line-height:1.5;">
+            Sent by Acme Inc via <span style="color:#1a1a2e;font-weight:600;">CherryWorks Pro</span>
+          </p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"
+`;
+
+exports[`emailDetailCard heading rendering > matches the existing untitled call site in sendInviteEmail (byte-equivalent) 1`] = `
+"<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8f9fa;border-radius:8px;margin:24px 0;">
+    <tr><td style="padding:20px 24px;">
+      
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+    <td style="padding:6px 0;color:#8b8da3;font-size:13px;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;white-space:nowrap;vertical-align:top;width:120px;">Email</td>
+    <td style="padding:6px 0 6px 12px;color:#1a1a2e;font-size:14px;font-weight:600;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">user@example.com</td>
+  </tr><tr>
+    <td style="padding:6px 0;color:#8b8da3;font-size:13px;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;white-space:nowrap;vertical-align:top;width:120px;">Password</td>
+    <td style="padding:6px 0 6px 12px;color:#1a1a2e;font-size:14px;font-weight:600;font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"><code>secret123</code></td>
+  </tr>
+      </table>
+    </td></tr>
+  </table>"
+`;

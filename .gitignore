@@ -1,0 +1,104 @@
+node_modules
+dist
+.DS_Store
+server/public
+vite.config.ts.*
+*.tar.gz
+*.tar
+proof_bundle_*.zip
+.agents/
+.local/
+attached_assets/Pasted-*.txt
+
+# Runtime data — receipts uploaded by users at runtime should never be
+# committed (real customer data). Folder is created on demand by the app.
+uploads/
+
+# Runtime export bundles produced on demand (zips of reports/codebases).
+# Some files have no extension so we exclude the whole directory.
+exports/
+
+# Historical sprint / proof artifacts that should not ship in source.
+audit-results/
+proof-bundle-*/
+proof-bundle-29/
+account-audit-results.json
+codebase-mchat1.zip
+codebase-sprint5-help-verify.txt
+CHANGES.md
+HELP_PHASE3_VERIFY.md
+PROD_MIGRATION_RESULT.md
+# Ignore everything under /proof/ except the explicitly tracked sub-bundles
+# below — git cannot re-include children of an ignored directory, so we have
+# to ignore /proof/* (contents) instead of /proof/ (directory).
+/proof/*
+# Sprint 2n.1 brand-modal proof bundle (Task #361) — explicitly track the
+# eight authenticated screenshots + the status report, since they're the
+# deliverable referenced from the sprint write-up.
+!/proof/2n1/
+/proof/2n1/*
+!/proof/2n1/STATUS.md
+!/proof/2n1/brand-modal-light-1280.jpg
+!/proof/2n1/brand-modal-light-1366.jpg
+!/proof/2n1/brand-modal-light-1440.jpg
+!/proof/2n1/brand-modal-light-1920.jpg
+!/proof/2n1/brand-modal-dark-1280.jpg
+!/proof/2n1/brand-modal-dark-1366.jpg
+!/proof/2n1/brand-modal-dark-1440.jpg
+!/proof/2n1/brand-modal-dark-1920.jpg
+!/proof/2n1/settings-brands-after.jpg
+
+# Sprint M-Chat-1 marketing-chatbot proof bundle (Task #406) — track the
+# HR4 sweep, schema-parity dump, and full vitest log so the deliverable
+# is reproducible from a fresh checkout.
+!/proof/mchat1/
+/proof/mchat1/*
+!/proof/mchat1/mchat1-hr4-sweep.txt
+!/proof/mchat1/mchat1-schema-parity.txt
+!/proof/mchat1/mchat1-vitest.txt
+!/proof/mchat1/mchat1-tsc.txt
+!/proof/mchat1/STATUS.md
+tmp/
+test-results/
+attached_assets/
+.env
+.env.local
+.env.production
+.env.*.local
+cherryworks-proof-bundle.zip
+
+# Sprint 2f.1 (2026-04-19): stop committing proof bundles & build artifacts.
+# These were tipping the GitLab LFS storage quota and blocking pushes.
+# Keep them on disk for the user to download, but never push to remote.
+*.zip
+proof-bundle-*.zip
+proof_bundle_*.zip
+codebase-snapshot.zip
+cherryworks-*.zip
+cwp-audit-*.zip
+cwp-full-*.zip
+b29-cleanup-proof.zip
+src-snapshot/
+playwright-output.txt
+tsc-output.txt
+tsc-after-*.txt
+changed-files.txt
+PROOF.md
+proof_manual/
+backups/
+
+# Sprint 2p.2 (2026-04-23): bundle/ holds historical proof zips; gitignore so they stop creeping back.
+bundle/
+
+# Sprint 2p.2 (2026-04-23): block ad-hoc log/output captures from polluting root.
+*-output.log
+*-output.txt
+*-results.txt
+crawl-output*.log
+crawl-stderr.log
+tsc-after-*.txt
+tsc-output.txt
+playwright-output.txt
+pw-output.txt
+proof-bundle-*.zip
+codebase-*-complete-*.zip

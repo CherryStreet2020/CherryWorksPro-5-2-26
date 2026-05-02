@@ -1,0 +1,59 @@
+=== M-Chat-1 vitest run (2026-04-26 final v4) ===
+
+
+ RUN  v4.0.18 /home/runner/workspace
+
+[vitest globalSetup] Spawning test server on :5100 (NODE_ENV=test)
+[vitest globalSetup] Test server ready on :5100
+ ✓ server/lib/llm-providers.test.ts > chatComplete — happy path > returns Groq's reply on first success 30ms
+ ✓ server/lib/llm-providers.test.ts > chatComplete — fallback paths > falls back to Anthropic on Groq HTTP 500 1ms
+ ✓ server/lib/llm-providers.test.ts > chatComplete — fallback paths > falls back to Anthropic on Groq HTTP 429 1ms
+ ✓ server/lib/llm-providers.test.ts > chatComplete — fallback paths > falls back when Groq fetch throws 1ms
+ ✓ server/lib/llm-providers.test.ts > chatComplete — fallback paths > falls back when GROQ_API_KEY is missing 1ms
+ ✓ server/lib/llm-providers.test.ts > chatComplete — fallback paths > falls back when Groq returns empty content 1ms
+ ✓ server/lib/llm-providers.test.ts > chatComplete — both fail > throws BothProvidersFailedError when both providers 5xx 1ms
+ ✓ server/lib/llm-providers.test.ts > chatComplete — both fail > throws BothProvidersFailedError without fetching when both keys missing 1ms
+ ✓ server/lib/llm-providers.test.ts > anthropic message shaping > strips system-role messages from the messages array (Anthropic rejects them) 2ms
+ ✓ server/marketing-chat.test.ts > stealth-404 gates > env flag off → 404 on chat 144ms
+ ✓ server/marketing-chat.test.ts > stealth-404 gates > env flag off → 404 on brand-info 14ms
+ ✓ server/marketing-chat.test.ts > stealth-404 gates > brand missing → 404 17ms
+ ✓ server/marketing-chat.test.ts > stealth-404 gates > brand has chat_enabled=false → 404 13ms
+ ✓ server/marketing-chat.test.ts > stealth-404 gates > brand has chat_enabled=null → 404 14ms
+ ✓ server/marketing-chat.test.ts > stealth-404 gates > org missing marketing_os entitlement → 404 17ms
+ ✓ server/storage-chat.test.ts > getBrandBySlugForChat > returns null when slug is empty 2ms
+ ✓ server/storage-chat.test.ts > getBrandBySlugForChat > returns null when no row matches 2ms
+ ✓ server/storage-chat.test.ts > getBrandBySlugForChat > returns the brand shape (id, orgId, primaryColor, chat_* fields) on hit 1ms
+ ✓ server/storage-chat.test.ts > getOrCreateChatConversation > returns the existing conversation when (brandId, sessionToken) hits 1ms
+ ✓ server/storage-chat.test.ts > getOrCreateChatConversation > inserts a new conversation when no row matches 1ms
+ ✓ server/storage-chat.test.ts > getOrCreateChatConversation > re-reads when insert is no-op'd by a concurrent insert (race-loss) 1ms
+ ✓ server/storage-chat.test.ts > appendChatMessage > wraps insert + counter bump in a single db.transaction call 1ms
+ ✓ server/storage-chat.test.ts > appendChatMessage > propagates assistant tokensIn/tokensOut into the insert payload 1ms
+ ✓ server/storage-chat.test.ts > getConversationMessages > returns rows oldest→newest by reversing the desc-ordered slice 1ms
+ ✓ server/storage-chat.test.ts > linkConversationToProspect > only updates when prospectId is currently NULL (one-shot attribution) 1ms
+ ✓ server/storage-chat.test.ts > softCreateProspectFromChat > inserts into marketing_prospects with leadSource='chatbot' on first contact 2ms
+ ✓ server/storage-chat.test.ts > softCreateProspectFromChat > appends a note + bumps lastActivityAt when the prospect already exists 1ms
+ ✓ server/storage-chat.test.ts > softCreateProspectFromChat > treats a 23505 race on insert as an update (concurrent chat turn) 1ms
+ ✓ server/storage-chat.test.ts > softCreateProspectFromChat > HR4: never targets brands or chat_message tables for the lead-capture write 2ms
+ ✓ server/marketing-chat.test.ts > stealth-404 gates > internal lookup throw → 404 (never leaks 500) 12ms
+ ✓ server/marketing-chat.test.ts > stealth-404 gates > malformed body → 404 (no field hints) 16ms
+ ✓ server/marketing-chat.test.ts > provider fallback (route surface) > returns 200 with the assistant reply when Anthropic served the response (Groq fallback win) 11ms
+ ✓ server/marketing-chat.test.ts > provider fallback (route surface) > forces Groq to fail and verifies the route resolves through Anthropic end-to-end 33ms
+ ✓ server/marketing-chat.test.ts > happy path > returns the assistant reply and persists user + assistant messages 14ms
+ ✓ server/marketing-chat.test.ts > happy path > brand-info returns persona/welcome/primaryColor 9ms
+ ✓ server/marketing-chat.test.ts > email → prospect soft capture (HR4) > detects email in message and upserts marketing_prospects 12ms
+stderr | server/marketing-chat.test.ts > email → prospect soft capture (HR4) > prospect upsert failure does NOT block the assistant reply
+[chat] soft prospect upsert failed (non-fatal): db hiccup
+
+ ✓ server/marketing-chat.test.ts > email → prospect soft capture (HR4) > does not call prospect upsert when message has no email 14ms
+ ✓ server/marketing-chat.test.ts > email → prospect soft capture (HR4) > prospect upsert failure does NOT block the assistant reply 10ms
+ ✓ server/marketing-chat.test.ts > GET /embed/chat.js > serves the embed script with the correct headers when marketing_os is enabled 11ms
+ ✓ server/marketing-chat.test.ts > GET /embed/chat.js > stealth-404s when the marketing_os env flag is off 6ms
+ ✓ server/marketing-chat.test.ts > per-IP rate limit > returns 429 on the 11th request to /api/marketing/chat in the same window 70ms
+ ✓ server/marketing-chat.test.ts > token cap > returns the canned reply once the per-conversation cap is exceeded 18ms
+
+ Test Files  3 passed (3)
+      Tests  42 passed (42)
+   Start at  21:12:15
+   Duration  10.47s (transform 2.94s, setup 1.12s, import 4.32s, tests 519ms, environment 0ms)
+
+[vitest globalSetup] Shutting down test server

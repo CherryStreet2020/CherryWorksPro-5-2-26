@@ -1,0 +1,7 @@
+Client Name,Invoice #,Date Issued,Date Due,Invoice Status,Date Paid,Item Name,Item Description,Rate,Quantity,Discount Percentage,Line Subtotal,Tax 1 Type,Tax 1 Amount,Tax 2 Type,Tax 2 Amount,Line Total,Currency
+"ABS Machining, Inc",196810,2024-02-05,2024-02-19,paid,2024-02-29,Project Planning/Management,,95.00,4.00000000,0.0000,380.00,,0.00,,0.00,380.00,USD
+"ABS Machining, Inc",196810,2024-02-05,2024-02-19,paid,2024-02-29,Project Planning/Management,,95.00,3.50000000,0.0000,332.50,,0.00,,0.00,332.50,USD
+"ABS Machining, Inc",196810,2024-02-05,2024-02-19,paid,2024-02-29,Project Planning/Management,,95.00,14.00000000,0.0000,1330.00,,0.00,,0.00,1330.00,USD
+"ABS Machining, Inc",196933,2026-02-09,2026-02-23,overdue,,ERP 21 Ongoing Support Activities,"(ERP21 Support) Dean Dunagan - Feb 1, 2026",125.00,1.00000000,0.0000,125.00,,0.00,,0.00,125.00,USD
+"ABS Machining, Inc",196933,2026-02-09,2026-02-23,overdue,,Build Fixed Assets / EAM Application,"(Fixed Assets - EAM App) Dean Dunagan - Feb 4, 2026",125.00,2.00000000,0.0000,250.00,,0.00,,0.00,250.00,USD
+"ABS Machining, Inc",196934,2026-02-09,2026-02-23,overdue,,ERP 21 Ongoing Support Activities,"(ABS IT Services Assistance) Daniel Eddy - Jan 26, 2026",125.00,2.00000000,0.0000,250.00,,0.00,,0.00,250.00,USD
