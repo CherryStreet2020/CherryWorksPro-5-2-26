@@ -958,7 +958,7 @@ export default function MarketingLandingPage() {
                       <div className="flex items-center gap-1.5 mb-2">
                         <Database className="w-3.5 h-3.5" style={{ color: "#a855f7" }} />
                         <span className="text-[10px] font-bold uppercase" style={{ color: "#c4b5fd" }}>
-                          Marketing
+                          Marketing Hub
                         </span>
                       </div>
                       <p className="text-[11px] font-mono mb-1" style={{ color: "rgba(255,255,255,0.65)" }}>
