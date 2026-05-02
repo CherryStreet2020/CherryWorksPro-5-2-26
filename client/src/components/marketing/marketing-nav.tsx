@@ -8,7 +8,7 @@ const navLinks = [
   { label: "Tour", href: "/demo" },
   { label: "Compare", href: "/compare" },
   { label: "Pricing", href: "/pricing" },
-  { label: "Marketing", href: "/marketing" },
+  { label: "Marketing Hub", href: "/marketing" },
   { label: "Integrations", href: "/integrations" },
   { label: "About", href: "/about" },
 ];

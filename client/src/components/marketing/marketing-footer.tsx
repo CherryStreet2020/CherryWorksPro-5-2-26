@@ -15,7 +15,7 @@ const footerLinks = {
   Product: [
     { label: "Tour", href: "/demo" },
     { label: "Features", href: "/features" },
-    { label: "Marketing", href: "/marketing" },
+    { label: "Marketing Hub", href: "/marketing" },
     { label: "Pricing", href: "/pricing" },
     { label: "Compare to Competitors", href: "/compare" },
     { label: "Switch from QuickBooks", href: "/switch-from-quickbooks" },

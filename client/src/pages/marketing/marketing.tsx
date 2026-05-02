@@ -751,20 +751,20 @@ const featureSections: {
 
 const faqs = [
   {
-    q: "What is Marketing on CherryWorks Pro?",
-    a: "Marketing is a full prospect-to-client layer built into CherryWorks Pro: contacts and companies CRM, tags, segments, campaigns, sequences, an activity timeline, and bulk contact import. It is included in the Business plan — no separate add-on charge — and shares your team, your branding, and your audit log with the rest of the product.",
+    q: "What is Marketing Hub on CherryWorks Pro?",
+    a: "Marketing Hub is a full prospect-to-client layer built into CherryWorks Pro: contacts and companies CRM, tags, segments, campaigns, sequences, an activity timeline, and bulk contact import. It is included in the Business plan — no separate add-on charge — and shares your team, your branding, and your audit log with the rest of the product.",
   },
   {
     q: "How is this different from a generic CRM like HubSpot?",
-    a: "Marketing is built for professional services firms that already use CherryWorks Pro for billing. It shares your team, your branding, and your audit log — but it physically separates marketing prospects from billing clients so you can never invoice a lead by accident. Generic CRMs don’t know the difference between a prospect and a client; we do.",
+    a: "Marketing Hub is built for professional services firms that already use CherryWorks Pro for billing. It shares your team, your branding, and your audit log — but it physically separates marketing prospects from billing clients so you can never invoice a lead by accident. Generic CRMs don’t know the difference between a prospect and a client; we do.",
   },
   {
-    q: "How does Marketing keep marketing data separate from my books?",
+    q: "How does Marketing Hub keep marketing data separate from my books?",
     a: "Marketing prospects and marketing companies live in physically separate database tables from your billing clients. There are no foreign keys between the two, so a marketing lead can never silently be invoiced, reported on, or paid out as a client. Promoting a prospect into a billing client is an explicit, audited step you take — never an automatic side effect. The result: no cross-contamination between marketing and billing records, by design. We label this guarantee Prospect / Client Separation.",
   },
   {
-    q: "Can I send real email campaigns from Marketing?",
-    a: "Yes. Compose a campaign, pick a segment, and Marketing sends through your configured sender. You get open, click, reply, and bounce tracking, plus the full activity feed per contact.",
+    q: "Can I send real email campaigns from Marketing Hub?",
+    a: "Yes. Compose a campaign, pick a segment, and Marketing Hub sends through your configured sender. You get open, click, reply, and bounce tracking, plus the full activity feed per contact.",
   },
   {
     q: "Do sequences stop automatically when someone replies?",
@@ -775,12 +775,12 @@ const faqs = [
     a: "Yes. The CSV importer maps your columns, dedupes by email, previews the result, and refuses to overwrite anything in your billing clients table. Bring 1,000 or 100,000 leads — same flow.",
   },
   {
-    q: "Which plan do I need for Marketing?",
-    a: "Marketing is included in the Business plan. Pick Business at signup (or upgrade from Starter or Professional any time) and Marketing turns on for your whole firm with no separate add-on charge.",
+    q: "Which plan do I need for Marketing Hub?",
+    a: "Marketing Hub is included in the Business plan. Pick Business at signup (or upgrade from Starter or Professional any time) and Marketing Hub turns on for your whole firm with no separate add-on charge.",
   },
   {
     q: "Is there a free trial?",
-    a: "Your CherryWorks Pro subscription includes a 14-day free trial. Start the trial on the Business plan and you can use Marketing from day one.",
+    a: "Your CherryWorks Pro subscription includes a 14-day free trial. Start the trial on the Business plan and you can use Marketing Hub from day one.",
   },
 ];
 
@@ -795,9 +795,9 @@ export default function MarketingLandingPage() {
     <div style={{ background: "#0a0f1c" }}>
       <MarketingNav />
       <SEO
-        title="Marketing"
-        fullTitle="Marketing — CRM, Campaigns & Sequences for Professional Services Firms | CherryWorks Pro"
-        description="Marketing adds a full prospect-to-client CRM to CherryWorks Pro: contacts, companies, tags, segments, campaigns, sequences, activity timeline, and CSV import — with strict Prospect / Client Separation. Included in the Business plan."
+        title="Marketing Hub"
+        fullTitle="Marketing Hub — CRM, Campaigns & Sequences for Professional Services Firms | CherryWorks Pro"
+        description="Marketing Hub adds a full prospect-to-client CRM to CherryWorks Pro: contacts, companies, tags, segments, campaigns, sequences, activity timeline, and CSV import — with strict Prospect / Client Separation. Included in the Business plan."
         path="/marketing"
       />
       <FAQStructuredData faqs={faqs} />
@@ -820,7 +820,7 @@ export default function MarketingLandingPage() {
             Included in Business plan
           </span>
           <h1 className="text-4xl md:text-6xl font-bold text-white tracking-tight" data-testid="marketing-os-heading">
-            Marketing
+            Marketing Hub
           </h1>
           <p className="mt-3 text-xl md:text-2xl font-semibold" style={{ color: "rgba(255,255,255,0.85)" }}>
             A real CRM for professional services firms — that never touches your books.
@@ -1024,7 +1024,7 @@ export default function MarketingLandingPage() {
       <section className="py-12 md:py-16" style={{ background: "#0a0f1c" }}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 mb-12 text-center">
           <h2 className="text-3xl md:text-4xl font-bold text-white tracking-tight">
-            The full Marketing tour
+            The full Marketing Hub tour
           </h2>
           <p className="mt-3 text-lg max-w-2xl mx-auto" style={{ color: "rgba(255,255,255,0.55)" }}>
             Eight surfaces. Everything you need to bring leads in and walk them to a signed engagement — included in the Business plan.
@@ -1049,7 +1049,7 @@ export default function MarketingLandingPage() {
             Built for the way professional services firms actually grow
           </h2>
           <p className="mt-3 text-center text-base max-w-2xl mx-auto" style={{ color: "rgba(255,255,255,0.55)" }}>
-            Three patterns we see every week. Marketing handles all of them out of the box.
+            Three patterns we see every week. Marketing Hub handles all of them out of the box.
           </p>
           <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-5">
             {[
@@ -1117,7 +1117,7 @@ export default function MarketingLandingPage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-[1.4fr_1fr] gap-8 items-start">
               <div>
-                <h3 className="text-xl font-bold text-white">Marketing — included in the Business plan</h3>
+                <h3 className="text-xl font-bold text-white">Marketing Hub — included in the Business plan</h3>
                 <p className="text-base mt-2 mb-4 leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>
                   The full prospect-to-client layer on top of CherryWorks Pro. Bring leads in, segment them, run
                   campaigns and sequences, and promote them into billing clients on your terms.
@@ -1158,7 +1158,7 @@ export default function MarketingLandingPage() {
                   No separate add-on charge
                 </p>
                 <p className="text-sm mb-6" style={{ color: "rgba(255,255,255,0.45)" }}>
-                  Pick the Business plan and Marketing turns on for your whole firm from day one.
+                  Pick the Business plan and Marketing Hub turns on for your whole firm from day one.
                 </p>
                 <Link href="/pricing">
                   <span
@@ -1170,7 +1170,7 @@ export default function MarketingLandingPage() {
                   </span>
                 </Link>
                 <p className="text-xs text-center mt-2" style={{ color: "rgba(255,255,255,0.4)" }}>
-                  14-day free trial · Marketing included on Business
+                  14-day free trial · Marketing Hub included on Business
                 </p>
               </div>
             </div>
@@ -1185,7 +1185,7 @@ export default function MarketingLandingPage() {
             className="text-2xl md:text-3xl font-bold text-center mb-10 text-white tracking-tight"
             data-testid="heading-marketing-os-faq"
           >
-            Marketing FAQ
+            Marketing Hub FAQ
           </h2>
           <div className="space-y-2">
             {faqs.map((faq, i) => (
@@ -1238,7 +1238,7 @@ export default function MarketingLandingPage() {
             Bring leads in. Keep your books clean.
           </h2>
           <p className="mt-3 text-lg" style={{ color: "rgba(255,255,255,0.6)" }}>
-            Start your CherryWorks Pro free trial on the Business plan and Marketing is on from day one. 14 days, full access.
+            Start your CherryWorks Pro free trial on the Business plan and Marketing Hub is on from day one. 14 days, full access.
           </p>
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link href="/signup">
