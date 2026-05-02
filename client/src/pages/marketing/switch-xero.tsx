@@ -210,7 +210,7 @@ export default function SwitchXeroPage() {
             </span>
             <h2 className="text-3xl md:text-4xl font-bold text-white tracking-tight">One more thing no competitor offers</h2>
             <p className="mt-3 text-base max-w-2xl mx-auto" style={{ color: "rgba(255,255,255,0.55)" }}>
-              Marketing adds a full prospect-to-client layer on top of CherryWorks Pro &mdash; included in the Business plan, with no cross-contamination between marketing and billing records.
+              Marketing Hub adds a full prospect-to-client layer on top of CherryWorks Pro &mdash; included in the Business plan, with no cross-contamination between marketing and billing records.
             </p>
           </div>
           <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.06)" }}>
@@ -245,7 +245,7 @@ export default function SwitchXeroPage() {
                 style={{ color: "rgba(255,255,255,0.85)", border: "1px solid rgba(255,255,255,0.18)" }}
                 data-testid="link-compare-marketing-os"
               >
-                Tour Marketing
+                Tour Marketing Hub
                 <ArrowRight className="w-4 h-4" />
               </span>
             </Link>

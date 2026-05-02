@@ -47,8 +47,8 @@ const sections = [
   },
   {
     icon: Database,
-    title: "Marketing — Prospect / Client Separation",
-    content: "On the Business plan, Marketing is included: marketing prospects and marketing companies live in physically separate database tables (marketing_prospects, marketing_companies) from your billing clients. No foreign keys cross that boundary, so a marketing lead cannot be silently invoiced or reported on as a client. Promoting a prospect to a billing client is an explicit, audited action — never an automatic side effect. This prevents cross-contamination between marketing and billing records by design.",
+    title: "Marketing Hub — Prospect / Client Separation",
+    content: "On the Business plan, Marketing Hub is included: marketing prospects and marketing companies live in physically separate database tables (marketing_prospects, marketing_companies) from your billing clients. No foreign keys cross that boundary, so a marketing lead cannot be silently invoiced or reported on as a client. Promoting a prospect to a billing client is an explicit, audited action — never an automatic side effect. This prevents cross-contamination between marketing and billing records by design.",
   },
 ];
 

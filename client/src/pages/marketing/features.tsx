@@ -1153,7 +1153,7 @@ const featurePills = [
   { label: "Audit Trail", targetId: "audittrail", color: "#ef4444" },
   { label: "CherryAssist AI", targetId: "cherryassist", color: "#cf3339" },
   { label: "1099 Compliance", targetId: "payouts", color: "#ef4444" },
-  { label: "Marketing", targetId: "marketing", color: "#cf3339" },
+  { label: "Marketing Hub", targetId: "marketing", color: "#cf3339" },
 ];
 
 function FeaturePillMarquee() {
@@ -1275,9 +1275,9 @@ export default function FeaturesPage() {
             <span className="inline-block text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full mb-3" style={{ background: "rgba(220,38,38,0.15)", color: "#f87171", border: "1px solid rgba(220,38,38,0.25)" }} data-testid="badge-features-marketing-os">
               Included in Business plan
             </span>
-            <h2 className="text-3xl md:text-4xl font-bold text-white tracking-tight">Marketing — Prospect / Client Separation</h2>
+            <h2 className="text-3xl md:text-4xl font-bold text-white tracking-tight">Marketing Hub — Prospect / Client Separation</h2>
             <p className="mt-3 text-base max-w-2xl mx-auto" style={{ color: "rgba(255,255,255,0.55)" }}>
-              Marketing adds a full prospect-to-client layer on top of CherryWorks Pro — included in the Business plan, with no cross-contamination between marketing and billing records.
+              Marketing Hub adds a full prospect-to-client layer on top of CherryWorks Pro — included in the Business plan, with no cross-contamination between marketing and billing records.
             </p>
           </div>
           <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.06)" }}>
@@ -1312,7 +1312,7 @@ export default function FeaturesPage() {
                 style={{ color: "rgba(255,255,255,0.85)", border: "1px solid rgba(255,255,255,0.18)" }}
                 data-testid="link-features-marketing-os"
               >
-                Tour Marketing
+                Tour Marketing Hub
                 <ArrowRight className="w-4 h-4" />
               </span>
             </Link>

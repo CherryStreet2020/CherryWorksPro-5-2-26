@@ -47,8 +47,8 @@ const featureHighlights = [
   "Team Payouts",
   "Client Portal",
   "22+ Features",
-  "Marketing (Business plan)",
-  "Marketing CRM",
+  "Marketing Hub (Business plan)",
+  "Marketing Hub CRM",
 ];
 
 const platformLogos = ["FreshBooks", "QuickBooks", "Harvest", "Xero", "Wave", "BigTime", "Scoro", "Paymo"];
@@ -244,12 +244,12 @@ export default function SignupPage() {
                   Included in Business plan
                 </span>
               </div>
-              <p className="text-sm font-bold text-white mb-1">Marketing — Prospect / Client Separation</p>
+              <p className="text-sm font-bold text-white mb-1">Marketing Hub — Prospect / Client Separation</p>
               <p className="text-xs leading-relaxed mb-2" style={{ color: "rgba(255,255,255,0.5)" }}>
                 Contacts &amp; companies CRM, tags, segments, campaigns, and sequences. Marketing prospects live in separate database tables from your billing clients — no cross-contamination between marketing and billing records.
               </p>
               <p className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
-                Pick the Business plan to turn Marketing on from day one.{" "}
+                Pick the Business plan to turn Marketing Hub on from day one.{" "}
                 <Link href="/marketing">
                   <span className="underline cursor-pointer" style={{ color: "#f87171" }} data-testid="link-signup-marketing-os">See details</span>
                 </Link>

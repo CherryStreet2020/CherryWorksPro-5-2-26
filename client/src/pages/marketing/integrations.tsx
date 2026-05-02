@@ -156,7 +156,7 @@ export default function IntegrationsPage() {
         <div className="max-w-3xl mx-auto text-center">
           <div className="rounded-2xl p-10" style={{ background: "linear-gradient(135deg, rgba(220,38,38,0.08), rgba(220,38,38,0.02))", border: "1px solid rgba(220,38,38,0.15)" }}>
             <span className="inline-block text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full mb-3" style={{ background: "rgba(220,38,38,0.15)", color: "#f87171", border: "1px solid rgba(220,38,38,0.25)" }} data-testid="badge-marketing-os-addon">Included in Business plan</span>
-            <h3 className="text-2xl font-bold text-white mb-3">Marketing — Prospect / Client Separation</h3>
+            <h3 className="text-2xl font-bold text-white mb-3">Marketing Hub — Prospect / Client Separation</h3>
             <p className="text-sm mb-6 max-w-lg mx-auto" style={{ color: "rgba(255,255,255,0.55)" }}>
               Contacts &amp; companies CRM, tags, segments, campaigns, sequences, and an activity timeline — included in the Business plan. Marketing prospects live in separate database tables from your billing clients, so a marketing lead can never silently turn into an invoice — no cross-contamination between marketing and billing records, by design.
             </p>
@@ -166,7 +166,7 @@ export default function IntegrationsPage() {
                 style={{ color: "rgba(255,255,255,0.85)", border: "1px solid rgba(255,255,255,0.18)" }}
                 data-testid="link-marketing-os"
               >
-                Tour Marketing
+                Tour Marketing Hub
                 <ArrowRight className="w-4 h-4" />
               </span>
             </Link>

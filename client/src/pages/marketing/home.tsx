@@ -1147,7 +1147,7 @@ function MarketingOSSection() {
           </span>
           <h2 className="text-3xl md:text-5xl font-bold tracking-tight text-white">Bring leads in. Keep your books clean.</h2>
           <p className="mt-3 text-lg max-w-2xl mx-auto" style={{ color: "rgba(255,255,255,0.55)" }}>
-            Marketing adds a full prospect-to-client layer on top of CherryWorks Pro &mdash; included in the Business plan, without ever mixing marketing leads into your billing records.
+            Marketing Hub adds a full prospect-to-client layer on top of CherryWorks Pro &mdash; included in the Business plan, without ever mixing marketing leads into your billing records.
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1176,7 +1176,7 @@ function MarketingOSSection() {
               style={{ color: "rgba(255,255,255,0.85)", border: "1px solid rgba(255,255,255,0.18)" }}
               data-testid="link-home-marketing-os"
             >
-              Tour Marketing
+              Tour Marketing Hub
               <ArrowRight className="w-4 h-4" />
             </span>
           </Link>

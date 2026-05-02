@@ -1021,7 +1021,7 @@ function MarketingOSTourSection() {
           <span className="inline-block text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full mb-3" style={{ background: "rgba(220,38,38,0.15)", color: "#f87171", border: "1px solid rgba(220,38,38,0.25)" }} data-testid="badge-tour-marketing-os">
             Included in Business plan
           </span>
-          <h2 className="text-3xl md:text-4xl font-bold text-white tracking-tight" data-testid="demo-section-marketing-os">Marketing — bring leads in, keep your books clean</h2>
+          <h2 className="text-3xl md:text-4xl font-bold text-white tracking-tight" data-testid="demo-section-marketing-os">Marketing Hub — bring leads in, keep your books clean</h2>
           <p className="mt-3 text-base max-w-2xl mx-auto" style={{ color: "rgba(255,255,255,0.55)" }}>
             A full prospect-to-client layer on top of CherryWorks Pro &mdash; no cross-contamination between marketing and billing records.
           </p>
@@ -1052,7 +1052,7 @@ function MarketingOSTourSection() {
               style={{ color: "rgba(255,255,255,0.85)", border: "1px solid rgba(255,255,255,0.18)" }}
               data-testid="link-tour-marketing-os"
             >
-              Tour Marketing
+              Tour Marketing Hub
               <ArrowRight className="w-4 h-4" />
             </span>
           </Link>

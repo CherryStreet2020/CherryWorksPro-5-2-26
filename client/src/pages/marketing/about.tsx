@@ -213,13 +213,13 @@ export default function AboutPage() {
           <p className="text-sm font-bold uppercase tracking-[3px] text-center mb-4" style={{ color: "#cf3339" }}>Beyond billing</p>
           <h2 className="text-3xl md:text-4xl font-bold text-center mb-4 text-white" data-testid="about-marketing-os-heading">A prospect-to-client layer, on its own foundation</h2>
           <p className="text-base md:text-lg text-center max-w-2xl mx-auto mb-10" style={{ color: "rgba(255,255,255,0.55)" }}>
-            Marketing is included in the Business plan and gives your firm a CRM, campaigns, and sequences — all on dedicated tables that prevent cross-contamination between marketing and billing records.
+            Marketing Hub is included in the Business plan and gives your firm a CRM, campaigns, and sequences — all on dedicated tables that prevent cross-contamination between marketing and billing records.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {[
-              { icon: Layers, title: "Same firm, two clean halves", desc: "Marketing prospects belong to outreach. Billing clients belong to your books. Marketing keeps the line crisp without forcing you to run a second tool." },
+              { icon: Layers, title: "Same firm, two clean halves", desc: "Marketing prospects belong to outreach. Billing clients belong to your books. Marketing Hub keeps the line crisp without forcing you to run a second tool." },
               { icon: Database, title: "Prospect / Client Separation", desc: "Marketing data lives in dedicated database tables — no foreign keys to your books, no cross-contamination between marketing and billing records." },
-              { icon: ArrowRight, title: "Promote when ready", desc: "When a prospect is ready to become a paying client, promote them into your billing world. Marketing history stays put; nothing leaks the other way." },
+              { icon: ArrowRight, title: "Promote when ready", desc: "When a prospect is ready to become a paying client, promote them into your billing world. Marketing Hub history stays put; nothing leaks the other way." },
             ].map((p, i) => (
               <div key={i} className="rounded-2xl p-6 text-center" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }} data-testid={`card-about-marketing-os-${i}`}>
                 <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background: "rgba(220,38,38,0.12)" }}>
@@ -237,7 +237,7 @@ export default function AboutPage() {
                 style={{ color: "rgba(255,255,255,0.85)", border: "1px solid rgba(255,255,255,0.18)" }}
                 data-testid="link-about-marketing-os"
               >
-                Tour Marketing
+                Tour Marketing Hub
                 <ArrowRight className="w-4 h-4" />
               </span>
             </Link>

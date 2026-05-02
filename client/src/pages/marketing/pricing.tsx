@@ -99,13 +99,13 @@ const featureMatrix = [
   { feature: "Payment plans", starter: false, pro: false, business: true, enterprise: true },
   { feature: "Role-based dashboards", starter: false, pro: false, business: true, enterprise: true },
   { feature: "Multi-jurisdiction tax engine", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Marketing — Contacts & Companies CRM", starter: false, pro: false, business: true, enterprise: true, highlight: true },
-  { feature: "Marketing — Tags & Segments", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Marketing — Campaigns", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Marketing — Sequences (auto-stop on reply)", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Marketing — Activity timeline", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Marketing — Bulk contacts CSV import", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Marketing — Prospect / Client Separation", starter: false, pro: false, business: true, enterprise: true, highlight: true },
+  { feature: "Marketing Hub — Contacts & Companies CRM", starter: false, pro: false, business: true, enterprise: true, highlight: true },
+  { feature: "Marketing Hub — Tags & Segments", starter: false, pro: false, business: true, enterprise: true },
+  { feature: "Marketing Hub — Campaigns", starter: false, pro: false, business: true, enterprise: true },
+  { feature: "Marketing Hub — Sequences (auto-stop on reply)", starter: false, pro: false, business: true, enterprise: true },
+  { feature: "Marketing Hub — Activity timeline", starter: false, pro: false, business: true, enterprise: true },
+  { feature: "Marketing Hub — Bulk contacts CSV import", starter: false, pro: false, business: true, enterprise: true },
+  { feature: "Marketing Hub — Prospect / Client Separation", starter: false, pro: false, business: true, enterprise: true, highlight: true },
   { feature: "Priority email support", starter: false, pro: false, business: true, enterprise: true },
   { feature: "Dedicated onboarding call", starter: false, pro: false, business: true, enterprise: true },
   { feature: "SSO / SAML", starter: false, pro: false, business: false, enterprise: true },
@@ -130,8 +130,8 @@ const faqs = [
   { q: "Can I import data from other platforms?", a: "Yes \u2014 the Professional, Business, and Enterprise plans include import wizards for FreshBooks, QuickBooks, Harvest, Xero, Wave, BigTime, Scoro, and Paymo. Upload, preview with dry-run, execute, and rollback if needed." },
   { q: "Is my data secure?", a: "Yes. All data is encrypted in transit (SSL/TLS) and stored in isolated PostgreSQL databases. Every query is scoped to your organization \u2014 no cross-tenant data access is possible. Full audit logging tracks every financial event." },
   { q: "Can I cancel anytime?", a: "Yes. No contracts, no cancellation fees. Cancel anytime and your data remains accessible." },
-  { q: "What is Marketing on the Business plan?", a: "Marketing is a full prospect-to-client layer included with the Business plan: contacts and companies CRM, tags, segments, campaigns, sequences, an activity timeline, and bulk contact import. There is no separate add-on charge \u2014 pick the Business plan and Marketing is on for your firm from day one. The Prospect / Client Separation guarantee is built in, so marketing leads never touch your billing records." },
-  { q: "How does Marketing keep marketing data separate from my books?", a: "Marketing prospects and marketing companies live in physically separate database tables from your billing clients. There are no foreign keys between the two, so a marketing lead can never silently be invoiced, reported on, or paid out as a client. Promoting a prospect into a billing client is an explicit, audited step you take \u2014 never an automatic side effect. The result: no cross-contamination between marketing and billing records, by design. We label this guarantee Prospect / Client Separation." },
+  { q: "What is Marketing Hub on the Business plan?", a: "Marketing Hub is a full prospect-to-client layer included with the Business plan: contacts and companies CRM, tags, segments, campaigns, sequences, an activity timeline, and bulk contact import. There is no separate add-on charge \u2014 pick the Business plan and Marketing Hub is on for your firm from day one. The Prospect / Client Separation guarantee is built in, so marketing leads never touch your billing records." },
+  { q: "How does Marketing Hub keep marketing data separate from my books?", a: "Marketing prospects and marketing companies live in physically separate database tables from your billing clients. There are no foreign keys between the two, so a marketing lead can never silently be invoiced, reported on, or paid out as a client. Promoting a prospect into a billing client is an explicit, audited step you take \u2014 never an automatic side effect. The result: no cross-contamination between marketing and billing records, by design. We label this guarantee Prospect / Client Separation." },
 ];
 
 function FeatureCell({ value }: { value: boolean | string }) {
@@ -222,7 +222,7 @@ export default function PricingPage() {
                   <p className="text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>Your logo on invoices and portal</p>
                   {plan.name === "Business" && (
                     <>
-                      <p className="text-sm font-semibold pt-1" style={{ color: "#f87171" }} data-testid="text-business-marketing-included">Marketing included</p>
+                      <p className="text-sm font-semibold pt-1" style={{ color: "#f87171" }} data-testid="text-business-marketing-included">Marketing Hub included</p>
                       <p className="text-sm" style={{ color: "rgba(255,255,255,0.55)" }}>CRM, campaigns, sequences &middot; Prospect / Client Separation</p>
                     </>
                   )}
