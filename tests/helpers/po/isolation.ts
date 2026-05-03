@@ -414,8 +414,6 @@ export async function buildIsolatedRequest(
   // specs in a single worker exhausts the bucket — Express has
   // `trust proxy = 1`, so X-Forwarded-For becomes req.ip and is
   // what express-rate-limit's default keyGenerator hashes on.
-  // Task #443: this fix unblocks running the full task-#443 spec
-  // batch in a single serial worker.
   const b = randomBytes(2);
   const sourceIp = `198.51.${b[0]}.${(b[1] % 254) + 1}`;
   const ctx = await pwRequest.newContext({

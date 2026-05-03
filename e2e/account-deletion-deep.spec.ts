@@ -4,7 +4,7 @@ import { loginIsolated } from "./_iso-helpers";
 test.use({ navigationTimeout: 30_000 });
 
 test.describe("Account deletion deep", () => {
-  test("dialog gates submit on password+confirm, then POSTs /api/account/delete-request", async ({ page, isolatedOrg }) => {
+  test("submit gates on password+confirm, then POSTs /api/account/delete-request", async ({ page, isolatedOrg }) => {
     await loginIsolated(page, isolatedOrg);
     await page.goto("/profile");
 
@@ -31,22 +31,55 @@ test.describe("Account deletion deep", () => {
     const delRes = await delPromise;
     expect(delRes.status()).toBeGreaterThanOrEqual(200);
     expect(delRes.status()).toBeLessThan(300);
-
     const body = await delRes.json();
     expect(body.message).toBeTruthy();
+  });
 
-    // Server returns either { scheduledDeletion: true } (last-admin
-    // grace period — user stays signed in) or { scheduledDeletion: false }
-    // (immediate logout). Pin both branches deterministically.
-    if (body.scheduledDeletion === false) {
-      await expect.poll(async () => {
-        const me = await page.request.get("/api/auth/me");
-        return me.status();
-      }, { timeout: 8_000 }).toBe(401);
-    } else {
-      const billing = await isolatedOrg.request.get("/api/billing/status");
-      expect(billing.status()).toBeLessThan(500);
-    }
+  test("scheduledDeletion=false branch: stubbed response logs the user out (subsequent /api/auth/me → 401)", async ({ page, isolatedOrg }) => {
+    await loginIsolated(page, isolatedOrg);
+    await page.route("**/api/account/delete-request", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ scheduledDeletion: false, message: "Account deleted" }),
+      }),
+    );
+
+    await page.goto("/profile");
+    await page.locator('[data-testid="button-delete-account"]').click();
+    await page.locator('[data-testid="input-delete-password"]').fill(isolatedOrg.password);
+    await page.locator('[data-testid="checkbox-delete-confirm"]').check();
+    await page.locator('[data-testid="button-confirm-delete"]').click();
+
+    await expect.poll(async () => {
+      const me = await page.request.get("/api/auth/me");
+      return me.status();
+    }, { timeout: 10_000 }).toBe(401);
+  });
+
+  test("scheduledDeletion=true branch: stubbed grace-period response keeps the session alive", async ({ page, isolatedOrg }) => {
+    await loginIsolated(page, isolatedOrg);
+    await page.route("**/api/account/delete-request", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          scheduledDeletion: true,
+          message: "Deletion scheduled in 30 days. You remain signed in.",
+        }),
+      }),
+    );
+
+    await page.goto("/profile");
+    await page.locator('[data-testid="button-delete-account"]').click();
+    await page.locator('[data-testid="input-delete-password"]').fill(isolatedOrg.password);
+    await page.locator('[data-testid="checkbox-delete-confirm"]').check();
+    await page.locator('[data-testid="button-confirm-delete"]').click();
+
+    // Session stays alive — /api/auth/me must still be 200 after the response.
+    await page.waitForTimeout(500);
+    const me = await page.request.get("/api/auth/me");
+    expect(me.status()).toBe(200);
   });
 
   test("submit is disabled when only the checkbox is checked (no password)", async ({ page, isolatedOrg }) => {
