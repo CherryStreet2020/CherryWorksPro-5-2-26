@@ -46,6 +46,12 @@ const ANON_SPECS = [
   "public-pricing-deeplink.spec.ts",
   "public-marketing-os-landing.spec.ts",
   "public-contact-form.spec.ts",
+  // Task #444 — public-token edge cases (malformed/unknown 64-char
+  // token surfaces) and network-failure resilience for top public
+  // forms. Both are stub-only and never log in as the shared seed
+  // admin, so they're safe under fullyParallel.
+  "public-token-edge-cases.spec.ts",
+  "network-failure-resilience.spec.ts",
   "public-demo.spec.ts",
   "public-compare-switch-cta.spec.ts",
   // Flag specs use the isolatedOrg fixture (Task #432) so each test
