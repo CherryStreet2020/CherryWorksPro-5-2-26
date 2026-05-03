@@ -6,12 +6,6 @@ import {
   BASE,
 } from "../tests/helpers/po/auth";
 
-// Task #445: removed hardcoded `CherryWorks2026!` (drift from
-// `e2e/global-setup.ts`, which resets the seed admin to `admin123`).
-// `loginApi` / `loginViaPage` from the shared helper try the canonical
-// password first and fall back to `admin123` so the spec works under
-// both arrangements.
-
 async function login(request: APIRequestContext) {
   await loginApi(request);
 }

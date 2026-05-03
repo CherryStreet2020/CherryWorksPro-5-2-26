@@ -65,12 +65,9 @@ export async function loginApi(
     usedPassword = FALLBACK_ADMIN_PASS;
   }
   expect(r.status(), `login as ${email} failed`).toBe(200);
-  // Task #445: if the user has multiple orgs (e.g. the seeded
-  // `dean@cherrystconsulting.com` ends up with both `cherry-st` and
-  // `cherry-street-consulting` after enough test runs), the first
-  // login returns `{needsOrgPick: true, orgs: [...]}` with HTTP 200
-  // but no session is established. Re-POST with the first org's
-  // slug to complete the login. Without this every csrf-protected
+  // Multi-org cold pick: a 200 with `{needsOrgPick: true, orgs}` does
+  // NOT establish a session — we have to re-POST with `orgSlug` set
+  // to one of the returned options. Otherwise every CSRF-protected
   // call afterwards 401s.
   try {
     const body = await r.json();
@@ -121,11 +118,10 @@ export async function loginViaPage(
     await page.click('[data-testid="button-login"]');
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => undefined);
   }
-  // Task #445: when the user has multiple orgs the login page renders
-  // a workspace picker (`button-org-pick-<slug>`). Wait briefly for it
-  // and click the first option so callers always end up signed into
-  // a real org. Use `waitFor` (not `isVisible`) so we don't race
-  // React paint after the post-login response.
+  // Multi-org users land on the workspace picker
+  // (`button-org-pick-<slug>`). Wait briefly and click the first
+  // option so callers always end up signed into a real org. Use
+  // `waitFor` (not `isVisible`) to avoid racing React paint.
   const orgPick = page.locator('[data-testid^="button-org-pick-"]').first();
   try {
     await orgPick.waitFor({ state: "visible", timeout: 3000 });
