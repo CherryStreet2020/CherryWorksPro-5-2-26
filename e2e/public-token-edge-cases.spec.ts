@@ -3,6 +3,8 @@ import { test as orgTest } from "../tests/helpers/po/fixtures";
 
 test.use({ navigationTimeout: 30_000 });
 
+const BASE_URL = `http://localhost:${process.env.PORT || 5000}`;
+
 const SYNTHETIC_64 = "0".repeat(60) + "dead";
 
 const ROUTES = [
@@ -98,7 +100,7 @@ orgTest.describe("Estimate token — real used semantics", () => {
     const token: string = sent.publicToken ?? sent.token ?? sent.estimate?.publicToken;
     expect(token, "estimate send must return a publicToken").toMatch(/^[0-9a-f]{64}$/);
 
-    const anon = await pwRequest.newContext();
+    const anon = await pwRequest.newContext({ baseURL: BASE_URL });
     try {
       const first = await anon.post(`/api/public/estimates/${token}/accept`);
       const firstStatus = first.status();
@@ -126,8 +128,8 @@ orgTest.describe("Cross-org / wrong-org token semantics", () => {
     const client = await create.json();
     expect(client.portalToken).toMatch(/^[0-9a-f]{64}$/);
 
-    const anonA = await pwRequest.newContext();
-    const anonB = await pwRequest.newContext();
+    const anonA = await pwRequest.newContext({ baseURL: BASE_URL });
+    const anonB = await pwRequest.newContext({ baseURL: BASE_URL });
     try {
       // Possession works (no per-org session is checked — token IS auth).
       expect((await anonA.get(`/api/public/portal/${client.portalToken}`)).status()).toBe(200);
