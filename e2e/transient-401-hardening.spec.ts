@@ -5,7 +5,7 @@ test.use({ navigationTimeout: 30_000 });
 
 test.describe("Transient 401 on boot — authed Marketing OS race", () => {
   test.fixme(
-    "silent retry: one-shot 401 on /api/auth/me does not blow away an already-valid session",
+    "silent retry: one-shot 401 on /api/auth/me does not blow away an already-valid session (follow-up #453)",
     async ({ page, isolatedOrg }) => {
       await loginIsolated(page, isolatedOrg);
       let meHits = 0;
@@ -29,7 +29,7 @@ test.describe("Transient 401 on boot — authed Marketing OS race", () => {
   );
 
   test.fixme(
-    "silent retry: one-shot 401 on /api/csrf-token does not break the next mutation",
+    "silent retry: one-shot 401 on /api/csrf-token does not break the next mutation (follow-up #453)",
     async ({ page, isolatedOrg }) => {
       await loginIsolated(page, isolatedOrg);
       let csrfHits = 0;
@@ -53,7 +53,7 @@ test.describe("Transient 401 on boot — authed Marketing OS race", () => {
   );
 
   test.fixme(
-    "silent retry: one-shot 401 on /api/marketing/brand-info does not crash the marketing-OS surface",
+    "silent retry: one-shot 401 on /api/marketing/brand-info does not crash the marketing-OS surface (follow-up #453)",
     async ({ page, isolatedOrg }) => {
       await loginIsolated(page, isolatedOrg);
       let hits = 0;

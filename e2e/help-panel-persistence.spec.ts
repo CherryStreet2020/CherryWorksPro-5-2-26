@@ -5,7 +5,7 @@ test.use({ navigationTimeout: 30_000 });
 
 test.describe("Help panel — persistence", () => {
   test.fixme(
-    "auto-closes after at least three in-app navigations",
+    "auto-closes after at least three in-app navigations (follow-up #455)",
     async ({ page, isolatedOrg }) => {
       await loginIsolated(page, isolatedOrg);
       await gotoWithRetry(page, "/dashboard");
