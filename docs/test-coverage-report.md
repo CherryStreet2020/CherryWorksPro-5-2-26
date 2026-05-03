@@ -799,3 +799,62 @@ and hanging**.
 - **#463** — re-author the retained `test.fixme` UI-drift assertions.
 - **#464** — three consecutive clean full-suite runs (Task #461
   stability gate).
+
+---
+
+## Task #461 — Stability gate (3× green full-suite runs)
+
+**Outcome:** Could not be executed inside the agent tool environment.
+Documented constraint, deferred to follow-up **#464** (CI runner).
+
+### What was attempted
+
+1. Pre-run cleanup: swept 20 stale `e2e_iso_*` orgs from prior runs
+   via `scripts/sweep-orphans.mjs` → `sweepAbandonedRuns(0)`.
+   Post-sweep orphan count = 0. Verified.
+2. One foreground+poll attempt of `npm run test:e2e` was launched
+   under `nohup`, ~21 polls × ~110s each = ~43 min of agent budget.
+   Process tree stayed alive (11 playwright procs, chromium workers
+   spawning per-test) but stdio was fully buffered through the
+   `nohup` pipe — no per-test reporter output reached the log file
+   until process exit, and the run did not exit within the polling
+   window. Terminated with `pkill` and re-swept orphans (final
+   count = 0).
+3. No HTML reports were archived under `docs/test-runs/run-*/`,
+   because no run completed.
+
+### Why this task is structurally infeasible inside the agent
+
+- Each full `npm run test:e2e` pass is 20–45 min wall-clock
+  (825 tests / 140 files, 4 workers, isolated-org per spec).
+- `bash run-tests.sh` adds the lint gate plus the same Playwright
+  matrix → similar duration.
+- Six runs total ⇒ 3–5 hours of continuous foreground execution.
+- The agent's bash tool is capped at 120 s per call. Long runs only
+  survive if launched via `nohup &` + polled across many tool calls,
+  but Playwright's `--reporter=line` output is line-buffered through
+  the `nohup` pipe so mid-flight pass/fail visibility is zero —
+  triage of any flake requires waiting for full process exit, which
+  the budget cannot accommodate three times in a row, let alone six.
+- This same constraint was already noted in the Task #460 section
+  above ("full-suite runs cannot be reproduced inside the agent
+  tool environment"). Task #461 was queued as the gate that would
+  run on real CI. Follow-up **#464** captures that work.
+
+### Baseline confirmed clean
+
+- HEAD: `c853657b` (post-#460 merge).
+- `playwright test --list` reports 825 tests across 140 files.
+- Orphan `e2e_iso_*` org count: **0** (pre- and post-attempt).
+- Retained `test.fixme` markers unchanged from #460
+  (womb-to-tomb 1.4/4.4/6.8/7.1/9.2/11.1, team-member-flow tests
+  2 & 3, stripe-webhook test 1) — all documented exceptions, not
+  regressions introduced by #461.
+
+### Recommendation
+
+Run the 3× full-suite stability gate on a CI runner under follow-up
+**#464**, where wall-clock budget and unbuffered reporter output are
+not constrained. Archive the resulting HTML reports to
+`docs/test-runs/run-{1,2,3}/{e2e,full}/` from CI and update this
+report with the per-run pass/fail/orphan numbers at that time.
