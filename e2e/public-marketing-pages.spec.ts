@@ -8,6 +8,14 @@
  */
 import { test, expect, type Page } from "@playwright/test";
 
+// Vite-dev cold-compiles these marketing routes on first hit; under
+// the parallel "anonymous" project (Task #432) several workers race
+// for the same compile slot and the default 15s navigation budget can
+// be exhausted on the first request. Bumping spec-locally only —
+// production builds resolve these statically and don't need the extra
+// headroom. (Same treatment as switch-from-pages.spec.ts.)
+test.use({ navigationTimeout: 30_000 });
+
 const ROUTES: Array<{
   path: string;
   anchor: string;

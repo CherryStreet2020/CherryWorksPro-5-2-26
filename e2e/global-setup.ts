@@ -123,6 +123,34 @@ export default async function globalSetup() {
   try {
     await resetTestAdminPassword(pool);
     await sweepStaleTestPollution(pool);
+    // Task #432: mint a stable run id (worker processes read it via
+    // test-results/e2e-run-id.txt) and best-effort sweep ABANDONED
+    // prior runs (>6h old). Current run's tenants are scoped to their
+    // own run id, so this can't race a concurrent suite invocation.
+    try {
+      const {
+        initRunId,
+        sweepAbandonedRuns,
+        closeIsolationPool,
+      } = await import("../tests/helpers/po/isolation");
+      const runId = initRunId();
+      console.log(`[e2e global-setup] run id: ${runId}`);
+      const { swept, failed, runsTouched } = await sweepAbandonedRuns();
+      if (swept > 0 || failed > 0) {
+        console.log(
+          `[e2e global-setup] abandoned-run sweep: removed ${swept} ` +
+          `org(s) across ${runsTouched} prior run(s); ${failed} failed (logged above).`,
+        );
+      }
+      await closeIsolationPool();
+    } catch (isoErr) {
+      // Non-fatal: the main run can still proceed; the per-test
+      // fixture cleanup + global-teardown sweep will catch up.
+      console.warn(
+        "[e2e global-setup] isolated-org pre-run setup failed (non-fatal):",
+        isoErr,
+      );
+    }
   } catch (err) {
     console.error("[e2e global-setup] failed:", err);
     throw err;

@@ -13,5 +13,15 @@ if [ "$LINT_EXIT" -ne 0 ]; then
 fi
 echo "[run-tests] Lint OK."
 
+# Task #432: pass through parallelism / sharding env vars so CI nodes
+# can split the suite (PW_SHARD=1 PW_TOTAL=2) and tune worker count
+# (PW_WORKERS=8) without editing the config. Defaults preserve the
+# pre-#432 single-worker serial behaviour for the `serial` project.
+export PW_WORKERS="${PW_WORKERS:-4}"
+echo "[run-tests] Playwright workers (anonymous project): $PW_WORKERS"
+if [ -n "$PW_SHARD" ] && [ -n "$PW_TOTAL" ]; then
+  echo "[run-tests] Shard: $PW_SHARD/$PW_TOTAL"
+fi
+
 npx playwright test --reporter=json > test-results/results.json 2>test-results/stderr.txt
 echo "EXIT:$?" > test-results/exit-code.txt
