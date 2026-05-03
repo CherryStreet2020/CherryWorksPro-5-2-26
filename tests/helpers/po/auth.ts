@@ -14,9 +14,37 @@
  * specs working under both arrangements we fall back to `admin123`
  * if the primary login attempt 4xxs.
  */
-import { expect, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, request as pwRequest, type APIRequestContext, type Page } from "@playwright/test";
+import { randomBytes } from "node:crypto";
 
 export const BASE = `http://localhost:${process.env.PORT || 5000}`;
+
+/**
+ * Generate a per-test source IP. The Express app runs with
+ * `trust proxy = 1`, so `X-Forwarded-For` becomes `req.ip` and is
+ * what `express-rate-limit`'s default keyGenerator hashes on.
+ * Returning a fresh IP per test isolates per-IP rate limiters
+ * (signupLimiter, forgotPasswordLimiter, passwordChangeLimiter,
+ * loginLimiter) so the suite runs in a single workflow without
+ * spec-to-spec budget pollution.
+ */
+export function freshIp(): string {
+  const b = randomBytes(2);
+  return `198.51.${b[0]}.${(b[1] % 254) + 1}`;
+}
+
+/**
+ * Returns a fresh APIRequestContext that the server sees as
+ * coming from a brand-new client IP — bypassing per-IP rate
+ * limits without touching the limiter implementation.
+ */
+export async function freshApiContext(opts: { ip?: string } = {}): Promise<APIRequestContext> {
+  const ip = opts.ip ?? freshIp();
+  return pwRequest.newContext({
+    baseURL: BASE,
+    extraHTTPHeaders: { "X-Forwarded-For": ip },
+  });
+}
 export const ADMIN_EMAIL = "dean@cherrystconsulting.com";
 export const PRIMARY_ADMIN_PASS = "CherryWorks2026!";
 export const FALLBACK_ADMIN_PASS = "admin123";

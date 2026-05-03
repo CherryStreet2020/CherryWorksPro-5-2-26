@@ -6,9 +6,8 @@
 import { Pool } from "pg";
 import { randomBytes } from "node:crypto";
 import { test, expect } from "../tests/helpers/po/fixtures";
-import { BASE } from "../tests/helpers/po/auth";
+import { BASE, freshApiContext, freshIp } from "../tests/helpers/po/auth";
 import { ISO_SLUG_PREFIX, getRunId, deleteIsolatedOrg } from "../tests/helpers/po/isolation";
-import { request as pwRequest } from "@playwright/test";
 
 let pool: Pool;
 test.beforeAll(() => {
@@ -63,7 +62,7 @@ test.describe("/signup password strength (API)", () => {
   for (const [pw, msg] of cases) {
     test(`rejects ${JSON.stringify(pw)} with ${msg}`, async () => {
       const id = randomBytes(4).toString("hex");
-      const ctx = await pwRequest.newContext({ baseURL: BASE });
+      const ctx = await freshApiContext();
       try {
         const r = await ctx.post(`${BASE}/api/auth/signup`, {
           data: {
@@ -96,9 +95,11 @@ test.describe("/signup happy path", () => {
     try {
       // Drive the API for the actual provisioning so the test isn't
       // gated by HTML5 validation, then verify the UI redirects to
-      // the authenticated shell.
+      // the authenticated shell. Use a unique X-Forwarded-For so the
+      // per-IP signupLimiter (5/15min) is isolated from sibling specs.
+      await page.setExtraHTTPHeaders({ "X-Forwarded-For": freshIp() });
       await page.goto("/signup");
-      const ctx = await page.context().request;
+      const ctx = page.context().request;
       const r = await ctx.post(`${BASE}/api/auth/signup`, {
         data: { firmName, firstName: "Signup", lastName: "Tester", email, password },
       });
@@ -147,7 +148,7 @@ test.describe("/signup multi-tenant email semantics", () => {
   }) => {
     const id = randomBytes(4).toString("hex");
     const firmName = `${ISO_SLUG_PREFIX}${getRunId()}_multi_${id}`;
-    const ctx = await pwRequest.newContext({ baseURL: BASE });
+    const ctx = await freshApiContext();
     let createdOrgId: string | null = null;
     try {
       const r = await ctx.post(`${BASE}/api/auth/signup`, {
@@ -179,7 +180,7 @@ test.describe("/signup multi-tenant email semantics", () => {
     // The signup endpoint dedupes the slug by appending `-N` until
     // free (auth-routes.ts ~327-331). Same firmName therefore
     // succeeds with a different slug rather than 409ing.
-    const ctx = await pwRequest.newContext({ baseURL: BASE });
+    const ctx = await freshApiContext();
     let createdOrgId: string | null = null;
     try {
       const id = randomBytes(4).toString("hex");
@@ -225,7 +226,7 @@ test.describe("/signup duplicate domain", () => {
       );
     }
 
-    const ctx = await pwRequest.newContext({ baseURL: BASE });
+    const ctx = await freshApiContext();
     try {
       const r = await ctx.post(`${BASE}/api/auth/signup`, {
         data: {

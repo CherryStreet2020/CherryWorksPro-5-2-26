@@ -4,8 +4,7 @@
  */
 import { Pool } from "pg";
 import { test, expect } from "../tests/helpers/po/fixtures";
-import { BASE } from "../tests/helpers/po/auth";
-import { request as pwRequest } from "@playwright/test";
+import { BASE, freshApiContext, freshIp } from "../tests/helpers/po/auth";
 
 let pool: Pool;
 test.beforeAll(() => {
@@ -19,7 +18,7 @@ test.describe("Session — idle timeout", () => {
   test("expiring lastActivity in the session row 401s the next request", async ({
     isolatedOrg,
   }) => {
-    const ctx = await pwRequest.newContext({ baseURL: BASE });
+    const ctx = await freshApiContext();
     try {
       const login = await ctx.post(`${BASE}/api/auth/login`, {
         data: { email: isolatedOrg.email, password: isolatedOrg.password },
@@ -41,6 +40,32 @@ test.describe("Session — idle timeout", () => {
       await ctx.dispose();
     }
   });
+
+  test("UI: an idled browser session is redirected to /login?auth=required", async ({
+    isolatedOrg,
+    page,
+  }) => {
+    await page.setExtraHTTPHeaders({ "X-Forwarded-For": freshIp() });
+    await page.goto("/login");
+    await page.fill('[data-testid="input-email"]', isolatedOrg.email);
+    await page.fill('[data-testid="input-password"]', isolatedOrg.password);
+    await page.click('[data-testid="button-login"]');
+    await expect(page).not.toHaveURL(/\/login/, { timeout: 15000 });
+
+    const oneHourAgoMs = Date.now() - 60 * 60 * 1000;
+    await pool.query(
+      `UPDATE session
+          SET sess = jsonb_set(sess::jsonb, '{lastActivity}', to_jsonb($1::bigint), true)::json
+        WHERE (sess::jsonb ->> 'userId') = $2`,
+      [oneHourAgoMs, isolatedOrg.userId],
+    );
+
+    // Any AdminRoute-guarded navigation should bounce to /login?auth=required.
+    // (LazyRoute pages render without an auth guard at the route level; the
+    // explicit guards live in AdminRoute / ManagerRoute — see App.tsx ~256.)
+    await page.goto("/banking");
+    await expect(page).toHaveURL(/\/login\?auth=required/, { timeout: 15000 });
+  });
 });
 
 test.describe("Change-password", () => {
@@ -48,7 +73,7 @@ test.describe("Change-password", () => {
     isolatedOrg,
   }) => {
     const newPass = `Changed!${Date.now()}A1`;
-    const ctx = await pwRequest.newContext({ baseURL: BASE });
+    const ctx = await freshApiContext();
     try {
       expect((await ctx.post(`${BASE}/api/auth/login`, {
         data: { email: isolatedOrg.email, password: isolatedOrg.password },
@@ -61,7 +86,7 @@ test.describe("Change-password", () => {
       });
       expect(change.status()).toBe(200);
 
-      const ctx2 = await pwRequest.newContext({ baseURL: BASE });
+      const ctx2 = await freshApiContext();
       try {
         expect((await ctx2.post(`${BASE}/api/auth/login`, {
           data: { email: isolatedOrg.email, password: isolatedOrg.password },
@@ -80,7 +105,7 @@ test.describe("Change-password", () => {
   test("mismatch: wrong currentPassword returns 401, original still works", async ({
     isolatedOrg,
   }) => {
-    const ctx = await pwRequest.newContext({ baseURL: BASE });
+    const ctx = await freshApiContext();
     try {
       expect((await ctx.post(`${BASE}/api/auth/login`, {
         data: { email: isolatedOrg.email, password: isolatedOrg.password },
@@ -96,7 +121,7 @@ test.describe("Change-password", () => {
       });
       expect(change.status()).toBe(401);
 
-      const ctx2 = await pwRequest.newContext({ baseURL: BASE });
+      const ctx2 = await freshApiContext();
       try {
         expect((await ctx2.post(`${BASE}/api/auth/login`, {
           data: { email: isolatedOrg.email, password: isolatedOrg.password },

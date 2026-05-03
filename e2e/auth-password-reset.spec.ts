@@ -5,8 +5,7 @@
 import { Pool } from "pg";
 import { createHash, randomBytes } from "node:crypto";
 import { test, expect } from "../tests/helpers/po/fixtures";
-import { BASE } from "../tests/helpers/po/auth";
-import { request as pwRequest } from "@playwright/test";
+import { BASE, freshApiContext, freshIp } from "../tests/helpers/po/auth";
 
 let pool: Pool;
 test.beforeAll(() => {
@@ -25,7 +24,7 @@ test.describe("Forgot password — issues a token row", () => {
       [isolatedOrg.userId],
     );
 
-    const ctx = await pwRequest.newContext({ baseURL: BASE });
+    const ctx = await freshApiContext();
     try {
       const r = await ctx.post(`${BASE}/api/auth/forgot-password`, {
         data: { email: isolatedOrg.email },
@@ -47,7 +46,7 @@ test.describe("Forgot password — rate limit", () => {
   test("6th forgot-password request inside the window returns 429", async () => {
     // Limiter is per-IP, max=5 in dev. We hit it from a fresh context
     // so we don't blow the budget for sibling specs sharing the IP.
-    const ctx = await pwRequest.newContext({ baseURL: BASE });
+    const ctx = await freshApiContext();
     try {
       let lastStatus = 0;
       for (let i = 0; i < 6; i++) {
@@ -85,7 +84,7 @@ test.describe("Reset token — valid+reuse / expired / garbage", () => {
     );
 
     const newPass = `ResetPass!${Date.now()}A1`;
-    const ctx = await pwRequest.newContext({ baseURL: BASE });
+    const ctx = await freshApiContext();
     try {
       const validate = await ctx.get(`${BASE}/api/auth/reset-password/${rawToken}`);
       expect(validate.status()).toBe(200);
@@ -121,7 +120,7 @@ test.describe("Reset token — valid+reuse / expired / garbage", () => {
       ],
     );
 
-    const ctx = await pwRequest.newContext({ baseURL: BASE });
+    const ctx = await freshApiContext();
     try {
       const consume = await ctx.post(`${BASE}/api/auth/reset-password/${rawToken}`, {
         data: { password: `Exp!${Date.now()}A1` },
@@ -133,7 +132,7 @@ test.describe("Reset token — valid+reuse / expired / garbage", () => {
   });
 
   test("garbage: POST rejected with 400", async () => {
-    const ctx = await pwRequest.newContext({ baseURL: BASE });
+    const ctx = await freshApiContext();
     try {
       const r = await ctx.post(
         `${BASE}/api/auth/reset-password/${"garbage".repeat(10)}`,
