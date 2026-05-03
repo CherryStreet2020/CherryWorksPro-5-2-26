@@ -2,7 +2,7 @@ import type { Page, Response as PWResponse } from "@playwright/test";
 import type { IsolatedOrgFixture } from "../tests/helpers/po/fixtures";
 
 /**
- * Dev-server 502 retry helper (Task #444).
+ * Dev-server 502 retry helper.
  *
  * Vite's dev middleware occasionally surfaces a transient 502 on the
  * very first hit to a freshly-cold-compiled route — most often when

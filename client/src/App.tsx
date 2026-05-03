@@ -217,10 +217,8 @@ const DevPremiumShowcaseRoute: React.ReactElement | null = (() => {
   );
 })();
 
-// Task #444 — dev-only synthetic crash route used by the e2e
-// suite to exercise the ErrorBoundary fallback via a real React
-// render throw (the only organic trigger for the 500 surface).
-// Stripped from production builds via `import.meta.env.DEV`.
+// Dev-only synthetic crash route exposed when import.meta.env.DEV
+// is true; used by e2e specs to exercise the ErrorBoundary fallback.
 const DevCrashRoute: React.ReactElement | null = (() => {
   if (!import.meta.env.DEV) return null;
   function Crasher(): React.ReactElement {

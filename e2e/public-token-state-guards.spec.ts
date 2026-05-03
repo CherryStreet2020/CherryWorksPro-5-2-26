@@ -1,14 +1,11 @@
-/**
- * Public estimate token — used / wrong-state guards (Task #444).
- * Mints a real estimate, transitions it out of SENT, and asserts
- * the public accept/decline endpoints return the documented 400.
- */
 import { test, expect } from "../tests/helpers/po/fixtures";
+import type { IsolatedOrgFixture } from "../tests/helpers/po/fixtures";
 
 test.use({ navigationTimeout: 30_000 });
 
-async function createSentEstimate(isolatedOrg: any): Promise<{ id: string; token: string }> {
-  // 1. Create a client.
+async function createSentEstimate(
+  isolatedOrg: IsolatedOrgFixture,
+): Promise<{ id: string; token: string }> {
   const tag = Date.now().toString(36);
   const clientRes = await isolatedOrg.request.post("/api/clients", {
     data: { name: `Wrong-State Client ${tag}` },
