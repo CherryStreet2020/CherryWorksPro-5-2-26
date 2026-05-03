@@ -67,18 +67,23 @@ test.describe("Expenses — OCR + filters + lifecycle (#440)", () => {
     await expect(page.getByTestId("input-expense-tax")).toHaveValue(/3\.?9?9?/);
   });
 
-  test("OCR Tesseract-fallback shape (vendor only) still populates the form", async ({
+  test("OCR vendor-only response (Tesseract-style minimal payload) populates the form", async ({
     page,
     isolatedOrg,
   }) => {
+    // Frontend contract: when the scan endpoint returns only `vendor` (the
+    // shape Tesseract produces on low-confidence images, vs Groq's full
+    // extraction), the new-expense form still pre-fills the vendor field.
+    // Note: the Groq-vs-Tesseract selection itself happens server-side in
+    // `/api/expenses/scan-receipt` and is covered by the unit-level tests in
+    // `server/lib/llm-providers.test.ts`; Playwright cannot intercept the
+    // server-side Groq SDK call.
     await apiBoundary.fulfill(
       page,
       "**/api/expenses/upload-receipt",
       200,
       { url: "/api/uploads/receipts/stub2.png", filename: "stub2.png" },
     );
-    // Tesseract fallback returns a minimal payload — vendor only is the
-    // documented contract for low-confidence receipts.
     await apiBoundary.fulfill(page, "**/api/expenses/scan-receipt", 200, {
       vendor: "Tesseract Fallback Co",
     });
@@ -102,13 +107,10 @@ test.describe("Expenses — OCR + filters + lifecycle (#440)", () => {
     );
   });
 
-  test("multi-currency: API persists a non-USD payload and grid lists it", async ({
+  test("multi-currency: a non-USD expense is persisted with the submitted currency", async ({
     page,
     isolatedOrg,
   }) => {
-    // The current backend `createExpenseSchema` strips `currency` and stores
-    // USD even when EUR is sent. We assert the observable contract: the row
-    // is created, listed, and persists with a 3-letter ISO code.
     const today = new Date().toISOString().slice(0, 10);
     const created = await isolatedOrg.request.post("/api/expenses", {
       headers: { "x-csrf-token": isolatedOrg.csrf },
@@ -129,7 +131,7 @@ test.describe("Expenses — OCR + filters + lifecycle (#440)", () => {
     }>;
     const row = arr.find((e) => e.vendor === "EUR Vendor");
     expect(row).toBeTruthy();
-    expect(row!.currency).toMatch(/^[A-Z]{3}$/);
+    expect(row!.currency).toBe("EUR");
 
     await loginIsolated(page, isolatedOrg);
     await page.goto("/expenses");

@@ -1482,6 +1482,7 @@ export type InsertExpenseReport = z.infer<typeof insertExpenseReportSchema>;
 
 export const createExpenseSchema = z.object({
   amount: z.string().or(z.number()).refine(val => Number(val) > 0, { message: "Amount must be greater than zero" }),
+  currency: z.string().length(3).optional(),
   date: dateString,
   vendor: z.string().max(200, "Must be at most 200 characters").optional(),
   description: z.string().max(5000, "Must be at most 5000 characters").optional(),

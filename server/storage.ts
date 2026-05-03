@@ -4870,6 +4870,7 @@ export class DatabaseStorage {
 
   async createExpense(data: {
     orgId: string; userId: string; amount: number | string; date: string;
+    currency?: string;
     vendor?: string; description?: string; categoryId?: string | null;
     projectId?: string | null; clientId?: string | null;
     billable?: boolean; reimbursable?: boolean;
