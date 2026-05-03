@@ -389,6 +389,10 @@ app.post("/api/gl/journal-entries", requireManagerOrAbove, async (req, res) => {
       }
     }
 
+    if (await storage.isDateInClosedPeriod(req.session.orgId!, entryDate)) {
+      return res.status(400).json({ message: `Cannot post journal entry: ${entryDate} falls in a closed accounting period. Reopen the period first.` });
+    }
+
     const entry = await storage.createGLJournalEntry(
       req.session.orgId!,
       entryDate,

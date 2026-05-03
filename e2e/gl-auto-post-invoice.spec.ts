@@ -1,29 +1,13 @@
-/**
- * Auto-post-on-paid invoice spec (Task #438, audit §7 item 13).
- *
- * Mints a COA + a SENT invoice via direct DB inserts, then records a
- * full payment via POST /api/payments and verifies a PAYMENT-sourced
- * journal entry was auto-created against the 1000/1200 control
- * accounts.
- *
- * ── Behavioural finding documented here ─────────────────────────────
- * `orgs.auto_post_journal_entries` defaults to true and gates the
- * expense-reimbursement and payout auto-post paths. The
- * `POST /api/payments` route, however, ALWAYS calls
- * createAutoJournalEntry regardless of that flag (server/routes/
- * payment-routes.ts:91). So this spec asserts the actual current
- * behaviour: the JE is created in BOTH flag states.
- *
- * The flag-off branch carries a `expect(jeAfter).toBeGreaterThan(...)`
- * assertion + a comment so a future code-change that wires the flag
- * into the payment path will explicitly need to update this spec —
- * keeping the audit-finding visible in CI rather than buried in the
- * gap-tracker.
- * ────────────────────────────────────────────────────────────────────
- */
 import { test, expect } from "../tests/helpers/po/fixtures";
 import { seedCoa } from "./_gl-helpers";
 import { Pool } from "pg";
+
+interface JournalEntryRow {
+  id: number;
+  sourceType: string | null;
+  sourceRef: string | null;
+  sourceId: number | null;
+}
 
 let _pool: Pool | null = null;
 function pool(): Pool {
@@ -39,18 +23,7 @@ test.afterAll(async () => {
   }
 });
 
-/**
- * The shared teardown in tests/helpers/po/isolation.ts deletes per-
- * org tables in information_schema order, which lands on `clients`
- * before `client_activities`. The createPayment path side-effects a
- * client_activities row (FK → clients with no cascade), so we
- * pro-actively clean those up here for any org we touched.
- */
 test.afterEach(async ({ isolatedOrg }) => {
-  // The shared teardown deletes per-org tables in alphabetical
-  // (information_schema) order — `clients` lands BEFORE `invoices`
-  // and `client_activities`, both of which carry FKs into clients
-  // without ON DELETE CASCADE. Pre-clean the dependent rows here.
   const p = pool();
   for (const sql of [
     `DELETE FROM payments WHERE org_id = $1`,
@@ -69,11 +42,7 @@ async function setAutoPostFlag(orgId: string, value: boolean): Promise<void> {
   );
 }
 
-async function makeSentInvoice(
-  orgId: string,
-  amount: string,
-): Promise<string> {
-  // Minimal client.
+async function makeSentInvoice(orgId: string, amount: string): Promise<string> {
   const client = await pool().query(
     `INSERT INTO clients (org_id, name) VALUES ($1, $2) RETURNING id`,
     [orgId, `auto-post test client ${Date.now()}`],
@@ -81,17 +50,16 @@ async function makeSentInvoice(
   const clientId = client.rows[0].id as string;
 
   const today = new Date().toISOString().slice(0, 10);
-  const due = today;
   const number = `INV-AP-${Date.now()}`;
   const inv = await pool().query(
     `INSERT INTO invoices
        (org_id, client_id, number, status, issued_date, due_date,
         currency, exchange_rate, subtotal, discount_type, discount_value,
         discount_amount, tax_rate, tax_amount, total, paid_amount)
-     VALUES ($1, $2, $3, 'SENT', $4, $5, 'USD', '1', $6, 'NONE', '0',
-             '0', '0', '0', $6, '0')
+     VALUES ($1, $2, $3, 'SENT', $4, $4, 'USD', '1', $5, 'NONE', '0',
+             '0', '0', '0', $5, '0')
      RETURNING id`,
-    [orgId, clientId, number, today, due, amount],
+    [orgId, clientId, number, today, amount],
   );
   const invoiceId = inv.rows[0].id as string;
 
@@ -105,29 +73,25 @@ async function makeSentInvoice(
   return invoiceId;
 }
 
-async function countPaymentJEs(
-  iso: { request: any; orgId: string },
-): Promise<number> {
-  const start = "1990-01-01";
-  const end = `${new Date().getFullYear() + 1}-12-31`;
+async function paymentJEs(
+  iso: { request: import("@playwright/test").APIRequestContext },
+): Promise<JournalEntryRow[]> {
   const r = await iso.request.get(
-    `/api/gl/journal-entries?startDate=${start}&endDate=${end}&sourceType=PAYMENT`,
+    `/api/gl/journal-entries?startDate=1990-01-01&endDate=2099-12-31&sourceType=PAYMENT`,
   );
-  if (r.status() !== 200) return 0;
-  const list = await r.json();
-  return Array.isArray(list) ? list.length : 0;
+  if (r.status() !== 200) return [];
+  const list = (await r.json()) as JournalEntryRow[];
+  return Array.isArray(list) ? list : [];
 }
 
 test.describe.configure({ mode: "serial" });
 
-test.describe("Auto-post on paid invoice (Task #438)", () => {
-  test("flag=true: payment creates a PAYMENT-sourced JE", async ({
-    isolatedOrg,
-  }) => {
+test.describe("Auto-post on paid invoice", () => {
+  test("flag=true: payment creates a PAYMENT-sourced JE", async ({ isolatedOrg }) => {
     await seedCoa(isolatedOrg);
     await setAutoPostFlag(isolatedOrg.orgId, true);
-    const before = await countPaymentJEs(isolatedOrg);
 
+    const before = (await paymentJEs(isolatedOrg)).length;
     const invoiceId = await makeSentInvoice(isolatedOrg.orgId, "200.00");
 
     const r = await isolatedOrg.request.post("/api/payments", {
@@ -140,18 +104,18 @@ test.describe("Auto-post on paid invoice (Task #438)", () => {
       },
     });
     expect(r.status(), await r.text()).toBe(200);
+    const payment = (await r.json()) as { id: string };
 
-    const after = await countPaymentJEs(isolatedOrg);
-    expect(after).toBeGreaterThan(before);
+    const after = await paymentJEs(isolatedOrg);
+    expect(after.length).toBe(before + 1);
+    expect(after.some((j) => j.sourceRef === payment.id)).toBe(true);
   });
 
-  test("flag=false: payment route currently still creates the JE (audit gap documented)", async ({
-    isolatedOrg,
-  }) => {
+  test("flag=false: payment skips auto-JE", async ({ isolatedOrg }) => {
     await seedCoa(isolatedOrg);
     await setAutoPostFlag(isolatedOrg.orgId, false);
-    const before = await countPaymentJEs(isolatedOrg);
 
+    const before = (await paymentJEs(isolatedOrg)).length;
     const invoiceId = await makeSentInvoice(isolatedOrg.orgId, "150.00");
 
     const r = await isolatedOrg.request.post("/api/payments", {
@@ -164,11 +128,10 @@ test.describe("Auto-post on paid invoice (Task #438)", () => {
       },
     });
     expect(r.status(), await r.text()).toBe(200);
+    const payment = (await r.json()) as { id: string };
 
-    const after = await countPaymentJEs(isolatedOrg);
-    // Documenting the actual behaviour: the payment route ignores the
-    // org-level autoPostJournalEntries flag and ALWAYS posts. If a
-    // future PR wires the flag in, flip this expectation to .toBe(before).
-    expect(after).toBeGreaterThan(before);
+    const after = await paymentJEs(isolatedOrg);
+    expect(after.length).toBe(before);
+    expect(after.some((j) => j.sourceRef === payment.id)).toBe(false);
   });
 });

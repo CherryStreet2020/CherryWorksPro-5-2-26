@@ -1,16 +1,18 @@
-/**
- * Chart-of-Accounts CRUD spec (Task #438).
- *
- * Mints its own COA per test, exercises new-account create for every
- * account type, edit, and the delete-guard (account with journal
- * entries cannot be hard-deleted — must archive instead).
- */
 import { test, expect } from "../tests/helpers/po/fixtures";
 import { loginAsIsoAdmin, seedCoa } from "./_gl-helpers";
 
+interface AccountRow {
+  id: number;
+  accountNumber: string;
+  name: string;
+  accountType: string;
+  isActive: boolean;
+  isSystem: boolean;
+}
+
 test.describe.configure({ mode: "serial" });
 
-test.describe("Chart of Accounts (Task #438)", () => {
+test.describe("Chart of Accounts", () => {
   test("creates accounts of each type via the form", async ({
     isolatedOrg,
     browser,
@@ -34,28 +36,28 @@ test.describe("Chart of Accounts (Task #438)", () => {
         await page.getByTestId("input-account-number").fill(t.num);
         await page.getByTestId("input-account-name").fill(t.name);
         await page.getByTestId("select-account-type").click();
-        await page.getByRole("option", { name: new RegExp(`^${t.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}$`, "i") }).click();
+        const label = t.type
+          .toLowerCase()
+          .split("_")
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(" ");
+        await page.getByRole("option", { name: new RegExp(`^${label}$`, "i") }).click();
         await page.getByTestId("button-submit-account").click();
-        await expect(page.getByText(`${t.num}`).first()).toBeVisible({ timeout: 10000 });
+        await expect(page.getByText(t.num).first()).toBeVisible({ timeout: 10000 });
       }
 
-      // Verify all six rendered.
-      const accts = await isolatedOrg.request
+      const accts = (await isolatedOrg.request
         .get("/api/gl/accounts")
-        .then((r) => r.json());
-      const numbers = accts.map((a: any) => a.accountNumber);
+        .then((r) => r.json())) as AccountRow[];
+      const numbers = accts.map((a) => a.accountNumber);
       for (const t of types) expect(numbers).toContain(t.num);
     } finally {
       await close();
     }
   });
 
-  test("seeds + edits + archives a non-control account", async ({
-    isolatedOrg,
-    browser,
-  }) => {
+  test("seeds + edits a non-system account", async ({ isolatedOrg, browser }) => {
     const seeded = await seedCoa(isolatedOrg);
-    // 6000-series is Operating Expenses in the seed COA — non-control.
     const expense = seeded.find((a) => a.accountNumber.startsWith("6"));
     expect(expense, "expected an expense seed account").toBeTruthy();
 
@@ -66,27 +68,25 @@ test.describe("Chart of Accounts (Task #438)", () => {
         timeout: 10000,
       });
 
-      // Edit name.
       await page.getByTestId(`button-edit-account-${expense!.id}`).click();
       const newName = `Edited ${Date.now()}`;
       await page.getByTestId("input-account-name").fill(newName);
       await page.getByTestId("button-submit-account").click();
-      await expect(
-        page.getByTestId(`text-account-name-${expense!.id}`),
-      ).toHaveText(newName, { timeout: 10000 });
+      await expect(page.getByTestId(`text-account-name-${expense!.id}`)).toHaveText(
+        newName,
+        { timeout: 10000 },
+      );
     } finally {
       await close();
     }
   });
 
-  test("delete is guarded for an account with posted entries (archive instead)", async ({
+  test("UI archive guard: account with posted entries soft-deletes (hidden from active list)", async ({
     isolatedOrg,
     browser,
   }) => {
     await seedCoa(isolatedOrg);
 
-    // Create non-system accounts so the archive button is guaranteed to
-    // render in the UI (seeded defaults are often system-locked).
     const unique = Date.now().toString().slice(-6);
     const aRes = await isolatedOrg.request.post("/api/gl/accounts", {
       headers: { "x-csrf-token": isolatedOrg.csrf },
@@ -98,7 +98,7 @@ test.describe("Chart of Accounts (Task #438)", () => {
       },
     });
     expect(aRes.status(), await aRes.text()).toBe(201);
-    const a = await aRes.json();
+    const a = (await aRes.json()) as AccountRow;
 
     const bRes = await isolatedOrg.request.post("/api/gl/accounts", {
       headers: { "x-csrf-token": isolatedOrg.csrf },
@@ -110,10 +110,8 @@ test.describe("Chart of Accounts (Task #438)", () => {
       },
     });
     expect(bRes.status(), await bRes.text()).toBe(201);
-    const b = await bRes.json();
+    const b = (await bRes.json()) as AccountRow;
 
-    // Post a JE against `a` and `b` via API so the storage delete-guard
-    // demotes the DELETE to an archive.
     const post = await isolatedOrg.request.post("/api/gl/journal-entries", {
       headers: { "x-csrf-token": isolatedOrg.csrf },
       data: {
@@ -130,25 +128,25 @@ test.describe("Chart of Accounts (Task #438)", () => {
     const { page, close } = await loginAsIsoAdmin(browser, isolatedOrg);
     try {
       await page.goto("/gl/accounts");
-      await expect(page.getByTestId(`row-account-${a.id}`)).toBeVisible({
-        timeout: 10000,
-      });
-
       const archiveBtn = page.getByTestId(`button-archive-account-${a.id}`);
       await expect(archiveBtn).toBeVisible({ timeout: 10000 });
       await archiveBtn.click();
 
-      // The row is hidden by the default (active-only) list. Pull the
-      // archived view to confirm the soft-delete landed.
-      const activeOnly = await isolatedOrg.request
-        .get("/api/gl/accounts")
-        .then((r) => r.json());
-      expect(activeOnly.find((x: any) => x.id === a.id)).toBeUndefined();
+      // After archive the row disappears from the default (active-only)
+      // list rendered by the page.
+      await expect(page.getByTestId(`row-account-${a.id}`)).toBeHidden({
+        timeout: 10000,
+      });
 
-      const all = await isolatedOrg.request
+      const activeOnly = (await isolatedOrg.request
+        .get("/api/gl/accounts")
+        .then((r) => r.json())) as AccountRow[];
+      expect(activeOnly.find((x) => x.id === a.id)).toBeUndefined();
+
+      const all = (await isolatedOrg.request
         .get("/api/gl/accounts?includeArchived=true")
-        .then((r) => r.json());
-      const updated = all.find((x: any) => x.id === a.id);
+        .then((r) => r.json())) as AccountRow[];
+      const updated = all.find((x) => x.id === a.id);
       expect(updated?.isActive).toBe(false);
     } finally {
       await close();

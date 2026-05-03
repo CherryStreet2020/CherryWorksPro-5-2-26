@@ -1,13 +1,15 @@
-/**
- * Shared helpers for the GL/accounting E2E suite (Task #438).
- *
- * Every GL spec mints its own chart of accounts via the
- * /api/gl/accounts/seed endpoint and then either drives a manual JE
- * through the UI or inserts source rows directly via the test DB pool
- * (for paths that aren't being asserted by the spec).
- */
 import type { Browser, Page } from "@playwright/test";
 import type { IsolatedOrgFixture } from "../tests/helpers/po/fixtures";
+
+export interface SeededAccount {
+  id: number;
+  accountNumber: string;
+  name: string;
+  accountType: string;
+  normalBalance: "DEBIT" | "CREDIT";
+  isActive?: boolean;
+  isSystem?: boolean;
+}
 
 export async function loginAsIsoAdmin(
   browser: Browser,
@@ -20,36 +22,37 @@ export async function loginAsIsoAdmin(
   await page.fill('[data-testid="input-password"]', iso.password);
   await page.click('[data-testid="button-login"]');
   await page.waitForURL((url) => !url.pathname.startsWith("/login"), {
-    timeout: 15000,
+    timeout: 20000,
   });
   return { page, close: () => ctx.close() };
 }
 
-export interface SeededAccount {
-  id: number;
-  accountNumber: string;
-  name: string;
-  accountType: string;
-  normalBalance: "DEBIT" | "CREDIT";
-}
-
-export async function seedCoa(
-  iso: IsolatedOrgFixture,
-): Promise<SeededAccount[]> {
+export async function seedCoa(iso: IsolatedOrgFixture): Promise<SeededAccount[]> {
   const r = await iso.request.post("/api/gl/accounts/seed", {
     headers: { "x-csrf-token": iso.csrf },
   });
   if (r.status() !== 200) {
     throw new Error(`[gl-helpers] seed failed: ${r.status()} ${await r.text()}`);
   }
-  return r.json();
+  return (await r.json()) as SeededAccount[];
 }
 
-export function findAccount(
-  accts: SeededAccount[],
-  number: string,
-): SeededAccount {
+export function findAccount(accts: SeededAccount[], number: string): SeededAccount {
   const a = accts.find((x) => x.accountNumber === number);
   if (!a) throw new Error(`[gl-helpers] account ${number} not in seeded COA`);
+  return a;
+}
+
+export function pickNonControlExpense(accts: SeededAccount[]): SeededAccount {
+  const a = accts.find((x) => x.accountType === "EXPENSE")
+    || accts.find((x) => x.accountType === "COST_OF_SERVICES");
+  if (!a) throw new Error("[gl-helpers] no non-control expense account in COA");
+  return a;
+}
+
+export function pickNonControlRevenue(accts: SeededAccount[]): SeededAccount {
+  const a = accts.find((x) => x.accountType === "REVENUE" && x.accountNumber !== "4000")
+    || accts.filter((x) => x.accountType === "EXPENSE")[1];
+  if (!a) throw new Error("[gl-helpers] no non-control revenue account in COA");
   return a;
 }

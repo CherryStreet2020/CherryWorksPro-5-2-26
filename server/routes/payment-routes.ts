@@ -80,15 +80,18 @@ app.post("/api/payments", requireManagerOrAbove, async (req, res) => {
     }
 
     {
-      const xr = Number(invoice.exchangeRate) || 1;
-      const basePmt = round2(parsed.amount * xr);
-      const pmtAmt = basePmt.toFixed(2);
-      const currSuffix = invoice.currency && invoice.currency !== "USD" ? ` (${invoice.currency})` : "";
-      const glLines: { accountNumber: string; debit: string; credit: string; memo?: string }[] = [
-        { accountNumber: "1000", debit: pmtAmt, credit: "0.00", memo: "Cash received" },
-        { accountNumber: "1200", debit: "0.00", credit: pmtAmt, memo: "Accounts Receivable reduced" },
-      ];
-      await createAutoJournalEntry(orgId, parsed.date, `Payment on Invoice ${invoice.number}${currSuffix}`, "PAYMENT", payment.id, glLines, req.session.userId);
+      const payOrg = await storage.getOrg(orgId);
+      if (payOrg?.autoPostJournalEntries) {
+        const xr = Number(invoice.exchangeRate) || 1;
+        const basePmt = round2(parsed.amount * xr);
+        const pmtAmt = basePmt.toFixed(2);
+        const currSuffix = invoice.currency && invoice.currency !== "USD" ? ` (${invoice.currency})` : "";
+        const glLines: { accountNumber: string; debit: string; credit: string; memo?: string }[] = [
+          { accountNumber: "1000", debit: pmtAmt, credit: "0.00", memo: "Cash received" },
+          { accountNumber: "1200", debit: "0.00", credit: pmtAmt, memo: "Accounts Receivable reduced" },
+        ];
+        await createAutoJournalEntry(orgId, parsed.date, `Payment on Invoice ${invoice.number}${currSuffix}`, "PAYMENT", payment.id, glLines, req.session.userId);
+      }
     }
 
     return res.json(payment);
