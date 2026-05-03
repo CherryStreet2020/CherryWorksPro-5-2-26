@@ -40,6 +40,14 @@ const ANON_SPECS = [
   "public-marketing-pages.spec.ts",
   "public-token-pages.spec.ts",
   "switch-from-pages.spec.ts",
+  // Task #442 — public marketing site CTA + interaction coverage.
+  "public-marketing-home.spec.ts",
+  "public-marketing-static-cta.spec.ts",
+  "public-pricing-deeplink.spec.ts",
+  "public-marketing-os-landing.spec.ts",
+  "public-contact-form.spec.ts",
+  "public-demo.spec.ts",
+  "public-compare-switch-cta.spec.ts",
   // Flag specs use the isolatedOrg fixture (Task #432) so each test
   // logs in as its own org-specific admin — never the shared seed
   // admin — and is safe under fullyParallel.
