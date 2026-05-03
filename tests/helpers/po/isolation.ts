@@ -306,6 +306,22 @@ export async function deleteIsolatedOrg(orgId: string): Promise<boolean> {
       await client.query(
         `SELECT set_config('app.allow_audit_log_modification', 'on', true)`,
       );
+      // Defuse FK ordering between sibling org-scoped tables. The
+      // `discoverOrgIdTables()` list is in arbitrary information_schema
+      // order, so e.g. `clients` can be deleted before
+      // `client_activities` — even though both carry `org_id`, the
+      // `client_activities.client_id` FK to `clients` blocks the
+      // parent delete and the org never goes away. Over hundreds of
+      // runs this leaked 450+ orphaned `e2e_iso_*` orgs and made
+      // `sweepAbandonedRuns` a 5-15 min stall during global-setup.
+      //
+      // `session_replication_role = 'replica'` skips FK trigger
+      // checks for the duration of THIS transaction on THIS pooled
+      // connection only. We are deleting an entire org subtree by
+      // org_id on every table that carries one, so referential
+      // integrity is preserved by construction — there is nothing
+      // left to be inconsistent with once COMMIT runs.
+      await client.query(`SET LOCAL session_replication_role = 'replica'`);
       for (const t of tables) {
         // Wrap each per-table DELETE in its own SAVEPOINT so a single
         // FK violation only rolls back THAT delete instead of poisoning
