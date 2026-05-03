@@ -40,6 +40,11 @@ const ANON_SPECS = [
   "public-marketing-pages.spec.ts",
   "public-token-pages.spec.ts",
   "switch-from-pages.spec.ts",
+  // Flag specs use the isolatedOrg fixture (Task #432) so each test
+  // logs in as its own org-specific admin — never the shared seed
+  // admin — and is safe under fullyParallel.
+  "feature-flag-marketing-os.flags-on.spec.ts",
+  "feature-flag-email-oauth.flags-on.spec.ts",
 ];
 
 function parseShard(): { current: number; total: number } | undefined {

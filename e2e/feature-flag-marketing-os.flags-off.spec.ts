@@ -70,4 +70,33 @@ test.describe("MARKETING_OS_ENABLED=false (against the dedicated flag-off web se
       await page.locator('[data-testid="section-marketing-locked"]').count(),
     ).toBe(0);
   });
+
+  test("UI: navigating directly to /marketing/contacts does not render the marketing list", async ({
+    page,
+    isolatedOrg,
+  }) => {
+    const { orgId, email, password } = isolatedOrg;
+    await setEntitlement(orgId, "marketing_os", true);
+
+    await page.goto("/login");
+    await page.waitForSelector('[data-testid="input-email"]', { timeout: 15000 });
+    await page.fill('[data-testid="input-email"]', email);
+    await page.fill('[data-testid="input-password"]', password);
+    await page.click('[data-testid="button-login"]');
+    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => undefined);
+
+    const resp = await page.goto("/marketing/contacts", { waitUntil: "domcontentloaded" });
+    // Client-side router still mounts the SPA shell, but the marketing
+    // contacts page must NOT render its data table or the "New Contact"
+    // CTA when the env flag is OFF — its data fetch would 404 anyway.
+    expect(resp?.status() ?? 200, "SPA shell still serves").toBeLessThan(500);
+    await page.waitForTimeout(750);
+    expect(
+      await page.locator('[data-testid="table-contacts"]').count(),
+      "marketing contacts table must not render under flag OFF",
+    ).toBe(0);
+    expect(
+      await page.locator('[data-testid="button-new-contact"]').count(),
+    ).toBe(0);
+  });
 });

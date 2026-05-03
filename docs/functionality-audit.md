@@ -706,19 +706,20 @@ tier gate **untested in E2E**. Other tier-gated APIs **untested**.
 - **`EMAIL_OAUTH_ENABLED`** — gates Gmail + M365 OAuth flows in
   `server/email/feature-flag.ts`, `routes/oauth-mailbox-routes.ts`.
 - **Coverage.** Off/on env-flag behavior covered at E2E by
-  `e2e/feature-flag-marketing-os.spec.ts` (brands + marketing chat 404
+  `e2e/feature-flag-marketing-os.flags-{on,off}.spec.ts` (brands + marketing chat 404
   when flag OFF; brands reachable when flag ON; entitlement gate still
   fires when flag ON but entitlement absent) and
-  `e2e/feature-flag-email-oauth.spec.ts` (oauth start/callback 404 +
+  `e2e/feature-flag-email-oauth.flags-{on,off}.spec.ts` (oauth start/callback 404 +
   `oauthFlagEnabled=false` when flag OFF; reachable + flag-enabled
-  surface when flag ON). Both rely on a dev-only runtime override
-  endpoint at `POST /api/__test__/feature-flags`. **Gap remaining:**
-  the marketing kill switch is currently only wired into
-  `routes/brands.ts` and `routes/marketing/chat.ts`; the
-  `requireFeature("marketing_os")` middleware is entitlement-only, so
-  flag-OFF + entitlement-ON still serves `/api/marketing/contacts` &
-  friends. Sidebar visibility is also entitlement-only. Tracked under
-  audit §7 #15 — refactor out of scope for this task.
+  surface when flag ON). Both invoke two real dev servers: the main
+  workflow at `:5000` (flags ON) and a dedicated `:5101` server with
+  all four flag env vars set to `false`, spawned by
+  `playwright.feature-flags-off.config.ts`. No runtime override
+  endpoint is involved. The marketing kill switch is wired into the
+  `requireFeature("marketing_os")` chokepoint middleware
+  (`server/services/entitlements.ts`), and the sidebar's
+  `<MarketingNavSection/>` is gated on
+  `isMarketingOsEnabled()` (which reads `import.meta.env.VITE_MARKETING_OS_ENABLED`).
 
 ### 3.5 Error pages
 - 403 → `pages/error-403.tsx` (rendered by `AdminRoute`/`ManagerRoute`

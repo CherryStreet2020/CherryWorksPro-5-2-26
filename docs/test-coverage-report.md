@@ -129,9 +129,11 @@ in CI, or (c) authoring volume well beyond a single session.
   upload + column mapping).
 - ~~**`MARKETING_OS_ENABLED` and `EMAIL_OAUTH_ENABLED` env-flag**
   paired on/off specs (requires booting two server instances).~~
-  **Done (Task #437):** `e2e/feature-flag-marketing-os.spec.ts` +
-  `e2e/feature-flag-email-oauth.spec.ts` use a dev-only runtime
-  override at `POST /api/__test__/feature-flags` (mirrors the existing
+  **Done (Task #437):** paired `e2e/feature-flag-{marketing-os,email-oauth}.flags-{on,off}.spec.ts`
+  run against two dev servers — the main workflow at `:5000` (flag ON,
+  via `playwright.config.ts`) and a dedicated `:5101` server with all
+  four flag env vars set to `false` (via `playwright.feature-flags-off.config.ts`).
+  No runtime override; the kill switch is exercised at boot. (mirrors the existing
   `__set*FlagForTests` test seam in `server/email/feature-flag.ts`),
   so no second server instance is needed. Specs reset overrides in
   `afterEach` to keep ordering safe. Remaining gap: the marketing
@@ -158,8 +160,10 @@ npx playwright test e2e/auth-*.spec.ts e2e/public-*.spec.ts \
   e2e/services-crud.spec.ts e2e/profile-page.spec.ts \
   e2e/expenses-page.spec.ts e2e/payouts-admin.spec.ts \
   e2e/api-integrations-page.spec.ts e2e/multi-tenant-isolation.spec.ts \
-  e2e/role-guards.spec.ts e2e/feature-flag-marketing-os.spec.ts \
-  e2e/feature-flag-email-oauth.spec.ts \
+  e2e/role-guards.spec.ts e2e/feature-flag-marketing-os.flags-on.spec.ts \
+  e2e/feature-flag-email-oauth.flags-on.spec.ts \
+  # And the dedicated flag-OFF server invocation:
+  npx playwright test --config=playwright.feature-flags-off.config.ts \
   e2e/switch-from-pages.spec.ts
 ```
 
