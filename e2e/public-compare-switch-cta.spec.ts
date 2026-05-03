@@ -9,6 +9,7 @@
  * via its comparison table + tier-switch links.
  */
 import { test, expect } from "@playwright/test";
+import { gotoWithRetry } from "./_iso-helpers";
 
 test.use({ navigationTimeout: 30_000 });
 
@@ -29,7 +30,7 @@ test.describe("Public /switch-from-* — CTA verification", () => {
       const errors: string[] = [];
       page.on("pageerror", (err) => errors.push(`pageerror: ${err.message}`));
 
-      await page.goto(path);
+      await gotoWithRetry(page, path);
       await expect(page.locator("h1").first()).toBeVisible({ timeout: 15000 });
 
       // Migration timeline + cross-sell are present on each LP.
@@ -55,7 +56,7 @@ test.describe("Public /switch-from-* — CTA verification", () => {
     });
 
     test(`${path}: cta-start-trial → /signup`, async ({ page }) => {
-      await page.goto(path);
+      await gotoWithRetry(page, path);
       const cta = page.locator('[data-testid="cta-start-trial"]').first();
       await cta.scrollIntoViewIfNeeded();
       await expect(cta).toBeVisible({ timeout: 15000 });
@@ -67,7 +68,7 @@ test.describe("Public /switch-from-* — CTA verification", () => {
     });
 
     test(`${path}: pain-point grid renders multiple cards`, async ({ page }) => {
-      await page.goto(path);
+      await gotoWithRetry(page, path);
       const painPoints = page.locator('[data-testid^="pain-point-"]');
       await expect(painPoints.first()).toBeVisible({ timeout: 15000 });
       const count = await painPoints.count();
@@ -75,7 +76,7 @@ test.describe("Public /switch-from-* — CTA verification", () => {
     });
 
     test(`${path}: migration timeline renders step 1/2/3`, async ({ page }) => {
-      await page.goto(path);
+      await gotoWithRetry(page, path);
       for (const step of ["1", "2", "3"]) {
         const node = page.locator(`[data-testid="timeline-step-${step}"]`);
         await node.scrollIntoViewIfNeeded();
@@ -90,7 +91,7 @@ test.describe("Public /compare hub", () => {
     const errors: string[] = [];
     page.on("pageerror", (err) => errors.push(`pageerror: ${err.message}`));
 
-    await page.goto("/compare");
+    await gotoWithRetry(page, "/compare");
     await expect(page.locator('[data-testid="comparison-table"]').first()).toBeVisible({ timeout: 15000 });
 
     const crossSell = page.locator('[data-testid="link-compare-marketing-os"]');
@@ -119,7 +120,7 @@ test.describe("Public /compare hub", () => {
   ];
 
   test("every competitor switch tile on /compare exposes the right href", async ({ page }) => {
-    await page.goto("/compare");
+    await gotoWithRetry(page, "/compare");
     for (const tile of SWITCH_TILES) {
       const link = page.locator(`[data-testid="${tile.id}"]`).first();
       await link.scrollIntoViewIfNeeded();
@@ -130,7 +131,7 @@ test.describe("Public /compare hub", () => {
   });
 
   test("clicking the QuickBooks switch tile navigates to its LP", async ({ page }) => {
-    await page.goto("/compare");
+    await gotoWithRetry(page, "/compare");
     const link = page.locator('[data-testid="switch-link-quickbooks"]').first();
     await link.scrollIntoViewIfNeeded();
     await expect(link).toBeVisible({ timeout: 15000 });
@@ -143,7 +144,7 @@ test.describe("Public /compare hub", () => {
   });
 
   test("/compare comparison table renders Cherry header + competitor filter buttons", async ({ page }) => {
-    await page.goto("/compare");
+    await gotoWithRetry(page, "/compare");
     const table = page.locator('[data-testid="comparison-table"]').first();
     await expect(table).toBeVisible({ timeout: 15000 });
     // Filter pills (one per competitor) live above the table; verify a few are mounted.

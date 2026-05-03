@@ -1,13 +1,7 @@
 /**
- * Public estimate token — wrong-state guards (Task #444).
- *
- * Complements `public-token-edge-cases.spec.ts` (which only proves
- * unknown tokens 404) by creating a real estimate inside an isolated
- * org, sending it to mint a valid public token, then transitioning
- * it OUT of `SENT` state and asserting that the public-side accept
- * AND decline endpoints both return the documented 400
- * (`Estimate cannot be accepted/declined in current state`) — the
- * "used / wrong-state" branch the audit explicitly calls out.
+ * Public estimate token — used / wrong-state guards (Task #444).
+ * Mints a real estimate, transitions it out of SENT, and asserts
+ * the public accept/decline endpoints return the documented 400.
  */
 import { test, expect } from "../tests/helpers/po/fixtures";
 

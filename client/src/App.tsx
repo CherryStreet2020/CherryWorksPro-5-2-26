@@ -217,6 +217,18 @@ const DevPremiumShowcaseRoute: React.ReactElement | null = (() => {
   );
 })();
 
+// Task #444 — dev-only synthetic crash route used by the e2e
+// suite to exercise the ErrorBoundary fallback via a real React
+// render throw (the only organic trigger for the 500 surface).
+// Stripped from production builds via `import.meta.env.DEV`.
+const DevCrashRoute: React.ReactElement | null = (() => {
+  if (!import.meta.env.DEV) return null;
+  function Crasher(): React.ReactElement {
+    throw new Error("[e2e] synthetic render crash");
+  }
+  return <Route path="/__e2e_crash" component={Crasher} />;
+})();
+
 function LazyFallback() {
   return (
     <div className="h-full flex items-center justify-center p-8">
@@ -637,6 +649,7 @@ function App() {
             <Route path="/careers"><Redirect to="/" /></Route>
             <Route path="/timesheets"><Redirect to="/time" /></Route>
             {DevPremiumShowcaseRoute}
+            {DevCrashRoute}
             <Route path="/getting-started"><AuthProvider><BrandProvider><Suspense fallback={<LazyFallback />}><AuthenticatedGettingStarted /></Suspense></BrandProvider></AuthProvider></Route>
             <Route>
               <AuthProvider>

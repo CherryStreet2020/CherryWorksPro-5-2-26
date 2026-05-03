@@ -8,10 +8,11 @@
  *  - FAQ section renders and at least one item expands
  */
 import { test, expect } from "@playwright/test";
+import { gotoWithRetry } from "./_iso-helpers";
 
 test.describe("Public /pricing", () => {
   test("renders plan cards, billing toggle, and FAQ", async ({ page }) => {
-    await page.goto("/pricing");
+    await gotoWithRetry(page, "/pricing");
     await expect(page.locator('[data-testid="pricing-heading"]')).toBeVisible({
       timeout: 15000,
     });
@@ -42,7 +43,7 @@ test.describe("Public /pricing", () => {
   });
 
   test("Starter plan CTA links to /signup", async ({ page }) => {
-    await page.goto("/pricing");
+    await gotoWithRetry(page, "/pricing");
     const starterCta = page.locator('[data-testid="button-signup-starter"]');
     await expect(starterCta).toBeVisible({ timeout: 15000 });
     await Promise.all([
