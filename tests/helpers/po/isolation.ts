@@ -307,11 +307,28 @@ export async function deleteIsolatedOrg(orgId: string): Promise<boolean> {
         `SELECT set_config('app.allow_audit_log_modification', 'on', true)`,
       );
       for (const t of tables) {
+        // Wrap each per-table DELETE in its own SAVEPOINT so a single
+        // FK violation only rolls back THAT delete instead of poisoning
+        // the whole transaction. Without the savepoint, the first
+        // failure aborts the txn and every subsequent DELETE in this
+        // loop logs "current transaction is aborted, commands ignored"
+        // — a single global-setup used to spew hundreds of those lines
+        // and bury real failures (task #456). Savepoints keep the
+        // outer txn (and the audit-log GUC set above) alive across
+        // per-table errors.
+        await client.query(`SAVEPOINT del_tbl`);
         try {
           // `t` comes from information_schema, not user input — safe
           // to interpolate as a quoted identifier.
           await client.query(`DELETE FROM "${t}" WHERE org_id = $1`, [orgId]);
+          await client.query(`RELEASE SAVEPOINT del_tbl`);
         } catch (err) {
+          await client
+            .query(`ROLLBACK TO SAVEPOINT del_tbl`)
+            .catch(() => undefined);
+          await client
+            .query(`RELEASE SAVEPOINT del_tbl`)
+            .catch(() => undefined);
           console.warn(
             `[e2e isolation] DELETE "${t}" for org ${orgId} failed (attempt ${attempt}):`,
             err,
