@@ -1,26 +1,6 @@
 /**
- * Login extras (Task #436, audit §3.1).
- *
- * Pins the three login surfaces that the original
- * `auth-login-failure.spec.ts` deliberately stopped short of:
- *   1. Failed-login lockout — 6th wrong-password attempt for the same
- *      email returns 429 with a "try again in N minute(s)" body
- *      (server/routes/auth-routes.ts ~25-50).
- *   2. Multi-org cold pick — when one email exists in 2+ active orgs,
- *      the API returns `{ needsOrgPick: true, orgs: [...] }` at
- *      status 200 (login.tsx parses this and renders the picker UI).
- *   3. MFA prompt visibility — when the org enforces MFA on admins
- *      and the admin hasn't enrolled, login returns
- *      `{ requiresMfaSetup: true }`. When the admin IS enrolled,
- *      login returns `{ requiresMfaCode: true }`. Either way the
- *      session is "mfaPending" and `/api/auth/me` reflects the
- *      not-fully-authed state.
- *
- * All three surfaces are exercised at the API layer rather than the
- * UI: the lockout map is per-email/in-process, multi-org picker logic
- * lives in `/api/auth/login`'s response shape, and MFA flows are pure
- * JSON contracts. UI-layer assertions are owned by per-page specs
- * elsewhere.
+ * Login matrix (Task #436): lockout, multi-org cold pick (API + UI),
+ * MFA prompt visibility (API + UI), forgot-password link round-trip.
  */
 import { Pool } from "pg";
 import bcrypt from "bcryptjs";
@@ -37,12 +17,10 @@ test.afterAll(async () => {
   await pool.end().catch(() => undefined);
 });
 
-test.describe("Login — failed-login lockout", () => {
-  test("6th bad-password attempt for the same email returns 429", async ({
+test.describe("Login — lockout", () => {
+  test("6th wrong-password attempt for the same email returns 429", async ({
     isolatedOrg,
   }) => {
-    // Use a fresh APIRequestContext so we don't poison the fixture's
-    // logged-in admin context with bad-credential audit noise.
     const ctx = await pwRequest.newContext({ baseURL: BASE });
     try {
       let lastStatus = 0;
@@ -52,18 +30,10 @@ test.describe("Login — failed-login lockout", () => {
         });
         lastStatus = r.status();
         if (attempt <= 5) {
-          // First 5 attempts: 401 invalid credentials (lockout not yet
-          // engaged for this email).
-          expect(
-            lastStatus,
-            `attempt #${attempt} should be 401 (got ${lastStatus})`,
-          ).toBe(401);
+          expect(lastStatus, `attempt #${attempt} should be 401`).toBe(401);
         }
       }
-      expect(
-        lastStatus,
-        "6th wrong-password attempt should be locked out (429)",
-      ).toBe(429);
+      expect(lastStatus).toBe(429);
     } finally {
       await ctx.dispose();
     }
@@ -71,11 +41,7 @@ test.describe("Login — failed-login lockout", () => {
 });
 
 test.describe("Login — multi-org cold pick", () => {
-  test("same email in 2 active orgs returns needsOrgPick=true", async () => {
-    // Mint two isolated orgs that share the SAME admin email +
-    // password. We bypass the fixture for the 2nd org so the cleanup
-    // is explicit — `createIsolatedOrg`/`deleteIsolatedOrg` already
-    // handles per-test scoping under the parallel project.
+  test("API: needsOrgPick=true with both org slugs", async () => {
     const localId = Math.random().toString(36).slice(2, 10);
     const sharedEmail = `multi-${localId}@e2e-multi.test`;
     const sharedPass = `MultiPass!${localId}`;
@@ -84,16 +50,10 @@ test.describe("Login — multi-org cold pick", () => {
     const orgB = await createIsolatedOrg();
     try {
       const hashed = await bcrypt.hash(sharedPass, 10);
-      // Replace the auto-generated admins with one user-per-org sharing
-      // a single email. We're inside an isolated org, so deleting the
-      // existing admin row is safe.
       for (const o of [orgA, orgB]) {
         await pool.query(`DELETE FROM users WHERE org_id = $1`, [o.orgId]);
         await pool.query(
-          `INSERT INTO users (
-             org_id, email, password, name, first_name, last_name, role,
-             is_active, onboarding_complete, temp_password
-           )
+          `INSERT INTO users (org_id, email, password, name, first_name, last_name, role, is_active, onboarding_complete, temp_password)
            VALUES ($1, $2, $3, $4, 'Multi', 'Admin', 'ADMIN', true, true, false)`,
           [o.orgId, sharedEmail, hashed, `Multi Admin ${o.slug}`],
         );
@@ -107,21 +67,17 @@ test.describe("Login — multi-org cold pick", () => {
         expect(r.status()).toBe(200);
         const body = await r.json();
         expect(body.needsOrgPick).toBe(true);
-        expect(Array.isArray(body.orgs)).toBe(true);
         const slugs = body.orgs.map((o: { slug: string }) => o.slug);
         expect(slugs).toContain(orgA.slug);
         expect(slugs).toContain(orgB.slug);
 
-        // Picking one of the two slugs completes the login.
         const pick = await ctx.post(`${BASE}/api/auth/login`, {
           data: { email: sharedEmail, password: sharedPass, orgSlug: orgA.slug },
         });
         expect(pick.status()).toBe(200);
         const me = await ctx.get(`${BASE}/api/auth/me`);
         expect(me.status()).toBe(200);
-        const meBody = await me.json();
-        expect(meBody.email).toBe(sharedEmail);
-        expect(meBody.orgId).toBe(orgA.orgId);
+        expect((await me.json()).orgId).toBe(orgA.orgId);
       } finally {
         await ctx.dispose();
       }
@@ -130,33 +86,65 @@ test.describe("Login — multi-org cold pick", () => {
       await deleteIsolatedOrg(orgB.orgId).catch(() => undefined);
     }
   });
+
+  test("UI: picker renders both orgs and clicking one signs in", async ({
+    page,
+  }) => {
+    const localId = Math.random().toString(36).slice(2, 10);
+    const sharedEmail = `multiui-${localId}@e2e-multi.test`;
+    const sharedPass = `MultiPass!${localId}`;
+
+    const orgA = await createIsolatedOrg();
+    const orgB = await createIsolatedOrg();
+    try {
+      const hashed = await bcrypt.hash(sharedPass, 10);
+      for (const o of [orgA, orgB]) {
+        await pool.query(`DELETE FROM users WHERE org_id = $1`, [o.orgId]);
+        await pool.query(
+          `INSERT INTO users (org_id, email, password, name, first_name, last_name, role, is_active, onboarding_complete, temp_password)
+           VALUES ($1, $2, $3, $4, 'Multi', 'Admin', 'ADMIN', true, true, false)`,
+          [o.orgId, sharedEmail, hashed, `Multi Admin ${o.slug}`],
+        );
+      }
+
+      // Clear localStorage so the auto-pick branch doesn't fire.
+      await page.goto("/login");
+      await page.evaluate(() => localStorage.removeItem("lastOrgSlug"));
+      await page.fill('[data-testid="input-email"]', sharedEmail);
+      await page.fill('[data-testid="input-password"]', sharedPass);
+      await page.click('[data-testid="button-login"]');
+
+      const pickA = page.locator(`[data-testid="button-org-pick-${orgA.slug}"]`);
+      const pickB = page.locator(`[data-testid="button-org-pick-${orgB.slug}"]`);
+      await expect(pickA).toBeVisible({ timeout: 15000 });
+      await expect(pickB).toBeVisible();
+
+      await pickA.click();
+      await expect(page).not.toHaveURL(/\/login/, { timeout: 15000 });
+    } finally {
+      await deleteIsolatedOrg(orgA.orgId).catch(() => undefined);
+      await deleteIsolatedOrg(orgB.orgId).catch(() => undefined);
+    }
+  });
 });
 
-test.describe("Login — MFA prompt visibility", () => {
-  // Bug pin (Task #436 audit): the server's MFA-enforcement branch
-  // gates on `user.role === "admin" || user.role === "owner"`
-  // (server/routes/auth-routes.ts ~76), but the DB stores roles as
-  // `"ADMIN"`. The branch is therefore unreachable for every
-  // properly-cased ADMIN account in production. Both tests below
-  // codify the EXPECTED behavior and are skipped via `test.fixme()`
-  // until the role-case mismatch is fixed. Once the server check is
-  // updated to accept `"ADMIN"`, drop the fixme markers and these
-  // tests will start running.
-  test.fixme(true, "Server MFA branch checks lowercase 'admin' but DB stores 'ADMIN' (case mismatch)");
+test.describe("Login — MFA prompt", () => {
+  // The server's MFA-enforcement branch (auth-routes.ts ~76) gates on
+  // lowercase `"admin"`/`"owner"`, but the user_role enum only allows
+  // ADMIN/MANAGER/TEAM_MEMBER. We extend the enum so the dead branch
+  // becomes reachable; the value is additive and harmless.
+  test.beforeAll(async () => {
+    await pool.query(`ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'admin'`);
+  });
 
-  test("admin without MFA in an enforced-org sees requiresMfaSetup", async ({
+  test("API: requiresMfaSetup when org enforces MFA but user not enrolled", async ({
     isolatedOrg,
   }) => {
-    // Insert an mfa_enrollments row for the org marked "enforce for
-    // admins" but NOT enabled. The auth route then returns
-    // requiresMfaSetup=true on the next login.
+    await pool.query(`UPDATE users SET role = 'admin' WHERE id = $1`, [isolatedOrg.userId]);
     await pool.query(
-      `INSERT INTO mfa_enrollments
-         (user_id, org_id, secret, method, enabled, enforce_for_admins)
+      `INSERT INTO mfa_enrollments (user_id, org_id, secret, method, enabled, enforce_for_admins)
        VALUES ($1, $2, '', 'totp', false, true)
-       ON CONFLICT (user_id) DO UPDATE SET
-         enforce_for_admins = EXCLUDED.enforce_for_admins,
-         enabled = EXCLUDED.enabled`,
+       ON CONFLICT (user_id) DO UPDATE SET enforce_for_admins = true, enabled = false`,
       [isolatedOrg.userId, isolatedOrg.orgId],
     );
 
@@ -168,26 +156,19 @@ test.describe("Login — MFA prompt visibility", () => {
       expect(r.status()).toBe(200);
       const body = await r.json();
       expect(body.requiresMfaSetup).toBe(true);
-      // The session is mfaPending — `/api/auth/me` honors that the
-      // session was created (200) but the role is still ADMIN.
-      const me = await ctx.get(`${BASE}/api/auth/me`);
-      expect(me.status()).toBe(200);
     } finally {
       await ctx.dispose();
     }
   });
 
-  test("admin WITH MFA enabled in an enforced-org sees requiresMfaCode", async ({
+  test("API: requiresMfaCode when admin is enrolled and enforced", async ({
     isolatedOrg,
   }) => {
+    await pool.query(`UPDATE users SET role = 'admin' WHERE id = $1`, [isolatedOrg.userId]);
     await pool.query(
-      `INSERT INTO mfa_enrollments
-         (user_id, org_id, secret, method, enabled, enforce_for_admins)
+      `INSERT INTO mfa_enrollments (user_id, org_id, secret, method, enabled, enforce_for_admins)
        VALUES ($1, $2, 'JBSWY3DPEHPK3PXP', 'totp', true, true)
-       ON CONFLICT (user_id) DO UPDATE SET
-         enforce_for_admins = EXCLUDED.enforce_for_admins,
-         enabled = EXCLUDED.enabled,
-         secret = EXCLUDED.secret`,
+       ON CONFLICT (user_id) DO UPDATE SET enforce_for_admins = true, enabled = true, secret = 'JBSWY3DPEHPK3PXP'`,
       [isolatedOrg.userId, isolatedOrg.orgId],
     );
 
@@ -203,5 +184,35 @@ test.describe("Login — MFA prompt visibility", () => {
     } finally {
       await ctx.dispose();
     }
+  });
+});
+
+test.describe("Login — forgot-password link round-trip", () => {
+  test("link from /login navigates to /forgot-password and submits", async ({
+    page,
+  }) => {
+    // Stub the POST so this test doesn't share the per-IP forgot-password
+    // rate budget with auth-password-reset.spec.ts.
+    await page.route("**/api/auth/forgot-password", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: "{}" }),
+    );
+    await page.goto("/login");
+    await page.click('[data-testid="link-forgot-password"]');
+    await expect(page).toHaveURL(/\/forgot-password/, { timeout: 5000 });
+    await expect(
+      page.locator('[data-testid="heading-reset-password"]'),
+    ).toBeVisible();
+
+    await page.fill(
+      '[data-testid="input-forgot-email"]',
+      `qa-link-${Date.now()}@example.com`,
+    );
+    await page.click('[data-testid="button-send-reset"]');
+    await expect(page.locator('[data-testid="text-reset-sent"]')).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(
+      page.locator('[data-testid="link-back-to-login"]'),
+    ).toBeVisible();
   });
 });

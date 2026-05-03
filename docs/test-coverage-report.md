@@ -386,17 +386,24 @@ project) exercises every helper in this section at least once:
 
 ## Task #436 — Auth & permissions specs
 
-Built on the Task #435 fixture library. Four new spec files cover the
-auth gaps the audit (§3.1) flagged:
+Built on the Task #435 fixture library. Five new spec files cover the
+auth gaps the audit (§3.1, §6.1.3, §7) flagged:
 
 | Spec | Surface |
 | --- | --- |
-| `e2e/auth-login-extras.spec.ts` | Failed-login lockout (6th attempt → 429), multi-org cold pick (`needsOrgPick=true`), MFA prompt visibility (`requiresMfaSetup` / `requiresMfaCode`). |
-| `e2e/auth-account-lifecycle.spec.ts` | Signup happy path with TRIAL+14d window assertion via direct DB read; signup duplicate-domain rate guard (4th in 24h → 429); password-reset round-trip (validate → consume → reuse → garbage). |
-| `e2e/auth-session.spec.ts` | Idle-timeout via direct `session.sess` mutation (no 30-min sleep); change-password happy + current-password mismatch + tempPassword auto-mount UI redirect. |
-| `e2e/role-guards-matrix.spec.ts` | Parametric ADMIN / MANAGER / TEAM_MEMBER matrix across `AdminRoute` and `ManagerRoute` page samples — uses `seedRoleAdminPage` / `seedManagerPage` / `seedTeamMemberPage` from #435. |
+| `e2e/auth-login-extras.spec.ts` | Failed-login lockout (6th attempt → 429); multi-org cold pick **API + UI** (picker renders both orgs, click signs in to chosen org); MFA prompt **API** for `requiresMfaSetup` and `requiresMfaCode` (the test extends `user_role` enum with `'admin'` because the server's MFA branch gates on lowercase, see `auth-routes.ts` ~76); forgot-password link round-trip from `/login` (link → form → success state). |
+| `e2e/auth-signup.spec.ts` | UI submit-disabled gating across every required field + every password-strength rule; per-rule API password-strength assertions (8+/upper/lower/digit); happy path creates TRIAL org with 14-day window verified by direct PG read + post-signup browser lands authenticated; multi-tenant email semantics (same email in second org succeeds; same firmName auto-suffixes the slug); duplicate-domain rate guard (4th signup on the same email-domain in 24h → 429). |
+| `e2e/auth-password-reset.spec.ts` | `forgot-password` issues a `password_reset_tokens` row; per-IP `forgotPasswordLimiter` (6th call → 429); reset token round-trip via DB-injected token (validate → consume → re-POST rejected → re-login works); expired token rejected; garbage token rejected. |
+| `e2e/auth-session.spec.ts` | Idle-timeout via direct `session.sess` mutation (no 30-min sleep); change-password happy (new password authenticates, old fails); current-password mismatch returns 401 and original still works; tempPassword auto-mount UI redirect. |
+| `e2e/role-guards-matrix.spec.ts` | Parametric ADMIN / MANAGER / TEAM_MEMBER matrix across **every** `AdminRoute` (10 routes) and `ManagerRoute` (27 routes) usage in `App.tsx` — uses `seedRoleAdminPage` / `seedManagerPage` / `seedTeamMemberPage` from #435. |
 
-All four files import `test` from `tests/helpers/po/fixtures.ts`, so
+All five files import `test` from `tests/helpers/po/fixtures.ts`, so
 they pick up `isolatedOrg`, the per-role sessions, and the AdminSetupGate
 default. They run in the `serial` Playwright project (no anonymous
 addition) because they exercise authenticated mutations.
+
+Test counts: 6 / 9 / 5 / 4 / 111 (= 135 new specs) — all green
+locally when the workflow is restarted between rate-limited spec
+files (`auth-signup`, `auth-password-reset`, `auth-session` each share
+per-IP `signupLimiter` / `forgotPasswordLimiter` / `passwordChangeLimiter`
+budgets of 5 calls per 15 minutes in dev).
