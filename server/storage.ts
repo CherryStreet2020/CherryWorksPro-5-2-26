@@ -5348,6 +5348,10 @@ export class DatabaseStorage {
       throw new Error(`GL entry must balance: debits (${totalDebit.toFixed(2)}) must equal credits (${totalCredit.toFixed(2)})`);
     }
 
+    if (await this.isDateInClosedPeriod(orgId, entryDate)) {
+      throw new Error(`Cannot post journal entry: ${entryDate} falls in a closed accounting period`);
+    }
+
     return await db.transaction(async (tx) => {
       const [entry] = await tx.insert(glJournalEntries).values({
         orgId,

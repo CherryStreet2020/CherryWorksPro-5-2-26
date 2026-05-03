@@ -88,9 +88,12 @@ test.describe("General Ledger", () => {
 
     const lines = (await isolatedOrg.request
       .get(`/api/gl/report`)
-      .then((r) => r.json())) as Array<{ id: number; lines: { lineId: number }[] }>;
+      .then((r) => r.json())) as Array<{
+        id: number;
+        lines: { lineId: number; runningBalance: string }[];
+      }>;
     const drRow = lines.find((row) => row.id === dr.id)!;
-    const lineId = drRow.lines[0].lineId;
+    const line = drRow.lines[0];
 
     const { page, close } = await loginAsIsoAdmin(browser, isolatedOrg);
     try {
@@ -98,9 +101,11 @@ test.describe("General Ledger", () => {
       const row = page.getByTestId(`row-ledger-account-${dr.id}`);
       await expect(row).toBeVisible();
       await row.click();
-      await expect(page.getByTestId(`row-ledger-line-${lineId}`)).toBeVisible({
-        timeout: 10000,
-      });
+      const lineRow = page.getByTestId(`row-ledger-line-${line.lineId}`);
+      await expect(lineRow).toBeVisible({ timeout: 10000 });
+      // Running balance for a single $42.00 debit on the expense account is $42.00.
+      expect(Number(line.runningBalance)).toBeCloseTo(42, 2);
+      await expect(lineRow).toContainText(/42\.00/);
     } finally {
       await close();
     }

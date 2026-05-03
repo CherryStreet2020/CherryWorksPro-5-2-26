@@ -158,4 +158,39 @@ test.describe("Auto-post on paid invoice", () => {
     expect(after.length).toBe(before);
     expect(after.some((j) => j.sourceRef === payment.id)).toBe(false);
   });
+
+  test("closed period: payment into closed date is rejected and no auto-JE is created", async ({
+    isolatedOrg,
+  }) => {
+    await seedCoa(isolatedOrg);
+    await setAutoPostFlag(isolatedOrg.orgId, true);
+
+    const periodStart = "1993-01-01";
+    const periodEnd = "1993-01-31";
+    const within = "1993-01-15";
+
+    const created = await isolatedOrg.request.post("/api/close-periods", {
+      headers: { "x-csrf-token": isolatedOrg.csrf },
+      data: { periodStart, periodEnd },
+    });
+    expect([200, 201]).toContain(created.status());
+    const period = (await created.json()) as { id: string };
+    const closeRes = await isolatedOrg.request.post(
+      `/api/close-periods/${period.id}/close`,
+      { headers: { "x-csrf-token": isolatedOrg.csrf } },
+    );
+    expect(closeRes.status()).toBe(200);
+
+    const before = (await paymentJEs(isolatedOrg)).length;
+    const invoiceId = await makeSentInvoice(isolatedOrg.orgId, "175.00");
+
+    const r = await isolatedOrg.request.post("/api/payments", {
+      headers: { "x-csrf-token": isolatedOrg.csrf },
+      data: { invoiceId, amount: 175, date: within, method: "ACH" },
+    });
+    expect(r.status()).toBeGreaterThanOrEqual(400);
+
+    const after = await paymentJEs(isolatedOrg);
+    expect(after.length).toBe(before);
+  });
 });
