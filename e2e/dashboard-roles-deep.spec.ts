@@ -42,6 +42,7 @@ test.describe("Dashboard role variants (isolated per-role sessions)", () => {
     await expect(page.locator('[data-testid="kpi-net-cash"]')).toBeVisible();
     await expect(page.locator('[data-testid="kpi-team"]')).toBeVisible();
     await expect(page.locator('[data-testid="chart-revenue-trend"]')).toBeVisible();
+    await expect(page.locator('[data-testid="card-activity-feed"]')).toBeVisible();
   });
 
   test("MANAGER (same isolated org) inherits the admin executive dashboard surface", async ({ page, isolatedOrg }) => {

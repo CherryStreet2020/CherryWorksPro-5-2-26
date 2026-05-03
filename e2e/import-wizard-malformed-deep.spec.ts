@@ -85,5 +85,10 @@ test.describe("/import wizard malformed/dry-run", () => {
     expect(goodExec.ok()).toBe(true);
     const ex = await goodExec.json();
     expect(ex.status).toBe("COMPLETED");
+    // dry-run reconciliation legs are present on the executed run
+    expect(dry1.reconciliation).toBeTruthy();
+    expect(dry1.reconciliation.invoiceTotal).toBeTruthy();
+    expect(dry1.reconciliation.timeHours).toBeTruthy();
+    expect(dry1.reconciliation.expenseTotal).toBeTruthy();
   });
 });

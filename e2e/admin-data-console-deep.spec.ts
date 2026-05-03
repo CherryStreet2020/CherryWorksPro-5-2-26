@@ -139,10 +139,70 @@ test.describe("/admin/data console deep", () => {
   });
 
   test("non-editable entity (users) rejects POST/PATCH/DELETE", async ({ isolatedOrg }) => {
+    const headers = { "X-CSRF-Token": isolatedOrg.csrf };
     const post = await isolatedOrg.request.post("/api/admin/data/users", {
       data: { email: "x@e2e.test", role: "TEAM_MEMBER" },
-      headers: { "X-CSRF-Token": isolatedOrg.csrf },
+      headers,
     });
     expect(post.status()).toBe(400);
+
+    const patch = await isolatedOrg.request.patch(
+      "/api/admin/data/users/00000000-0000-0000-0000-000000000000",
+      { data: { name: "x" }, headers },
+    );
+    expect(patch.status()).toBe(400);
+
+    const del = await isolatedOrg.request.delete(
+      "/api/admin/data/users/00000000-0000-0000-0000-000000000000",
+      { headers },
+    );
+    expect(del.status()).toBe(400);
+
+    const auditPost = await isolatedOrg.request.post("/api/admin/data/audit_logs", {
+      data: { action: "noop" },
+      headers,
+    });
+    expect(auditPost.status()).toBe(400);
+  });
+
+  test("PATCH /api/admin/data/projects/:id round-trips and DELETE on referenced client returns 400 (FK guard)", async ({ isolatedOrg }) => {
+    const tag = Date.now().toString(36);
+    const headers = { "X-CSRF-Token": isolatedOrg.csrf };
+
+    const c = await isolatedOrg.request.post("/api/admin/data/clients", {
+      data: { name: `FK Client ${tag}`, email: `fkc-${tag}@e2e.test` },
+      headers,
+    });
+    expect(c.status()).toBe(201);
+    const client = await c.json();
+
+    const p = await isolatedOrg.request.post("/api/admin/data/projects", {
+      data: { name: `FK Project ${tag}`, clientId: client.id },
+      headers,
+    });
+    expect(p.status()).toBe(201);
+    const project = await p.json();
+
+    const patch = await isolatedOrg.request.patch(
+      `/api/admin/data/projects/${project.id}`,
+      { data: { name: `FK Project Renamed ${tag}` }, headers },
+    );
+    expect(patch.status()).toBe(200);
+    expect((await patch.json()).name).toBe(`FK Project Renamed ${tag}`);
+
+    // Deleting the referenced client should hit the 23503 → 400 guard.
+    const delClient = await isolatedOrg.request.delete(
+      `/api/admin/data/clients/${client.id}`,
+      { headers },
+    );
+    expect(delClient.status()).toBe(400);
+
+    // Cleanup.
+    expect(
+      (await isolatedOrg.request.delete(`/api/admin/data/projects/${project.id}`, { headers })).status(),
+    ).toBe(200);
+    expect(
+      (await isolatedOrg.request.delete(`/api/admin/data/clients/${client.id}`, { headers })).status(),
+    ).toBe(200);
   });
 });

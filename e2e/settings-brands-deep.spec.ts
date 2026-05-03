@@ -40,6 +40,42 @@ test.describe("/settings/brands deep", () => {
     await expect(page.locator(`[data-testid="card-brand-${created.id}"]`)).toHaveCount(0, { timeout: 10_000 });
   });
 
+  test("brand archive: opens dialog-delete-brand, Cancel keeps card, Confirm DELETEs and removes card", async ({ page, isolatedOrg }) => {
+    await loginIsolated(page, isolatedOrg);
+    const tag = Date.now().toString(36);
+    const create = await isolatedOrg.request.post("/api/brands", {
+      data: { name: `Cascade ${tag}`, slug: `cascade-${tag}` },
+      headers: { "X-CSRF-Token": isolatedOrg.csrf },
+    });
+    expect(create.status()).toBe(201);
+    const created = await create.json();
+
+    await page.goto("/settings/brands");
+    const card = page.locator(`[data-testid="card-brand-${created.id}"]`);
+    await expect(card).toBeVisible({ timeout: 15_000 });
+
+    await card.locator(`[data-testid="button-brand-menu-${created.id}"]`).click();
+    await page.locator(`[data-testid="menu-delete-brand-${created.id}"]`).click();
+    await expect(page.locator('[data-testid="dialog-delete-brand"]')).toBeVisible({ timeout: 5_000 });
+
+    await page.locator('[data-testid="button-cancel-delete"]').click();
+    await expect(page.locator('[data-testid="dialog-delete-brand"]')).toHaveCount(0, { timeout: 5_000 });
+    await expect(card).toBeVisible();
+
+    await card.locator(`[data-testid="button-brand-menu-${created.id}"]`).click();
+    await page.locator(`[data-testid="menu-delete-brand-${created.id}"]`).click();
+    await expect(page.locator('[data-testid="dialog-delete-brand"]')).toBeVisible({ timeout: 5_000 });
+    const delPromise = page.waitForResponse(
+      (r) => r.url().includes(`/api/brands/${created.id}`) && r.request().method() === "DELETE",
+      { timeout: 10_000 },
+    );
+    await page.locator('[data-testid="button-confirm-delete"]').click();
+    const delRes = await delPromise;
+    expect([200, 204]).toContain(delRes.status());
+    await page.reload();
+    await expect(page.locator(`[data-testid="card-brand-${created.id}"]`)).toHaveCount(0, { timeout: 10_000 });
+  });
+
   test("Add Brand button opens the brand modal", async ({ page, isolatedOrg }) => {
     await loginIsolated(page, isolatedOrg);
     await page.goto("/settings/brands");

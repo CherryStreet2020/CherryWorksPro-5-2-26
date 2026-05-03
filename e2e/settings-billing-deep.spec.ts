@@ -87,6 +87,32 @@ test.describe("/settings/billing deep", () => {
     expect(req.url()).toContain("/api/billing/portal");
   });
 
+  test("grace status on a purchasable add-on renders badge-status-grace and Manage button", async ({ page, isolatedOrg }) => {
+    await loginIsolated(page, isolatedOrg);
+    const graceEndsAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+    await page.route("**/api/me/entitlements/details", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          pso_core: { active: true, gracePeriodEndsAt: null, tierDerived: true },
+          marketing_os: { active: true, gracePeriodEndsAt: null, tierDerived: true },
+          multi_brand: { active: true, gracePeriodEndsAt: graceEndsAt, tierDerived: false },
+          hubspot_bridge: { active: false, gracePeriodEndsAt: null, tierDerived: false },
+        }),
+      });
+    });
+
+    await page.goto("/settings/billing");
+    const mbRow = page.locator('[data-testid="row-entitlement-multi_brand"]');
+    await expect(mbRow).toBeVisible({ timeout: 20_000 });
+    const grace = mbRow.locator('[data-testid="badge-status-grace"]');
+    await expect(grace).toBeVisible();
+    await expect(grace).toContainText(/grace/i);
+    // Manage button is shown for grace status (same as active).
+    await expect(mbRow.locator('[data-testid="button-manage-multi_brand"]')).toBeVisible();
+  });
+
   test("upgrade-plan-marketing_os button is wired and POSTs portal when shown", async ({ page, isolatedOrg }) => {
     await loginIsolated(page, isolatedOrg);
     await apiBoundary.fulfill(page, "**/api/billing/portal", 200, { url: "about:blank" });
