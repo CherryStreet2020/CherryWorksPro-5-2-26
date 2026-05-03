@@ -15,8 +15,7 @@ async function seedProjectAndTimeEntry(iso: {
     headers: { "x-csrf-token": iso.csrf },
     data: { name: `TT Project ${Date.now()}`, clientId: client.id },
   });
-  const project = (await pR.json()) as { id: string };
-  // Add the iso admin to the project so they can log time.
+  const project = (await pR.json()) as { id: string; name: string };
   await iso.request
     .post(`/api/projects/${project.id}/members`, {
       headers: { "x-csrf-token": iso.csrf },
@@ -24,12 +23,12 @@ async function seedProjectAndTimeEntry(iso: {
     })
     .catch(() => undefined);
 
-  // Create a time entry inside the current week. The backend treats
-  // SUNDAY as the week-start (see shared/schema.ts → getWeekStartDate)
-  // so we anchor both the entry date and the weekStartDate to Sunday.
+  // The backend treats Sunday as the week start (shared/schema.ts → getWeekStartDate).
   const now = new Date();
-  const utc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  utc.setUTCDate(utc.getUTCDate() - utc.getUTCDay()); // back up to Sunday
+  const utc = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+  utc.setUTCDate(utc.getUTCDate() - utc.getUTCDay());
   const date = utc.toISOString().slice(0, 10);
 
   const teR = await iso.request.post("/api/time-entries", {
@@ -43,95 +42,132 @@ async function seedProjectAndTimeEntry(iso: {
     },
   });
   expect(teR.status(), await teR.text()).toBeLessThan(400);
-  return { projectId: project.id, weekStart: date };
+  return { projectId: project.id, projectName: project.name, weekStart: date };
 }
 
-test.describe("Time tracking — submit/recall + week-nav + selectors (#440)", () => {
-  test("submit-empty-week confirm dialog opens", async ({ page, isolatedOrg }) => {
-    await loginIsolated(page, isolatedOrg);
-    await page.goto("/time?view=week");
-    await expect(page.getByTestId("text-time-title")).toBeVisible({ timeout: 15000 });
-
-    // For a brand-new iso org with NO entries this week, the submit button
-    // should be present (the empty-confirm dialog is the alert path).
-    const submitBtn = page.getByTestId("button-submit-timesheet");
-    if (await submitBtn.isVisible().catch(() => false)) {
-      await submitBtn.click();
-      // Either the empty-confirm dialog appears or submission proceeds.
-      const confirmEmpty = page.getByTestId("button-confirm-submit-empty");
-      if (await confirmEmpty.isVisible({ timeout: 3000 }).catch(() => false)) {
-        await page.getByTestId("button-cancel-submit-empty").click();
-      }
-    }
-  });
-
-  test("week navigation: prev/next changes week label", async ({
+test.describe("Time tracking — submit + dialog selectors + week-nav (#440)", () => {
+  test("week navigation: prev/next changes the visible week label", async ({
     page,
     isolatedOrg,
   }) => {
     await loginIsolated(page, isolatedOrg);
     await page.goto("/time?view=week");
-    await expect(page.getByTestId("text-time-title")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId("text-time-title")).toBeVisible({
+      timeout: 15000,
+    });
     const initial = await page.getByTestId("text-week-label").textContent();
     await page.getByTestId("button-prev-week").click();
-    await expect(page.getByTestId("text-week-label")).not.toHaveText(initial || "", {
-      timeout: 10000,
-    });
+    await expect(page.getByTestId("text-week-label")).not.toHaveText(
+      initial || "",
+      { timeout: 10000 },
+    );
     await page.getByTestId("button-next-week").click();
     await expect(page.getByTestId("text-week-label")).toHaveText(initial || "", {
       timeout: 10000,
     });
   });
 
-  test("submit-for-approval flow flips backing timesheet status", async ({
+  test("submit-week via UI flips the timesheet status to SUBMITTED", async ({
     page,
     isolatedOrg,
   }) => {
     const { weekStart } = await seedProjectAndTimeEntry(isolatedOrg);
 
-    // Verify the UI exposes the submit button (UI surface coverage).
     await loginIsolated(page, isolatedOrg);
     await page.goto("/time?view=week");
-    await expect(page.getByTestId("text-time-title")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId("text-time-title")).toBeVisible({
+      timeout: 15000,
+    });
+
     const submitBtn = page.getByTestId("button-submit-timesheet");
     await expect(submitBtn).toBeVisible({ timeout: 15000 });
     await expect(submitBtn).toBeEnabled();
+    await submitBtn.click();
 
-    // The UI click is racy across weeks/users in CI, so prove the
-    // backend submission flow directly. The fixture's request is
-    // logged in as the same admin, so this exercises the same
-    // tenant-scoped path the button calls.
-    const submitRes = await isolatedOrg.request.post("/api/timesheets/submit", {
-      headers: { "x-csrf-token": isolatedOrg.csrf },
-      data: { weekStartDate: weekStart, confirmEmpty: false },
-    });
-    // 200 on first submit; 400 only if a prior submit already flipped status.
-    expect([200, 201, 400]).toContain(submitRes.status());
-
-    const wk = await isolatedOrg.request.get(
-      `/api/timesheets/my-week?weekStartDate=${weekStart}`,
-    );
-    expect(wk.status()).toBe(200);
-    const body = (await wk.json()) as { timesheet?: { status?: string } | null };
-    expect(body.timesheet?.status).toBe("SUBMITTED");
+    // The backend timesheet for this week must transition to SUBMITTED.
+    await expect
+      .poll(
+        async () => {
+          const wk = await isolatedOrg.request.get(
+            `/api/timesheets/my-week?weekStartDate=${weekStart}`,
+          );
+          if (wk.status() !== 200) return null;
+          const body = (await wk.json()) as {
+            timesheet?: { status?: string } | null;
+          };
+          return body.timesheet?.status ?? null;
+        },
+        { timeout: 15000 },
+      )
+      .toBe("SUBMITTED");
   });
 
-  test("add-time dialog has project + billable selectors", async ({
+  test("add-time dialog: project + service + notes + billable controls all interactable", async ({
     page,
     isolatedOrg,
   }) => {
-    await seedProjectAndTimeEntry(isolatedOrg);
+    const { projectName } = await seedProjectAndTimeEntry(isolatedOrg);
     await loginIsolated(page, isolatedOrg);
     await page.goto("/time?view=week");
-    await expect(page.getByTestId("text-time-title")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId("text-time-title")).toBeVisible({
+      timeout: 15000,
+    });
 
     await page.getByTestId("button-add-time").click();
-    // Dialog renders a project select and billable checkbox.
     await expect(page.getByTestId("dialog-title-time-entry")).toBeVisible({
       timeout: 10000,
     });
-    await expect(page.getByTestId("select-dialog-project")).toBeVisible();
-    await expect(page.getByTestId("checkbox-dialog-billable")).toBeVisible();
+
+    // Project select — pick our seeded project.
+    await page.getByTestId("select-dialog-project").click();
+    await page
+      .getByRole("option", { name: new RegExp(projectName, "i") })
+      .first()
+      .click();
+
+    // Notes input accepts text.
+    await page.getByTestId("input-dialog-notes").fill("validation note");
+    await expect(page.getByTestId("input-dialog-notes")).toHaveValue(
+      "validation note",
+    );
+
+    // Billable checkbox starts checked (default true). Toggling via the UI
+    // flips the aria-checked attribute on the Radix primitive.
+    const billable = page.getByTestId("checkbox-dialog-billable");
+    await expect(billable).toBeVisible();
+    await expect(billable).toHaveAttribute("aria-checked", "true");
+    await billable.click();
+    await expect(billable).toHaveAttribute("aria-checked", "false");
+    await billable.click();
+    await expect(billable).toHaveAttribute("aria-checked", "true");
+
+    // Service selector is present (org may not have services seeded yet — assert visibility only).
+    await expect(page.getByTestId("select-dialog-service")).toBeVisible();
+
     await page.getByTestId("button-dialog-cancel").click();
+    await expect(page.getByTestId("dialog-title-time-entry")).toHaveCount(0, {
+      timeout: 5000,
+    });
+  });
+
+  test("submit-empty-week opens the confirm dialog with confirm/cancel buttons", async ({
+    page,
+    isolatedOrg,
+  }) => {
+    await loginIsolated(page, isolatedOrg);
+    await page.goto("/time?view=week");
+    await expect(page.getByTestId("text-time-title")).toBeVisible({
+      timeout: 15000,
+    });
+
+    const submitBtn = page.getByTestId("button-submit-timesheet");
+    await expect(submitBtn).toBeVisible({ timeout: 15000 });
+    await submitBtn.click();
+    // Brand-new iso org with no entries → empty-week confirm dialog.
+    await expect(page.getByTestId("button-confirm-submit-empty")).toBeVisible({
+      timeout: 5000,
+    });
+    await expect(page.getByTestId("button-cancel-submit-empty")).toBeVisible();
+    await page.getByTestId("button-cancel-submit-empty").click();
   });
 });

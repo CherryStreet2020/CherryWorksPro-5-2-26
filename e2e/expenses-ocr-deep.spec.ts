@@ -1,5 +1,9 @@
 import { test, expect } from "../tests/helpers/po/fixtures";
-import { apiBoundary, groqStub, tesseractStub } from "../tests/helpers/po/stubs";
+import {
+  apiBoundary,
+  groqStub,
+  tesseractStub,
+} from "../tests/helpers/po/stubs";
 import { loginIsolated } from "./_iso-helpers";
 
 const TINY_PNG_B64 =
@@ -13,21 +17,22 @@ async function seedCategory(iso: {
     headers: { "x-csrf-token": iso.csrf },
     data: { name: `Travel ${Date.now()}`, isActive: true },
   });
-  if (r.status() < 400) return (await r.json()) as { id: string; name: string };
-  return null;
+  expect(r.status(), await r.text()).toBeLessThan(400);
+  return (await r.json()) as { id: string; name: string };
 }
 
-test.describe("Expenses — drag-drop OCR + filters + multi-currency (#440)", () => {
-  test("OCR happy path: stubbed Groq fills vendor + total via UI", async ({
+test.describe("Expenses — OCR + filters + lifecycle (#440)", () => {
+  test("OCR Groq-shaped response populates vendor, amount, tax, date", async ({
     page,
     isolatedOrg,
   }) => {
-    // Stub the upload so we don't need a real receipt file on disk.
-    await apiBoundary.fulfill(page, "**/api/expenses/upload-receipt", 200, {
-      url: "/api/uploads/receipts/stub.png",
-      filename: "stub.png",
-    });
-    // Stub the server-side OCR endpoint with deterministic Groq-shaped output.
+    await apiBoundary.fulfill(
+      page,
+      "**/api/expenses/upload-receipt",
+      200,
+      { url: "/api/uploads/receipts/stub.png", filename: "stub.png" },
+    );
+    // Full Groq-shaped extraction.
     await apiBoundary.fulfill(page, "**/api/expenses/scan-receipt", 200, {
       vendor: "Stub Vendor Inc",
       totalAmount: "42.99",
@@ -36,7 +41,6 @@ test.describe("Expenses — drag-drop OCR + filters + multi-currency (#440)", ()
       date: new Date().toISOString().slice(0, 10),
       currency: "USD",
     });
-    // Marker — covers the documented browser-edge case.
     await groqStub.success(page);
 
     await loginIsolated(page, isolatedOrg);
@@ -46,7 +50,6 @@ test.describe("Expenses — drag-drop OCR + filters + multi-currency (#440)", ()
     });
 
     await page.getByTestId("button-new-expense").click();
-    // Set the file input directly — exercises the same handler as drag-drop.
     const input = page.getByTestId("input-expense-receipt");
     await input.setInputFiles({
       name: "receipt.png",
@@ -54,27 +57,28 @@ test.describe("Expenses — drag-drop OCR + filters + multi-currency (#440)", ()
       buffer: Buffer.from(TINY_PNG_B64, "base64"),
     });
 
-    // Wait for the form fields to populate from the stubbed OCR.
     await expect(page.getByTestId("input-expense-vendor")).toHaveValue(
       "Stub Vendor Inc",
       { timeout: 15000 },
     );
     await expect(page.getByTestId("input-expense-amount")).toHaveValue(
       /42\.?9?9?/,
-      { timeout: 5000 },
     );
+    await expect(page.getByTestId("input-expense-tax")).toHaveValue(/3\.?9?9?/);
   });
 
-  test("OCR fallback: Tesseract-shaped minimal response still populates vendor", async ({
+  test("OCR Tesseract-fallback shape (vendor only) still populates the form", async ({
     page,
     isolatedOrg,
   }) => {
-    await apiBoundary.fulfill(page, "**/api/expenses/upload-receipt", 200, {
-      url: "/api/uploads/receipts/stub2.png",
-      filename: "stub2.png",
-    });
-    // Tesseract fallback returns a deterministic but minimal payload — only
-    // the vendor field is reliably extracted.
+    await apiBoundary.fulfill(
+      page,
+      "**/api/expenses/upload-receipt",
+      200,
+      { url: "/api/uploads/receipts/stub2.png", filename: "stub2.png" },
+    );
+    // Tesseract fallback returns a minimal payload — vendor only is the
+    // documented contract for low-confidence receipts.
     await apiBoundary.fulfill(page, "**/api/expenses/scan-receipt", 200, {
       vendor: "Tesseract Fallback Co",
     });
@@ -98,16 +102,13 @@ test.describe("Expenses — drag-drop OCR + filters + multi-currency (#440)", ()
     );
   });
 
-  test("multi-currency: API accepts non-USD payload and grid lists it", async ({
+  test("multi-currency: API persists a non-USD payload and grid lists it", async ({
     page,
     isolatedOrg,
   }) => {
-    // NOTE: createExpenseSchema currently strips `currency`, so the
-    // backend defaults to USD even when EUR is requested. We test the
-    // surface that *is* observable end-to-end: the row gets created and
-    // shows up in the grid, and the API exposes a normalized currency
-    // string (defaulted to USD by the schema). Currency-passthrough
-    // would require a backend change tracked separately.
+    // The current backend `createExpenseSchema` strips `currency` and stores
+    // USD even when EUR is sent. We assert the observable contract: the row
+    // is created, listed, and persists with a 3-letter ISO code.
     const today = new Date().toISOString().slice(0, 10);
     const created = await isolatedOrg.request.post("/api/expenses", {
       headers: { "x-csrf-token": isolatedOrg.csrf },
@@ -122,10 +123,12 @@ test.describe("Expenses — drag-drop OCR + filters + multi-currency (#440)", ()
 
     const list = await isolatedOrg.request.get("/api/expenses");
     expect(list.status()).toBe(200);
-    const arr = (await list.json()) as Array<{ vendor: string; currency: string }>;
+    const arr = (await list.json()) as Array<{
+      vendor: string;
+      currency: string;
+    }>;
     const row = arr.find((e) => e.vendor === "EUR Vendor");
     expect(row).toBeTruthy();
-    // Currency must be a 3-letter ISO code on every persisted row.
     expect(row!.currency).toMatch(/^[A-Z]{3}$/);
 
     await loginIsolated(page, isolatedOrg);
@@ -138,11 +141,13 @@ test.describe("Expenses — drag-drop OCR + filters + multi-currency (#440)", ()
     });
   });
 
-  test("category filter narrows the expense grid", async ({ page, isolatedOrg }) => {
+  test("category grid filter narrows the expense list to matching rows", async ({
+    page,
+    isolatedOrg,
+  }) => {
     const cat = await seedCategory(isolatedOrg);
-
-    // Seed two expenses — one with category, one without — via API.
     const today = new Date().toISOString().slice(0, 10);
+
     const e1 = await isolatedOrg.request.post("/api/expenses", {
       headers: { "x-csrf-token": isolatedOrg.csrf },
       data: {
@@ -150,10 +155,12 @@ test.describe("Expenses — drag-drop OCR + filters + multi-currency (#440)", ()
         amount: "10",
         currency: "USD",
         date: today,
-        categoryId: cat?.id ?? null,
+        categoryId: cat.id,
       },
     });
     expect(e1.status(), await e1.text()).toBeLessThan(400);
+    const exp1 = (await e1.json()) as { id: string };
+
     const e2 = await isolatedOrg.request.post("/api/expenses", {
       headers: { "x-csrf-token": isolatedOrg.csrf },
       data: {
@@ -164,18 +171,34 @@ test.describe("Expenses — drag-drop OCR + filters + multi-currency (#440)", ()
       },
     });
     expect(e2.status()).toBeLessThan(400);
+    const exp2 = (await e2.json()) as { id: string };
 
     await loginIsolated(page, isolatedOrg);
     await page.goto("/expenses");
-    await expect(page.getByTestId("text-expenses-title")).toBeVisible({
+    await expect(page.getByTestId(`row-expense-${exp1.id}`)).toBeVisible({
       timeout: 15000,
     });
+    await expect(page.getByTestId(`row-expense-${exp2.id}`)).toBeVisible();
 
-    await expect(page.getByText("CatVendor").first()).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("OtherVendor").first()).toBeVisible();
+    // Open the category column filter popup. The parent th is draggable and
+    // intercepts pointer events, so dispatch a synthetic click directly on the
+    // underlying <button> to bypass the wrapper.
+    await page
+      .getByTestId("grid-filter-category")
+      .evaluate((el) => (el as HTMLButtonElement).click());
+    await expect(page.getByTestId("filter-input-exp-category")).toBeVisible({
+      timeout: 5000,
+    });
+    await page.getByTestId("filter-input-exp-category").fill(cat.name);
+
+    // Only the categorized row should remain visible.
+    await expect(page.getByTestId(`row-expense-${exp1.id}`)).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(page.getByTestId(`row-expense-${exp2.id}`)).toHaveCount(0);
   });
 
-  test("submit-for-approval transitions DRAFT → SUBMITTED via row action", async ({
+  test("submit-for-approval via row button transitions DRAFT → SUBMITTED", async ({
     page,
     isolatedOrg,
   }) => {
@@ -198,14 +221,28 @@ test.describe("Expenses — drag-drop OCR + filters + multi-currency (#440)", ()
     await expect(page.getByTestId(`row-expense-${exp.id}`)).toBeVisible({
       timeout: 15000,
     });
+
     const submitBtn = page.getByTestId(`button-submit-${exp.id}`);
-    if (await submitBtn.isVisible().catch(() => false)) {
-      await submitBtn.click();
-      await page.waitForTimeout(800);
-      const r = await isolatedOrg.request.get("/api/expenses");
-      const arr = (await r.json()) as Array<{ id: string; status: string }>;
-      const fresh = arr.find((x) => x.id === exp.id);
-      expect(fresh?.status).toBe("SUBMITTED");
-    }
+    await expect(submitBtn).toBeVisible();
+    await submitBtn.click();
+
+    // UI: the row text reflects the new SUBMITTED state and the submit button
+    // (only rendered while DRAFT) goes away.
+    const row = page.getByTestId(`row-expense-${exp.id}`);
+    await expect(row).toContainText("SUBMITTED", { timeout: 10000 });
+    await expect(submitBtn).toHaveCount(0);
+    await expect
+      .poll(
+        async () => {
+          const r = await isolatedOrg.request.get("/api/expenses");
+          const arr = (await r.json()) as Array<{
+            id: string;
+            status: string;
+          }>;
+          return arr.find((x) => x.id === exp.id)?.status ?? null;
+        },
+        { timeout: 10000 },
+      )
+      .toBe("SUBMITTED");
   });
 });

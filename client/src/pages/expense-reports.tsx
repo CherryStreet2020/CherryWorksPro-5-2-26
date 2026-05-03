@@ -33,7 +33,8 @@ const STATUS_COLORS: Record<string, string> = {
 function StatusBadge({ status }: { status: string }) {
   return (
     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
-      style={{ background: `${STATUS_COLORS[status] || "#6b7280"}15`, color: STATUS_COLORS[status] || "#6b7280" }}>
+      style={{ background: `${STATUS_COLORS[status] || "#6b7280"}15`, color: STATUS_COLORS[status] || "#6b7280" }}
+      data-testid={`badge-status-${status.toLowerCase()}`}>
       {status}
     </span>
   );
