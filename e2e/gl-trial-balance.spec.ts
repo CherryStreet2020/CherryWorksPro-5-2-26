@@ -1,5 +1,5 @@
 import { test, expect } from "../tests/helpers/po/fixtures";
-import { loginAsIsoAdmin, seedCoa, pickNonControlExpense, pickNonControlRevenue } from "./_gl-helpers";
+import { loginAsIsoAdmin, seedCoa, pickNonControlExpense, seedExtraRevenue } from "./_gl-helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -10,7 +10,7 @@ test.describe("Trial Balance", () => {
   }) => {
     const seeded = await seedCoa(isolatedOrg);
     const exp = pickNonControlExpense(seeded);
-    const rev = pickNonControlRevenue(seeded);
+    const rev = await seedExtraRevenue(isolatedOrg);
 
     const today = new Date().toISOString().slice(0, 10);
     const amounts = ["100.00", "75.50", "12.34"];
@@ -61,10 +61,27 @@ test.describe("Trial Balance", () => {
     }
   });
 
+  test("blank state: fresh org renders the empty message", async ({
+    isolatedOrg,
+    browser,
+  }) => {
+    await seedCoa(isolatedOrg);
+    const { page, close } = await loginAsIsoAdmin(browser, isolatedOrg);
+    try {
+      await page.goto("/gl/trial-balance");
+      await expect(page.getByTestId("text-page-title")).toBeVisible();
+      await expect(
+        page.getByText(/No account balances found/i),
+      ).toBeVisible({ timeout: 10000 });
+    } finally {
+      await close();
+    }
+  });
+
   test("as-of-date filter narrows the report", async ({ isolatedOrg, browser }) => {
     const seeded = await seedCoa(isolatedOrg);
     const exp = pickNonControlExpense(seeded);
-    const rev = pickNonControlRevenue(seeded);
+    const rev = await seedExtraRevenue(isolatedOrg);
 
     const r = await isolatedOrg.request.post("/api/gl/journal-entries", {
       headers: { "x-csrf-token": isolatedOrg.csrf },

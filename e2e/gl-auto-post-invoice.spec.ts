@@ -9,6 +9,10 @@ interface JournalEntryRow {
   sourceId: number | null;
 }
 
+interface JournalEntryWithLines extends JournalEntryRow {
+  lines: { accountId: number; debit: string; credit: string }[];
+}
+
 let _pool: Pool | null = null;
 function pool(): Pool {
   if (_pool) return _pool;
@@ -108,7 +112,27 @@ test.describe("Auto-post on paid invoice", () => {
 
     const after = await paymentJEs(isolatedOrg);
     expect(after.length).toBe(before + 1);
-    expect(after.some((j) => j.sourceRef === payment.id)).toBe(true);
+    const created = after.find((j) => j.sourceRef === payment.id);
+    expect(created).toBeTruthy();
+
+    // Cross-check the actual debit/credit lines: a payment-sourced JE must
+    // debit Cash (1000) and credit AR (1200) for the payment amount.
+    const detail = (await isolatedOrg.request
+      .get(`/api/gl/journal-entries/${created!.id}`)
+      .then((r) => r.json())) as JournalEntryWithLines;
+    expect(detail.lines.length).toBeGreaterThanOrEqual(2);
+    const totalDebit = detail.lines.reduce((s, l) => s + Number(l.debit), 0);
+    const totalCredit = detail.lines.reduce((s, l) => s + Number(l.credit), 0);
+    expect(totalDebit).toBeCloseTo(200, 2);
+    expect(totalCredit).toBeCloseTo(200, 2);
+
+    const accts = await isolatedOrg.request
+      .get(`/api/gl/accounts`)
+      .then((r) => r.json()) as Array<{ id: number; accountNumber: string }>;
+    const cash = accts.find((a) => a.accountNumber === "1000")!;
+    const ar = accts.find((a) => a.accountNumber === "1200")!;
+    expect(detail.lines.some((l) => l.accountId === cash.id && Number(l.debit) > 0)).toBe(true);
+    expect(detail.lines.some((l) => l.accountId === ar.id && Number(l.credit) > 0)).toBe(true);
   });
 
   test("flag=false: payment skips auto-JE", async ({ isolatedOrg }) => {

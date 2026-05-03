@@ -1,5 +1,5 @@
 import { test, expect } from "../tests/helpers/po/fixtures";
-import { loginAsIsoAdmin, seedCoa, findAccount, pickNonControlExpense, pickNonControlRevenue } from "./_gl-helpers";
+import { loginAsIsoAdmin, seedCoa, findAccount, pickNonControlExpense, seedExtraRevenue } from "./_gl-helpers";
 
 interface JournalEntry {
   id: number;
@@ -16,7 +16,7 @@ test.describe("Journal Entries", () => {
   }) => {
     const seeded = await seedCoa(isolatedOrg);
     const dr = pickNonControlExpense(seeded);
-    const cr = pickNonControlRevenue(seeded);
+    const cr = await seedExtraRevenue(isolatedOrg);
 
     const { page, close } = await loginAsIsoAdmin(browser, isolatedOrg);
     const memo = `E2E manual JE ${Date.now()}`;
@@ -63,7 +63,7 @@ test.describe("Journal Entries", () => {
   }) => {
     const seeded = await seedCoa(isolatedOrg);
     const a = pickNonControlExpense(seeded);
-    const b = pickNonControlRevenue(seeded);
+    const b = await seedExtraRevenue(isolatedOrg);
 
     const { page, close } = await loginAsIsoAdmin(browser, isolatedOrg);
     try {

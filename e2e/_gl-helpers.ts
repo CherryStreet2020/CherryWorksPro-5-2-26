@@ -44,15 +44,26 @@ export function findAccount(accts: SeededAccount[], number: string): SeededAccou
 }
 
 export function pickNonControlExpense(accts: SeededAccount[]): SeededAccount {
-  const a = accts.find((x) => x.accountType === "EXPENSE")
-    || accts.find((x) => x.accountType === "COST_OF_SERVICES");
-  if (!a) throw new Error("[gl-helpers] no non-control expense account in COA");
+  const a = accts.find((x) => x.accountType === "EXPENSE" && !x.isSystem)
+    || accts.find((x) => x.accountType === "EXPENSE");
+  if (!a) throw new Error("[gl-helpers] no expense account in COA");
   return a;
 }
 
-export function pickNonControlRevenue(accts: SeededAccount[]): SeededAccount {
-  const a = accts.find((x) => x.accountType === "REVENUE" && x.accountNumber !== "4000")
-    || accts.filter((x) => x.accountType === "EXPENSE")[1];
-  if (!a) throw new Error("[gl-helpers] no non-control revenue account in COA");
-  return a;
+export async function seedExtraRevenue(iso: IsolatedOrgFixture): Promise<SeededAccount> {
+  const accountNumber = `4${Math.floor(100 + Math.random() * 899)}`;
+  const r = await iso.request.post("/api/gl/accounts", {
+    headers: { "x-csrf-token": iso.csrf },
+    data: {
+      accountNumber,
+      name: `Test Revenue ${accountNumber}`,
+      accountType: "REVENUE",
+      normalBalance: "CREDIT",
+      isActive: true,
+    },
+  });
+  if (r.status() !== 201 && r.status() !== 200) {
+    throw new Error(`[gl-helpers] create revenue failed: ${r.status()} ${await r.text()}`);
+  }
+  return (await r.json()) as SeededAccount;
 }

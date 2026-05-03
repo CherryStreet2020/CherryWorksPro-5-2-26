@@ -1,5 +1,5 @@
 import { test, expect } from "../tests/helpers/po/fixtures";
-import { loginAsIsoAdmin, seedCoa, pickNonControlExpense, pickNonControlRevenue } from "./_gl-helpers";
+import { loginAsIsoAdmin, seedCoa, pickNonControlExpense, seedExtraRevenue } from "./_gl-helpers";
 import { Pool } from "pg";
 
 let _pool: Pool | null = null;
@@ -98,7 +98,7 @@ test.describe("Close Periods", () => {
   }) => {
     const seeded = await seedCoa(isolatedOrg);
     const dr = pickNonControlExpense(seeded);
-    const cr = pickNonControlRevenue(seeded);
+    const cr = await seedExtraRevenue(isolatedOrg);
 
     // Close a far-past period so date-picking is unambiguous and no
     // other fixture data lands in it.

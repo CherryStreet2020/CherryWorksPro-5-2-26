@@ -1,5 +1,5 @@
 import { test, expect } from "../tests/helpers/po/fixtures";
-import { loginAsIsoAdmin, seedCoa, pickNonControlExpense, pickNonControlRevenue } from "./_gl-helpers";
+import { loginAsIsoAdmin, seedCoa, pickNonControlExpense, seedExtraRevenue } from "./_gl-helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -34,7 +34,7 @@ test.describe("General Ledger", () => {
   }) => {
     const seeded = await seedCoa(isolatedOrg);
     const dr = pickNonControlExpense(seeded);
-    const cr = pickNonControlRevenue(seeded);
+    const cr = await seedExtraRevenue(isolatedOrg);
 
     const today = new Date().toISOString().slice(0, 10);
     await postJE(isolatedOrg, today, dr.id, cr.id, "250.00", "ledger fixture A");
@@ -59,10 +59,57 @@ test.describe("General Ledger", () => {
     }
   });
 
+  test("blank state: fresh org with no JEs renders the empty message", async ({
+    isolatedOrg,
+    browser,
+  }) => {
+    await seedCoa(isolatedOrg);
+    const { page, close } = await loginAsIsoAdmin(browser, isolatedOrg);
+    try {
+      await page.goto("/gl/ledger");
+      await expect(page.getByTestId("text-page-title")).toBeVisible();
+      await expect(
+        page.getByText(/No transactions found for this period/i),
+      ).toBeVisible({ timeout: 10000 });
+    } finally {
+      await close();
+    }
+  });
+
+  test("drill-down: expanding an account row reveals its underlying line", async ({
+    isolatedOrg,
+    browser,
+  }) => {
+    const seeded = await seedCoa(isolatedOrg);
+    const dr = pickNonControlExpense(seeded);
+    const cr = await seedExtraRevenue(isolatedOrg);
+    const today = new Date().toISOString().slice(0, 10);
+    await postJE(isolatedOrg, today, dr.id, cr.id, "42.00", "drill-down fixture");
+
+    const lines = (await isolatedOrg.request
+      .get(`/api/gl/report`)
+      .then((r) => r.json())) as Array<{ id: number; lines: { lineId: number }[] }>;
+    const drRow = lines.find((row) => row.id === dr.id)!;
+    const lineId = drRow.lines[0].lineId;
+
+    const { page, close } = await loginAsIsoAdmin(browser, isolatedOrg);
+    try {
+      await page.goto("/gl/ledger");
+      const row = page.getByTestId(`row-ledger-account-${dr.id}`);
+      await expect(row).toBeVisible();
+      await row.click();
+      await expect(page.getByTestId(`row-ledger-line-${lineId}`)).toBeVisible({
+        timeout: 10000,
+      });
+    } finally {
+      await close();
+    }
+  });
+
   test("date-range filter excludes out-of-range JEs", async ({ isolatedOrg, browser }) => {
     const seeded = await seedCoa(isolatedOrg);
     const dr = pickNonControlExpense(seeded);
-    const cr = pickNonControlRevenue(seeded);
+    const cr = await seedExtraRevenue(isolatedOrg);
 
     await postJE(isolatedOrg, "1995-06-15", dr.id, cr.id, "999.00", "in-range");
 
