@@ -88,7 +88,7 @@ export default defineConfig({
     },
     {
       name: "serial",
-      testIgnore: ANON_SPECS,
+      testIgnore: [...ANON_SPECS, /\.flags-off\.spec\.ts$/],
       fullyParallel: false,
       workers: 1,
     },

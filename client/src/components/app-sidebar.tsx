@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useEntitlement, useEntitlementDetails, resolveEntitlementStatus } from "@/lib/entitlements";
 import { MarketingNavSection } from "@/components/marketing-nav-section";
+import { isMarketingOsEnabled } from "@/lib/featureFlags";
 import { CherryLogo } from "@/components/shared/cherry-logo";
 import { BrandLockup } from "@/components/shared/brand-lockup";
 import { useQuery } from "@tanstack/react-query";
@@ -397,7 +398,7 @@ export function AppSidebar() {
         {enrichedSections.map((section) => (
           <NavSection key={section.label} section={section} isAdmin={isAdmin} canManage={canManage} location={location} planTier={planTier} />
         ))}
-        {canManage && marketingStatus !== null && (
+        {canManage && marketingStatus !== null && isMarketingOsEnabled() && (
           <MarketingNavSection
             status={marketingStatus}
             location={location}
