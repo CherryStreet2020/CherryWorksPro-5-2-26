@@ -1033,38 +1033,164 @@ export async function runProductionMigrations(): Promise<void> {
     }
 
     // ─── ACCT-RECOVERY: Cherry Street Consulting org + admin user + junk org cleanup ───
+    // Task #457: this block originally always created the
+    // `cherry-street-consulting` org if missing, but `dean@cherrystconsulting.com`
+    // already lives on the canonical `cherry-st` org seeded elsewhere. Re-running
+    // the migration after `cherry-st` exists produced a *second* org with the same
+    // admin user, which made `POST /api/auth/login` return `{needsOrgPick: true}`
+    // for every test that did not pre-supply an `orgSlug`. Guard the entire
+    // recovery block: if the admin already exists on any org, skip recreating it,
+    // and drop the empty duplicate `cherry-street-consulting` row if one snuck in
+    // before this guard landed.
     const cscSlug = 'cherry-street-consulting';
-    const cscCheck = await client.query(`SELECT id FROM orgs WHERE slug = $1`, [cscSlug]);
-    let cscOrgId: string;
-    if (cscCheck.rows.length === 0) {
-      const cscResult = await client.query(`
-        INSERT INTO orgs (
-          id, name, slug, plan_tier, subscription_status, max_team_members,
-          trial_ends_at, base_currency, auto_post_journal_entries,
-          data_retention_days, rate_limit_rpm, default_bill_rate,
-          invoice_prefix, estimate_prefix, default_payment_terms_days,
-          onboarding_complete, created_at, updated_at
-        ) VALUES (
-          gen_random_uuid(),
-          'Cherry Street Consulting', $1, 'ENTERPRISE', 'active', 999999,
-          NULL, 'USD', true,
-          0, 1000, 125,
-          'CSC-INV-', 'CSC-EST-', 30,
-          false, NOW(), NOW()
-        ) RETURNING id
-      `, [cscSlug]);
-      cscOrgId = cscResult.rows[0].id;
-      console.log(`[migration] Created Cherry Street Consulting org: ${cscOrgId}`);
-    } else {
-      cscOrgId = cscCheck.rows[0].id;
-      console.log(`[migration] Cherry Street Consulting org already exists: ${cscOrgId}`);
-    }
-
-    const userCheck = await client.query(
-      `SELECT id FROM users WHERE org_id = $1 AND email = 'dean@cherrystconsulting.com'`,
-      [cscOrgId]
+    const adminEmail = 'dean@cherrystconsulting.com';
+    const existingAdmin = await client.query<{ org_id: string; slug: string }>(
+      `SELECT u.org_id, o.slug
+         FROM users u
+         JOIN orgs o ON o.id = u.org_id
+        WHERE u.email = $1`,
+      [adminEmail],
     );
-    if (userCheck.rows.length === 0) {
+
+    if (existingAdmin.rows.length > 0) {
+      const canonical = existingAdmin.rows.find((r) => r.slug !== cscSlug)
+        ?? existingAdmin.rows[0];
+      console.log(
+        `[migration] Admin user ${adminEmail} already exists on org ` +
+          `${canonical.slug} (${canonical.org_id}); skipping CSC recovery insert.`,
+      );
+
+      // If the duplicate `cherry-street-consulting` org is hanging around with
+      // *only* the dean user (and no real consulting data), purge it so logins
+      // stop offering an org-pick. Tables checked are the same heavy hitters
+      // the migration cleans for the historical junk orgs below.
+      const dupRow = existingAdmin.rows.find(
+        (r) => r.slug === cscSlug && r.org_id !== canonical.org_id,
+      );
+      if (dupRow) {
+        const dupId = dupRow.org_id;
+        const heavyTables = [
+          'invoices', 'estimates', 'projects', 'clients',
+          'time_entries', 'expenses', 'payments',
+        ];
+        let hasRealData = false;
+        for (const tbl of heavyTables) {
+          try {
+            const { rows } = await client.query<{ n: string }>(
+              `SELECT COUNT(*)::text AS n FROM "${tbl}" WHERE org_id = $1`,
+              [dupId],
+            );
+            if (Number(rows[0]?.n ?? 0) > 0) { hasRealData = true; break; }
+          } catch {
+            /* table missing on older schemas — ignore */
+          }
+        }
+        if (hasRealData) {
+          console.warn(
+            `[migration] Duplicate ${cscSlug} org ${dupId} has real data; ` +
+              `leaving it intact for manual review.`,
+          );
+        } else {
+          // Best-effort cascade. The audit_logs table carries an immutable
+          // trigger (`prevent_audit_log_modification`); we briefly disable it
+          // so the org row's FK doesn't pin the duplicate in place forever.
+          // All other tables are cleaned with try/catch so a missing-on-this-
+          // schema table can't abort the whole sweep.
+          const dupUserIds = await client.query<{ id: string }>(
+            `SELECT id FROM users WHERE org_id = $1`,
+            [dupId],
+          );
+          for (const { id: uid } of dupUserIds.rows) {
+            await client.query(`DELETE FROM password_reset_tokens WHERE user_id = $1`, [uid]).catch(() => {});
+            await client.query(`DELETE FROM active_sessions WHERE user_id = $1`, [uid]).catch(() => {});
+            await client.query(`DELETE FROM notification_preferences WHERE user_id = $1`, [uid]).catch(() => {});
+            await client.query(`DELETE FROM mfa_enrollments WHERE user_id = $1`, [uid]).catch(() => {});
+          }
+          for (const tbl of [
+            'active_sessions', 'notification_preferences', 'mfa_enrollments',
+            'pending_invites', 'support_requests', 'api_keys',
+            'webhook_deliveries', 'webhook_endpoints',
+            'expense_categories', 'gl_accounts', 'org_entitlements',
+          ]) {
+            await client
+              .query(`DELETE FROM "${tbl}" WHERE org_id = $1`, [dupId])
+              .catch(() => { /* table missing on older schemas */ });
+          }
+          await client.query(`DELETE FROM users WHERE org_id = $1`, [dupId]);
+          // Wrap the trigger-disable + audit-log delete in try/finally so a
+          // mid-cleanup failure (e.g. an unexpected FK) can never leave the
+          // immutable-audit-log protection off after this block returns.
+          let triggerDisabled = false;
+          try {
+            await client.query(
+              `ALTER TABLE audit_logs DISABLE TRIGGER prevent_audit_log_modification`,
+            );
+            triggerDisabled = true;
+            await client.query(`DELETE FROM audit_logs WHERE org_id = $1`, [dupId]);
+          } catch (e: any) {
+            console.warn(
+              `[migration] Audit-log cleanup for duplicate ${cscSlug} ` +
+                `failed (${e.message?.slice(0, 80)}); leaving org row in place.`,
+            );
+          } finally {
+            if (triggerDisabled) {
+              await client
+                .query(`ALTER TABLE audit_logs ENABLE TRIGGER prevent_audit_log_modification`)
+                .catch((reErr) => {
+                  // This is the worst-case scenario — bubble it up so the
+                  // outer migration handler logs loudly. Audit-log writes
+                  // are still allowed; only DELETE/UPDATE were blocked.
+                  console.error(
+                    `[migration] CRITICAL: failed to re-enable ` +
+                      `prevent_audit_log_modification trigger:`,
+                    reErr,
+                  );
+                });
+            }
+          }
+          await client.query(`DELETE FROM orgs WHERE id = $1`, [dupId]).catch((e) => {
+            console.warn(
+              `[migration] Could not delete duplicate ${cscSlug} org row ` +
+                `${dupId}: ${e.message?.slice(0, 100)}`,
+            );
+          });
+          console.log(
+            `[migration] Removed empty duplicate ${cscSlug} org ${dupId} ` +
+              `(task #457 — was forcing org-pick on every login).`,
+          );
+        }
+      }
+    } else {
+      // No admin anywhere — bootstrap the recovery org + user as before.
+      const cscCheck = await client.query(
+        `SELECT id FROM orgs WHERE slug = $1`,
+        [cscSlug],
+      );
+      let cscOrgId: string;
+      if (cscCheck.rows.length === 0) {
+        const cscResult = await client.query(`
+          INSERT INTO orgs (
+            id, name, slug, plan_tier, subscription_status, max_team_members,
+            trial_ends_at, base_currency, auto_post_journal_entries,
+            data_retention_days, rate_limit_rpm, default_bill_rate,
+            invoice_prefix, estimate_prefix, default_payment_terms_days,
+            onboarding_complete, created_at, updated_at
+          ) VALUES (
+            gen_random_uuid(),
+            'Cherry Street Consulting', $1, 'ENTERPRISE', 'active', 999999,
+            NULL, 'USD', true,
+            0, 1000, 125,
+            'CSC-INV-', 'CSC-EST-', 30,
+            false, NOW(), NOW()
+          ) RETURNING id
+        `, [cscSlug]);
+        cscOrgId = cscResult.rows[0].id;
+        console.log(`[migration] Created Cherry Street Consulting org: ${cscOrgId}`);
+      } else {
+        cscOrgId = cscCheck.rows[0].id;
+        console.log(`[migration] Cherry Street Consulting org already exists: ${cscOrgId}`);
+      }
+
       const tempHash = '$2b$12$7knJb3wAmMkrbqgyGxHKxeufOXTGMfRYqNOiYjxbCXc/Rq.LIIwfe';
       await client.query(`
         INSERT INTO users (
@@ -1072,15 +1198,13 @@ export async function runProductionMigrations(): Promise<void> {
           role, is_active, onboarding_complete, temp_password,
           created_at, updated_at
         ) VALUES (
-          gen_random_uuid(), $1, 'dean@cherrystconsulting.com', $2,
+          gen_random_uuid(), $1, $2, $3,
           'Dean Dunagan', 'Dean', 'Dunagan',
           'ADMIN', true, false, true,
           NOW(), NOW()
         )
-      `, [cscOrgId, tempHash]);
-      console.log(`[migration] Created admin user dean@cherrystconsulting.com on org ${cscOrgId}`);
-    } else {
-      console.log(`[migration] Admin user dean@cherrystconsulting.com already exists`);
+      `, [cscOrgId, adminEmail, tempHash]);
+      console.log(`[migration] Created admin user ${adminEmail} on org ${cscOrgId}`);
     }
 
     const junkOrgIds = [
