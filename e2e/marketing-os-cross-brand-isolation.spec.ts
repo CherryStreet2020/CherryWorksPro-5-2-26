@@ -1,14 +1,4 @@
-/**
- * Task #441 — Audit §6.1.7: brand-aware cross-brand isolation.
- *
- * API: every brand-scoped Marketing surface refuses to leak brand-A
- * rows into brand-B (and vice versa); explicit guards on
- * segment-in-campaign + tag-in-segment + audience-preview reject
- * cross-brand references with 400.
- *
- * UI: switching the active brand from A to B clears the search filter
- * on the contacts page (filters are brand-scoped).
- */
+// Task #441 — Marketing OS audit §6.1.7: brand-aware cross-brand isolation.
 import { test, expect } from "../tests/helpers/po/fixtures";
 import { setEntitlement } from "../tests/helpers/po/tier";
 import { BASE } from "../tests/helpers/po/auth";
@@ -17,35 +7,19 @@ import { loginIsolated } from "./_iso-helpers";
 
 const HDRS = (csrf: string) => ({ "x-csrf-token": csrf });
 
-test.describe("Marketing OS — cross-brand isolation (Task #441 / audit §6.1.7)", () => {
-  test("brand-scoped queries return only their own rows", async ({
-    isolatedOrg,
-  }) => {
+test.describe("Marketing OS — cross-brand isolation", () => {
+  test("contacts list returns only its own brand rows", async ({ isolatedOrg }) => {
     const { request, csrf, orgId } = isolatedOrg;
     await setEntitlement(orgId, "marketing_os", true);
     const { brandA, brandB } = await withTwoBrands(isolatedOrg);
-
     const cA = await (await request.post(`${BASE}/api/marketing/contacts`, {
       headers: HDRS(csrf),
-      data: {
-        brandId: brandA.id,
-        firstName: "OnlyA",
-        lastName: "Contact",
-        email: "onlya@brand-a.test",
-      },
+      data: { brandId: brandA.id, firstName: "OnlyA", lastName: "C", email: "onlya@brand-a.test" },
     })).json();
     const cB = await (await request.post(`${BASE}/api/marketing/contacts`, {
       headers: HDRS(csrf),
-      data: {
-        brandId: brandB.id,
-        firstName: "OnlyB",
-        lastName: "Contact",
-        email: "onlyb@brand-b.test",
-      },
+      data: { brandId: brandB.id, firstName: "OnlyB", lastName: "C", email: "onlyb@brand-b.test" },
     })).json();
-    // GET /api/marketing/contacts returns the array directly (no
-    // {rows} envelope); the legacy `.rows ?? []` fallback was masking
-    // empty results.
     const aRaw = await (await request.get(
       `${BASE}/api/marketing/contacts?brandId=${brandA.id}`,
     )).json();
@@ -63,7 +37,28 @@ test.describe("Marketing OS — cross-brand isolation (Task #441 / audit §6.1.7
     expect(bIds.has(cA.id)).toBe(false);
   });
 
-  test("guards: segment-in-campaign and tag-in-segment reject cross-brand references with 400", async ({
+  test("companies list is also brand-scoped", async ({ isolatedOrg }) => {
+    const { request, csrf, orgId } = isolatedOrg;
+    await setEntitlement(orgId, "marketing_os", true);
+    const { brandA, brandB } = await withTwoBrands(isolatedOrg);
+    const coA = await (await request.post(`${BASE}/api/marketing/companies`, {
+      headers: HDRS(csrf),
+      data: { brandId: brandA.id, name: "A Co", domain: "a-co.test" },
+    })).json();
+    const coB = await (await request.post(`${BASE}/api/marketing/companies`, {
+      headers: HDRS(csrf),
+      data: { brandId: brandB.id, name: "B Co", domain: "b-co.test" },
+    })).json();
+    const aRaw = await (await request.get(
+      `${BASE}/api/marketing/companies?brandId=${brandA.id}`,
+    )).json();
+    const aRows = Array.isArray(aRaw) ? aRaw : (aRaw.rows ?? []);
+    const aIds = new Set(aRows.map((r: { id: string }) => r.id));
+    expect(aIds.has(coA.id)).toBe(true);
+    expect(aIds.has(coB.id)).toBe(false);
+  });
+
+  test("guards: segment-in-campaign and tag-in-segment reject cross-brand refs with 400", async ({
     isolatedOrg,
   }) => {
     const { request, csrf, orgId } = isolatedOrg;
@@ -75,24 +70,14 @@ test.describe("Marketing OS — cross-brand isolation (Task #441 / audit §6.1.7
     })).json();
     const segB = await (await request.post(`${BASE}/api/marketing/segments`, {
       headers: HDRS(csrf),
-      data: {
-        brandId: brandB.id,
-        name: "B Seg",
-        filter: { tagIds: [tagB.id], search: "" },
-      },
+      data: { brandId: brandB.id, name: "B Seg", filter: { tagIds: [tagB.id], search: "" } },
     })).json();
-
     const camp = await request.post(`${BASE}/api/marketing/campaigns`, {
       headers: HDRS(csrf),
       data: {
-        brandId: brandA.id,
-        name: "Cross Camp",
-        subject: "S",
-        body: "<p/>",
-        fromEmail: "noreply@brand-a.test",
-        fromName: "A",
-        audienceType: "segment",
-        audienceSegmentId: segB.id,
+        brandId: brandA.id, name: "Cross", subject: "S", body: "<p/>",
+        fromEmail: "noreply@brand-a.test", fromName: "A",
+        audienceType: "segment", audienceSegmentId: segB.id,
       },
     });
     expect(camp.status()).toBe(400);
@@ -100,11 +85,7 @@ test.describe("Marketing OS — cross-brand isolation (Task #441 / audit §6.1.7
 
     const seg = await request.post(`${BASE}/api/marketing/segments`, {
       headers: HDRS(csrf),
-      data: {
-        brandId: brandA.id,
-        name: "Cross Seg",
-        filter: { tagIds: [tagB.id], search: "" },
-      },
+      data: { brandId: brandA.id, name: "Cross Seg", filter: { tagIds: [tagB.id], search: "" } },
     });
     expect(seg.status()).toBe(400);
     expect((await seg.json()).invalidTagIds ?? []).toContain(tagB.id);
@@ -119,11 +100,7 @@ test.describe("Marketing OS — cross-brand isolation (Task #441 / audit §6.1.7
     const brandB = await createBrand(isolatedOrg, { name: "Aud B", slug: "aud-b" });
     const segB = await (await request.post(`${BASE}/api/marketing/segments`, {
       headers: HDRS(csrf),
-      data: {
-        brandId: brandB.id,
-        name: "Aud B Seg",
-        filter: { tagIds: [], search: "" },
-      },
+      data: { brandId: brandB.id, name: "B Seg", filter: { tagIds: [], search: "" } },
     })).json();
     const res = await request.get(
       `${BASE}/api/marketing/campaigns/audience-preview?brandId=${brandA.id}&audienceType=segment&segmentId=${segB.id}`,
@@ -132,48 +109,35 @@ test.describe("Marketing OS — cross-brand isolation (Task #441 / audit §6.1.7
     expect((await res.json()).message).toMatch(/brand/i);
   });
 
-  test("UI — switching the active brand on /marketing/contacts isolates the row from brand A", async ({
-    page,
-    isolatedOrg,
+  test("UI — switching active brand isolates the brand-A row from the grid", async ({
+    page, isolatedOrg,
   }) => {
     test.setTimeout(45_000);
     const { request, csrf, orgId } = isolatedOrg;
     await setEntitlement(orgId, "marketing_os", true);
     const { brandA, brandB } = await withTwoBrands(isolatedOrg);
-    // Seed a brand-A-only contact so the grid has a deterministic row
-    // to look for after each brand switch.
     const onlyA = await (await request.post(`${BASE}/api/marketing/contacts`, {
       headers: HDRS(csrf),
       data: {
-        brandId: brandA.id,
-        firstName: "Alice",
-        lastName: "OnlyA",
+        brandId: brandA.id, firstName: "Alice", lastName: "OnlyA",
         email: "alice-only-a@brand-a.test",
       },
     })).json();
 
     await loginIsolated(page, isolatedOrg);
     await page.goto("/marketing/contacts");
-
-    // Land on either the brand picker (new isolated org) or the grid.
     const pickA = page.locator(`[data-testid="button-pick-brand-${brandA.id}"]`);
     const search = page.locator('[data-testid="input-search-contacts"]');
     await Promise.race([
       pickA.waitFor({ state: "visible", timeout: 15_000 }).catch(() => {}),
       search.waitFor({ state: "visible", timeout: 15_000 }).catch(() => {}),
     ]);
-    if (await pickA.isVisible().catch(() => false)) {
-      await pickA.click();
-    }
+    if (await pickA.isVisible().catch(() => false)) await pickA.click();
     await expect(search).toBeVisible({ timeout: 15_000 });
-
-    // Brand A → row visible.
     await expect(
       page.locator(`[data-testid="row-contact-${onlyA.id}"]`),
     ).toBeVisible({ timeout: 15_000 });
 
-    // Switch to brand B via the header switcher; confirm the active
-    // brand chip flips and the brand-A row disappears from the grid.
     await page.click('[data-testid="button-brand-switcher"]');
     await page.click(`[data-testid="menu-item-brand-${brandB.id}"]`);
     await expect(
