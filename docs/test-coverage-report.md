@@ -47,7 +47,8 @@
 | `api-integrations-page.spec.ts`            | §2.1 `/api-integrations` Untested                                  |
 | `multi-tenant-isolation.spec.ts`           | §3.3 cross-org isolation gap (read-side smoke on clients)          |
 | `role-guards.spec.ts`                      | §3.1 admin-only API surface 401/403 enforcement                    |
-| `feature-flag-marketing-os.spec.ts`        | §3.4 entitlement on/off API↔UI coherence                           |
+| `feature-flag-marketing-os.spec.ts`        | §3.4 `MARKETING_OS_ENABLED` env kill switch (brands + chat 404)    |
+| `feature-flag-email-oauth.spec.ts`         | §3.4 `EMAIL_OAUTH_ENABLED` env kill switch (oauth start/callback)  |
 
 ### Defensive patterns adopted by every new spec
 
@@ -126,8 +127,17 @@ in CI, or (c) authoring volume well beyond a single session.
   enrollment failure paths beyond cadence, telemetry edge cases,
   retry-policy boundary conditions, contacts-import wizard CSV
   upload + column mapping).
-- **`MARKETING_OS_ENABLED` and `EMAIL_OAUTH_ENABLED` env-flag**
-  paired on/off specs (requires booting two server instances).
+- ~~**`MARKETING_OS_ENABLED` and `EMAIL_OAUTH_ENABLED` env-flag**
+  paired on/off specs (requires booting two server instances).~~
+  **Done (Task #437):** `e2e/feature-flag-marketing-os.spec.ts` +
+  `e2e/feature-flag-email-oauth.spec.ts` use a dev-only runtime
+  override at `POST /api/__test__/feature-flags` (mirrors the existing
+  `__set*FlagForTests` test seam in `server/email/feature-flag.ts`),
+  so no second server instance is needed. Specs reset overrides in
+  `afterEach` to keep ordering safe. Remaining gap: the marketing
+  flag is currently only honored in `routes/brands.ts` +
+  `routes/marketing/chat.ts`; the rest of `/api/marketing/*` is
+  entitlement-only — refactor tracked separately.
 - **Network-failure-mid-submit cases** on highest-value forms
   (invoices, payments, expenses, time entries, signup).
 - **Settings tabs** beyond email/health/webhook: MFA, SAML, GDPR
@@ -149,6 +159,7 @@ npx playwright test e2e/auth-*.spec.ts e2e/public-*.spec.ts \
   e2e/expenses-page.spec.ts e2e/payouts-admin.spec.ts \
   e2e/api-integrations-page.spec.ts e2e/multi-tenant-isolation.spec.ts \
   e2e/role-guards.spec.ts e2e/feature-flag-marketing-os.spec.ts \
+  e2e/feature-flag-email-oauth.spec.ts \
   e2e/switch-from-pages.spec.ts
 ```
 

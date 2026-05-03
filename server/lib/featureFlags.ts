@@ -1,13 +1,14 @@
-/**
- * Marketing OS — server-side feature flag gate.
- *
- * This is the SINGLE source of truth for `process.env.MARKETING_OS_ENABLED`
- * on the server. Do NOT read the env var directly anywhere else.
- *
- * Independent from the in-memory `featureFlagStore` at
- * `server/routes/feature-flags-routes.ts` — that system uses a different
- * keyspace for runtime toggles.
- */
+let testOverride: boolean | null = null;
+
 export function isMarketingOsEnabled(): boolean {
+  if (testOverride !== null) return testOverride;
   return process.env.MARKETING_OS_ENABLED === "true";
+}
+
+export function __setMarketingOsEnabledForTests(value: boolean | null): void {
+  testOverride = value;
+}
+
+export function __resetMarketingOsFlagForTests(): void {
+  testOverride = null;
 }

@@ -705,8 +705,20 @@ tier gate **untested in E2E**. Other tier-gated APIs **untested**.
   per-org `marketing_os` entitlement.
 - **`EMAIL_OAUTH_ENABLED`** — gates Gmail + M365 OAuth flows in
   `server/email/feature-flag.ts`, `routes/oauth-mailbox-routes.ts`.
-- **Coverage.** Off/on env-flag behavior **untested** at E2E (the
-  entitlement-level on/off is covered).
+- **Coverage.** Off/on env-flag behavior covered at E2E by
+  `e2e/feature-flag-marketing-os.spec.ts` (brands + marketing chat 404
+  when flag OFF; brands reachable when flag ON; entitlement gate still
+  fires when flag ON but entitlement absent) and
+  `e2e/feature-flag-email-oauth.spec.ts` (oauth start/callback 404 +
+  `oauthFlagEnabled=false` when flag OFF; reachable + flag-enabled
+  surface when flag ON). Both rely on a dev-only runtime override
+  endpoint at `POST /api/__test__/feature-flags`. **Gap remaining:**
+  the marketing kill switch is currently only wired into
+  `routes/brands.ts` and `routes/marketing/chat.ts`; the
+  `requireFeature("marketing_os")` middleware is entitlement-only, so
+  flag-OFF + entitlement-ON still serves `/api/marketing/contacts` &
+  friends. Sidebar visibility is also entitlement-only. Tracked under
+  audit §7 #15 — refactor out of scope for this task.
 
 ### 3.5 Error pages
 - 403 → `pages/error-403.tsx` (rendered by `AdminRoute`/`ManagerRoute`
@@ -1017,7 +1029,7 @@ likelihood). Authored in the order they should be covered.
 | 12 | Approvals tier gate (PROFESSIONAL+ wall) + bulk approve/reject for both legit and over-quota users | Tier monetization correctness |
 | 13 | GL postings: invoice paid → JE auto-post (when `autoPostJournalEntries=true`); close-period blocks edits | Accounting correctness; **no E2E** |
 | 14 | Trial balance + ledger correctness after a sequence of mixed transactions | Reporting accuracy; **no E2E** |
-| 15 | Marketing OS: env flag `MARKETING_OS_ENABLED` off ⇒ all `/marketing/*` 404 even if entitlement is present | Kill-switch correctness; only entitlement-level covered |
+| 15 | Marketing OS: env flag `MARKETING_OS_ENABLED` off ⇒ all `/marketing/*` 404 even if entitlement is present | Kill-switch correctness; partially covered by `e2e/feature-flag-marketing-os.spec.ts` (brands + chat only — broader middleware refactor still owed) |
 | 16 | CSV import wizard (FreshBooks / QuickBooks / Xero) including conflict resolution and preview rollback | Customer migration; only one path covered |
 | 17 | Public token pages (`/i/:token`, `/e/:token`, `/portal/:token`) including expired/invalid token handling | Customer-facing surface; only happy path |
 | 18 | Stripe Connect payouts (`/payouts`) reconciliation: sync, void, missing payout | Money flow; **no E2E** |

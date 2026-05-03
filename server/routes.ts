@@ -55,6 +55,7 @@ import { registerImportRoutes } from "./routes/import-routes";
 import { registerSettingsRoutes } from "./routes/settings-routes";
 import { registerOauthMailboxRoutes } from "./routes/oauth-mailbox-routes";
 import { registerTestEmailRoutes } from "./routes/test-email-routes";
+import { registerTestFeatureFlagRoutes } from "./routes/test-feature-flags-routes";
 import { registerDashboardRoutes } from "./routes/dashboard-routes";
 import { registerBackupRoutes } from "./routes/backup-routes";
 import { registerDataManagementRoutes } from "./routes/data-management-routes";
@@ -635,6 +636,7 @@ export async function registerRoutes(
   registerSettingsRoutes(app);
   registerOauthMailboxRoutes(app);
   registerTestEmailRoutes(app);
+  registerTestFeatureFlagRoutes(app);
   registerAuthRoutes(app);
   registerTeamRoutes(app);
   registerDashboardRoutes(app);

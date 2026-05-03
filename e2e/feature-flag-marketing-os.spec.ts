@@ -1,43 +1,96 @@
-/**
- * Feature-flag coherence smoke for the `marketing_os` entitlement
- * (Task #431, audit §3.4).
- *
- * The env-level `MARKETING_OS_ENABLED` kill switch is not flipped at
- * spec time (would require restarting the dev server); we instead
- * verify the *per-org entitlement* coherence contract: whatever
- * `/api/me/entitlements` reports for `marketing_os` must agree with
- * whether `/marketing/contacts` renders the page or the locked card.
- */
-import { test, expect } from "@playwright/test";
-import { BASE, loginApi, loginViaPage } from "../tests/helpers/po/auth";
+import { test, expect } from "../tests/helpers/po/fixtures";
+import { setEntitlement, setOrgTier } from "../tests/helpers/po/tier";
+import { BASE } from "../tests/helpers/po/auth";
+import { type APIRequestContext } from "@playwright/test";
 
-test.describe("marketing_os entitlement coherence", () => {
-  test("API entitlement state matches UI surface", async ({
-    request,
-    page,
+async function setFlag(
+  api: APIRequestContext,
+  csrf: string,
+  patch: { marketingOs?: boolean | null; emailOauth?: boolean | null },
+): Promise<void> {
+  const r = await api.post(`${BASE}/api/__test__/feature-flags`, {
+    data: patch,
+    headers: { "X-CSRF-Token": csrf },
+  });
+  expect(r.status(), "test feature-flag override endpoint").toBe(200);
+}
+
+async function resetFlags(api: APIRequestContext, csrf: string): Promise<void> {
+  await api.delete(`${BASE}/api/__test__/feature-flags`, {
+    headers: { "X-CSRF-Token": csrf },
+  });
+}
+
+test.describe("MARKETING_OS_ENABLED env kill switch", () => {
+  test.afterEach(async ({ isolatedOrg }) => {
+    await resetFlags(isolatedOrg.request, isolatedOrg.csrf);
+  });
+
+  test("flag OFF + entitlement granted: brands + marketing chat 404 (kill switch wins)", async ({
+    isolatedOrg,
   }) => {
-    await loginApi(request);
-    const entR = await request.get(`${BASE}/api/me/entitlements`);
-    expect(entR.status()).toBe(200);
-    const ent = await entR.json();
-    const marketingOn = Boolean(ent?.marketing_os ?? ent?.marketingOs);
+    const { request, orgId, csrf } = isolatedOrg;
+    await setEntitlement(orgId, "marketing_os", true);
 
-    await loginViaPage(page);
-    await page.goto("/marketing/contacts");
-    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => undefined);
+    await setFlag(request, csrf, { marketingOs: false });
 
-    if (marketingOn) {
-      // Page should render some marketing-OS-specific anchor; tolerate
-      // the AdminSetupGate edge if the test admin isn't fully set up.
-      const lock = page.locator("text=Marketing OS").first();
-      await expect(lock).toBeVisible({ timeout: 15000 });
-    } else {
-      // The locked card or 404-stealth surface must appear; the page
-      // must NOT render the contacts CRUD UI.
-      const contactsForm = page.locator(
-        '[data-testid="button-add-contact"], [data-testid="input-contact-search"]',
-      );
-      expect(await contactsForm.count()).toBe(0);
-    }
+    const brands = await request.get(`${BASE}/api/brands`);
+    expect(brands.status(), "brands list must 404 when env flag is OFF").toBe(404);
+
+    // POST /api/marketing/chat is the single-turn chat endpoint and
+    // returns a stealth 404 from `requireMarketingOsForBrand` when the
+    // env flag is off (server/routes/marketing/chat.ts line 104).
+    const chat = await request.post(`${BASE}/api/marketing/chat`, {
+      data: {
+        brandSlug: "any-slug",
+        sessionToken: "00000000-0000-0000-0000-000000000000",
+        message: "ping",
+      },
+      headers: { "X-CSRF-Token": csrf },
+    });
+    expect(chat.status(), "marketing chat must 404 when env flag is OFF").toBe(404);
+
+    const embed = await request.get(`${BASE}/embed/chat.js`);
+    expect(embed.status(), "embed/chat.js must 404 when env flag is OFF").toBe(404);
+  });
+
+  test("flag ON + entitlement granted: brands list reachable + chat no longer stealth-404s on flag", async ({
+    isolatedOrg,
+  }) => {
+    const { request, orgId, csrf } = isolatedOrg;
+    await setEntitlement(orgId, "marketing_os", true);
+
+    await setFlag(request, csrf, { marketingOs: true });
+
+    const brands = await request.get(`${BASE}/api/brands`);
+    expect(brands.status(), "brands list must succeed when both flag + entitlement ON").toBe(200);
+    expect(Array.isArray(await brands.json())).toBe(true);
+
+    // With the env flag ON, the chat endpoint advances past gate 1 and
+    // 404s for a *different* reason (unknown brand slug). We can't
+    // distinguish that from the flag-OFF stealth 404 here, but the
+    // embed/chat.js script — which is also gated by isMarketingOsEnabled
+    // — must now serve JS instead of 404.
+    const embed = await request.get(`${BASE}/embed/chat.js`);
+    expect(embed.status(), "embed/chat.js must serve when env flag is ON").toBe(200);
+  });
+
+  test("flag ON + entitlement absent: existing entitlement gate still 404s marketing CRUD", async ({
+    isolatedOrg,
+  }) => {
+    const { request, orgId, csrf } = isolatedOrg;
+    // BUSINESS tier auto-derives marketing_os via the tier overlay, so we
+    // must also drop the tier to fully revoke the entitlement (see the
+    // architectural caveat in tests/helpers/po/tier.ts).
+    await setOrgTier(orgId, "STARTER");
+    await setEntitlement(orgId, "marketing_os", false);
+
+    await setFlag(request, csrf, { marketingOs: true });
+
+    const contacts = await request.get(`${BASE}/api/marketing/contacts`);
+    expect(
+      contacts.status(),
+      "entitlement gate must still 404 marketing/contacts when flag is ON but entitlement is absent",
+    ).toBe(404);
   });
 });
