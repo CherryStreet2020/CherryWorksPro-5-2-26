@@ -19,10 +19,29 @@ function notFound(res: Response): Response {
   return res.status(404).json({ message: "Not found" });
 }
 
-/** Belt-and-braces guard: production NEVER reaches the handlers, even
- * if requireAuth is somehow bypassed. */
+/**
+ * Belt-and-braces guard. To reach a handler, ALL of the following must
+ * hold:
+ *   1. NODE_ENV !== "production"        (this `devOnly` check)
+ *   2. caller is authenticated          (`requireAuth` further down)
+ *   3. caller sends X-E2E-Flag-Override (this `devOnly` check)
+ *
+ * The header gate stops a stray browser tab on a shared dev/staging
+ * environment from accidentally (or maliciously) flipping global
+ * feature switches just because the user happens to be logged in.
+ * The token value is intentionally a fixed sentinel rather than a
+ * secret — anyone reading the spec can find it. The point is to make
+ * the test-only nature explicit and prevent drive-by mutations, not
+ * to keep the seam itself secret.
+ */
+const E2E_OVERRIDE_HEADER = "x-e2e-flag-override";
+const E2E_OVERRIDE_TOKEN = "task-437-test-only";
 function devOnly(req: Request, res: Response, next: NextFunction): void {
   if (!isTestOnly()) {
+    notFound(res);
+    return;
+  }
+  if (req.header(E2E_OVERRIDE_HEADER) !== E2E_OVERRIDE_TOKEN) {
     notFound(res);
     return;
   }

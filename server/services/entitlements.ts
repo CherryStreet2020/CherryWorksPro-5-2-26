@@ -24,6 +24,7 @@ import {
 } from "@shared/schema";
 import { storage } from "../storage";
 import { marketingOsActiveFromTier } from "./marketing-os-tier";
+import { isMarketingOsEnabled } from "../lib/featureFlags";
 
 export type EntitlementMap = Record<OrgEntitlementFeature, boolean>;
 
@@ -258,6 +259,15 @@ export const EntitlementService = {
  */
 export function requireFeature(feature: OrgEntitlementFeature): RequestHandler {
   return async (req: Request, res: Response, next: NextFunction) => {
+    // Task #437 — env-level kill switch wins over per-org entitlement.
+    // For `marketing_os` specifically, MARKETING_OS_ENABLED=false must
+    // 404 every gated surface even when the org's entitlement is granted.
+    // This is the one chokepoint every marketing route flows through, so
+    // the env check belongs here rather than scattered across each
+    // route file.
+    if (feature === "marketing_os" && !isMarketingOsEnabled()) {
+      return res.status(404).json({ message: "Not found" });
+    }
     const orgId = req.session?.orgId;
     if (!orgId || !req.session?.userId) {
       // No session → indistinguishable from "feature doesn't exist" to

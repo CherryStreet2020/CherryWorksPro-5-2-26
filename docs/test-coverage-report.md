@@ -47,8 +47,8 @@
 | `api-integrations-page.spec.ts`            | §2.1 `/api-integrations` Untested                                  |
 | `multi-tenant-isolation.spec.ts`           | §3.3 cross-org isolation gap (read-side smoke on clients)          |
 | `role-guards.spec.ts`                      | §3.1 admin-only API surface 401/403 enforcement                    |
-| `feature-flag-marketing-os.spec.ts`        | §3.4 `MARKETING_OS_ENABLED` env kill switch (brands + chat 404)    |
-| `feature-flag-email-oauth.spec.ts`         | §3.4 `EMAIL_OAUTH_ENABLED` env kill switch (oauth start/callback)  |
+| `feature-flag-marketing-os.spec.ts`        | §3.4 `MARKETING_OS_ENABLED` env kill switch — every gated `/api/marketing/*` route (brands, chat, embed, contacts, companies, tags, segments, campaigns, activities, prospects) 404s when flag OFF; entitlement gate still applies when flag ON. Kill switch now wired into the `requireFeature("marketing_os")` chokepoint. |
+| `feature-flag-email-oauth.spec.ts`         | §3.4 `EMAIL_OAUTH_ENABLED` env kill switch — oauth start/callback 404 with flag OFF, `oauthFlagEnabled` surfaced to UI; FLAG-ON UI assertion verifies the Settings → Accounting & Email tab renders the provider radio, M365/Google options, and Connect Mailbox button (the FLAG-OFF Vite-baked client gate is documented as out-of-scope). |
 
 ### Defensive patterns adopted by every new spec
 
