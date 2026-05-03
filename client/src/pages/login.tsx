@@ -61,6 +61,17 @@ export default function LoginPage() {
         const jsonPart = raw.includes("{") ? raw.slice(raw.indexOf("{")) : raw;
         const obj = JSON.parse(jsonPart);
         if (obj.needsOrgPick && obj.orgs) {
+          // Task #458: defensive guard — if the API ever returns
+          // `needsOrgPick` with only one workspace (it shouldn't,
+          // since the server finalizes single-org logins inline),
+          // auto-pick instead of rendering a one-button picker.
+          if (Array.isArray(obj.orgs) && obj.orgs.length === 1) {
+            const only = obj.orgs[0];
+            setOrgPickerOrgs(obj.orgs);
+            setAutoPicking(only);
+            await handleOrgPick(only.slug, true);
+            return;
+          }
           let savedSlug: string | null = null;
           try { savedSlug = localStorage.getItem("lastOrgSlug"); } catch {}
           const match = savedSlug ? obj.orgs.find((o: { slug: string; name: string }) => o.slug === savedSlug) : null;
