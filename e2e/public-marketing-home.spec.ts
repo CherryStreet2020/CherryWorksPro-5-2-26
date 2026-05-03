@@ -58,20 +58,55 @@ test.describe("Public marketing home", () => {
     await expect(page.locator('[data-testid="marketing-os-heading"]')).toBeVisible({ timeout: 15000 });
   });
 
-  test.describe("Marketing nav links resolve", () => {
-    const navTargets: Array<{ label: string; path: string; anchor: string }> = [
-      { label: "Features", path: "/features", anchor: '[data-testid="features-heading"]' },
-      { label: "Tour", path: "/demo", anchor: '[data-testid="demo-section-dashboard"]' },
-      { label: "Compare", path: "/compare", anchor: '[data-testid="comparison-table"]' },
-      { label: "Pricing", path: "/pricing", anchor: '[data-testid="pricing-heading"]' },
-      { label: "Marketing Hub", path: "/marketing", anchor: '[data-testid="marketing-os-heading"]' },
-      { label: "Integrations", path: "/integrations", anchor: '[data-testid="link-zapier"]' },
-      { label: "About", path: "/about", anchor: '[data-testid="about-heading"]' },
+  test('hero secondary CTA "Explore the Full Platform" navigates to /features', async ({ page }) => {
+    await page.goto("/");
+    const secondary = page.getByRole("link", { name: /Explore the Full Platform/i }).first();
+    await expect(secondary).toBeVisible({ timeout: 15000 });
+    await Promise.all([
+      page.waitForURL(/\/features(\?|$)/, { timeout: 15000 }),
+      secondary.click(),
+    ]);
+    await expect(page.locator('[data-testid="features-heading"]')).toBeVisible({ timeout: 15000 });
+  });
+
+  test("final-section Start Your Free Trial CTA navigates to /signup", async ({ page }) => {
+    await page.goto("/");
+    const cta = page.locator('[data-testid="cta-start-free-trial"]').first();
+    await cta.scrollIntoViewIfNeeded();
+    await expect(cta).toBeVisible({ timeout: 15000 });
+    await Promise.all([
+      page.waitForURL(/\/signup(\?|$)/, { timeout: 15000 }),
+      cta.click(),
+    ]);
+    await expect(page.locator('[data-testid="signup-form-card"]')).toBeVisible({ timeout: 15000 });
+  });
+
+  // Verify nav by *clicking* the visible nav links from `/`, not by goto-ing each
+  // path directly. This catches breakage in the nav itself (wrong href, hidden
+  // link on desktop, etc.), which goto-only checks would miss.
+  test.describe("Marketing nav links — actual click from home", () => {
+    const navTargets: Array<{ label: RegExp; path: RegExp; anchor: string }> = [
+      { label: /^Features$/, path: /\/features(\?|$)/, anchor: '[data-testid="features-heading"]' },
+      { label: /^Tour$/, path: /\/demo(\?|$)/, anchor: '[data-testid="demo-section-dashboard"]' },
+      { label: /^Compare$/, path: /\/compare(\?|$)/, anchor: '[data-testid="comparison-table"]' },
+      { label: /^Pricing$/, path: /\/pricing(\?|$)/, anchor: '[data-testid="pricing-heading"]' },
+      { label: /Marketing Hub/, path: /\/marketing(\?|$)/, anchor: '[data-testid="marketing-os-heading"]' },
+      { label: /^Integrations$/, path: /\/integrations(\?|$)/, anchor: '[data-testid="link-zapier"]' },
+      { label: /^About$/, path: /\/about(\?|$)/, anchor: '[data-testid="about-heading"]' },
     ];
 
     for (const t of navTargets) {
-      test(`nav → ${t.path}`, async ({ page }) => {
-        await page.goto(t.path);
+      test(`nav click → ${t.path}`, async ({ page }) => {
+        await page.goto("/");
+        const nav = page.locator('[data-testid="marketing-nav"]');
+        await expect(nav).toBeVisible({ timeout: 15000 });
+        // Scope to the desktop nav region; pick the first matching link inside.
+        const link = nav.getByRole("link", { name: t.label }).first();
+        await expect(link).toBeVisible();
+        await Promise.all([
+          page.waitForURL(t.path, { timeout: 15000 }),
+          link.click(),
+        ]);
         await expect(page.locator(t.anchor).first()).toBeVisible({ timeout: 15000 });
       });
     }

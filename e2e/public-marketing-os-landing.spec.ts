@@ -36,16 +36,30 @@ test.describe("Public /marketing (Marketing OS landing)", () => {
     expect(real, `/marketing page errors: ${real.join(" | ")}`).toEqual([]);
   });
 
-  test("FAQ accordion expands and collapses", async ({ page }) => {
+  test("FAQ accordion reveals + hides answer content on toggle", async ({ page }) => {
     await page.goto("/marketing");
-    const firstFaq = page.locator('[data-testid="button-marketing-os-faq-0"]');
-    await firstFaq.scrollIntoViewIfNeeded();
-    await expect(firstFaq).toBeVisible({ timeout: 15000 });
-    await firstFaq.click();
-    // Item still mounted after toggle
-    await expect(page.locator('[data-testid="marketing-os-faq-item-0"]')).toBeVisible();
-    await firstFaq.click();
-    await expect(page.locator('[data-testid="marketing-os-faq-item-0"]')).toBeVisible();
+    const firstButton = page.locator('[data-testid="button-marketing-os-faq-0"]');
+    const firstItem = page.locator('[data-testid="marketing-os-faq-item-0"]');
+    await firstButton.scrollIntoViewIfNeeded();
+    await expect(firstButton).toBeVisible({ timeout: 15000 });
+
+    // Capture the question text so we can compare item height with/without answer.
+    const questionText = (await firstButton.innerText()).trim();
+    expect(questionText.length).toBeGreaterThan(0);
+
+    // Initially collapsed: item shows only the question (no <p> answer body).
+    const closedHasParagraph = await firstItem.locator("p").count();
+    expect(closedHasParagraph, "FAQ should start collapsed (no <p> answer rendered)").toBe(0);
+
+    // Expand: an answer paragraph is rendered.
+    await firstButton.click();
+    await expect(firstItem.locator("p")).toBeVisible();
+    const openText = (await firstItem.innerText()).trim();
+    expect(openText.length, "expanded item should contain more text than the question alone").toBeGreaterThan(questionText.length);
+
+    // Collapse: answer paragraph removed again.
+    await firstButton.click();
+    await expect(firstItem.locator("p")).toHaveCount(0);
   });
 
   test("hero signup CTA navigates to /signup", async ({ page }) => {

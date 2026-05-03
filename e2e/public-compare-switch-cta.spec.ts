@@ -65,6 +65,23 @@ test.describe("Public /switch-from-* — CTA verification", () => {
       ]);
       await expect(page.locator('[data-testid="signup-form-card"]')).toBeVisible({ timeout: 15000 });
     });
+
+    test(`${path}: pain-point grid renders multiple cards`, async ({ page }) => {
+      await page.goto(path);
+      const painPoints = page.locator('[data-testid^="pain-point-"]');
+      await expect(painPoints.first()).toBeVisible({ timeout: 15000 });
+      const count = await painPoints.count();
+      expect(count, `${path} should render >=3 pain-point cards`).toBeGreaterThanOrEqual(3);
+    });
+
+    test(`${path}: migration timeline renders step 1/2/3`, async ({ page }) => {
+      await page.goto(path);
+      for (const step of ["1", "2", "3"]) {
+        const node = page.locator(`[data-testid="timeline-step-${step}"]`);
+        await node.scrollIntoViewIfNeeded();
+        await expect(node).toBeVisible({ timeout: 15000 });
+      }
+    });
   }
 });
 
@@ -88,7 +105,31 @@ test.describe("Public /compare hub", () => {
     expect(real, `/compare errors: ${real.join(" | ")}`).toEqual([]);
   });
 
-  test("each switch-link tile on /compare resolves to its competitor LP", async ({ page }) => {
+  // Each tier-switch tile on /compare must point to its competitor LP. We
+  // assert the href on every tile and click-verify a couple for navigation.
+  const SWITCH_TILES: Array<{ id: string; href: RegExp }> = [
+    { id: "switch-link-freshbooks", href: /\/switch-from-freshbooks$/ },
+    { id: "switch-link-quickbooks", href: /\/switch-from-quickbooks$/ },
+    { id: "switch-link-xero", href: /\/switch-from-xero$/ },
+    { id: "switch-link-wave", href: /\/switch-from-wave$/ },
+    { id: "switch-link-harvest", href: /\/switch-from-harvest$/ },
+    { id: "switch-link-bigtime", href: /\/switch-from-bigtime$/ },
+    { id: "switch-link-scoro", href: /\/switch-from-scoro$/ },
+    { id: "switch-link-paymo", href: /\/switch-from-paymo$/ },
+  ];
+
+  test("every competitor switch tile on /compare exposes the right href", async ({ page }) => {
+    await page.goto("/compare");
+    for (const tile of SWITCH_TILES) {
+      const link = page.locator(`[data-testid="${tile.id}"]`).first();
+      await link.scrollIntoViewIfNeeded();
+      await expect(link, `${tile.id} should be visible`).toBeVisible({ timeout: 15000 });
+      const href = await link.locator("xpath=ancestor::a[1]").getAttribute("href");
+      expect(href, `${tile.id} href`).toMatch(tile.href);
+    }
+  });
+
+  test("clicking the QuickBooks switch tile navigates to its LP", async ({ page }) => {
     await page.goto("/compare");
     const link = page.locator('[data-testid="switch-link-quickbooks"]').first();
     await link.scrollIntoViewIfNeeded();
@@ -98,5 +139,16 @@ test.describe("Public /compare hub", () => {
       link.click(),
     ]);
     await expect(page.locator("h1").first()).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('[data-testid="migration-timeline-heading"]')).toBeVisible({ timeout: 15000 });
+  });
+
+  test("/compare comparison table renders Cherry header + competitor filter buttons", async ({ page }) => {
+    await page.goto("/compare");
+    const table = page.locator('[data-testid="comparison-table"]').first();
+    await expect(table).toBeVisible({ timeout: 15000 });
+    // Filter pills (one per competitor) live above the table; verify a few are mounted.
+    for (const id of ["compare-filter-quickbooks", "compare-filter-xero", "compare-filter-wave"]) {
+      await expect(page.locator(`[data-testid="${id}"]`)).toBeVisible();
+    }
   });
 });

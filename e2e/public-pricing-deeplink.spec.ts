@@ -55,6 +55,30 @@ test.describe("Public /pricing — plan-card deep-links", () => {
     await expect(page.locator('[data-testid="signup-form-card"]')).toBeVisible({ timeout: 15000 });
   });
 
+  test("billing toggle flips visible price + savings copy", async ({ page }) => {
+    await page.goto("/pricing");
+    const starterCard = page.locator('[data-testid="tier-card-starter"]');
+    await expect(starterCard).toBeVisible({ timeout: 15000 });
+
+    // Monthly default: $39 visible, no annual savings line.
+    await expect(starterCard.getByText(/\$39/)).toBeVisible();
+    await expect(starterCard.getByText(/Billed \$\d+\/yr/i)).toHaveCount(0);
+
+    // Toggle to annual and assert prices + the "Billed …/yr" line appear.
+    await page.click('[data-testid="button-toggle-billing"]');
+    // Save-20% badge stays visible (it's tied to the toggle, not state)
+    await expect(page.locator('[data-testid="badge-save-20"]')).toBeVisible();
+
+    // Starter annual price ($31/mo) + per-year billed copy now show.
+    await expect(starterCard.getByText(/\$31/)).toBeVisible();
+    await expect(starterCard.getByText(/Billed \$\d+\/yr/i)).toBeVisible();
+
+    // Toggle back: $39 reappears, /yr copy disappears.
+    await page.click('[data-testid="button-toggle-billing"]');
+    await expect(starterCard.getByText(/\$39/)).toBeVisible();
+    await expect(starterCard.getByText(/Billed \$\d+\/yr/i)).toHaveCount(0);
+  });
+
   test("Enterprise tier routes to /contact", async ({ page }) => {
     await page.goto("/pricing");
     const enterprise = page.locator('[data-testid="tier-card-enterprise"]');

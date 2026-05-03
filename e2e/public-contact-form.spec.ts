@@ -75,6 +75,54 @@ test.describe("Public /contact form", () => {
     expect(real, `contact page errors: ${real.join(" | ")}`).toEqual([]);
   });
 
+  test("warning JSON (200 ok with warning) still surfaces success state", async ({ page }) => {
+    // The /api/public/contact endpoint returns `{ ok: true, warning: "..." }`
+    // when the SMTP transport fails but the message was queued. The UI treats
+    // any 2xx as success and shows "Message sent!" — this verifies that
+    // contract so we don't regress to surfacing the warning as an error.
+    await page.route("**/api/public/contact", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          warning: "Email notification could not be sent.",
+        }),
+      });
+    });
+
+    await page.goto("/contact");
+    await page.fill('[data-testid="input-contact-name"]', "Margaret Hamilton");
+    await page.fill('[data-testid="input-contact-email"]', "margaret@example.com");
+    await page.fill('[data-testid="input-contact-message"]', "Soft-warning path");
+    await page.click('[data-testid="button-contact-submit"]');
+
+    await expect(page.getByText(/Message sent!/i)).toBeVisible({ timeout: 10000 });
+  });
+
+  test("rate-limit (429) surfaces inline error and stays on form", async ({ page }) => {
+    // POST /api/public/contact is wrapped in apiLimiter on the server. Rather
+    // than hammer the live limiter, simulate the response shape here.
+    await page.route("**/api/public/contact", async (route) => {
+      await route.fulfill({
+        status: 429,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "Too many requests, please try again later." }),
+      });
+    });
+
+    await page.goto("/contact");
+    await page.fill('[data-testid="input-contact-name"]', "Katherine Johnson");
+    await page.fill('[data-testid="input-contact-email"]', "katherine@example.com");
+    await page.fill('[data-testid="input-contact-message"]', "Trigger rate limit");
+    await page.click('[data-testid="button-contact-submit"]');
+
+    await expect(page.getByText(/Too many requests/i)).toBeVisible({ timeout: 10000 });
+    // Form is still mounted, success card never rendered.
+    await expect(page.getByText(/Message sent!/i)).toHaveCount(0);
+    await expect(page.locator('[data-testid="button-contact-submit"]')).toBeVisible();
+  });
+
   test("server error surfaces inline error banner", async ({ page }) => {
     await page.route("**/api/public/contact", async (route) => {
       await route.fulfill({

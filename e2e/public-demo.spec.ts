@@ -15,6 +15,13 @@ const SECTIONS = [
   "demo-section-time",
   "demo-section-invoicing",
   "demo-section-expenses",
+  "demo-section-ai-receipt",
+  "demo-section-reports",
+  "demo-section-gl",
+  "demo-section-bank-recon",
+  "demo-section-marketing-os",
+  "demo-section-client-portal",
+  "demo-section-mission-control",
 ];
 
 test.describe("Public /demo", () => {
@@ -48,5 +55,38 @@ test.describe("Public /demo", () => {
       cta.click(),
     ]);
     await expect(page.locator('[data-testid="signup-form-card"]')).toBeVisible({ timeout: 15000 });
+  });
+
+  test("interactive mockup: timesheet approval has per-row approve/reject + bulk approve buttons", async ({ page }) => {
+    await page.goto("/demo");
+    const section = page.locator('[data-testid="demo-section-timesheet-approval"]');
+    await section.scrollIntoViewIfNeeded();
+    await expect(section).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('[data-testid="button-approve-all"]')).toBeVisible();
+    // At least the first row's approve/reject controls are mounted and clickable.
+    await expect(page.locator('[data-testid="button-approve-0"]')).toBeVisible();
+    await expect(page.locator('[data-testid="button-reject-0"]')).toBeVisible();
+  });
+
+  test("interactive mockup: estimates section exposes convert-to-invoice + PDF actions", async ({ page }) => {
+    await page.goto("/demo");
+    const section = page.locator('[data-testid="demo-section-estimates"]');
+    await section.scrollIntoViewIfNeeded();
+    await expect(section).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('[data-testid="button-convert-invoice"]')).toBeVisible();
+    await expect(page.locator('[data-testid="button-download-pdf"]')).toBeVisible();
+    await expect(page.locator('[data-testid="button-revise-estimate"]')).toBeVisible();
+  });
+
+  test("Marketing OS cross-sell on /demo links to /marketing", async ({ page }) => {
+    await page.goto("/demo");
+    const link = page.locator('[data-testid="link-tour-marketing-os"]');
+    await link.scrollIntoViewIfNeeded();
+    await expect(link).toBeVisible({ timeout: 15000 });
+    await Promise.all([
+      page.waitForURL(/\/marketing(\?|$)/, { timeout: 15000 }),
+      link.click(),
+    ]);
+    await expect(page.locator('[data-testid="marketing-os-heading"]')).toBeVisible({ timeout: 15000 });
   });
 });
