@@ -2,7 +2,6 @@ import { createContext, useContext, useState, useEffect, useCallback } from "rea
 import type { User } from "@shared/schema";
 import { apiRequest, queryClient, ensureCSRFToken } from "./queryClient";
 
-// Result of a successful (HTTP 200) /api/auth/login call.
 export type LoginResult =
   | { kind: "mfa-code"; requiresMfaCode: true }
   | { kind: "mfa-setup"; requiresMfaSetup: true }

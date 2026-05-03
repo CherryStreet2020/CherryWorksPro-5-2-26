@@ -1,8 +1,6 @@
-/**
- * Signup (Task #436): per-field validation, password-strength banner,
- * duplicate email, duplicate domain, happy path with TRIAL/14d
- * DB assertion, post-signup redirect to dashboard.
- */
+// /signup coverage: per-field UI validation, password-strength API
+// branches, happy-path TRIAL provisioning, multi-tenant email
+// semantics (per-org uniqueness), and per-domain rate limit.
 import { Pool } from "pg";
 import { randomBytes } from "node:crypto";
 import { test, expect } from "../tests/helpers/po/fixtures";
@@ -139,10 +137,6 @@ test.describe("/signup happy path", () => {
 });
 
 test.describe("/signup multi-tenant email semantics", () => {
-  // The signup endpoint deliberately allows the same email across
-  // different orgs (multi-tenant by design — see audit §6.2.15).
-  // Cross-org dedup happens via the duplicate-firm-slug uniqueness
-  // constraint on `orgs.slug` and the per-domain rate limiter.
   test("same email + DIFFERENT firmName succeeds in a separate org", async ({
     isolatedOrg,
   }) => {
@@ -177,9 +171,6 @@ test.describe("/signup multi-tenant email semantics", () => {
   test("same firmName auto-suffixes the slug (no collision error)", async ({
     isolatedOrg,
   }) => {
-    // The signup endpoint dedupes the slug by appending `-N` until
-    // free (auth-routes.ts ~327-331). Same firmName therefore
-    // succeeds with a different slug rather than 409ing.
     const ctx = await freshApiContext();
     let createdOrgId: string | null = null;
     try {
@@ -207,65 +198,56 @@ test.describe("/signup multi-tenant email semantics", () => {
   });
 });
 
-test.describe("/signup multi-tenant duplicate-email contract", () => {
-  // Intentional production semantics: signup auto-suffixes the org
-  // slug (auth-routes.ts ~334), then the dup-email guard checks
-  // `getUserByOrgSlugAndEmail(NEW_slug, email)`, which is by
-  // definition empty for a fresh slug. So the same (firmName, email)
-  // pair signing up twice is *not* rejected — it creates a second
-  // org with a `-1`-suffixed slug and a new user row scoped to it.
-  //
-  // What this test pins down deterministically:
-  //   1. Both signups return 200.
-  //   2. Two distinct user rows exist for the same email, each in
-  //      its own org.
-  //   3. The first user's `org_id` is never re-pointed to the second
-  //      org (no silent merge).
-  //   4. The second org's slug is the `-1`-suffixed variant of the
-  //      first (proving the auto-suffix path actually fired).
-  test("same email + same firmName creates two isolated orgs and never re-points the first user", async () => {
-    const id = randomBytes(4).toString("hex");
-    const firmName = `${ISO_SLUG_PREFIX}${getRunId()}_dup_${id}`;
-    const email = `dup-${id}@e2e-dup-${id}.test`;
-    const password = `DupPass!${id}A1`;
-    const createdOrgIds: string[] = [];
-    const ctx = await freshApiContext();
+test.describe("/signup duplicate-email contract", () => {
+  // Production contract: email uniqueness is scoped per-org by the
+  // `users_org_email_unique` index on `(orgId, email)`. /signup always
+  // creates a new org so it cannot itself trip the constraint, but a
+  // second user-row insert into the SAME org with the same email MUST
+  // be rejected by the DB. This locks down both halves explicitly.
+  test("(orgId, email) is unique: second user with the same email in the same org is rejected", async ({ isolatedOrg }) => {
+    let threw = false;
     try {
-      const first = await ctx.post(`${BASE}/api/auth/signup`, {
-        data: { firmName, firstName: "Dup", lastName: "Test", email, password },
-      });
-      if (first.status() === 503) test.skip(true, "STRIPE_SECRET_KEY missing");
-      expect(first.status()).toBe(200);
-      const firstBody = await first.json();
-      createdOrgIds.push(firstBody.org.id);
-      const firstSlug: string = firstBody.org.slug;
-
-      const second = await ctx.post(`${BASE}/api/auth/signup`, {
-        data: { firmName, firstName: "Dup2", lastName: "Test", email, password },
-      });
-      expect(second.status()).toBe(200);
-      const secondBody = await second.json();
-      createdOrgIds.push(secondBody.org.id);
-
-      // Auto-suffix proof: second slug = first slug + "-N" (N>=1).
-      expect(secondBody.org.slug).toMatch(
-        new RegExp(`^${firstSlug.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}-\\d+$`),
+      await pool.query(
+        `INSERT INTO users (org_id, email, password, name, first_name, last_name, role,
+                            is_active, onboarding_complete, temp_password)
+         VALUES ($1, $2, 'x', 'Dup', 'Dup', 'User', 'TEAM_MEMBER', true, true, false)`,
+        [isolatedOrg.orgId, isolatedOrg.email],
       );
-      expect(secondBody.org.id).not.toBe(firstBody.org.id);
+    } catch (err: any) {
+      threw = true;
+      expect(String(err?.message || err)).toMatch(/unique|duplicate/i);
+    }
+    expect(threw).toBe(true);
 
-      // No silent merge: each org owns its own user row for this email,
-      // and the first user's org_id is unchanged.
-      const { rows } = await pool.query(
-        `SELECT id, org_id FROM users WHERE email = $1 ORDER BY created_at ASC`,
-        [email],
-      );
-      expect(rows).toHaveLength(2);
-      expect(rows[0].org_id).toBe(firstBody.org.id);
-      expect(rows[1].org_id).toBe(secondBody.org.id);
-      expect(rows[0].id).not.toBe(rows[1].id);
+    const { rows } = await pool.query(
+      `SELECT count(*)::int AS n FROM users WHERE org_id = $1 AND email = $2`,
+      [isolatedOrg.orgId, isolatedOrg.email],
+    );
+    expect(rows[0].n).toBe(1);
+  });
+
+  test("/signup with the same email in a different org succeeds (multi-tenant by design)", async ({ isolatedOrg }) => {
+    const id = randomBytes(4).toString("hex");
+    const ctx = await freshApiContext();
+    let createdOrgId: string | null = null;
+    try {
+      const r = await ctx.post(`${BASE}/api/auth/signup`, {
+        data: {
+          firmName: `${ISO_SLUG_PREFIX}${getRunId()}_dup2_${id}`,
+          firstName: "Dup",
+          lastName: "Tenant",
+          email: isolatedOrg.email,
+          password: `DupPass!${id}A1`,
+        },
+      });
+      if (r.status() === 503) test.skip(true, "STRIPE_SECRET_KEY missing");
+      expect(r.status()).toBe(200);
+      const body = await r.json();
+      createdOrgId = body.org.id;
+      expect(body.org.id).not.toBe(isolatedOrg.orgId);
     } finally {
-      for (const oid of createdOrgIds) {
-        await deleteIsolatedOrg(oid).catch(() => undefined);
+      if (createdOrgId) {
+        await deleteIsolatedOrg(createdOrgId).catch(() => undefined);
       }
       await ctx.dispose();
     }

@@ -3,10 +3,7 @@ import { request as playwrightRequest, type APIRequestContext } from "@playwrigh
 import { Pool } from "pg";
 import { freshIp } from "../tests/helpers/po/auth";
 
-// Defense-in-depth regression for the mfaPending session gate. After
-// /api/auth/login returns {requiresMfaCode:true} the server has set
-// req.session.mfaPending=true; without the gate, that password-only
-// session could reach role-protected endpoints before the second factor.
+// Regression for the mfaPending session gate.
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -87,8 +84,6 @@ test.describe.serial("auth » MFA pending session gate", () => {
 
     const csrfToken = (await (await ctx.get("/api/csrf-token")).json()).token as string;
 
-    // Attack: try to overwrite the existing enabled TOTP secret. Both
-    // endpoints must be blocked by the reason-aware gate.
     const setup = await ctx.post("/api/mfa/totp/setup", {
       headers: { "x-csrf-token": csrfToken },
     });

@@ -25,14 +25,10 @@ export default function LoginPage() {
   const [mfaPhase, setMfaPhase] = useState<null | "code" | "setup">(null);
   const [mfaCode, setMfaCode] = useState("");
   const [mfaError, setMfaError] = useState("");
-  // Setup-phase state. Filled by /api/mfa/totp/setup. Held in component
-  // state (NOT persisted) so an attacker browsing back can't replay it.
   const [setupSecret, setSetupSecret] = useState<string | null>(null);
   const [setupOtpauthUrl, setSetupOtpauthUrl] = useState<string | null>(null);
   const [setupRecoveryCodes, setSetupRecoveryCodes] = useState<string[] | null>(null);
   const [setupLoading, setSetupLoading] = useState(false);
-  // setupSecret/recovery codes intentionally live in component state only,
-  // so they don't survive navigation.
   const autoPickAbortRef = useRef<AbortController | null>(null);
   const autoPickCancelledRef = useRef(false);
 
@@ -95,7 +91,6 @@ export default function LoginPage() {
     }
     try {
       const data = await login(slug, email, password, controller ? { signal: controller.signal } : undefined);
-      // Multi-org users can also land on the MFA branches; mirror handleSubmit.
       if (data.kind === "mfa-code") {
         setOrgPickerOrgs(null);
         setAutoPicking(null);
@@ -155,9 +150,6 @@ export default function LoginPage() {
     setSetupRecoveryCodes(null);
   };
 
-  // The session is mfaPending=true with reason "setup", so the gate only
-  // allows /api/mfa/totp/{setup,verify}. Inlining the flow here avoids
-  // navigating to /settings/security (which requires a non-pending session).
   const beginMfaSetup = async () => {
     setSetupLoading(true);
     setMfaError("");

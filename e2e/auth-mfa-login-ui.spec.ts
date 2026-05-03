@@ -2,9 +2,6 @@ import { test, expect } from "../tests/helpers/po/fixtures";
 import { Pool } from "pg";
 
 // MFA login UI: TOTP code branch, inline setup branch, cancel.
-// Uses the isolatedOrg fixture (per-test fresh ADMIN with known password).
-// Each test additionally seeds an mfa_enrollments row to drive the
-// MFA-enforced branches of /api/auth/login.
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 

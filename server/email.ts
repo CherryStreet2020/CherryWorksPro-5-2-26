@@ -116,8 +116,6 @@ function requireValidEmail(email: string, fieldName: string): void {
  *
  * Emits a one-line forensic trace on every send for rollback / audit.
  */
-// Test-only transport. Writes a JSON envelope per send to EMAIL_CAPTURE_DIR.
-// pickTransport() refuses to wire this up in production.
 class FileCaptureTransport implements EmailTransport {
   readonly kind = "noop" as const;
   constructor(private readonly dir: string) {}

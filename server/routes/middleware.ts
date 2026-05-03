@@ -340,9 +340,6 @@ const MFA_PENDING_ALWAYS_ALLOWED = new Set<string>([
   "/api/mfa/status",
   "/api/auth/logout",
 ]);
-// Allowing /setup or /verify in a "code"-branch session would let a
-// password-only attacker overwrite the enrolled TOTP secret. Keep these
-// gated by reason, not unioned into the always-allowed set.
 const MFA_PENDING_SETUP_ONLY = new Set<string>([
   "/api/mfa/totp/setup",
   "/api/mfa/totp/verify",
@@ -351,7 +348,6 @@ const MFA_PENDING_CODE_ONLY = new Set<string>([
   "/api/mfa/totp/validate",
 ]);
 
-// Must be called from every authenticated middleware before any role check.
 export function rejectIfMfaPending(req: Request, res: Response): boolean {
   if (!req.session?.mfaPending) return false;
   const path = req.path;

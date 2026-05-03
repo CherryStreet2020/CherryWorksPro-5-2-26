@@ -3,10 +3,8 @@ import { Pool } from "pg";
 import { freshIp } from "../tests/helpers/po/auth";
 import { waitForCapturedEmail, clearCapturedEmails, DEFAULT_CAPTURE_DIR } from "../tests/helpers/email-capture";
 
-// /signup must write WELCOME_EMAIL_DISPATCH_ATTEMPTED + dispatch a real
-// welcome email (captured via EMAIL_CAPTURE_DIR). The isolatedOrg fixture
-// is intentionally NOT used here: the unit under test is the signup
-// transaction itself, which must create its own org+user.
+// /signup writes a WELCOME_EMAIL_DISPATCH_ATTEMPTED audit row and
+// dispatches the welcome email through the EMAIL_CAPTURE_DIR harness.
 
 const HARNESS_DIR = process.env.EMAIL_CAPTURE_DIR || DEFAULT_CAPTURE_DIR;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });

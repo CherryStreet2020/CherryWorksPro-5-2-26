@@ -193,6 +193,17 @@ export async function registerRoutes(
     const now = Date.now();
     if (req.session.lastActivity && (now - req.session.lastActivity) > SESSION_IDLE_TIMEOUT_MS) {
       return req.session.destroy(() => {
+        // HTML navigations (Accept: text/html, non-/api/*) get a 302 to
+        // /login?auth=required so the browser lands on the login page
+        // instead of rendering a raw JSON body. XHR/fetch + /api/* keep
+        // the JSON 401 the SPA already handles.
+        const wantsHtml =
+          req.method === "GET" &&
+          !req.path.startsWith("/api/") &&
+          (req.headers.accept || "").includes("text/html");
+        if (wantsHtml) {
+          return res.redirect(302, "/login?auth=required");
+        }
         res.status(401).json({ message: "Session expired due to inactivity" });
       });
     }

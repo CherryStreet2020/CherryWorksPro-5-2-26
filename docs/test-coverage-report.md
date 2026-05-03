@@ -528,17 +528,16 @@ Audit semantics for the welcome email were also tightened: the single
 `WELCOME_EMAIL_FAILED` (on rejection). The welcome-email spec asserts
 the new ATTEMPTED action.
 
-### Remaining UX gap (filed as follow-up Task #447)
+### Idle-timeout HTML redirect (Round 6)
 
-**Idle-timeout HTML redirect.** The idle-timeout middleware in
-`server/routes.ts` ~188 short-circuits with `res.status(401).json(...)`,
-including for HTML navigations. There is no client-side `<Redirect
-to="/login?auth=required" />` — once the session row is idle, the
-browser receives a raw 401 JSON body. The `auth-session.spec.ts`
-"UX gap" subtest asserts the *current* observable behaviour
-(`page.request.get(/api/auth/me)` → 401 from the browser's own
-cookie context) so any future fix that adds a real redirect will
-flip the test red and force the assertion to be rewritten.
+The idle-timeout middleware in `server/routes.ts` now branches on
+the request shape: HTML navigations (`GET`, non-`/api/*`, `Accept:
+text/html`) get a `302` to `/login?auth=required`, while XHR/fetch
+and `/api/*` keep the JSON `401` the SPA already handles. Covered
+by `auth-session.spec.ts`:
+- API path: an idle session 401s the next `/api/auth/me`.
+- UI path: after expiring `lastActivity` in PG, a `page.goto("/")`
+  lands on `/login?auth=required` without any client-side fallback.
 
 The new password-reset email-capture assertion lives in the existing
 `auth-password-reset.spec.ts` (test "forgot-password dispatches reset
