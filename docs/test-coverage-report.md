@@ -383,3 +383,20 @@ project) exercises every helper in this section at least once:
   `firmProfileComplete` field on `/api/implementation-status`
 - Each third-party stub variant fires at least once
 - `resendStub.build(...)` produces a well-formed inbound payload
+
+## Task #436 — Auth & permissions specs
+
+Built on the Task #435 fixture library. Four new spec files cover the
+auth gaps the audit (§3.1) flagged:
+
+| Spec | Surface |
+| --- | --- |
+| `e2e/auth-login-extras.spec.ts` | Failed-login lockout (6th attempt → 429), multi-org cold pick (`needsOrgPick=true`), MFA prompt visibility (`requiresMfaSetup` / `requiresMfaCode`). |
+| `e2e/auth-account-lifecycle.spec.ts` | Signup happy path with TRIAL+14d window assertion via direct DB read; signup duplicate-domain rate guard (4th in 24h → 429); password-reset round-trip (validate → consume → reuse → garbage). |
+| `e2e/auth-session.spec.ts` | Idle-timeout via direct `session.sess` mutation (no 30-min sleep); change-password happy + current-password mismatch + tempPassword auto-mount UI redirect. |
+| `e2e/role-guards-matrix.spec.ts` | Parametric ADMIN / MANAGER / TEAM_MEMBER matrix across `AdminRoute` and `ManagerRoute` page samples — uses `seedRoleAdminPage` / `seedManagerPage` / `seedTeamMemberPage` from #435. |
+
+All four files import `test` from `tests/helpers/po/fixtures.ts`, so
+they pick up `isolatedOrg`, the per-role sessions, and the AdminSetupGate
+default. They run in the `serial` Playwright project (no anonymous
+addition) because they exercise authenticated mutations.
