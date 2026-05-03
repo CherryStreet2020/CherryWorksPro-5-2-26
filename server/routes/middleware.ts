@@ -347,17 +347,27 @@ const MFA_PENDING_ALLOWLIST = new Set<string>([
   "/api/auth/logout",
 ]);
 
+/**
+ * Returns true if the request was rejected due to a pending MFA challenge.
+ * MUST be invoked at the top of every authenticated middleware
+ * (requireAuth, requireAdmin, requireManagerOrAbove, requirePlatformOperator,
+ * etc.) before any role/permission check, otherwise a password-only session
+ * for an MFA-enforced user could reach role-protected endpoints.
+ */
+export function rejectIfMfaPending(req: Request, res: Response): boolean {
+  if (req.session?.mfaPending && !MFA_PENDING_ALLOWLIST.has(req.path)) {
+    res.status(401).json({ message: "MFA required", mfaPending: true });
+    return true;
+  }
+  return false;
+}
+
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.session.userId) {
     console.warn(`[auth] 401 Unauthorized: no session userId for ${req.method} ${req.path}`);
     return res.status(401).json({ message: "Unauthorized" });
   }
-  // Block protected surface while MFA is still pending. Without this gate,
-  // a password-only login against an MFA-enforced org would yield a usable
-  // session even though the second factor was never satisfied.
-  if (req.session.mfaPending && !MFA_PENDING_ALLOWLIST.has(req.path)) {
-    return res.status(401).json({ message: "MFA required", mfaPending: true });
-  }
+  if (rejectIfMfaPending(req, res)) return;
   try {
     const user = await storage.getUserById(req.session.userId);
     if (!user || !user.isActive) {
@@ -375,6 +385,7 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
     console.warn(`[auth] 401 Unauthorized: no session userId for ${req.method} ${req.path}`);
     return res.status(401).json({ message: "Unauthorized" });
   }
+  if (rejectIfMfaPending(req, res)) return;
   try {
     const user = await storage.getUserById(req.session.userId);
     if (!user) {
@@ -397,6 +408,7 @@ export async function requireManagerOrAbove(req: Request, res: Response, next: N
     console.warn(`[auth] 401 Unauthorized: no session userId for ${req.method} ${req.path}`);
     return res.status(401).json({ message: "Unauthorized" });
   }
+  if (rejectIfMfaPending(req, res)) return;
   try {
     const user = await storage.getUserById(req.session.userId);
     if (!user) {
@@ -465,6 +477,12 @@ export async function requirePlatformOperator(req: Request, res: Response, next:
     return res.status(404).json({ message: "Not found" });
   }
   if (!req.session.userId) {
+    return res.status(404).json({ message: "Not found" });
+  }
+  // Match the existence-hiding contract of this gate: when MFA is pending,
+  // platform-operator surface must look identical to "not found" rather than
+  // leaking the existence of the route via a 401-with-mfaPending body.
+  if (req.session.mfaPending && !MFA_PENDING_ALLOWLIST.has(req.path)) {
     return res.status(404).json({ message: "Not found" });
   }
   const ok = await isPlatformOperatorUserId(req.session.userId);

@@ -464,15 +464,29 @@ leaking from one spec to the next.
 The architect review of the round-6 product additions surfaced three
 must-fix issues; all are addressed in this slice:
 
-1. **MFA bypass via `mfaPending` not enforced.** `requireAuth`
-   (`server/routes/middleware.ts`) and `/api/auth/me`
-   (`server/routes/auth-routes.ts`) now reject with
-   `401 { mfaPending: true }` whenever `req.session.mfaPending === true`,
-   except for a narrow allow-list of MFA finish/abandon endpoints
+1. **MFA bypass via `mfaPending` not enforced.** A new
+   `rejectIfMfaPending(req, res)` helper in
+   `server/routes/middleware.ts` returns `401 { mfaPending: true }`
+   whenever `req.session.mfaPending === true`, except for a narrow
+   allow-list of MFA finish/abandon endpoints
    (`/api/mfa/totp/{setup,verify,validate}`, `/api/mfa/status`,
-   `/api/auth/logout`). `/api/mfa/totp/validate` now clears
-   `req.session.mfaPending` on both TOTP and recovery-code success so
-   the user transitions cleanly into a fully-authenticated session.
+   `/api/auth/logout`). It is invoked at the top of every authenticated
+   middleware — `requireAuth`, `requireAdmin`,
+   `requireManagerOrAbove` (also exported as `requireAdminOnly` /
+   `requireAdminOrManager`) — so role-protected routes cannot be
+   reached with a password-only session. `requirePlatformOperator`
+   responds with `404` (matching its existence-hiding contract) on
+   `mfaPending`. `/api/auth/me` enforces the same check directly.
+   `/api/mfa/totp/validate` clears `req.session.mfaPending` on both
+   TOTP and recovery-code success so the user transitions cleanly
+   into a fully-authenticated session.
+
+   Regression coverage: `e2e/auth-mfa-pending-gate.spec.ts` logs in
+   an MFA-enforced admin, asserts `/api/auth/me`, a `requireAdmin`
+   endpoint (`/api/admin/audit-logs/actions`), and a
+   `requireManagerOrAbove` endpoint (`/api/clients`) all return
+   `401 { mfaPending: true }`, then verifies all three return `200`
+   after `/api/mfa/totp/validate` succeeds with the dev bypass code.
 
 2. **`000000` TOTP dev-bypass exposed in prod.** Both
    `/api/mfa/totp/verify` (initial setup) and `/api/mfa/totp/validate`
@@ -505,6 +519,7 @@ browser receives a raw 401 JSON body. The `auth-session.spec.ts`
 cookie context) so any future fix that adds a real redirect will
 flip the test red and force the assertion to be rewritten.
 
-Test counts: 6 / 10 / 5 / 5 / 168 / 1 / 3 = 198 new specs across
+Test counts: 6 / 10 / 5 / 5 / 168 / 1 / 3 / 1 = 199 new specs across
 auth-login-extras / auth-signup / auth-password-reset / auth-session /
-role-guards-matrix / auth-welcome-email / auth-mfa-login-ui.
+role-guards-matrix / auth-welcome-email / auth-mfa-login-ui /
+auth-mfa-pending-gate.
