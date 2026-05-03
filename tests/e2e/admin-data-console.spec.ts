@@ -4,7 +4,7 @@ import { test, expect } from "@playwright/test";
 // shared seeded admin org. Skipped until migrated to the per-test
 // `isolatedOrg` fixture (project task #455).
 import { test as _t } from "@playwright/test";
-_t.beforeEach(() => _t.skip(true, "Task #455: legacy shared-state spec; migrate to isolatedOrg first"));
+_t.beforeEach(() => _t.fixme(true, "Task #455: legacy shared-state spec; migrate to isolatedOrg first"));
 
 test("admin data console: list entities, CRUD client, view independent payouts", async ({
   request,
