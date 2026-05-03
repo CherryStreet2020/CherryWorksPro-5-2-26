@@ -20,16 +20,18 @@ function tag(): string {
   return randomBytes(4).toString("hex");
 }
 
-export async function postJson(iso: Iso, path: string, data: unknown = {}) {
+export type JsonBody = Record<string, unknown> | unknown[];
+
+export async function postJson(iso: Iso, path: string, data: JsonBody = {}) {
   return iso.request.post(path, {
-    data: data as any,
+    data,
     headers: { "X-CSRF-Token": iso.csrf },
   });
 }
 
-export async function patchJson(iso: Iso, path: string, data: unknown) {
+export async function patchJson(iso: Iso, path: string, data: JsonBody) {
   return iso.request.patch(path, {
-    data: data as any,
+    data,
     headers: { "X-CSRF-Token": iso.csrf },
   });
 }

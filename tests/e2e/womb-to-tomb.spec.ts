@@ -11,6 +11,17 @@
  * in `afterAll`. Every phase runs against that one tenant in the
  * sequence the lifecycle demands. `tests-e2e` is `workers: 1,
  * fullyParallel: false`, so serial ordering is honoured.
+ *
+ * EXCEPTION — fixture choice (Task #460 review note):
+ * This spec deliberately does NOT use the per-test `isolatedOrg`
+ * fixture from `tests/helpers/po/fixtures.ts`. The walk is a single
+ * 14-phase business lifecycle (client → project → time → invoice →
+ * payment → reports → ...); each phase consumes data created by an
+ * earlier phase. A per-test fixture would mint 50+ fresh orgs and
+ * shatter the lifecycle. Instead we replicate the fixture's contract
+ * inline (`createIsolatedOrg` + `buildIsolatedRequest` +
+ * `deleteIsolatedOrg`) at file scope. See `docs/test-coverage-report.md`
+ * §"Task #460 — legacy spec migration" for the documented exception.
  */
 import { test as base, expect, type Page, type APIRequestContext } from "@playwright/test";
 import {

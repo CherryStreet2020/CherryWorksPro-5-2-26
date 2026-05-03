@@ -722,3 +722,80 @@ isolation migration in **#455**.
   `loginApi`/`loginViaPage` helpers now handle the multi-org cold
   pick transparently, so this is cosmetic rather than blocking.
   Tracked: **#457**.
+
+---
+
+## Task #460 — legacy spec migration (final status)
+
+All 20 specs under `tests/e2e/` are now migrated off the shared seed
+admin org and onto per-test isolation. The blanket
+`_t.beforeEach(() => _t.fixme(true, "Task #455…"))` guard documented
+above has been removed file-by-file as each spec was rewritten.
+
+### Fixture adoption
+
+| Spec | Adoption | Notes |
+| --- | --- | --- |
+| `admin-data-console.spec.ts` | `isolatedOrg` fixture | Direct. |
+| `approvals-crud.spec.ts` | `isolatedOrg` fixture | Direct. |
+| `client-crud.spec.ts` | `isolatedOrg` fixture | Direct. |
+| `client-portal.spec.ts` | `isolatedOrg` fixture | Direct. |
+| `email-resend.spec.ts` | `isolatedOrg` fixture | Direct. |
+| `estimates.spec.ts` | `isolatedOrg` fixture | Direct. |
+| `getting-started-theme.spec.ts` | `isolatedOrg` fixture | Direct. |
+| `import-wizard.spec.ts` | `isolatedOrg` fixture | Direct. |
+| `invoice-crud.spec.ts` | `isolatedOrg` fixture | Direct. |
+| `mobile.spec.ts` | `isolatedOrg` fixture | Direct. |
+| `payment-crud.spec.ts` | `isolatedOrg` fixture | Direct. |
+| `profitability-wip-1099.spec.ts` | `isolatedOrg` fixture | Direct. |
+| `project-crud.spec.ts` | `isolatedOrg` fixture | Direct. |
+| `public-invoice.spec.ts` | `isolatedOrg` fixture | Direct. |
+| `smoke.spec.ts` | `isolatedOrg` fixture | Direct. |
+| `stripe-webhook.spec.ts` | `isolatedOrg` fixture | Direct. |
+| `team-member-flow.spec.ts` | `isolatedOrg` fixture | Direct. |
+| `time-crud.spec.ts` | `isolatedOrg` fixture | Direct. |
+| `timesheet.spec.ts` | `isolatedOrg` fixture | Direct. |
+| `womb-to-tomb.spec.ts` | **Documented exception** — file-scope `createIsolatedOrg` + `buildIsolatedRequest` in `beforeAll`, `deleteIsolatedOrg` in `afterAll`. | The spec is a single 14-phase business lifecycle that requires shared state across `test()` blocks; a per-test fixture would mint 50+ orgs and break the lifecycle. The contract (per-spec org isolation, deterministic teardown) is preserved. |
+
+### Retained `test.fixme` markers (UI-drift, not regressions)
+
+These assertions referenced testids/copy that have since moved due
+to product UI restructures. They are tracked under follow-up
+**#463 — Re-author the e2e checks that were paused due to UI changes**.
+
+| Spec | Test | Reason |
+| --- | --- | --- |
+| `womb-to-tomb.spec.ts` | 1.4 quick-action | `button-quick-log-time` moved to team-member dashboard. |
+| `womb-to-tomb.spec.ts` | 4.4 entries | Time entries listing testids moved. |
+| `womb-to-tomb.spec.ts` | 6.8 status tabs | Invoice status tabs restructured. |
+| `womb-to-tomb.spec.ts` | 7.1 payment label | Payment status label copy changed. |
+| `womb-to-tomb.spec.ts` | 9.2 reports tabs | Reports `TabsTrigger` lacks data-testid. |
+| `womb-to-tomb.spec.ts` | 11.1 settings | Settings page restructured into nested tabs. |
+| `team-member-flow.spec.ts` | tests 2 & 3 | Sidebar refactor + 403 page vs redirect. |
+| `stripe-webhook.spec.ts` | test 1 (env-gated) | Pre-existing pool-starvation when run alongside marketing scheduler — tracked under follow-up **#462** (rate-limit / scheduler decoupling), not introduced by #460. |
+
+### Phase 14 page-load smoke hardening
+
+`tests/e2e/womb-to-tomb.spec.ts` Phase 14 iterates 12 top-level
+authenticated routes. The current Express stack rate-limits the
+React-Query fan-out on some pages (`/time-tracking`, `/reports`,
+`/dashboard`) → HTTP 429 → infinite client retries → indefinite hang.
+To prevent one flaky page from stalling the whole suite, each Phase 14
+test now:
+
+1. Caps itself at `test.setTimeout(25000)`.
+2. Navigates with `waitUntil: "commit", timeout: 10000` (no silent
+   catch — a navigation failure now fails the test).
+3. Asserts `new URL(page.url()).pathname === p.path` so a soft
+   navigation failure cannot false-pass on the previous page.
+
+The 429 storm itself is a product-side issue tracked under
+follow-up **#462 — Stop authenticated pages from getting throttled
+and hanging**.
+
+### Out-of-scope follow-ups created
+
+- **#462** — backend rate-limit / React-Query retry policy fix.
+- **#463** — re-author the retained `test.fixme` UI-drift assertions.
+- **#464** — three consecutive clean full-suite runs (Task #461
+  stability gate).
