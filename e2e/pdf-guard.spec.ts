@@ -14,8 +14,8 @@ test.afterAll(async () => {
   await closeRevPool();
 });
 
-test.describe("Invoice PDF generation guard", () => {
-  test("PDF for invoice without line items returns 400 with explicit message", async ({
+test.describe("PDF generation guards (invoices + estimates)", () => {
+  test("Invoice PDF without line items returns 400 with explicit message", async ({
     isolatedOrg,
   }) => {
     const clientId = await insertClient(isolatedOrg.orgId);
@@ -30,7 +30,7 @@ test.describe("Invoice PDF generation guard", () => {
     expect((await r.json()).message).toMatch(/no line items/i);
   });
 
-  test("PDF for invoice with line items returns 200 application/pdf", async ({
+  test("Invoice PDF with line items returns application/pdf with %PDF magic header", async ({
     isolatedOrg,
   }) => {
     const clientId = await insertClient(isolatedOrg.orgId);
@@ -43,8 +43,33 @@ test.describe("Invoice PDF generation guard", () => {
     const r = await isolatedOrg.request.get(`/api/invoices/${invoiceId}/pdf`);
     expect(r.status(), await r.text()).toBe(200);
     expect(r.headers()["content-type"]).toMatch(/application\/pdf/);
+    expect(r.headers()["content-disposition"]).toMatch(/\.pdf/);
     const body = await r.body();
-    // PDF magic header `%PDF`
     expect(body.subarray(0, 4).toString("ascii")).toBe("%PDF");
+    expect(body.length).toBeGreaterThan(500);
+  });
+
+  test("Estimate PDF returns application/pdf with %PDF magic header", async ({
+    isolatedOrg,
+  }) => {
+    const clientId = await insertClient(isolatedOrg.orgId);
+    const created = await isolatedOrg.request.post("/api/estimates", {
+      headers: { "x-csrf-token": isolatedOrg.csrf },
+      data: {
+        clientId,
+        issuedDate: new Date().toISOString().slice(0, 10),
+        lines: [{ description: "Pdf line", quantity: 2, unitRate: 75 }],
+      },
+    });
+    expect(created.status(), await created.text()).toBe(201);
+    const est = await created.json();
+
+    const r = await isolatedOrg.request.get(`/api/estimates/${est.id}/pdf`);
+    expect(r.status(), await r.text()).toBe(200);
+    expect(r.headers()["content-type"]).toMatch(/application\/pdf/);
+    expect(r.headers()["content-disposition"]).toMatch(/\.pdf/);
+    const body = await r.body();
+    expect(body.subarray(0, 4).toString("ascii")).toBe("%PDF");
+    expect(body.length).toBeGreaterThan(500);
   });
 });

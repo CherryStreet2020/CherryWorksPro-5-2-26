@@ -2,10 +2,13 @@ import { test, expect } from "../tests/helpers/po/fixtures";
 import {
   closeRevPool,
   createTeamMember,
-  revPool,
+  ensurePayoutDedupIndex,
   sweepOrgRevenue,
 } from "./_revenue-helpers";
 
+test.beforeAll(async () => {
+  await ensurePayoutDedupIndex();
+});
 test.afterEach(async ({ isolatedOrg }) => {
   await sweepOrgRevenue(isolatedOrg.orgId);
 });
@@ -14,7 +17,7 @@ test.afterAll(async () => {
 });
 
 test.describe("Payouts — admin surface", () => {
-  test("POST creates a payout and surfaces 23505 dedup as 409 when the constraint catches it", async ({
+  test("POST creates a payout; duplicate (same TM/date/amount/method) returns 409", async ({
     isolatedOrg,
   }) => {
     const tm = await createTeamMember(isolatedOrg.orgId);
@@ -36,24 +39,37 @@ test.describe("Payouts — admin surface", () => {
     expect(payout.status).toBe("COMPLETED");
     expect(Number(payout.amount)).toBeCloseTo(125.5, 2);
 
-    // The route catches Postgres 23505 on `uq_payout_dedup` and returns
-    // 409. The constraint isn't installed in every environment, so we
-    // only enforce the contract when it exists; otherwise duplicates
-    // are allowed and the test simply documents that.
-    // Reuse the shared helper pool — never spin up a per-test Pool that
-    // we'd have to remember to .end(), or it leaks connections.
-    const idx = await revPool().query<{ exists: boolean }>(
-      `SELECT EXISTS(
-         SELECT 1 FROM pg_indexes WHERE indexname = 'uq_payout_dedup'
-       ) AS exists`,
-    );
-    const dedupInstalled = idx.rows[0]?.exists === true;
-
     const dup = await isolatedOrg.request.post("/api/payouts", {
       headers: { "x-csrf-token": isolatedOrg.csrf },
       data: body,
     });
-    expect(dup.status()).toBe(dedupInstalled ? 409 : 200);
+    expect(dup.status()).toBe(409);
+    expect((await dup.json()).message).toMatch(/already exists/i);
+  });
+
+  test("Payouts listing returns only the iso org's payouts", async ({
+    isolatedOrg,
+  }) => {
+    const tm = await createTeamMember(isolatedOrg.orgId);
+    await isolatedOrg.request.post("/api/payouts", {
+      headers: { "x-csrf-token": isolatedOrg.csrf },
+      data: {
+        teamMemberId: tm,
+        amount: 42,
+        payoutDate: new Date().toISOString().slice(0, 10),
+        paymentMethod: "ACH",
+        status: "COMPLETED",
+      },
+    });
+
+    const list = await isolatedOrg.request.get("/api/payouts");
+    expect(list.status()).toBe(200);
+    const payouts = await list.json();
+    expect(Array.isArray(payouts)).toBe(true);
+    expect(payouts.length).toBeGreaterThanOrEqual(1);
+    expect(
+      payouts.every((p: { teamMemberId: string }) => p.teamMemberId === tm),
+    ).toBe(true);
   });
 
   test("/execute on COMPLETED payout is rejected (only PENDING)", async ({

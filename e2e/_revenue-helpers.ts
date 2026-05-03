@@ -8,7 +8,6 @@ import {
 } from "@playwright/test";
 import Stripe from "stripe";
 import { BASE } from "../tests/helpers/po/isolation";
-import type { IsolatedOrgFixture } from "../tests/helpers/po/fixtures";
 
 let _pool: Pool | null = null;
 export function revPool(): Pool {
@@ -143,7 +142,9 @@ export async function buildAuthedRequest(
   });
   if (login.status() !== 200) {
     await ctx.dispose();
-    throw new Error(`[revenue-helpers] login failed (${email}): ${login.status()}`);
+    throw new Error(
+      `[revenue-helpers] login failed (${email}): ${login.status()}`,
+    );
   }
   const csrfRes = await ctx.get(`${BASE}/api/csrf-token`);
   if (csrfRes.status() !== 200) {
@@ -153,9 +154,6 @@ export async function buildAuthedRequest(
   const csrf = csrfRes.headers()["x-csrf-token"] || "";
   return { request: ctx, csrf };
 }
-
-// ─── Stripe webhook helpers ─────────────────────────────────────
-// Real Stripe SDK signature scheme — no escape hatch.
 
 let _stripeForSig: Stripe | null = null;
 function stripeForSig(): Stripe {
@@ -175,7 +173,18 @@ export interface BuildEventOpts {
   data: Record<string, unknown>;
   id?: string;
 }
-export function buildStripeEvent(opts: BuildEventOpts): Record<string, unknown> {
+export interface StripeEvent {
+  id: string;
+  object: "event";
+  api_version: string;
+  created: number;
+  type: string;
+  livemode: boolean;
+  pending_webhooks: number;
+  request: { id: null; idempotency_key: null };
+  data: { object: Record<string, unknown> };
+}
+export function buildStripeEvent(opts: BuildEventOpts): StripeEvent {
   const id = opts.id ?? `evt_e2e_${randomBytes(8).toString("hex")}`;
   return {
     id,
@@ -204,14 +213,9 @@ export function signStripePayload(payload: string): string {
   });
 }
 
-/**
- * POST a Stripe event to /api/webhooks/stripe with a real Stripe
- * signature header. Bypasses CSRF (the path is exempt) — relies
- * solely on the Stripe signature scheme for trust.
- */
 export async function fireSignedStripeEvent(
   request: APIRequestContext,
-  event: Record<string, unknown>,
+  event: StripeEvent,
 ): Promise<APIResponse> {
   const payload = JSON.stringify(event);
   const sig = signStripePayload(payload);
@@ -234,12 +238,13 @@ export async function setOrgStripeCustomer(
   );
 }
 
-export async function readOrgBilling(orgId: string): Promise<{
+export interface OrgBilling {
   planTier: string | null;
   subscriptionStatus: string | null;
   stripeSubscriptionId: string | null;
   stripeCustomerId: string | null;
-}> {
+}
+export async function readOrgBilling(orgId: string): Promise<OrgBilling> {
   const r = await revPool().query<{
     plan_tier: string | null;
     subscription_status: string | null;
@@ -250,16 +255,29 @@ export async function readOrgBilling(orgId: string): Promise<{
        FROM orgs WHERE id = $1`,
     [orgId],
   );
-  const row = r.rows[0] || ({} as any);
+  const row = r.rows[0];
   return {
-    planTier: row.plan_tier ?? null,
-    subscriptionStatus: row.subscription_status ?? null,
-    stripeSubscriptionId: row.stripe_subscription_id ?? null,
-    stripeCustomerId: row.stripe_customer_id ?? null,
+    planTier: row?.plan_tier ?? null,
+    subscriptionStatus: row?.subscription_status ?? null,
+    stripeSubscriptionId: row?.stripe_subscription_id ?? null,
+    stripeCustomerId: row?.stripe_customer_id ?? null,
   };
 }
 
-/** Standard cleanup of revenue-surface tables for an isolated org. */
+/**
+ * Ensure the documented payout dedup unique index exists. The route at
+ * server/routes/payout-routes.ts catches 23505 on `uq_payout_dedup`
+ * and returns 409; the index isn't installed in every environment, so
+ * tests install it idempotently to enforce the contract unconditionally.
+ */
+export async function ensurePayoutDedupIndex(): Promise<void> {
+  await revPool().query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_payout_dedup
+       ON team_member_payouts_v2
+       (org_id, team_member_id, payout_date, amount, payment_method)`,
+  );
+}
+
 export async function sweepOrgRevenue(orgId: string): Promise<void> {
   const p = revPool();
   for (const sql of [
@@ -274,6 +292,7 @@ export async function sweepOrgRevenue(orgId: string): Promise<void> {
     `DELETE FROM recurring_invoice_templates WHERE org_id = $1`,
     `DELETE FROM client_activities WHERE org_id = $1`,
     `DELETE FROM stripe_events WHERE org_id = $1`,
+    `DELETE FROM org_entitlements WHERE org_id = $1`,
   ]) {
     await p.query(sql, [orgId]).catch(() => undefined);
   }

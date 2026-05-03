@@ -121,7 +121,6 @@ test.describe("Payments — refund $500 ADMIN gate + provider lock", () => {
     );
     const payment = await recordPayment(isolatedOrg, invoiceId, 100);
 
-    // Flip provider to STRIPE directly — no API allows this.
     await revPool().query(
       `UPDATE payments SET provider = 'STRIPE' WHERE id = $1 AND org_id = $2`,
       [payment.id, isolatedOrg.orgId],
@@ -137,4 +136,5 @@ test.describe("Payments — refund $500 ADMIN gate + provider lock", () => {
     expect(r.status()).toBe(400);
     expect((await r.json()).message).toMatch(/Stripe/i);
   });
+
 });

@@ -6,9 +6,14 @@ import {
   fireSignedStripeEvent,
   readOrgBilling,
   setOrgStripeCustomer,
-  signStripePayload,
   sweepOrgRevenue,
 } from "./_revenue-helpers";
+
+interface WebhookAck {
+  received?: boolean;
+  duplicate?: boolean;
+  routed?: string;
+}
 
 test.afterEach(async ({ isolatedOrg }) => {
   await sweepOrgRevenue(isolatedOrg.orgId);
@@ -18,7 +23,7 @@ test.afterAll(async () => {
 });
 
 test.describe("Stripe subscription lifecycle (checkout → past_due → canceled)", () => {
-  test("rejects unsigned (and bad-signature) webhooks with 400", async ({
+  test("rejects unsigned and bad-signature webhooks with 400", async ({
     isolatedOrg,
   }) => {
     const event = buildStripeEvent({
@@ -42,16 +47,14 @@ test.describe("Stripe subscription lifecycle (checkout → past_due → canceled
     expect(badSig.status()).toBe(400);
   });
 
-  test("checkout.session.completed → trialing; sub.updated past_due preserves planTier; sub.deleted → EXPIRED", async ({
+  test("checkout → trialing; past_due preserves planTier; deleted → EXPIRED + canceled", async ({
     isolatedOrg,
   }) => {
     const customerId = `cus_e2e_${randomBytes(6).toString("hex")}`;
     const subId = `sub_e2e_${randomBytes(6).toString("hex")}`;
 
-    // Bind customer → org so customer-keyed webhooks can resolve the org.
     await setOrgStripeCustomer(isolatedOrg.orgId, customerId);
 
-    // 1) checkout.session.completed (subscription mode, metadata.orgId)
     const checkoutEvent = buildStripeEvent({
       type: "checkout.session.completed",
       data: {
@@ -60,8 +63,6 @@ test.describe("Stripe subscription lifecycle (checkout → past_due → canceled
         mode: "subscription",
         customer: customerId,
         subscription: subId,
-        // payment_method_collection deliberately omitted to skip the
-        // fingerprint-reuse Stripe API call.
         metadata: { orgId: isolatedOrg.orgId, planTier: "PROFESSIONAL" },
       },
     });
@@ -73,12 +74,11 @@ test.describe("Stripe subscription lifecycle (checkout → past_due → canceled
     expect(billing.planTier).toBe("PROFESSIONAL");
     expect(billing.stripeSubscriptionId).toBe(subId);
 
-    // Replay the same event id → handler reports duplicate.
     const replay = await fireSignedStripeEvent(isolatedOrg.request, checkoutEvent);
     expect(replay.status()).toBe(200);
-    expect(((await replay.json()) as any).duplicate).toBe(true);
+    const replayBody = (await replay.json()) as WebhookAck;
+    expect(replayBody.duplicate).toBe(true);
 
-    // 2) customer.subscription.updated → past_due
     const pastDueEvent = buildStripeEvent({
       type: "customer.subscription.updated",
       data: {
@@ -94,10 +94,8 @@ test.describe("Stripe subscription lifecycle (checkout → past_due → canceled
 
     billing = await readOrgBilling(isolatedOrg.orgId);
     expect(billing.subscriptionStatus).toBe("past_due");
-    // Tier preserved across past_due (grace window — billing is not yet revoked).
     expect(billing.planTier).toBe("PROFESSIONAL");
 
-    // 3) customer.subscription.deleted → EXPIRED + canceled
     const deletedEvent = buildStripeEvent({
       type: "customer.subscription.deleted",
       data: {
@@ -134,10 +132,7 @@ test.describe("Stripe subscription lifecycle (checkout → past_due → canceled
     const r = await fireSignedStripeEvent(isolatedOrg.request, event);
     expect(r.status()).toBe(200);
     const after = await readOrgBilling(isolatedOrg.orgId);
-    // No customer→org match exists, so iso org is untouched.
     expect(after.subscriptionStatus).toBe(before.subscriptionStatus);
     expect(after.planTier).toBe(before.planTier);
-    // Sanity: the signing path itself is exercised.
-    expect(typeof signStripePayload(JSON.stringify(event))).toBe("string");
   });
 });

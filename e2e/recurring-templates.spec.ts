@@ -59,10 +59,6 @@ test.describe("Recurring invoice templates", () => {
     const clientId = await insertClient(isolatedOrg.orgId);
     const tmplId = await createTemplate(isolatedOrg, clientId);
 
-    // Acquire the same advisory lock the route uses on a dedicated
-    // connection. While we hold it, the route's pg_try_advisory_lock
-    // call must return false → 409. This deterministically exercises
-    // the dedup branch without relying on HTTP-level race timing.
     const holder = await revPool().connect();
     let acquired = false;
     try {
@@ -80,9 +76,6 @@ test.describe("Recurring invoice templates", () => {
       expect(blocked.status()).toBe(409);
       expect((await blocked.json()).message).toMatch(/already in progress/i);
     } finally {
-      // Release the session-level lock on the same connection no matter
-      // what — otherwise a thrown assertion would leave the lock held
-      // and cascade 409s into later tests.
       if (acquired) {
         await holder
           .query("SELECT pg_advisory_unlock(200001, hashtext($1))", [tmplId])
@@ -91,7 +84,6 @@ test.describe("Recurring invoice templates", () => {
       holder.release();
     }
 
-    // After release, generation succeeds again.
     const ok = await isolatedOrg.request.post(
       `/api/recurring-templates/${tmplId}/generate`,
       { headers: { "x-csrf-token": isolatedOrg.csrf } },
