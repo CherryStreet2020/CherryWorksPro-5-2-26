@@ -16,6 +16,19 @@ test.afterAll(async () => {
   await pool.end().catch(() => undefined);
 });
 
+// mfa_enrollments has user_id but no org_id — invisible to the
+// isolation sweep. Drop the row before the fixture teardown runs
+// so deleting the user doesn't trip an FK violation.
+test.afterEach(async ({ isolatedOrg }) => {
+  if (isolatedOrg?.userId) {
+    await pool
+      .query(`DELETE FROM mfa_enrollments WHERE user_id = $1`, [
+        isolatedOrg.userId,
+      ])
+      .catch(() => undefined);
+  }
+});
+
 test.describe("Login — lockout", () => {
   test("6th wrong-password attempt for the same email returns 429", async ({
     isolatedOrg,
@@ -128,16 +141,60 @@ test.describe("Login — multi-org cold pick", () => {
 });
 
 test.describe("Login — MFA prompt", () => {
-  // BUG (filed as follow-up Task #446): the server's MFA-enforcement
-  // branch (server/routes/auth-routes.ts ~76) gates on lowercase
-  // "admin"/"owner" string literals, but the user_role enum only
-  // permits ADMIN/MANAGER/TEAM_MEMBER. As written, the requiresMfaSetup
-  // and requiresMfaCode response paths are unreachable for any seeded
-  // production user, so neither the API nor the (also missing) UI
-  // handler in client/src/pages/login.tsx fires. These tests are
-  // fixme-d until the server fix lands and a `mfa-prompt` UI is added.
-  test.fixme("API: requiresMfaSetup when org enforces MFA but user not enrolled", async () => {});
-  test.fixme("API: requiresMfaCode when admin is enrolled and enforced", async () => {});
+  // The MFA-enforcement branch in server/routes/auth-routes.ts
+  // historically compared against lowercase "admin"/"owner" literals
+  // while the user_role enum is upper-case (ADMIN/MANAGER/TEAM_MEMBER),
+  // making the path unreachable. Fixed in this commit by lowercasing
+  // the comparison; these tests now exercise the live behavior.
+  test("API: requiresMfaSetup when org enforces MFA but user not enrolled", async ({
+    isolatedOrg,
+  }) => {
+    await pool.query(
+      `INSERT INTO mfa_enrollments (user_id, org_id, secret, method, enabled, enforce_for_admins)
+       VALUES ($1, $2, '', 'totp', false, true)
+       ON CONFLICT (user_id) DO UPDATE SET enforce_for_admins = true, enabled = false, secret = ''`,
+      [isolatedOrg.userId, isolatedOrg.orgId],
+    );
+    const ctx = await freshApiContext();
+    try {
+      const r = await ctx.post(`${BASE}/api/auth/login`, {
+        data: { email: isolatedOrg.email, password: isolatedOrg.password },
+      });
+      expect(r.status()).toBe(200);
+      expect((await r.json()).requiresMfaSetup).toBe(true);
+    } finally {
+      await ctx.dispose();
+    }
+  });
+
+  test("API: requiresMfaCode when admin is enrolled and enforced", async ({
+    isolatedOrg,
+  }) => {
+    await pool.query(
+      `INSERT INTO mfa_enrollments (user_id, org_id, secret, method, enabled, enforce_for_admins)
+       VALUES ($1, $2, 'JBSWY3DPEHPK3PXP', 'totp', true, true)
+       ON CONFLICT (user_id) DO UPDATE SET enforce_for_admins = true, enabled = true, secret = 'JBSWY3DPEHPK3PXP'`,
+      [isolatedOrg.userId, isolatedOrg.orgId],
+    );
+    const ctx = await freshApiContext();
+    try {
+      const r = await ctx.post(`${BASE}/api/auth/login`, {
+        data: { email: isolatedOrg.email, password: isolatedOrg.password },
+      });
+      expect(r.status()).toBe(200);
+      const body = await r.json();
+      expect(body.requiresMfaCode).toBe(true);
+      expect(body.requiresMfaSetup).toBeUndefined();
+    } finally {
+      await ctx.dispose();
+    }
+  });
+
+  // FOLLOW-UP (filed as Task #446): client/src/pages/login.tsx does
+  // not surface a `data-testid="mfa-prompt"` UI for the
+  // requiresMfaCode/requiresMfaSetup responses (the fetch handler
+  // catches the response shape but only reads needsOrgPick). Until
+  // a Login MFA panel ships, the UI assertion stays fixme-d.
   test.fixme("UI: login form surfaces an MFA prompt when API returns requiresMfaCode", async () => {});
 });
 

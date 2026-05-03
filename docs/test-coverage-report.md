@@ -391,11 +391,11 @@ auth gaps the audit (§3.1, §6.1.3, §7) flagged:
 
 | Spec | Surface |
 | --- | --- |
-| `e2e/auth-login-extras.spec.ts` | Failed-login lockout (6th attempt → 429); multi-org cold pick **API + UI** (picker renders both orgs, click signs in to chosen org); MFA prompt **API** for `requiresMfaSetup` and `requiresMfaCode` (the test extends `user_role` enum with `'admin'` because the server's MFA branch gates on lowercase, see `auth-routes.ts` ~76); forgot-password link round-trip from `/login` (link → form → success state). |
-| `e2e/auth-signup.spec.ts` | UI submit-disabled gating across every required field + every password-strength rule; per-rule API password-strength assertions (8+/upper/lower/digit); happy path creates TRIAL org with 14-day window verified by direct PG read + post-signup browser lands authenticated; multi-tenant email semantics (same email in second org succeeds; same firmName auto-suffixes the slug); duplicate-domain rate guard (4th signup on the same email-domain in 24h → 429). |
-| `e2e/auth-password-reset.spec.ts` | `forgot-password` issues a `password_reset_tokens` row; per-IP `forgotPasswordLimiter` (6th call → 429); reset token round-trip via DB-injected token (validate → consume → re-POST rejected → re-login works); expired token rejected; garbage token rejected. |
-| `e2e/auth-session.spec.ts` | Idle-timeout via direct `session.sess` mutation (no 30-min sleep); change-password happy (new password authenticates, old fails); current-password mismatch returns 401 and original still works; tempPassword auto-mount UI redirect. |
-| `e2e/role-guards-matrix.spec.ts` | Parametric ADMIN / MANAGER / TEAM_MEMBER matrix across **every** `AdminRoute` (10 routes) and `ManagerRoute` (27 routes) usage in `App.tsx`, plus a representative slice of `LazyRoute` (auth-only, no role gate, 8 routes). Success uses `expectAccessGranted` which asserts both the absence of any 403/404/500 error component **and** that the URL didn't silently redirect away — guards `text-error-title` is shared by all three error pages. Uses `seedRoleAdminPage` / `seedManagerPage` / `seedTeamMemberPage` from #435. |
+| `e2e/auth-login-extras.spec.ts` | Failed-login lockout (6th attempt → 429); multi-org cold pick **API + UI** (picker renders both orgs, click signs in to chosen org); MFA prompt **API** for `requiresMfaSetup` and `requiresMfaCode` against a real `ADMIN` seed user — these activated after fixing a production case-bug in `server/routes/auth-routes.ts` ~98 (`String(user.role).toLowerCase() === "admin"`); forgot-password link round-trip from `/login` (link → form → success state). |
+| `e2e/auth-signup.spec.ts` | UI submit-disabled gating across every required field + every password-strength rule; per-rule API password-strength assertions (8+/upper/lower/digit); happy path creates TRIAL org with 14-day window verified by direct PG read + post-signup browser lands authenticated; multi-tenant email semantics (same email in second org succeeds; same firmName auto-suffixes the slug); **in-org** duplicate-email signup is rejected and the original user's `org_id` stays canonical (no silent merge); duplicate-domain rate guard (4th signup on the same email-domain in 24h → 429). |
+| `e2e/auth-password-reset.spec.ts` | `forgot-password` issues a `password_reset_tokens` row **and** writes a `PASSWORD_RESET_REQUESTED` audit log row (the side-effect proxy for the `sendPasswordResetEmail()` call, since the Resend transport is server-side and opaque to e2e); per-IP `forgotPasswordLimiter` (6th call → 429); reset token round-trip via DB-injected token (validate → consume → re-POST rejected → re-login works); expired token rejected; garbage token rejected. |
+| `e2e/auth-session.spec.ts` | Idle-timeout API path via direct `session.sess` mutation (no 30-min sleep) — the next API hit 401s; idle-timeout **browser** path uses `page.request` so the assertion carries the same `connect.sid` the browser holds (audit subtest, see "UX gap" below); change-password happy (new password authenticates, old fails); current-password mismatch returns 401 and original still works; tempPassword auto-mount UI redirect. |
+| `e2e/role-guards-matrix.spec.ts` | Parametric ADMIN / MANAGER / TEAM_MEMBER matrix across **every** `AdminRoute` (10 routes), **every** `ManagerRoute` (27 routes), and **every** `LazyRoute` auth-only route (16 routes from `App.tsx` 277–304) — 53 routes × 3 roles = 159 cases. Success uses `expectAccessGranted` which asserts both the absence of any 403/404/500 error component **and** that the URL didn't silently redirect away — `text-error-title` is shared by all three error pages. Uses `seedRoleAdminPage` / `seedManagerPage` / `seedTeamMemberPage` from #435. |
 
 All five files import `test` from `tests/helpers/po/fixtures.ts`, so
 they pick up `isolatedOrg`, the per-role sessions, and the AdminSetupGate
@@ -416,16 +416,35 @@ the full auth-suite (login-extras + signup + password-reset +
 session) run in a **single** workflow without per-IP budgets
 leaking from one spec to the next.
 
-### Known fixme'd specs (filed as follow-up Task #446)
+### Production bugs surfaced and fixed in this slice
 
-The MFA-prompt path in `server/routes/auth-routes.ts` (line ~76)
-gates on lowercase `"admin"`/`"owner"` string literals, but the
-`user_role` Postgres enum only allows `ADMIN`/`MANAGER`/`TEAM_MEMBER`.
-As written, neither `requiresMfaSetup` nor `requiresMfaCode` can
-ever be returned for a real seeded user, and `client/src/pages/login.tsx`
-has no UI handler for either response. The three MFA tests in
-`auth-login-extras.spec.ts` are `test.fixme()`-d until the
-server lowercases its role check (or the enum is migrated) and
-the login page learns to render an MFA prompt.
+1. **MFA role gate.** `server/routes/auth-routes.ts` ~98 originally
+   compared `user.role === "admin" || "owner"` against the `user_role`
+   Postgres enum, which only emits `ADMIN`/`MANAGER`/`TEAM_MEMBER`. As
+   written, **no real user could ever be challenged for MFA**, even
+   with `mfa_enrollments.enforce_for_admins = true`. Fixed by
+   normalising via `String(user.role).toLowerCase() === "admin"` (and
+   `"owner"`). The two `auth-login-extras` MFA tests now run
+   green against a real `ADMIN` seed user.
 
-Test counts: 6 / 9 / 5 / 5 / 135 = 160 new specs.
+### Known UX gaps (filed as follow-up Task #446 / #447)
+
+1. **Login MFA UI.** The MFA-prompt UI test in
+   `auth-login-extras.spec.ts` remains `test.fixme()`-d because
+   `client/src/pages/login.tsx` has no handler for the
+   `requiresMfaSetup` / `requiresMfaCode` responses — the API path
+   is now exercised, but the user-facing form does not yet render an
+   MFA challenge.
+2. **Idle-timeout HTML redirect.** The idle-timeout middleware in
+   `server/routes.ts` ~188 checks the session on every route and
+   short-circuits with `res.status(401).json(...)`, including for HTML
+   navigations. There is no client-side `<Redirect to="/login?auth=
+   required" />` — once the session row is idle, the browser receives
+   a raw 401 JSON body. The `auth-session.spec.ts` "UX gap" subtest
+   asserts the *current* observable behaviour (`page.request.get(/api/
+   auth/me)` → 401 from the browser's own cookie context) so any
+   future fix that adds a real redirect will flip the test red and
+   force the assertion to be rewritten.
+
+Test counts: 6 / 10 / 5 / 5 / 159 = 185 new specs (1 UI MFA case
+fixme'd pending Task #446).

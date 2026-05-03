@@ -15,6 +15,19 @@ test.afterAll(async () => {
   await pool.end().catch(() => undefined);
 });
 
+// password_reset_tokens has user_id (not org_id) so it's invisible to
+// the isolation sweep — clean tokens for the iso user before the
+// fixture teardown runs to avoid an FK violation on DELETE FROM users.
+test.afterEach(async ({ isolatedOrg }) => {
+  if (isolatedOrg?.userId) {
+    await pool
+      .query(`DELETE FROM password_reset_tokens WHERE user_id = $1`, [
+        isolatedOrg.userId,
+      ])
+      .catch(() => undefined);
+  }
+});
+
 test.describe("Forgot password — issues a token row", () => {
   test("POST /api/auth/forgot-password creates a password_reset_tokens row", async ({
     isolatedOrg,
@@ -39,6 +52,18 @@ test.describe("Forgot password — issues a token row", () => {
       [isolatedOrg.userId],
     );
     expect(after.rows[0].n).toBe(before.rows[0].n + 1);
+
+    // Email send is opaque to e2e (Resend / Ethereal transport runs
+    // server-side), but auth-routes.ts ~615 writes a
+    // PASSWORD_RESET_REQUESTED audit log immediately before the
+    // sendPasswordResetEmail() call. The presence of that row is our
+    // side-effect proof that the email send was reached.
+    const audit = await pool.query(
+      `SELECT count(*)::int AS n FROM audit_logs
+        WHERE action = 'PASSWORD_RESET_REQUESTED' AND entity_id = $1`,
+      [isolatedOrg.userId],
+    );
+    expect(audit.rows[0].n).toBeGreaterThanOrEqual(1);
   });
 });
 

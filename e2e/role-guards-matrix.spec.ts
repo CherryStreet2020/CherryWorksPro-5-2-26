@@ -116,18 +116,29 @@ test.describe("Role guards — ManagerRoute", () => {
   }
 });
 
-// LazyRoute pages are auth-only (no role gate) — every authenticated
-// role must reach them. Sample taken from `LazyRoute` usages in
-// client/src/App.tsx (lines 277-303).
+// LazyRoute pages are auth-only (no role gate at the route level).
+// Every authenticated role must reach all of them. Mirrors every
+// `<LazyRoute …>` usage in client/src/App.tsx that lives inside
+// the authenticated `<Switch>` block (lines 277-304); marketing /
+// public LazyRoute pages (/features, /pricing, /signup, …) are
+// intentionally excluded because they're served unauthenticated.
 const LAZY_AUTH_ROUTES = [
+  "/",
   "/dashboard",
+  "/home",
   "/clients",
+  "/clients/00000000-0000-0000-0000-000000000000",
   "/projects",
+  "/projects/00000000-0000-0000-0000-000000000000",
   "/time",
   "/expenses",
+  "/expense-reports",
   "/notifications",
   "/profile",
   "/change-password",
+  "/onboarding",
+  "/admin/m365-rescope",
+  "/admin/marketing-retry-policies",
 ];
 
 test.describe("Role guards — LazyRoute (auth-only)", () => {

@@ -92,7 +92,12 @@ app.post("/api/auth/login", loginLimiter, awaitSessionSave, async (req, res) => 
     const finalizeLogin = async (user: any) => {
       clearFailedLogin(parsed.email);
 
-      const isAdmin = user.role === "admin" || user.role === "owner";
+      // Role enum is upper-case (ADMIN/MANAGER/TEAM_MEMBER); historical
+      // versions of this branch compared against lowercase literals so
+      // the MFA-enforcement path was unreachable in production. Compare
+      // case-insensitively to keep both old and new seeds correct.
+      const roleLower = String(user.role || "").toLowerCase();
+      const isAdmin = roleLower === "admin" || roleLower === "owner";
       if (isAdmin) {
         const enforced = await isOrgMfaEnforcedForAdmins(user.orgId);
         if (enforced) {
