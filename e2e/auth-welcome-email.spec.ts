@@ -3,17 +3,10 @@ import { Pool } from "pg";
 import { freshIp } from "../tests/helpers/po/auth";
 import { waitForCapturedEmail, clearCapturedEmails, DEFAULT_CAPTURE_DIR } from "../tests/helpers/email-capture";
 
-/**
- * Sign-up should:
- *   1. Write a WELCOME_EMAIL_DISPATCH_ATTEMPTED audit row tied to the
- *      new org+user (and on transport success, a follow-up
- *      WELCOME_EMAIL_SUCCEEDED row).
- *   2. Dispatch a real welcome email (captured by EMAIL_CAPTURE_DIR harness).
- *
- * The email-capture harness is gated on the EMAIL_CAPTURE_DIR env var the
- * dev workflow sets. If the harness is off (e.g. CI without the var), only
- * the audit-row assertion runs.
- */
+// /signup must write WELCOME_EMAIL_DISPATCH_ATTEMPTED + dispatch a real
+// welcome email (captured via EMAIL_CAPTURE_DIR). The isolatedOrg fixture
+// is intentionally NOT used here: the unit under test is the signup
+// transaction itself, which must create its own org+user.
 
 const HARNESS_DIR = process.env.EMAIL_CAPTURE_DIR || DEFAULT_CAPTURE_DIR;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });

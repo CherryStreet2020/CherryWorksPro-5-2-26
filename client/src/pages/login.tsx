@@ -31,6 +31,8 @@ export default function LoginPage() {
   const [setupOtpauthUrl, setSetupOtpauthUrl] = useState<string | null>(null);
   const [setupRecoveryCodes, setSetupRecoveryCodes] = useState<string[] | null>(null);
   const [setupLoading, setSetupLoading] = useState(false);
+  // setupSecret/recovery codes intentionally live in component state only,
+  // so they don't survive navigation.
   const autoPickAbortRef = useRef<AbortController | null>(null);
   const autoPickCancelledRef = useRef(false);
 
@@ -93,10 +95,7 @@ export default function LoginPage() {
     }
     try {
       const data = await login(slug, email, password, controller ? { signal: controller.signal } : undefined);
-      // CRITICAL: a multi-org user landing in an MFA-enforced org gets the
-      // same {requiresMfaCode}/{requiresMfaSetup} payload as the single-org
-      // path. Without this branch the picker handler would silently swallow
-      // the response and leave the user staring at a frozen org picker.
+      // Multi-org users can also land on the MFA branches; mirror handleSubmit.
       if (data.kind === "mfa-code") {
         setOrgPickerOrgs(null);
         setAutoPicking(null);
@@ -156,11 +155,9 @@ export default function LoginPage() {
     setSetupRecoveryCodes(null);
   };
 
-  // The MFA gate (server/routes/middleware.ts) only permits
-  // /api/mfa/totp/{setup,verify} while mfaPendingReason === "setup".
-  // Calling them here lets an admin who is required-but-not-enrolled
-  // complete bootstrap inline, without ever needing a fully-authenticated
-  // session (which is impossible while mfaPending=true).
+  // The session is mfaPending=true with reason "setup", so the gate only
+  // allows /api/mfa/totp/{setup,verify}. Inlining the flow here avoids
+  // navigating to /settings/security (which requires a non-pending session).
   const beginMfaSetup = async () => {
     setSetupLoading(true);
     setMfaError("");

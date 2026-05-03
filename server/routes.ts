@@ -120,12 +120,8 @@ declare module "express-session" {
     role?: string;
     lastActivity?: number;
     mfaPending?: boolean;
-    // Why is mfaPending set?
-    //   "code"  — user has an enabled enrollment; MUST validate via TOTP/recovery
-    //             before reaching any other endpoint. setup/verify are NOT allowed
-    //             from this state (would let attacker overwrite the enabled secret).
-    //   "setup" — user has no enrollment yet; setup + verify ARE allowed so the
-    //             admin can complete MFA bootstrap.
+    // "code"  → user has an enabled enrollment; only /validate is allowed.
+    // "setup" → user has no enrollment yet; only /setup + /verify are allowed.
     mfaPendingReason?: "code" | "setup";
     _lastSessionDbUpdate?: number;
   }

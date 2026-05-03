@@ -336,40 +336,22 @@ export function getRateLimitInfo() {
   };
 }
 
-// Endpoints reachable while mfaPending=true regardless of reason. These let
-// the user query their state or abandon the half-finished login.
 const MFA_PENDING_ALWAYS_ALLOWED = new Set<string>([
   "/api/mfa/status",
   "/api/auth/logout",
 ]);
-
-// Endpoints reachable only while mfaPending=true AND the session is in
-// the "setup" branch (no enabled enrollment exists yet). Allowing these
-// during a "code" branch would let an attacker who has only the password
-// overwrite the user's enabled TOTP secret and forge a new factor —
-// a complete MFA bypass.
+// Allowing /setup or /verify in a "code"-branch session would let a
+// password-only attacker overwrite the enrolled TOTP secret. Keep these
+// gated by reason, not unioned into the always-allowed set.
 const MFA_PENDING_SETUP_ONLY = new Set<string>([
   "/api/mfa/totp/setup",
   "/api/mfa/totp/verify",
 ]);
-
-// Endpoint reachable only while mfaPending=true AND the session is in the
-// "code" branch (user already has an enabled enrollment to validate against).
 const MFA_PENDING_CODE_ONLY = new Set<string>([
   "/api/mfa/totp/validate",
 ]);
 
-/**
- * Returns true if the request was rejected due to a pending MFA challenge.
- * MUST be invoked at the top of every authenticated middleware
- * (requireAuth, requireAdmin, requireManagerOrAbove, requirePlatformOperator,
- * etc.) before any role/permission check, otherwise a password-only session
- * for an MFA-enforced user could reach role-protected endpoints.
- *
- * The reason-aware allowlist prevents a "code"-branch (already-enrolled)
- * session from calling /api/mfa/totp/setup or verify to overwrite the
- * existing enabled secret without first validating the existing factor.
- */
+// Must be called from every authenticated middleware before any role check.
 export function rejectIfMfaPending(req: Request, res: Response): boolean {
   if (!req.session?.mfaPending) return false;
   const path = req.path;
@@ -498,10 +480,7 @@ export async function requirePlatformOperator(req: Request, res: Response, next:
   if (!req.session.userId) {
     return res.status(404).json({ message: "Not found" });
   }
-  // Match the existence-hiding contract of this gate: when MFA is pending,
-  // platform-operator surface must look identical to "not found" rather than
-  // leaking the existence of the route via a 401-with-mfaPending body.
-  // Existence-hiding contract: even MFA pending sessions must look like 404.
+  // Existence-hiding contract: pending sessions also look like 404.
   if (req.session.mfaPending) {
     return res.status(404).json({ message: "Not found" });
   }

@@ -209,8 +209,7 @@ app.post("/api/mfa/totp/verify", requireAuth, async (req: Request, res: Response
         [orgId, userId, JSON.stringify({ method: "totp" })]
       );
 
-      // Setup completes the second factor for a "setup"-branch login;
-      // clear the pending flag so /api/auth/me and protected routes work.
+      // Successful setup-branch verify clears the pending flag.
       if (req.session.mfaPending && req.session.mfaPendingReason === "setup") {
         req.session.mfaPending = false;
         req.session.mfaPendingReason = undefined;
@@ -241,7 +240,6 @@ app.post("/api/mfa/totp/validate", requireAuth, async (req: Request, res: Respon
     const devBypass = process.env.NODE_ENV !== "production" && code === "000000";
     if (code === expected || devBypass) {
       await upsertMfa(userId, req.session.orgId!, { last_verified_at: new Date() });
-      // Clear the pending flag so requireAuth/auth/me will accept this session.
       req.session.mfaPending = false;
       req.session.mfaPendingReason = undefined;
       trackSession(req).catch(() => {});

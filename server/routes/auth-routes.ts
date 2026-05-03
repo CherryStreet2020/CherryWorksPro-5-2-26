@@ -92,10 +92,7 @@ app.post("/api/auth/login", loginLimiter, awaitSessionSave, async (req, res) => 
     const finalizeLogin = async (user: any) => {
       clearFailedLogin(parsed.email);
 
-      // Role enum is upper-case (ADMIN/MANAGER/TEAM_MEMBER); historical
-      // versions of this branch compared against lowercase literals so
-      // the MFA-enforcement path was unreachable in production. Compare
-      // case-insensitively to keep both old and new seeds correct.
+      // user_role enum is upper-case; compare case-insensitively.
       const roleLower = String(user.role || "").toLowerCase();
       const isAdmin = roleLower === "admin" || roleLower === "owner";
       if (isAdmin) {
@@ -212,8 +209,6 @@ app.get("/api/auth/me", async (req, res) => {
   if (!req.session.userId) {
     return res.status(401).json({ message: "Not authenticated" });
   }
-  // Block the user payload while MFA is still pending so the client can't
-  // treat the partial password-only session as authenticated.
   if (req.session.mfaPending) {
     return res.status(401).json({ message: "MFA required", mfaPending: true });
   }
@@ -433,12 +428,8 @@ app.post("/api/auth/signup", signupLimiter, awaitSessionSave, async (req, res) =
       details: { firmName: parsed.firmName, plan: parsed.plan, email: parsed.email },
     });
 
-    // Welcome email (best-effort: never block signup on email failure).
-    // Welcome email is dispatched best-effort. We write three audit rows so
-    // operators can disambiguate intent vs outcome:
-    //   WELCOME_EMAIL_DISPATCH_ATTEMPTED — always, before the send call
-    //   WELCOME_EMAIL_SUCCEEDED          — after a resolved transport call
-    //   WELCOME_EMAIL_FAILED             — on rejected transport call
+    // Welcome email — best-effort. Three audit actions distinguish intent
+    // (ATTEMPTED) from outcome (SUCCEEDED/FAILED).
     const proto = (req.headers["x-forwarded-proto"] as string)?.split(",")[0] || req.protocol || "http";
     const host = (req.headers["x-forwarded-host"] as string)?.split(",")[0] || req.get("host") || "localhost";
     const loginUrl = `${proto}://${host}/login`;

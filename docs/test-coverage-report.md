@@ -432,20 +432,28 @@ leaking from one spec to the next.
 1. **Login MFA challenge UI** (`client/src/pages/login.tsx`). The page now
    detects `requiresMfaCode` and `requiresMfaSetup` from `/api/auth/login`
    and renders, respectively, a 6-digit TOTP form that posts to
-   `/api/mfa/totp/validate` and a "set up two-factor" CTA that routes to
-   `/settings/security`. `client/src/lib/auth.tsx` `login()` now returns
-   the response payload and skips `setUser` while the session is still
-   `mfaPending`. Covered end-to-end by `e2e/auth-mfa-login-ui.spec.ts`
-   (3 cases): code happy path with dev-bypass `000000`, setup CTA,
-   and cancel-restore.
+   `/api/mfa/totp/validate`, and an inline setup panel that posts to
+   `/api/mfa/totp/setup` and `/api/mfa/totp/verify` directly from `/login`
+   (showing the new secret + recovery codes and accepting the first
+   verification code without ever leaving the login page).
+   `client/src/lib/auth.tsx` `login()` now returns a typed
+   `LoginResult` discriminated union (`mfa-code` | `mfa-setup` | `user`)
+   and skips `setUser` while the session is still `mfaPending`, so
+   single-org and multi-org code paths both branch correctly.
+   Covered end-to-end by `e2e/auth-mfa-login-ui.spec.ts` (3 cases):
+   code happy path with dev-bypass `000000`, inline setup happy path
+   (asserts `mfa_enrollments.enabled = true` with a freshly-issued
+   secret), and MFA-cancel restore of the email/password form.
 
 2. **`sendWelcomeEmail()` + signup integration** (`server/email.ts`,
    `server/routes/auth-routes.ts`). New transactional template
    mirroring `sendPasswordResetEmail`'s shape; called best-effort
-   from `/api/auth/signup` after the org is committed. A
-   `WELCOME_EMAIL_SENT` audit row is written immediately before the
-   send call so dispatch can be asserted independently of transport
-   success. Covered by `e2e/auth-welcome-email.spec.ts`.
+   from `/api/auth/signup` after the org is committed. Three audit
+   actions distinguish intent from outcome:
+   `WELCOME_EMAIL_DISPATCH_ATTEMPTED` (always, before the send),
+   `WELCOME_EMAIL_SUCCEEDED` (resolved transport call), and
+   `WELCOME_EMAIL_FAILED` (rejected transport call). Covered by
+   `e2e/auth-welcome-email.spec.ts`.
 
 3. **E2E email-capture harness** (`server/email.ts`,
    `tests/helpers/email-capture.ts`). `pickTransport` now checks
@@ -459,49 +467,47 @@ leaking from one spec to the next.
    The welcome-email spec asserts both the audit row (always) and the
    captured envelope content (subject, firm name, login URL).
 
-### Round 6 production-safety hardening (from architect review)
+### Round 6 production-safety hardening
 
-The architect review of the round-6 product additions surfaced three
-must-fix issues; all are addressed in this slice:
+1. **`mfaPending` session gate.** `rejectIfMfaPending(req, res)` in
+   `server/routes/middleware.ts` returns `401 { mfaPending: true }` when
+   `req.session.mfaPending === true`, called from `requireAuth`,
+   `requireAdmin`, `requireManagerOrAbove` (and aliases), plus
+   `/api/auth/me`. `requirePlatformOperator` returns `404` to match
+   its existence-hiding contract. `/api/mfa/totp/validate` clears
+   the flag on TOTP and recovery-code success.
 
-1. **MFA bypass via `mfaPending` not enforced.** A new
-   `rejectIfMfaPending(req, res)` helper in
-   `server/routes/middleware.ts` returns `401 { mfaPending: true }`
-   whenever `req.session.mfaPending === true`, except for a narrow
-   allow-list of MFA finish/abandon endpoints
-   (`/api/mfa/totp/{setup,verify,validate}`, `/api/mfa/status`,
-   `/api/auth/logout`). It is invoked at the top of every authenticated
-   middleware — `requireAuth`, `requireAdmin`,
-   `requireManagerOrAbove` (also exported as `requireAdminOnly` /
-   `requireAdminOrManager`) — so role-protected routes cannot be
-   reached with a password-only session. `requirePlatformOperator`
-   responds with `404` (matching its existence-hiding contract) on
-   `mfaPending`. `/api/auth/me` enforces the same check directly.
-   `/api/mfa/totp/validate` clears `req.session.mfaPending` on both
-   TOTP and recovery-code success so the user transitions cleanly
-   into a fully-authenticated session.
+   The allowlist is reason-aware via `req.session.mfaPendingReason`,
+   set at `/api/auth/login`:
+   - `"code"` (enrolled user) only permits `/api/mfa/totp/validate`
+     plus the always-allowed `/api/mfa/status` and `/api/auth/logout`.
+   - `"setup"` (not yet enrolled) only permits
+     `/api/mfa/totp/setup` and `/api/mfa/totp/verify`.
 
-   The allowlist is reason-aware via a new
-   `req.session.mfaPendingReason` field set by `/api/auth/login`.
-   `"code"` (existing enrollment) only permits
-   `/api/mfa/totp/validate` (plus `/status` and `/api/auth/logout`);
-   `"setup"` (no enrollment yet) only permits `/api/mfa/totp/setup`
-   and `/api/mfa/totp/verify`. Without this split, an attacker who
-   has only the password could call `/api/mfa/totp/setup` to
-   overwrite an enrolled user's enabled TOTP secret and forge a new
-   factor — a complete MFA bypass surfaced in the round-3 architect
-   review.
+   Without the split, a `"code"`-branch session could call
+   `/api/mfa/totp/setup` and overwrite an enrolled TOTP secret.
+
+   The `requiresMfaSetup` login branch is completed inline on
+   `/login` itself (`client/src/pages/login.tsx` calls
+   `/api/mfa/totp/setup` and `/verify` directly). Navigating to
+   `/settings/security` is not viable while `mfaPending=true` because
+   `/api/auth/me` returns `401`, which would bounce the admin
+   straight back to `/login`.
 
    Regression coverage in `e2e/auth-mfa-pending-gate.spec.ts`:
-   - logs in an MFA-enforced admin, asserts `/api/auth/me`, a
-     `requireAdmin` endpoint (`/api/admin/audit-logs/actions`), and
-     a `requireManagerOrAbove` endpoint (`/api/clients`) all return
-     `401 { mfaPending: true }`, then verifies all three return
-     `200` after `/api/mfa/totp/validate` succeeds.
-   - second case proves the overwrite-secret bypass is closed:
-     `/api/mfa/totp/setup` and `/verify` both return
-     `401 { mfaPending: true }` for a `code`-branch session, and
-     the existing enrolled secret in `mfa_enrollments` is unchanged.
+   - `requireAuth` / `requireAdmin` / `requireManagerOrAbove` all
+     reject a `mfaPending` session and accept it after
+     `/api/mfa/totp/validate` clears the flag.
+   - A `code`-branch session calling `/api/mfa/totp/setup` and
+     `/verify` is rejected with `401 { mfaPending: true }`, and the
+     enrolled TOTP secret in `mfa_enrollments` is unchanged.
+
+   Inline-setup happy path in
+   `e2e/auth-mfa-login-ui.spec.ts`: a `"setup"`-branch admin renders
+   the secret + recovery-codes panel, submits the dev-bypass code
+   to `/api/mfa/totp/verify`, lands authenticated on `/`, and the
+   row in `mfa_enrollments` is left `enabled = true` with a
+   freshly-issued secret distinct from any seed value.
 
 2. **`000000` TOTP dev-bypass exposed in prod.** Both
    `/api/mfa/totp/verify` (initial setup) and `/api/mfa/totp/validate`

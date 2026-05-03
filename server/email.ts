@@ -116,9 +116,8 @@ function requireValidEmail(email: string, fieldName: string): void {
  *
  * Emits a one-line forensic trace on every send for rollback / audit.
  */
-// Test-only file-capture transport. When EMAIL_CAPTURE_DIR is set (E2E only,
-// never in prod), every send writes a JSON envelope to that directory instead
-// of touching SMTP/Graph/Gmail. Tests poll the dir to assert content.
+// Test-only transport. Writes a JSON envelope per send to EMAIL_CAPTURE_DIR.
+// pickTransport() refuses to wire this up in production.
 class FileCaptureTransport implements EmailTransport {
   readonly kind = "noop" as const;
   constructor(private readonly dir: string) {}
@@ -157,9 +156,8 @@ async function pickTransport(
   org: OrgForTransport | null | undefined,
   smtpConfig: SmtpConfig | null | undefined,
 ): Promise<EmailTransport> {
-  // E2E harness gate. Hard-blocked in production so a stray env var can never
-  // silently divert real customer mail to disk. Requires both NODE_ENV !=
-  // production AND an explicit EMAIL_CAPTURE_DIR value.
+  // E2E capture transport. Hard-blocked in production so a stray env var
+  // can never divert real customer mail to disk.
   const captureDir = process.env.EMAIL_CAPTURE_DIR;
   if (captureDir && captureDir.length > 0) {
     if (process.env.NODE_ENV === "production") {
