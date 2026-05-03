@@ -155,12 +155,37 @@ npx playwright test e2e/auth-*.spec.ts e2e/public-*.spec.ts \
 ## Notes on the validation gate
 
 `run-tests.sh` runs `npx eslint . --max-warnings 0` before invoking
-Playwright. The lint gate was already failing on `main` before this
-PR (24 pre-existing errors in `server/timesheet-recall-and-my-recent.test.ts`
-and `tests/integration/project-list-team-member-strip.test.ts`); the
-new specs in this PR all live under `e2e/` which is ignored by the
-ESLint config (see `eslint.config.*` line 87, `"e2e/**"`), and the
-new helper at `tests/helpers/po/auth.ts` lints clean on its own.
-Re-greening the lint gate is out of scope for this task — those
-files predate it — and is suggested as a follow-up alongside the
-infrastructure work above.
+Playwright. The lint gate previously failed on `main` with 24
+pre-existing errors across 14 unrelated files, which prevented the
+expanded suite from running end-to-end.
+
+**Update:** those 24 errors have now been cleaned up so the gate is
+green again. `npx eslint . --max-warnings 0` and `npx tsc --noEmit`
+both exit 0 on `main`, and `bash run-tests.sh` proceeds straight
+into the Playwright run. The cleanup was mechanical — no behaviour
+change — and broke down as:
+
+| Rule                    | Hits | Fix pattern                                                                                                  |
+| ----------------------- | ---: | ------------------------------------------------------------------------------------------------------------ |
+| `no-useless-assignment` |   12 | Removed dead `= null`/`= false`/`= 1`/`= []` initializers. Used `let x!: T;` definite-assignment where TS narrowing can't span try/catch (`scheduled-send.ts` `advance`/`attemptNumber`/`acquired`, `quiet-hours.ts` `dayOffset`). |
+| `prefer-const`          |    4 | `let → const` for `offset`, two `orgNames`, `priceIds` (mutated as objects/arrays but never reassigned).      |
+| `preserve-caught-error` |    3 | Added `{ cause: err }` to rethrows in `marketing-os-checkout.ts` (×2) and `migrate-production.ts`.            |
+| Unknown-rule directive  |    2 | Deleted orphaned `// eslint-disable-next-line react-hooks/exhaustive-deps` comments in `App.tsx` and `billing.tsx` (the plugin is no longer installed; the directives referenced an unknown rule). |
+| `no-useless-catch`      |    1 | Removed `try { … } catch (dbErr) { throw dbErr; }` wrapper in `brands.ts` and replaced it with an inline comment. |
+| `no-useless-escape`     |    1 | `\;` → `;` in a regex inside `tests/integration/project-list-team-member-strip.test.ts`.                       |
+| Init overwritten        |    1 | `let parsed: URL \| null = null` → `let parsed: URL` in `logo-dropzone.tsx` (catch path returns).             |
+
+Files touched (all pre-existing, none authored by Task #431):
+`client/src/App.tsx`, `client/src/pages/settings/billing.tsx`,
+`client/src/components/marketing-os/premium/logo-dropzone.tsx`,
+`client/src/lib/marketing-os-checkout.ts`,
+`server/jobs/backfill-marketing-os-grandfather-from-stripe.ts`,
+`server/marketing-chat.test.ts`,
+`server/marketing/scheduled-send.ts`,
+`server/migrate-production.ts`,
+`server/notifications/quiet-hours.ts`,
+`server/routes/brands.ts`,
+`server/routes/email-deliverability-routes.ts`,
+`server/stripe_webhook.ts`,
+`server/timesheet-recall-and-my-recent.test.ts`,
+`tests/integration/project-list-team-member-strip.test.ts`.

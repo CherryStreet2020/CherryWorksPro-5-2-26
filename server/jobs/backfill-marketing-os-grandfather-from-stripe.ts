@@ -71,7 +71,7 @@ export async function backfillMarketingOsGrandfatherFromStripe(): Promise<Outcom
     orgId: string;
     stripeSubscriptionId: string | null;
     grandfatherExpiresAt: Date | null;
-  }> = [];
+  }>;
 
   try {
     rows = await db
@@ -131,7 +131,7 @@ export async function backfillMarketingOsGrandfatherFromStripe(): Promise<Outcom
       continue;
     }
 
-    let sub: any = null;
+    let sub: any;
     try {
       sub = await stripe.subscriptions.retrieve(row.stripeSubscriptionId);
     } catch (err: any) {

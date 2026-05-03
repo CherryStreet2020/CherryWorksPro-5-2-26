@@ -612,9 +612,9 @@ export async function processScheduledSequenceEnrollments(
     }
 
     let dispatched = false;
-    let advance = false;
+    let advance!: boolean;
     let outcome: AttemptOutcome | null = null;
-    let attemptNumber = 1;
+    let attemptNumber!: number;
 
     if (decision.action === "send") {
       attemptNumber = decision.attemptNumber;
@@ -763,7 +763,7 @@ export async function runScheduledSendTick(): Promise<ScheduledSendStats | null>
   // `finally` so the lock is guaranteed to land on the lock-holding
   // session.
   const client = await pool.connect();
-  let acquired = false;
+  let acquired!: boolean;
   try {
     const lockResult = await client.query(
       "SELECT pg_try_advisory_lock($1) AS acquired",

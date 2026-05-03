@@ -282,7 +282,7 @@ export function LogoDropzone({
             // javascript:/data:/file: URLs straight into brand.logoUrl.
             // The server (POST/PATCH /api/brands) re-validates with an
             // SSRF + image-type check; this is just user feedback.
-            let parsed: URL | null = null;
+            let parsed: URL;
             try {
               parsed = new URL(trimmed);
             } catch {

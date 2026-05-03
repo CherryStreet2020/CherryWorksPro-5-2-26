@@ -164,14 +164,14 @@ async function postJson(path: string, body: any, headers: Record<string, string>
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
-  let parsed: any = null;
+  let parsed: any;
   try { parsed = await res.json(); } catch { parsed = null; }
   return { status: res.status, body: parsed };
 }
 
 async function getJson(path: string, headers: Record<string, string> = {}) {
   const res = await fetch(baseUrl + path, { headers });
-  let parsed: any = null;
+  let parsed: any;
   try { parsed = await res.json(); } catch { parsed = null; }
   return { status: res.status, body: parsed };
 }

@@ -56,6 +56,7 @@ async function runPhase0SqlReplay(): Promise<void> {
     if (process.env.NODE_ENV !== "production") {
       throw new Error(
         `[startup] cannot read migrations dir ${migrationsDir} — aborting startup in non-production`,
+        { cause: e },
       );
     }
     return;

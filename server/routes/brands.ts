@@ -369,13 +369,9 @@ export function registerBrandRoutes(app: Express) {
         });
 
         const logoUrl = `${appBaseUrl(req)}/api/public-objects/${BRAND_LOGOS_PREFIX}/${filename}`;
-        try {
-          await storage.updateBrand(brandId, orgId, { logoUrl });
-        } catch (dbErr) {
-          // Best-effort: leave the orphaned object in storage but
-          // surface the DB failure.
-          throw dbErr;
-        }
+        // Best-effort: if updateBrand fails, the orphaned object stays
+        // in storage but the DB failure is surfaced to the caller.
+        await storage.updateBrand(brandId, orgId, { logoUrl });
 
         // Best-effort cleanup of the previously-hosted file (skip
         // data URLs and external URLs).

@@ -275,7 +275,6 @@ export default function SettingsBillingPage() {
     url.searchParams.delete("addon");
     url.searchParams.delete("status");
     window.history.replaceState({}, "", url.pathname + (url.search ? url.search : ""));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

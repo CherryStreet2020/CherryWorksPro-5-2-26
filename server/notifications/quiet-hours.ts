@@ -119,7 +119,7 @@ function wallTimeToUtc(
 ): Date {
   const wallUtcMs =
     Date.UTC(year, month - 1, day) + minutes * 60_000;
-  let offset = tzOffsetMs(new Date(wallUtcMs), tz);
+  const offset = tzOffsetMs(new Date(wallUtcMs), tz);
   let candidate = wallUtcMs - offset;
   // Re-evaluate offset at the candidate; iterate once more in case the
   // candidate is itself across a DST seam.
@@ -154,7 +154,7 @@ export function nextQuietHoursEnd(now: Date, prefs: QuietHoursPrefs): Date {
     return target;
   }
 
-  let dayOffset = 0;
+  let dayOffset!: number;
   if (start < end) {
     // Simple range — end is later today (cur < end by precondition).
     dayOffset = 0;

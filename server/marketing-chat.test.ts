@@ -129,7 +129,7 @@ async function postJson(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  let parsed: any = null;
+  let parsed: any;
   try {
     parsed = await res.json();
   } catch {
@@ -145,7 +145,7 @@ async function getJson(
 ): Promise<HttpResp> {
   const qs = new URLSearchParams(query).toString();
   const res = await fetch(baseUrl + path + (qs ? "?" + qs : ""));
-  let parsed: any = null;
+  let parsed: any;
   try {
     parsed = await res.json();
   } catch {

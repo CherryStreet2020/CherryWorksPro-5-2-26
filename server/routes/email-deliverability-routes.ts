@@ -133,7 +133,7 @@ app.get("/api/admin/email/failure-alerts", requireAdmin, async (req: Request, re
     // Resolve org names so the UI can render a friendly breakdown.
     // Only done for the operator view — tenant admins never see other
     // orgs' data, so there is nothing to resolve.
-    let orgNames: Record<string, string> = {};
+    const orgNames: Record<string, string> = {};
     if (isOperator) {
       const ids = new Set<string>();
       for (const a of alerts) {
@@ -731,7 +731,7 @@ app.get(
   async (_req: Request, res: Response) => {
     try {
       const entries = await listPinnedAlertOrgs();
-      let orgNames: Record<string, string> = {};
+      const orgNames: Record<string, string> = {};
       if (entries.length > 0) {
         const ids = entries.map((e) => e.orgId);
         const result = await pool.query(

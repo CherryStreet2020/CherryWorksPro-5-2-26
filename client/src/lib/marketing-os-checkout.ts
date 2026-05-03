@@ -45,15 +45,15 @@ export async function startMarketingOsCheckout(): Promise<MarketingOsCheckoutRes
       message.includes("410") ||
       message.toLowerCase().includes("no longer a standalone")
     ) {
-      throw new Error(MARKETING_OS_TIER_DERIVED_ERROR);
+      throw new Error(MARKETING_OS_TIER_DERIVED_ERROR, { cause: err });
     }
-    throw new Error(message || "Checkout could not be started");
+    throw new Error(message || "Checkout could not be started", { cause: err });
   }
   // 410 may also surface as a successful Response with a body — guard both.
   if (res.status === 410) {
     throw new Error(MARKETING_OS_TIER_DERIVED_ERROR);
   }
-  let json: any = null;
+  let json: any;
   try {
     json = await res.json();
   } catch {

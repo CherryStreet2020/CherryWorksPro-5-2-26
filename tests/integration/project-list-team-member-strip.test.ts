@@ -186,7 +186,7 @@ describe("/api/projects — TEAM_MEMBER cost-field stripping (hypothetical-gate 
     );
     // Find the GET /api/projects handler block (not /api/projects/:id, not POST).
     const listHandlerMatch = routeSrc.match(
-      /app\.get\("\/api\/projects",[\s\S]*?\}\)\;/,
+      /app\.get\("\/api\/projects",[\s\S]*?\}\);/,
     );
     expect(listHandlerMatch, "GET /api/projects handler not found in project-routes.ts").not.toBeNull();
     const handlerBody = listHandlerMatch![0];

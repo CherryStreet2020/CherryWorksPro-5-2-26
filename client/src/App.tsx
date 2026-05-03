@@ -92,7 +92,6 @@ function MarketingOsCheckoutToast() {
       "",
       url.pathname + (nextSearch ? `?${nextSearch}` : "") + url.hash,
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return null;
 }

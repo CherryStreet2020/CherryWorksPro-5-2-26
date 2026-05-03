@@ -32,7 +32,7 @@ export async function extractAddonPricesFromEvent(
   const obj = event?.data?.object;
   if (!obj) return { addonPriceIds: [], basePriceIds: [], subscriptionId: null };
 
-  let priceIds: string[] = [];
+  const priceIds: string[] = [];
   let subscriptionId: string | null = null;
 
   if (event.type?.startsWith("customer.subscription.")) {
@@ -268,7 +268,7 @@ export function registerStripeWebhook(app: Express): void {
     // both halves of the subscription are reflected. Add-on-only events
     // short-circuit and never touch `orgs.planTier` / `subscriptionStatus`.
     let addonRouted = false;
-    let addonContext: Awaited<ReturnType<typeof extractAddonPricesFromEvent>> | null = null;
+    let addonContext: Awaited<ReturnType<typeof extractAddonPricesFromEvent>> | null;
     if (
       eventType === "checkout.session.completed" ||
       eventType === "customer.subscription.created" ||
