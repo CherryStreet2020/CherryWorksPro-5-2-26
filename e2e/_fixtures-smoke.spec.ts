@@ -22,6 +22,7 @@ import {
   clearbitStub,
   plaidStub,
   resendStub,
+  apiBoundary,
   type StripeWebhookOptions,
 } from "../tests/helpers/po/stubs";
 
@@ -232,6 +233,47 @@ test.describe("Shared fixture library (Task #435)", () => {
         }
       });
       expect(result).toBe("AbortError");
+    } finally {
+      await ctx.close();
+    }
+  });
+});
+
+test.describe("apiBoundary helper (Task #435)", () => {
+  test("intercepting the local /api/* route prevents the server roundtrip", async ({ isolatedOrg, browser }) => {
+    const ctx = await browser.newContext();
+    try {
+      // Login the isolated admin so /api/auth/me succeeds normally.
+      await ctx.request.post("/api/auth/login", {
+        data: { email: isolatedOrg.email, password: isolatedOrg.password },
+      });
+
+      // Intercept /api/auth/me at the browser boundary with a stubbed
+      // response — the server is never asked, proving apiBoundary
+      // sits between the spec and any downstream third-party call.
+      const page = await ctx.newPage();
+      await page.goto("/login");
+      await apiBoundary.fulfill(page, /\/api\/auth\/me$/, 200, {
+        id: "stub-user",
+        role: "ADMIN",
+        email: "stubbed@e2e.test",
+      });
+      const r = await page.evaluate(async () => {
+        const res = await fetch("/api/auth/me");
+        return { status: res.status, body: await res.json() };
+      });
+      expect(r.status).toBe(200);
+      expect(r.body.email).toBe("stubbed@e2e.test");
+
+      // Failure variant.
+      const page2 = await ctx.newPage();
+      await page2.goto("/login");
+      await apiBoundary.fail(page2, /\/api\/auth\/me$/, 503);
+      const failed = await page2.evaluate(async () => {
+        const res = await fetch("/api/auth/me");
+        return { status: res.status };
+      });
+      expect(failed.status).toBe(503);
     } finally {
       await ctx.close();
     }

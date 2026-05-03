@@ -412,3 +412,38 @@ export async function stubAllSuccess(page: Page): Promise<void> {
 
 /** Type marker so spec authors can iterate stubs uniformly if needed. */
 export type StubVariant = Variant;
+
+// ============================================================================
+// API-boundary stub — intercept the LOCAL /api/* endpoint that the
+// server uses to talk to a third party. Because Playwright's
+// `page.route` intercepts requests the BROWSER makes, intercepting the
+// browser→/api/* call prevents the server from ever making the
+// outbound third-party call in the first place. This is the most
+// reliable way to make a server-side integration deterministic in E2E
+// without standing up an in-process proxy.
+//
+// Usage:
+//   await apiBoundary.fulfill(page, "**\/api\/entitlement-checkout\/**",
+//     200, { sessionUrl: "/billing/return?ok=1" });
+//   await apiBoundary.fail(page, "**\/api\/receipts\/ocr\/**", 503);
+// ============================================================================
+export const apiBoundary = {
+  async fulfill(
+    page: Page,
+    urlPattern: string | RegExp,
+    status: number,
+    body: unknown,
+  ): Promise<void> {
+    await page.route(urlPattern, async (route) => {
+      await fulfillJson(route, status, body);
+    });
+  },
+  async fail(page: Page, urlPattern: string | RegExp, code = 500): Promise<void> {
+    await page.route(urlPattern, async (route) => {
+      await fulfillJson(route, code, { error: "api boundary stub failure" });
+    });
+  },
+  async hang(page: Page, urlPattern: string | RegExp): Promise<void> {
+    await page.route(urlPattern, hang);
+  },
+};
