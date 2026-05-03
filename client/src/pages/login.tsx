@@ -25,6 +25,12 @@ export default function LoginPage() {
   const [mfaPhase, setMfaPhase] = useState<null | "code" | "setup">(null);
   const [mfaCode, setMfaCode] = useState("");
   const [mfaError, setMfaError] = useState("");
+  // Setup-phase state. Filled by /api/mfa/totp/setup. Held in component
+  // state (NOT persisted) so an attacker browsing back can't replay it.
+  const [setupSecret, setSetupSecret] = useState<string | null>(null);
+  const [setupOtpauthUrl, setSetupOtpauthUrl] = useState<string | null>(null);
+  const [setupRecoveryCodes, setSetupRecoveryCodes] = useState<string[] | null>(null);
+  const [setupLoading, setSetupLoading] = useState(false);
   const autoPickAbortRef = useRef<AbortController | null>(null);
   const autoPickCancelledRef = useRef(false);
 
@@ -42,12 +48,13 @@ export default function LoginPage() {
     setError("");
     try {
       const data = await login("", email, password);
-      if (data?.requiresMfaCode) {
+      if (data.kind === "mfa-code") {
         setMfaPhase("code");
         return;
       }
-      if (data?.requiresMfaSetup) {
+      if (data.kind === "mfa-setup") {
         setMfaPhase("setup");
+        await beginMfaSetup();
         return;
       }
     } catch (err: any) {
@@ -85,7 +92,24 @@ export default function LoginPage() {
       autoPickCancelledRef.current = false;
     }
     try {
-      await login(slug, email, password, controller ? { signal: controller.signal } : undefined);
+      const data = await login(slug, email, password, controller ? { signal: controller.signal } : undefined);
+      // CRITICAL: a multi-org user landing in an MFA-enforced org gets the
+      // same {requiresMfaCode}/{requiresMfaSetup} payload as the single-org
+      // path. Without this branch the picker handler would silently swallow
+      // the response and leave the user staring at a frozen org picker.
+      if (data.kind === "mfa-code") {
+        setOrgPickerOrgs(null);
+        setAutoPicking(null);
+        setMfaPhase("code");
+        return;
+      }
+      if (data.kind === "mfa-setup") {
+        setOrgPickerOrgs(null);
+        setAutoPicking(null);
+        setMfaPhase("setup");
+        await beginMfaSetup();
+        return;
+      }
     } catch (err: any) {
       if (isAutoPick && (autoPickCancelledRef.current || err?.name === "AbortError")) {
         return;
@@ -127,6 +151,54 @@ export default function LoginPage() {
     setMfaCode("");
     setMfaError("");
     setError("");
+    setSetupSecret(null);
+    setSetupOtpauthUrl(null);
+    setSetupRecoveryCodes(null);
+  };
+
+  // The MFA gate (server/routes/middleware.ts) only permits
+  // /api/mfa/totp/{setup,verify} while mfaPendingReason === "setup".
+  // Calling them here lets an admin who is required-but-not-enrolled
+  // complete bootstrap inline, without ever needing a fully-authenticated
+  // session (which is impossible while mfaPending=true).
+  const beginMfaSetup = async () => {
+    setSetupLoading(true);
+    setMfaError("");
+    try {
+      const res = await apiRequest("POST", "/api/mfa/totp/setup", {});
+      const data = await res.json();
+      if (data?.success) {
+        setSetupSecret(data.secret);
+        setSetupOtpauthUrl(data.otpauthUrl);
+        setSetupRecoveryCodes(data.recoveryCodes || []);
+      } else {
+        setMfaError("Could not start MFA setup. Please try again.");
+      }
+    } catch {
+      setMfaError("Could not start MFA setup. Please try again.");
+    } finally {
+      setSetupLoading(false);
+    }
+  };
+
+  const handleSetupVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setMfaError("");
+    try {
+      const res = await apiRequest("POST", "/api/mfa/totp/verify", { code: mfaCode.trim() });
+      const data = await res.json();
+      if (data?.success && data?.enabled) {
+        await refetchUser();
+        navigate("/");
+        return;
+      }
+      setMfaError("Invalid code");
+    } catch {
+      setMfaError("Invalid code");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const cancelAutoPick = () => {
@@ -245,15 +317,93 @@ export default function LoginPage() {
                     Your organization requires admins to enable an authenticator app before signing in.
                   </p>
                 </div>
-                <Button
-                  type="button"
-                  className="w-full text-white h-11 font-semibold"
-                  data-testid="button-mfa-setup-continue"
-                  onClick={() => navigate("/settings/security")}
-                  style={{ background: "var(--gradient-brand)" }}
-                >
-                  Continue to setup
-                </Button>
+                {setupLoading && (
+                  <p className="text-sm" style={{ color: "var(--lux-text-muted)" }} data-testid="text-mfa-setup-loading">
+                    Preparing your authenticator secret…
+                  </p>
+                )}
+                {setupSecret && (
+                  <div className="space-y-4" data-testid="state-mfa-setup-ready">
+                    <div>
+                      <Label className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+                        Scan in your authenticator app
+                      </Label>
+                      <code
+                        className="mt-2 block w-full rounded-lg p-3 text-xs break-all"
+                        style={{ background: "var(--lux-bg)", borderColor: "var(--lux-border)", color: "var(--lux-text)", border: "1px solid var(--lux-border)" }}
+                        data-testid="text-mfa-setup-secret"
+                      >
+                        {setupSecret}
+                      </code>
+                      {setupOtpauthUrl && (
+                        <p className="mt-2 text-xs break-all" style={{ color: "var(--lux-text-muted)" }} data-testid="text-mfa-setup-otpauth">
+                          {setupOtpauthUrl}
+                        </p>
+                      )}
+                    </div>
+                    {setupRecoveryCodes && setupRecoveryCodes.length > 0 && (
+                      <div>
+                        <Label className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+                          Recovery codes — store somewhere safe
+                        </Label>
+                        <ul
+                          className="mt-2 grid grid-cols-2 gap-1 rounded-lg p-3 text-xs font-mono"
+                          style={{ background: "var(--lux-bg)", border: "1px solid var(--lux-border)", color: "var(--lux-text)" }}
+                          data-testid="list-mfa-setup-recovery-codes"
+                        >
+                          {setupRecoveryCodes.map((c) => (
+                            <li key={c}>{c}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    <form onSubmit={handleSetupVerify} className="space-y-3">
+                      <Label htmlFor="mfa-setup-code" className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+                        Enter the 6-digit code from your app
+                      </Label>
+                      <Input
+                        id="mfa-setup-code"
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        placeholder="123456"
+                        maxLength={10}
+                        value={mfaCode}
+                        onChange={(e) => setMfaCode(e.target.value)}
+                        required
+                        autoFocus
+                        data-testid="input-mfa-setup-code"
+                        style={{ background: "var(--lux-bg)", borderColor: "var(--lux-border)", color: "var(--lux-text)", letterSpacing: "0.3em", textAlign: "center", fontSize: "18px" }}
+                      />
+                      {mfaError && (
+                        <p className="text-sm font-medium" style={{ color: "#ef4444" }} data-testid="text-mfa-setup-error">{mfaError}</p>
+                      )}
+                      <Button
+                        type="submit"
+                        className="w-full text-white h-11 font-semibold"
+                        disabled={loading || mfaCode.trim().length < 6}
+                        data-testid="button-mfa-setup-verify"
+                        style={{ background: "var(--gradient-brand)" }}
+                      >
+                        {loading ? "Verifying…" : "Enable two-factor"}
+                      </Button>
+                    </form>
+                  </div>
+                )}
+                {!setupLoading && !setupSecret && mfaError && (
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium" style={{ color: "#ef4444" }} data-testid="text-mfa-setup-error">{mfaError}</p>
+                    <Button
+                      type="button"
+                      onClick={beginMfaSetup}
+                      className="w-full text-white h-11 font-semibold"
+                      data-testid="button-mfa-setup-retry"
+                      style={{ background: "var(--gradient-brand)" }}
+                    >
+                      Try again
+                    </Button>
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={cancelMfa}

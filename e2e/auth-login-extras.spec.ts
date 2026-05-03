@@ -190,12 +190,10 @@ test.describe("Login — MFA prompt", () => {
     }
   });
 
-  // FOLLOW-UP (filed as Task #446): client/src/pages/login.tsx does
-  // not surface a `data-testid="mfa-prompt"` UI for the
-  // requiresMfaCode/requiresMfaSetup responses (the fetch handler
-  // catches the response shape but only reads needsOrgPick). Until
-  // a Login MFA panel ships, the UI assertion stays fixme-d.
-  test.fixme("UI: login form surfaces an MFA prompt when API returns requiresMfaCode", async () => {});
+  // The MFA panel UI itself (TOTP code entry + setup-required CTA) is
+  // covered end-to-end in e2e/auth-mfa-login-ui.spec.ts. That suite
+  // owns the seeded org/admin fixture and asserts the panel renders,
+  // accepts the dev-bypass code, and lands the user authenticated.
 });
 
 test.describe("Login — forgot-password link round-trip", () => {

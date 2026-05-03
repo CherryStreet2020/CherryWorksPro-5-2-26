@@ -112,7 +112,7 @@ test.describe.serial("auth » MFA login UI", () => {
     expect(me.email).toBe(seed.email);
   });
 
-  test("requiresMfaSetup → renders setup CTA pointing at /settings/security", async ({ page }) => {
+  test("requiresMfaSetup → renders inline setup, completes via dev bypass, lands authenticated", async ({ page }) => {
     const seed = await seedOrg({ withEnrollment: false });
     createdOrgIds.push(seed.orgId);
 
@@ -123,18 +123,37 @@ test.describe.serial("auth » MFA login UI", () => {
     await page.getByTestId("input-password").fill(PASS);
     await page.getByTestId("button-login").click();
 
+    // The setup-required panel renders inline because /api/auth/me would
+    // 401 while mfaPending=true; navigating to /settings/security would
+    // bounce back to /login. The MFA gate's reason-aware allowlist is
+    // what makes /api/mfa/totp/{setup,verify} reachable here.
     const setupBlock = page.getByTestId("state-mfa-setup-required");
     await expect(setupBlock).toBeVisible({ timeout: 5000 });
     await expect(page).toHaveURL(/\/login$/);
 
-    const cta = page.getByTestId("button-mfa-setup-continue");
-    await expect(cta).toBeVisible();
-    // The button is wired to navigate("/settings/security"). The destination
-    // route may immediately bounce back to /login when MFA is still pending
-    // for the org, but the click should at minimum tear down the setup CTA
-    // and trigger a URL change away from the bare /login MFA-setup view.
-    await cta.click();
-    await expect(page.getByTestId("state-mfa-setup-required")).toBeHidden({ timeout: 5000 });
+    // Inline setup auto-fires beginMfaSetup(), which POSTs /api/mfa/totp/setup.
+    await expect(page.getByTestId("text-mfa-setup-secret")).toBeVisible({ timeout: 8000 });
+    await expect(page.getByTestId("list-mfa-setup-recovery-codes")).toBeVisible();
+
+    // Dev bypass code "000000" completes verify in non-prod; on success
+    // the gate clears mfaPending and the page navigates to "/".
+    await page.getByTestId("input-mfa-setup-code").fill("000000");
+    await page.getByTestId("button-mfa-setup-verify").click();
+    await expect(page).not.toHaveURL(/\/login$/, { timeout: 8000 });
+
+    const meRes = await page.request.get(`${BASE}/api/auth/me`);
+    expect(meRes.status()).toBe(200);
+    expect((await meRes.json()).email).toBe(seed.email);
+
+    // The enrollment row should now be enabled with the issued secret.
+    const { rows } = await pool.query(
+      `SELECT enabled, secret FROM mfa_enrollments WHERE user_id = $1`,
+      [seed.userId],
+    );
+    expect(rows[0]?.enabled).toBe(true);
+    expect(rows[0]?.secret).not.toBe("JBSWY3DPEHPK3PXP");
+    expect(typeof rows[0]?.secret).toBe("string");
+    expect((rows[0]?.secret as string).length).toBeGreaterThan(0);
   });
 
   test("MFA cancel button restores the email/password form", async ({ page }) => {
