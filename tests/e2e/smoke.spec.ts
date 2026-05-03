@@ -17,7 +17,7 @@ test("login, create time entry, generate invoice, verify total, check PDF", asyn
   });
 
   const loginRes = await request.post("/api/auth/login", {
-    data: { email: "dean@cherrystconsulting.com", password: "admin123" },
+    data: { email: "dean@cherrystconsulting.com", password: "admin123", orgSlug: "cherry-st" },
   });
   expect(loginRes.ok()).toBeTruthy();
 
@@ -68,7 +68,7 @@ test("invoice editor: add line, set discount+tax, send, partial+final payment", 
   request,
 }) => {
   const loginRes = await request.post("/api/auth/login", {
-    data: { email: "dean@cherrystconsulting.com", password: "admin123" },
+    data: { email: "dean@cherrystconsulting.com", password: "admin123", orgSlug: "cherry-st" },
   });
   expect(loginRes.ok()).toBeTruthy();
 

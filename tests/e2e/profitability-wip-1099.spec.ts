@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 
 test("admin opens reports -> runs profitability + wip -> verifies totals not NaN and stable", async ({ request }) => {
   const loginRes = await request.post("/api/auth/login", {
-    data: { email: "dean@cherrystconsulting.com", password: "admin123" },
+    data: { email: "dean@cherrystconsulting.com", password: "admin123", orgSlug: "cherry-st" },
   });
   expect(loginRes.ok()).toBeTruthy();
 
@@ -50,7 +50,7 @@ test("admin opens reports -> runs profitability + wip -> verifies totals not NaN
 
 test("admin exports 1099 CSV -> verifies CSV non-empty and has expected headers", async ({ request }) => {
   const loginRes = await request.post("/api/auth/login", {
-    data: { email: "dean@cherrystconsulting.com", password: "admin123" },
+    data: { email: "dean@cherrystconsulting.com", password: "admin123", orgSlug: "cherry-st" },
   });
   expect(loginRes.ok()).toBeTruthy();
 

@@ -105,7 +105,7 @@ export async function setEntitlement(
   granted: boolean,
   opts: { strict?: boolean } = {},
 ): Promise<number> {
-  let affected = 0;
+  let affected: number;
   if (granted) {
     const r = await pool().query(
       `INSERT INTO org_entitlements (org_id, feature, active, activated_at, updated_at)

@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 
 test("create project, duplicate, verify copy in list", async ({ request }) => {
   const loginRes = await request.post("/api/auth/login", {
-    data: { email: "dean@cherrystconsulting.com", password: "admin123" },
+    data: { email: "dean@cherrystconsulting.com", password: "admin123", orgSlug: "cherry-st" },
   });
   expect(loginRes.ok()).toBeTruthy();
 
@@ -54,7 +54,7 @@ test("create project, duplicate, verify copy in list", async ({ request }) => {
 
 test("duplicate copies project members", async ({ request }) => {
   const loginRes = await request.post("/api/auth/login", {
-    data: { email: "dean@cherrystconsulting.com", password: "admin123" },
+    data: { email: "dean@cherrystconsulting.com", password: "admin123", orgSlug: "cherry-st" },
   });
   expect(loginRes.ok()).toBeTruthy();
 

@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 
 test("admin creates estimate, sends, checks public view", async ({ request }) => {
   const loginRes = await request.post("/api/auth/login", {
-    data: { email: "dean@cherrystconsulting.com", password: "admin123" },
+    data: { email: "dean@cherrystconsulting.com", password: "admin123", orgSlug: "cherry-st" },
   });
   expect(loginRes.ok()).toBeTruthy();
 
@@ -50,7 +50,7 @@ test("admin creates estimate, sends, checks public view", async ({ request }) =>
 
 test("public decline works on SENT estimate", async ({ request }) => {
   const loginRes = await request.post("/api/auth/login", {
-    data: { email: "dean@cherrystconsulting.com", password: "admin123" },
+    data: { email: "dean@cherrystconsulting.com", password: "admin123", orgSlug: "cherry-st" },
   });
   expect(loginRes.ok()).toBeTruthy();
 
@@ -79,7 +79,7 @@ test("public decline works on SENT estimate", async ({ request }) => {
 
 test("recurring templates CRUD", async ({ request }) => {
   const loginRes = await request.post("/api/auth/login", {
-    data: { email: "dean@cherrystconsulting.com", password: "admin123" },
+    data: { email: "dean@cherrystconsulting.com", password: "admin123", orgSlug: "cherry-st" },
   });
   expect(loginRes.ok()).toBeTruthy();
 
@@ -116,7 +116,7 @@ test("recurring templates CRUD", async ({ request }) => {
 
 test("org settings CRUD", async ({ request }) => {
   const loginRes = await request.post("/api/auth/login", {
-    data: { email: "dean@cherrystconsulting.com", password: "admin123" },
+    data: { email: "dean@cherrystconsulting.com", password: "admin123", orgSlug: "cherry-st" },
   });
   expect(loginRes.ok()).toBeTruthy();
 

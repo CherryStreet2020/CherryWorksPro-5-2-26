@@ -13,7 +13,7 @@ test("Create client → verify in list → edit name → verify updated → dele
   await page.waitForURL("**/", { timeout: 10000 });
 
   const loginRes = await request.post("/api/auth/login", {
-    data: { email: "dean@cherrystconsulting.com", password: "admin123" },
+    data: { email: "dean@cherrystconsulting.com", password: "admin123", orgSlug: "cherry-st" },
   });
   expect(loginRes.ok()).toBeTruthy();
 

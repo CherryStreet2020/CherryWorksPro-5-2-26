@@ -57,13 +57,35 @@ export async function loginApi(
   let r = await request.post(`${BASE}/api/auth/login`, {
     data: { email, password },
   });
+  let usedPassword = password;
   if (r.status() >= 400 && password === PRIMARY_ADMIN_PASS) {
     r = await request.post(`${BASE}/api/auth/login`, {
       data: { email, password: FALLBACK_ADMIN_PASS },
     });
+    usedPassword = FALLBACK_ADMIN_PASS;
   }
   expect(r.status(), `login as ${email} failed`).toBe(200);
-  return password;
+  // Task #445: if the user has multiple orgs (e.g. the seeded
+  // `dean@cherrystconsulting.com` ends up with both `cherry-st` and
+  // `cherry-street-consulting` after enough test runs), the first
+  // login returns `{needsOrgPick: true, orgs: [...]}` with HTTP 200
+  // but no session is established. Re-POST with the first org's
+  // slug to complete the login. Without this every csrf-protected
+  // call afterwards 401s.
+  try {
+    const body = await r.json();
+    if (body && body.needsOrgPick && Array.isArray(body.orgs) && body.orgs.length > 0) {
+      const orgSlug = body.orgs[0].slug;
+      const r2 = await request.post(`${BASE}/api/auth/login`, {
+        data: { email, password: usedPassword, orgSlug },
+      });
+      expect(r2.status(), `org-pick login as ${email}/${orgSlug} failed`).toBe(200);
+    }
+  } catch {
+    // Body wasn't JSON or was empty — single-org login already
+    // succeeded; nothing to follow up on.
+  }
+  return usedPassword;
 }
 
 export async function getCsrfToken(
@@ -98,6 +120,19 @@ export async function loginViaPage(
     await page.fill('[data-testid="input-password"]', FALLBACK_ADMIN_PASS);
     await page.click('[data-testid="button-login"]');
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => undefined);
+  }
+  // Task #445: when the user has multiple orgs the login page renders
+  // a workspace picker (`button-org-pick-<slug>`). Wait briefly for it
+  // and click the first option so callers always end up signed into
+  // a real org. Use `waitFor` (not `isVisible`) so we don't race
+  // React paint after the post-login response.
+  const orgPick = page.locator('[data-testid^="button-org-pick-"]').first();
+  try {
+    await orgPick.waitFor({ state: "visible", timeout: 3000 });
+    await orgPick.click();
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => undefined);
+  } catch {
+    // No picker rendered — single-org user, nothing to do.
   }
 }
 

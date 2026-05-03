@@ -24,7 +24,7 @@ export interface CapturedEmail {
 }
 
 async function readAll(dir: string): Promise<CapturedEmail[]> {
-  let entries: string[] = [];
+  let entries: string[];
   try {
     entries = await fs.readdir(dir);
   } catch (err: any) {

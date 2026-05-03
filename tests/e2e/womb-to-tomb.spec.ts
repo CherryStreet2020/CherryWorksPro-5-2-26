@@ -13,7 +13,7 @@ async function adminLogin(page: Page) {
 
 async function apiLogin(request: APIRequestContext) {
   const res = await request.post("/api/auth/login", {
-    data: { email: "dean@cherrystconsulting.com", password: "admin123" },
+    data: { email: "dean@cherrystconsulting.com", password: "admin123", orgSlug: "cherry-st" },
   });
   expect(res.ok()).toBeTruthy();
 }

@@ -1,28 +1,23 @@
-import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { test, expect, type APIRequestContext } from "@playwright/test";
+import {
+  loginApi,
+  loginViaPage as loginViaPageHelper,
+  getCsrfToken,
+  BASE,
+} from "../tests/helpers/po/auth";
 
-const BASE = `http://localhost:${process.env.PORT || 5000}`;
-const ADMIN_EMAIL = "dean@cherrystconsulting.com";
-const ADMIN_PASS = "CherryWorks2026!";
+// Task #445: removed hardcoded `CherryWorks2026!` (drift from
+// `e2e/global-setup.ts`, which resets the seed admin to `admin123`).
+// `loginApi` / `loginViaPage` from the shared helper try the canonical
+// password first and fall back to `admin123` so the spec works under
+// both arrangements.
 
 async function login(request: APIRequestContext) {
-  const r = await request.post(`${BASE}/api/auth/login`, {
-    data: { email: ADMIN_EMAIL, password: ADMIN_PASS },
-  });
-  expect(r.status()).toBe(200);
+  await loginApi(request);
 }
 
-async function loginViaPage(page: Page) {
-  await page.goto("/login");
-  await page.fill('[data-testid="input-email"]', ADMIN_EMAIL);
-  await page.fill('[data-testid="input-password"]', ADMIN_PASS);
-  await page.click('[data-testid="button-login"]');
-  await page.waitForLoadState("networkidle", { timeout: 15000 });
-}
-
-async function getCsrfToken(request: APIRequestContext): Promise<string> {
-  const r = await request.get(`${BASE}/api/csrf-token`);
-  expect(r.status()).toBe(200);
-  return r.headers()["x-csrf-token"] || "";
+async function loginViaPage(page: import("@playwright/test").Page) {
+  await loginViaPageHelper(page);
 }
 
 async function apiPost(

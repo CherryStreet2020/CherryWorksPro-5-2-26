@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 
 test("send invoice and resend returns ok", async ({ request }) => {
   const loginRes = await request.post("/api/auth/login", {
-    data: { email: "dean@cherrystconsulting.com", password: "admin123" },
+    data: { email: "dean@cherrystconsulting.com", password: "admin123", orgSlug: "cherry-st" },
   });
   expect(loginRes.ok()).toBeTruthy();
 
@@ -37,7 +37,7 @@ test("send invoice and resend returns ok", async ({ request }) => {
 
 test("resend rejects DRAFT invoice with 400", async ({ request }) => {
   const loginRes = await request.post("/api/auth/login", {
-    data: { email: "dean@cherrystconsulting.com", password: "admin123" },
+    data: { email: "dean@cherrystconsulting.com", password: "admin123", orgSlug: "cherry-st" },
   });
   expect(loginRes.ok()).toBeTruthy();
 

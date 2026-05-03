@@ -77,7 +77,7 @@ test("timesheet flow: log time, submit, lock, approve, invoice, utilization", as
   expect(lockedBody.message).toContain("locked");
 
   const adminLogin = await request.post("/api/auth/login", {
-    data: { email: "dean@cherrystconsulting.com", password: "admin123" },
+    data: { email: "dean@cherrystconsulting.com", password: "admin123", orgSlug: "cherry-st" },
   });
   expect(adminLogin.ok()).toBeTruthy();
 

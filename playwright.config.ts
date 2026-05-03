@@ -111,5 +111,22 @@ export default defineConfig({
       fullyParallel: false,
       workers: 1,
     },
+    // Task #445: pick up the 21 specs under `tests/e2e/` that the
+    // audit (§5.1, §6.2.8) flagged as invisible to the default
+    // Playwright invocation. They predate `e2e/` and use the legacy
+    // direct-login pattern (canonical seed password reset by
+    // `e2e/global-setup.ts`), so they all share the seed admin and
+    // must run serially. They reuse the same `globalSetup` /
+    // `globalTeardown` hooks because the top-level `globalSetup`
+    // declaration applies project-wide; only `testDir` is
+    // overridden per project.
+    {
+      name: "tests-e2e",
+      testDir: "./tests/e2e",
+      testMatch: /.*\.spec\.ts$/,
+      fullyParallel: false,
+      workers: 1,
+      retries: 0,
+    },
   ],
 });
