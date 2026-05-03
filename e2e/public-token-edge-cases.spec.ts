@@ -68,8 +68,53 @@ test.describe("Public estimate — used / wrong-state (real flow)", () => {
   });
 });
 
-orgTest.describe("Estimate token — real used semantics", () => {
-  orgTest("accepting a SENT estimate transitions it out of SENT; a second accept returns 4xx", async ({
+orgTest.describe("Estimate token — real used UI surface", () => {
+  orgTest("UI: accept once → 'accepted' surface; revisit → 'accepted' surface persists (no second accept button)", async ({
+    page,
+    isolatedOrg,
+  }) => {
+    const tag = Date.now().toString(36);
+    const c = await isolatedOrg.request.post("/api/clients", {
+      data: { name: `UsedUi ${tag}` },
+      headers: { "X-CSRF-Token": isolatedOrg.csrf },
+    });
+    expect(c.ok()).toBe(true);
+    const client = await c.json();
+    const e = await isolatedOrg.request.post("/api/estimates", {
+      data: {
+        clientId: client.id,
+        issuedDate: new Date().toISOString().slice(0, 10),
+        validUntilDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+        lines: [{ description: "x", quantity: 1, unitRate: 50 }],
+      },
+      headers: { "X-CSRF-Token": isolatedOrg.csrf },
+    });
+    expect(e.ok()).toBe(true);
+    const est = await e.json();
+    const sendRes = await isolatedOrg.request.post(`/api/estimates/${est.id}/send`, {
+      data: {},
+      headers: { "X-CSRF-Token": isolatedOrg.csrf },
+    });
+    expect(sendRes.ok()).toBe(true);
+    const token: string = (await sendRes.json()).publicToken;
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
+
+    await page.goto(`/e/${token}`);
+    const acceptBtn = page.locator('[data-testid="button-public-accept-estimate"]');
+    await expect(acceptBtn).toBeVisible({ timeout: 15_000 });
+    await acceptBtn.click();
+    await expect(page.locator('[data-testid="text-estimate-accepted-msg"]')).toBeVisible({
+      timeout: 10_000,
+    });
+
+    await page.goto(`/e/${token}`);
+    await expect(page.locator('[data-testid="text-estimate-accepted-msg"]')).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.locator('[data-testid="button-public-accept-estimate"]')).toHaveCount(0);
+  });
+
+  orgTest("API: accepting a SENT estimate transitions it out of SENT; a second accept returns 4xx", async ({
     isolatedOrg,
   }) => {
     const tag = Date.now().toString(36);
