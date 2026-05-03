@@ -35,6 +35,7 @@ const PW_WORKERS = Number(process.env.PW_WORKERS || 2);
 // the serial project until it's migrated to the `isolatedOrg` fixture.
 const ANON_SPECS = [
   "_isolation-smoke.spec.ts",
+  "_fixtures-smoke.spec.ts",
   "public-pricing.spec.ts",
   "public-marketing-pages.spec.ts",
   "public-token-pages.spec.ts",

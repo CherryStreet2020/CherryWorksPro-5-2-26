@@ -134,9 +134,18 @@ export async function createIsolatedOrg(opts: {
   planTier?: string;
   /** Subscription status. Defaults to "active". */
   subscriptionStatus?: string;
+  /**
+   * Task #435 — Pre-populate the firm-profile fields so AdminSetupGate
+   * (audit §6.1.1) lets ADMIN navigation through to the requested
+   * page. Defaults to true to match every existing spec's working
+   * assumption that admin pages render their actual content. Specs
+   * asserting the gated surface itself should pass `false`.
+   */
+  firmProfileComplete?: boolean;
 } = {}): Promise<IsolatedOrg> {
   const planTier = opts.planTier ?? "BUSINESS";
   const subscriptionStatus = opts.subscriptionStatus ?? "active";
+  const firmProfileComplete = opts.firmProfileComplete ?? true;
   const localId = randomUUID().replace(/-/g, "").slice(0, 12);
   const slug = slugForRun(localId);
   const orgName = `E2E Iso ${localId}`;
@@ -149,10 +158,20 @@ export async function createIsolatedOrg(opts: {
   try {
     await client.query("BEGIN");
     const orgRow = await client.query<{ id: string }>(
-      `INSERT INTO orgs (name, slug, plan_tier, subscription_status, max_team_members)
-       VALUES ($1, $2, $3, $4, 999999)
+      `INSERT INTO orgs (
+         name, slug, plan_tier, subscription_status, max_team_members,
+         email, address_city
+       )
+       VALUES ($1, $2, $3, $4, 999999, $5, $6)
        RETURNING id`,
-      [orgName, slug, planTier, subscriptionStatus],
+      [
+        orgName,
+        slug,
+        planTier,
+        subscriptionStatus,
+        firmProfileComplete ? `firm-${localId}@e2e.test` : null,
+        firmProfileComplete ? "E2E City" : null,
+      ],
     );
     const orgId = orgRow.rows[0].id;
     const userRow = await client.query<{ id: string }>(

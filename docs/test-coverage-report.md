@@ -282,3 +282,104 @@ test("creates a brand without racing the seed admin", async ({ isolatedOrg }) =>
 ```
 
 Then add the spec's filename to `ANON_SPECS` in `playwright.config.ts`.
+
+## Shared E2E fixture library (Task #435)
+
+Built on top of the parallel-safe org isolation from Task #432, this
+layer gives every downstream spec family one place to grab roles,
+tier flips, third-party stubs, and a working firm-profile gate
+bypass — so the next ten task families don't reinvent any of it.
+
+### Per-role pre-authenticated pages
+
+`tests/helpers/po/sessions.ts` mints ONE isolated BUSINESS-tier org
+per Playwright worker with three users (`ADMIN`, `MANAGER`,
+`TEAM_MEMBER`), logs each role in once, and persists the resulting
+storageState to `test-results/storage/seed-<role>-w<N>.json`. The
+`fixtures.ts` test object exposes them as worker-scoped fixtures:
+
+```ts
+import { test, expect } from "../tests/helpers/po/fixtures";
+test("only managers can see X", async ({ seedManagerPage }) => { ... });
+test("team members cannot do Y", async ({ seedTeamMemberPage }) => { ... });
+```
+
+**Trade-off** — these fixtures are read-only by convention. Multiple
+tests in the same worker share the same backing user, so any spec
+that mutates state should use the per-test `isolatedOrg` fixture
+instead. The seed-roles org is slug-prefixed `e2e_iso_<runId>_` so
+the global-teardown sweep cleans it up alongside everything else.
+
+### Tier + entitlement helpers
+
+`tests/helpers/po/tier.ts` — direct-DB shortcuts:
+
+```ts
+import { setOrgTier, setEntitlement } from "../tests/helpers/po/tier";
+
+// Knock an isolated BUSINESS org down to STARTER to assert paywall UI.
+await setOrgTier(isolatedOrg.orgId, "STARTER");
+
+// Grant / revoke a persisted org_entitlements row.
+await setEntitlement(isolatedOrg.orgId, "multi_brand", true);
+await setEntitlement(isolatedOrg.orgId, "multi_brand", false);
+```
+
+`marketing_os` is partially tier-derived
+(`server/services/marketing-os-tier.ts`); revoking it via
+`setEntitlement(false)` while the org sits on BUSINESS+ is a no-op
+through the read-path overlay. Drop the tier alongside the revoke if
+you need marketing_os fully off.
+
+### Firm-profile / AdminSetupGate helpers
+
+`tests/helpers/po/setup-gate.ts` — the audit's §6.1.1 finding that
+`AdminSetupGate` silently swallows every admin route while the firm
+profile is incomplete forced a default-on opt-in flag on the
+`isolatedOrg` fixture:
+
+```ts
+// Default: firm profile pre-completed (matches every existing spec).
+await use({ ...iso, request, csrf });
+
+// Opt-out — for specs asserting the gated surface itself.
+await clearFirmProfile(orgId);
+```
+
+### Third-party stubs
+
+`tests/helpers/po/stubs.ts` exports route-level `page.route(...)`
+stubs for every integration in audit §3.6, each with `.success(...)`,
+`.failure(code)`, and `.timeout()` variants:
+
+| Integration | Module | Notes |
+| --- | --- | --- |
+| Stripe Checkout | `stripeStub` | Browser-side only. Server-side prefer `setOrgTier`. |
+| M365 Graph | `graphStub` | OAuth token + `sendMail` |
+| Gmail | `gmailStub` | OAuth token + `messages/send` |
+| Groq OCR | `groqStub` | Browser-side. Server-side: `GROQ_API_KEY=""` to short-circuit. |
+| Tesseract | `tesseractStub` | In-process — no-op marker; toggle via `TESSERACT_FALLBACK_DISABLED=1`. |
+| Frankfurter FX | `frankfurterStub` | Browser + server. |
+| Clearbit logos | `clearbitStub` | Direct image fetch from client. |
+| Plaid | `plaidStub` | link_token / public_token exchange / accounts.get |
+| Resend inbound webhook | `resendStub` | Payload builder — POSTed by spec to local `/api/*`. |
+
+Default behavior with no stub installed is real network — every
+existing happy-path spec is unaffected. Stubs live under `tests/`
+only and never import server code, so they tree-shake cleanly from
+production builds.
+
+### Smoke coverage
+
+`e2e/_fixtures-smoke.spec.ts` (added to the parallel `anonymous`
+project) exercises every helper in this section at least once:
+
+- `seedManagerPage` / `seedTeamMemberPage` reach `/api/auth/me` with
+  the right role
+- `setOrgTier(...)` downgrade engages the Approvals `<UpgradeWall>`
+- `setEntitlement(...)` upserts a row visible via
+  `/api/me/entitlements`
+- `completeFirmProfile` / `clearFirmProfile` flip the
+  `firmProfileComplete` field on `/api/implementation-status`
+- Each third-party stub variant fires at least once
+- `resendStub.build(...)` produces a well-formed inbound payload

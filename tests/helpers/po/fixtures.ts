@@ -35,6 +35,13 @@ import {
 } from "./isolation";
 import { loginApi, ADMIN_EMAIL, PRIMARY_ADMIN_PASS, FALLBACK_ADMIN_PASS, BASE } from "./auth";
 import { request as pwRequest } from "@playwright/test";
+import {
+  createRoleSeedOrg,
+  persistRoleStorageState,
+  openPageWithStorageState,
+  teardownRoleSeedOrg,
+  type RoleSeedOrg,
+} from "./sessions";
 
 export interface IsolatedOrgFixture extends IsolatedOrg {
   request: APIRequestContext;
@@ -54,6 +61,17 @@ interface Fixtures {
    * reused across every test in the worker — no per-test login dance.
    */
   seedAdminPage: Page;
+  /**
+   * Per-worker authenticated `Page` for a MANAGER user seeded into the
+   * worker's role-seed org (see Task #435 / sessions.ts).
+   * READ-ONLY by convention — see sessions.ts docstring.
+   */
+  seedManagerPage: Page;
+  /**
+   * Per-worker authenticated `Page` for a TEAM_MEMBER user. Same
+   * read-only convention.
+   */
+  seedTeamMemberPage: Page;
 }
 
 interface WorkerFixtures {
@@ -63,6 +81,14 @@ interface WorkerFixtures {
    * runs.
    */
   seedAdminStorageStatePath: string;
+  /**
+   * Per-worker isolated org with ADMIN/MANAGER/TEAM_MEMBER users.
+   * Lazily created on first use of any per-role page fixture, torn
+   * down at worker shutdown.
+   */
+  roleSeedOrg: RoleSeedOrg;
+  managerStorageStatePath: string;
+  teamMemberStorageStatePath: string;
 }
 
 const STORAGE_DIR = resolve(process.cwd(), "test-results/storage");
@@ -107,6 +133,68 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
     } finally {
       await request.dispose().catch(() => undefined);
       await deleteIsolatedOrg(iso.orgId);
+    }
+  },
+
+  // Task #435 — per-worker role-seed org + role-scoped storageState
+  // files. The org is created lazily on first use of any per-role page
+  // and torn down at worker shutdown.
+  roleSeedOrg: [
+    // eslint-disable-next-line no-empty-pattern -- Playwright requires the fixture-arg destructure even when no other fixtures are read.
+    async ({}, use) => {
+      const seed = await createRoleSeedOrg();
+      try {
+        await use(seed);
+      } finally {
+        await teardownRoleSeedOrg(seed);
+      }
+    },
+    { scope: "worker" },
+  ],
+
+  managerStorageStatePath: [
+    async ({ roleSeedOrg }, use, workerInfo) => {
+      const file = await persistRoleStorageState(
+        workerInfo.workerIndex,
+        "MANAGER",
+        roleSeedOrg.users.MANAGER.email,
+        roleSeedOrg.users.MANAGER.password,
+        workerInfo.project.name,
+      );
+      await use(file);
+    },
+    { scope: "worker" },
+  ],
+
+  teamMemberStorageStatePath: [
+    async ({ roleSeedOrg }, use, workerInfo) => {
+      const file = await persistRoleStorageState(
+        workerInfo.workerIndex,
+        "TEAM_MEMBER",
+        roleSeedOrg.users.TEAM_MEMBER.email,
+        roleSeedOrg.users.TEAM_MEMBER.password,
+        workerInfo.project.name,
+      );
+      await use(file);
+    },
+    { scope: "worker" },
+  ],
+
+  seedManagerPage: async ({ browser, managerStorageStatePath }, use) => {
+    const { page, close } = await openPageWithStorageState(browser, managerStorageStatePath);
+    try {
+      await use(page);
+    } finally {
+      await close();
+    }
+  },
+
+  seedTeamMemberPage: async ({ browser, teamMemberStorageStatePath }, use) => {
+    const { page, close } = await openPageWithStorageState(browser, teamMemberStorageStatePath);
+    try {
+      await use(page);
+    } finally {
+      await close();
     }
   },
 });
