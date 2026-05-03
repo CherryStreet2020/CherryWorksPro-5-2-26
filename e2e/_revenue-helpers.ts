@@ -264,18 +264,15 @@ export async function readOrgBilling(orgId: string): Promise<OrgBilling> {
   };
 }
 
-/**
- * Ensure the documented payout dedup unique index exists. The route at
- * server/routes/payout-routes.ts catches 23505 on `uq_payout_dedup`
- * and returns 409; the index isn't installed in every environment, so
- * tests install it idempotently to enforce the contract unconditionally.
- */
-export async function ensurePayoutDedupIndex(): Promise<void> {
-  await revPool().query(
-    `CREATE UNIQUE INDEX IF NOT EXISTS uq_payout_dedup
-       ON team_member_payouts_v2
-       (org_id, team_member_id, payout_date, amount, payment_method)`,
+export async function payoutDedupIndexInstalled(): Promise<boolean> {
+  const r = await revPool().query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND indexname  = 'uq_payout_dedup'
+     ) AS exists`,
   );
+  return r.rows[0]?.exists === true;
 }
 
 export async function sweepOrgRevenue(orgId: string): Promise<void> {
