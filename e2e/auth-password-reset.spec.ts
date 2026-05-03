@@ -6,6 +6,7 @@ import { Pool } from "pg";
 import { createHash, randomBytes } from "node:crypto";
 import { test, expect } from "../tests/helpers/po/fixtures";
 import { BASE, freshApiContext, freshIp } from "../tests/helpers/po/auth";
+import { waitForCapturedEmail, clearCapturedEmails, DEFAULT_CAPTURE_DIR } from "../tests/helpers/email-capture";
 
 let pool: Pool;
 test.beforeAll(() => {
@@ -64,6 +65,31 @@ test.describe("Forgot password — issues a token row", () => {
       [isolatedOrg.userId],
     );
     expect(audit.rows[0].n).toBeGreaterThanOrEqual(1);
+  });
+
+  test("forgot-password dispatches reset email through capture harness", async ({
+    isolatedOrg,
+  }) => {
+    const dir = process.env.EMAIL_CAPTURE_DIR || DEFAULT_CAPTURE_DIR;
+    await clearCapturedEmails(dir).catch(() => {});
+    const watermark = Date.now();
+
+    const ctx = await freshApiContext();
+    try {
+      const r = await ctx.post(`${BASE}/api/auth/forgot-password`, {
+        data: { email: isolatedOrg.email },
+      });
+      expect(r.status()).toBe(200);
+    } finally {
+      await ctx.dispose();
+    }
+
+    const captured = await waitForCapturedEmail(
+      { to: isolatedOrg.email, subject: /reset/i },
+      { dir, sinceMs: watermark, timeoutMs: 5000 },
+    );
+    expect(captured.html).toMatch(/reset-password/i);
+    expect(captured.text || captured.html).toBeTruthy();
   });
 });
 

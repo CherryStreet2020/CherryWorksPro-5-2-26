@@ -519,7 +519,14 @@ browser receives a raw 401 JSON body. The `auth-session.spec.ts`
 cookie context) so any future fix that adds a real redirect will
 flip the test red and force the assertion to be rewritten.
 
-Test counts: 6 / 10 / 5 / 5 / 168 / 1 / 3 / 1 = 199 new specs across
+The new password-reset email-capture assertion lives in the existing
+`auth-password-reset.spec.ts` (test "forgot-password dispatches reset
+email through capture harness"). It uses the same `isolatedOrg`
+fixture as the rest of the suite and proves the
+`/api/auth/forgot-password` flow actually reaches the transport, not
+just the audit row.
+
+Test counts: 6 / 10 / 6 / 5 / 168 / 1 / 3 / 1 = 200 new specs across
 auth-login-extras / auth-signup / auth-password-reset / auth-session /
 role-guards-matrix / auth-welcome-email / auth-mfa-login-ui /
 auth-mfa-pending-gate.
