@@ -1,51 +1,20 @@
-import { test, expect } from "@playwright/test";
-
-// FIXME-task-455: Legacy shared-state spec (audit §6.2.8). The
-// surrounding suite mutates the same seeded admin org rows, so the
-// assertions race other serial specs. Skipped until migrated to the
-// per-test `isolatedOrg` fixture (see tests/helpers/po/fixtures.ts).
-// Tracked: project task #455.
-import { test as _t } from "@playwright/test";
-_t.beforeEach(() => _t.fixme(true, "Task #455: legacy shared-state spec; migrate to isolatedOrg first"));
+import { test, expect } from "../helpers/po/fixtures";
+import { postJson, loginPageAsIso, seedDraftInvoice } from "./_helpers";
 
 test.describe("Invoice CRUD — create, duplicate, verify", () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto("/");
-    await page.waitForSelector('[data-testid="input-email"]', { timeout: 15000 });
-    await page.fill('[data-testid="input-email"]', "dean@cherrystconsulting.com");
-    await page.fill('[data-testid="input-password"]', "admin123");
-    await page.click('[data-testid="button-login"]');
-    await page.waitForURL("**/", { timeout: 10000 });
-    await expect(page.locator("text=Dashboard").first()).toBeVisible({ timeout: 10000 });
-  });
+  test("duplicate invoice creates DRAFT copy in list", async ({ isolatedOrg, page }) => {
+    const { invoice } = await seedDraftInvoice(isolatedOrg);
 
-  test("duplicate invoice creates DRAFT copy in list", async ({ page, request }) => {
-    const loginRes = await request.post("/api/auth/login", {
-      data: { email: "dean@cherrystconsulting.com", password: "admin123", orgSlug: "cherry-st" },
-    });
-    expect(loginRes.ok()).toBeTruthy();
-
-    const listRes = await request.get("/api/invoices");
-    expect(listRes.ok()).toBeTruthy();
-    const invoices = await listRes.json();
-
-    if (invoices.length === 0) {
-      test.skip();
-      return;
-    }
-
-    const source = invoices[0];
-
-    const dupRes = await request.post(`/api/invoices/${source.id}/duplicate`);
+    const dupRes = await postJson(isolatedOrg, `/api/invoices/${invoice.id}/duplicate`, {});
     expect(dupRes.ok()).toBeTruthy();
     const dup = await dupRes.json();
     expect(dup.status).toBe("DRAFT");
-    expect(dup.id).not.toBe(source.id);
-    expect(dup.clientId).toBe(source.clientId);
+    expect(dup.id).not.toBe(invoice.id);
+    expect(dup.clientId).toBe(invoice.clientId);
 
-    await page.goto("/");
-    await page.click('a[href="/invoices"]');
-    await page.waitForSelector('[data-testid="text-invoices-title"]', { timeout: 10000 });
+    await loginPageAsIso(page, isolatedOrg);
+    await page.goto("/invoices");
+    await page.waitForSelector('[data-testid="text-invoices-title"]', { timeout: 15000 });
 
     await page.fill('[data-testid="input-search-invoices"]', dup.number);
     await page.waitForTimeout(500);
@@ -54,9 +23,10 @@ test.describe("Invoice CRUD — create, duplicate, verify", () => {
     await expect(row).toBeVisible({ timeout: 5000 });
   });
 
-  test("search filters invoices by number", async ({ page }) => {
-    await page.click('a[href="/invoices"]');
-    await page.waitForSelector('[data-testid="text-invoices-title"]', { timeout: 10000 });
+  test("search filters invoices by number", async ({ isolatedOrg, page }) => {
+    await loginPageAsIso(page, isolatedOrg);
+    await page.goto("/invoices");
+    await page.waitForSelector('[data-testid="text-invoices-title"]', { timeout: 15000 });
 
     const searchInput = page.locator('[data-testid="input-search-invoices"]');
     await expect(searchInput).toBeVisible();
@@ -65,9 +35,10 @@ test.describe("Invoice CRUD — create, duplicate, verify", () => {
     await page.waitForTimeout(300);
   });
 
-  test("status filter tabs work", async ({ page }) => {
-    await page.click('a[href="/invoices"]');
-    await page.waitForSelector('[data-testid="text-invoices-title"]', { timeout: 10000 });
+  test("status filter tabs work", async ({ isolatedOrg, page }) => {
+    await loginPageAsIso(page, isolatedOrg);
+    await page.goto("/invoices");
+    await page.waitForSelector('[data-testid="text-invoices-title"]', { timeout: 15000 });
 
     const allBtn = page.locator('[data-testid="button-filter-all"]');
     await expect(allBtn).toBeVisible();
@@ -82,9 +53,10 @@ test.describe("Invoice CRUD — create, duplicate, verify", () => {
     await page.waitForTimeout(300);
   });
 
-  test("sortable columns respond to clicks", async ({ page }) => {
-    await page.click('a[href="/invoices"]');
-    await page.waitForSelector('[data-testid="text-invoices-title"]', { timeout: 10000 });
+  test("sortable columns respond to clicks", async ({ isolatedOrg, page }) => {
+    await loginPageAsIso(page, isolatedOrg);
+    await page.goto("/invoices");
+    await page.waitForSelector('[data-testid="text-invoices-title"]', { timeout: 15000 });
 
     const thTotal = page.locator('[data-testid="th-sort-total"]');
     if (await thTotal.isVisible()) {

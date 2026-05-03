@@ -1,12 +1,5 @@
-import { test, expect } from "@playwright/test";
-
-// FIXME-task-455: Legacy shared-state spec (audit §6.2.8). The
-// surrounding suite mutates the same seeded admin org rows, so the
-// assertions race other serial specs. Skipped until migrated to the
-// per-test `isolatedOrg` fixture (see tests/helpers/po/fixtures.ts).
-// Tracked: project task #455.
-import { test as _t } from "@playwright/test";
-_t.beforeEach(() => _t.fixme(true, "Task #455: legacy shared-state spec; migrate to isolatedOrg first"));
+import { test, expect } from "../helpers/po/fixtures";
+import { postJson } from "./_helpers";
 
 function generateInvoiceCSV(invNum: string, clientName: string): Buffer {
   const header =
@@ -55,18 +48,13 @@ function generateInvoiceCSV(invNum: string, clientName: string): Buffer {
 }
 
 test("import wizard: upload, selective import, idempotent check, rollback", async ({
-  request,
+  isolatedOrg,
 }) => {
-  const loginRes = await request.post("/api/auth/login", {
-    data: { email: "dean@cherrystconsulting.com", password: "admin123", orgSlug: "cherry-st" },
-  });
-  expect(loginRes.ok()).toBe(true);
-
   const invNum = "9" + String(Date.now());
   const clientName = `E2E Import Client ${invNum}`;
   const csvBuffer = generateInvoiceCSV(invNum, clientName);
 
-  const uploadRes = await request.post("/api/import/upload", {
+  const uploadRes = await isolatedOrg.request.post("/api/import/upload", {
     multipart: {
       files: {
         name: "invoice_details_generated.csv",
@@ -74,6 +62,7 @@ test("import wizard: upload, selective import, idempotent check, rollback", asyn
         buffer: csvBuffer,
       },
     },
+    headers: { "X-CSRF-Token": isolatedOrg.csrf },
   });
   expect(uploadRes.ok()).toBe(true);
   const uploadData = await uploadRes.json();
@@ -108,38 +97,40 @@ test("import wizard: upload, selective import, idempotent check, rollback", asyn
     payoutDateEnd: "",
   };
 
-  const dryRunRes = await request.post(
+  const dryRunRes = await postJson(
+    isolatedOrg,
     `/api/import/dry-run/${importRunId}`,
-    { data: importOptions },
+    importOptions,
   );
   expect(dryRunRes.ok()).toBe(true);
   const dryPlan = await dryRunRes.json();
   expect(dryPlan.invoicesToCreate).toBe(1);
 
-  const execRes = await request.post(
-    `/api/import/execute/${importRunId}`,
-    { data: { ...importOptions, planHash: dryPlan.planHash } },
-  );
+  const execRes = await postJson(isolatedOrg, `/api/import/execute/${importRunId}`, {
+    ...importOptions,
+    planHash: dryPlan.planHash,
+  });
   expect(execRes.ok()).toBe(true);
   const execData = await execRes.json();
   expect(execData.status).toBe("COMPLETED");
   expect(execData.counts.invoice).toBe(1);
 
-  const runDetailRes = await request.get(`/api/import/runs/${importRunId}`);
+  const runDetailRes = await isolatedOrg.request.get(`/api/import/runs/${importRunId}`);
   expect(runDetailRes.ok()).toBe(true);
   const runDetail = await runDetailRes.json();
   expect(runDetail.status).toBe("COMPLETED");
   expect(runDetail.importedKeyCount).toBeGreaterThan(0);
 
-  const reExecRes = await request.post(
+  const reExecRes = await postJson(
+    isolatedOrg,
     `/api/import/execute/${importRunId}`,
-    { data: importOptions },
+    importOptions,
   );
   expect(reExecRes.ok()).toBe(false);
   const reExecData = await reExecRes.json();
   expect(reExecData.message).toContain("cannot execute");
 
-  const uploadRes2 = await request.post("/api/import/upload", {
+  const uploadRes2 = await isolatedOrg.request.post("/api/import/upload", {
     multipart: {
       files: {
         name: "invoice_details_generated.csv",
@@ -147,34 +138,36 @@ test("import wizard: upload, selective import, idempotent check, rollback", asyn
         buffer: csvBuffer,
       },
     },
+    headers: { "X-CSRF-Token": isolatedOrg.csrf },
   });
   expect(uploadRes2.ok()).toBe(true);
   const uploadData2 = await uploadRes2.json();
   const importRunId2 = uploadData2.importRunId;
 
-  const dryRunRes2 = await request.post(
+  const dryRunRes2 = await postJson(
+    isolatedOrg,
     `/api/import/dry-run/${importRunId2}`,
-    { data: importOptions },
+    importOptions,
   );
   expect(dryRunRes2.ok()).toBe(true);
   const dryPlan2 = await dryRunRes2.json();
   expect(dryPlan2.invoicesToCreate).toBe(0);
   expect(dryPlan2.skippedDuplicateKeys).toBeGreaterThan(0);
 
-  const rollbackRes = await request.post(
+  const rollbackRes = await postJson(
+    isolatedOrg,
     `/api/import/rollback/${importRunId}`,
+    {},
   );
   expect(rollbackRes.ok()).toBe(true);
   const rollbackData = await rollbackRes.json();
   expect(rollbackData.status).toBe("ROLLED_BACK");
 
-  const runAfterRollback = await request.get(
-    `/api/import/runs/${importRunId}`,
-  );
+  const runAfterRollback = await isolatedOrg.request.get(`/api/import/runs/${importRunId}`);
   const runAfterData = await runAfterRollback.json();
   expect(runAfterData.status).toBe("ROLLED_BACK");
 
-  const runsListRes = await request.get("/api/import/runs");
+  const runsListRes = await isolatedOrg.request.get("/api/import/runs");
   expect(runsListRes.ok()).toBe(true);
   const runsList = await runsListRes.json();
   expect(runsList.length).toBeGreaterThanOrEqual(2);
