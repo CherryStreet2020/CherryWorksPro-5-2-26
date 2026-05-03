@@ -200,6 +200,34 @@ export async function createIsolatedOrg(opts: {
   }
 }
 
+/**
+ * Add an extra user (MANAGER / TEAM_MEMBER / etc.) to an already-created
+ * isolated org. Returns the new user's email + plaintext password so the
+ * caller can sign in via the public /api/auth/login route. Lets a single
+ * spec exercise per-role variants (e.g. dashboard role gating) without
+ * sharing a seed org with other workers.
+ */
+export async function addUserToIsolatedOrg(
+  orgId: string,
+  role: "ADMIN" | "MANAGER" | "TEAM_MEMBER",
+): Promise<{ userId: string; email: string; password: string }> {
+  const localId = randomUUID().replace(/-/g, "").slice(0, 12);
+  const email = `iso-${role.toLowerCase()}-${localId}@e2e-${localId}.test`;
+  const password = `IsoPass!${localId}`;
+  const hashed = await bcrypt.hash(password, 10);
+  const p = pool();
+  const r = await p.query<{ id: string }>(
+    `INSERT INTO users (
+       org_id, email, password, name, first_name, last_name, role,
+       is_active, onboarding_complete, temp_password
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, true, true, false)
+     RETURNING id`,
+    [orgId, email, hashed, `Iso ${role} ${localId}`, "Iso", role.replace("_", " "), role],
+  );
+  return { userId: r.rows[0].id, email, password };
+}
+
 /** Cached list of `org_id`-bearing tables to avoid hitting
  * information_schema on every cleanup. The schema doesn't change
  * during a single test run. */
