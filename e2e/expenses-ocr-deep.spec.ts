@@ -6,8 +6,14 @@ import {
 } from "../tests/helpers/po/stubs";
 import { loginIsolated } from "./_iso-helpers";
 
+// 1x1 PNG — sufficient for upload/form-population tests where the scan
+// response is stubbed.
 const TINY_PNG_B64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+// 16x16 white PNG — large enough for Groq's vision API (which rejects
+// sub-2px images) and for Tesseract to attempt OCR.
+const SCAN_PNG_B64 =
+  "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAAAAAA6mKC9AAAAD0lEQVR4nGP4jwYYRrYAAID5/wEokJxdAAAAAElFTkSuQmCC";
 
 async function seedCategory(iso: {
   request: import("@playwright/test").APIRequestContext;
@@ -54,7 +60,7 @@ test.describe("Expenses — OCR + filters + lifecycle (#440)", () => {
     await input.setInputFiles({
       name: "receipt.png",
       mimeType: "image/png",
-      buffer: Buffer.from(TINY_PNG_B64, "base64"),
+      buffer: Buffer.from(SCAN_PNG_B64, "base64"),
     });
 
     await expect(page.getByTestId("input-expense-vendor")).toHaveValue(
@@ -67,17 +73,112 @@ test.describe("Expenses — OCR + filters + lifecycle (#440)", () => {
     await expect(page.getByTestId("input-expense-tax")).toHaveValue(/3\.?9?9?/);
   });
 
-  test("OCR vendor-only response (Tesseract-style minimal payload) populates the form", async ({
+  test("OCR backend: Groq primary path returns the documented contract", async ({
+    isolatedOrg,
+  }) => {
+    const upload = await isolatedOrg.request.post(
+      "/api/expenses/upload-receipt",
+      {
+        headers: { "x-csrf-token": isolatedOrg.csrf },
+        multipart: {
+          receipt: {
+            name: "groq.png",
+            mimeType: "image/png",
+            buffer: Buffer.from(SCAN_PNG_B64, "base64"),
+          },
+        },
+      },
+    );
+    expect(upload.status(), await upload.text()).toBe(200);
+    const { url } = (await upload.json()) as { url: string };
+
+    const scan = await isolatedOrg.request.post(
+      "/api/expenses/scan-receipt",
+      {
+        headers: { "x-csrf-token": isolatedOrg.csrf },
+        data: { receiptUrl: url },
+      },
+    );
+    expect(scan.status(), await scan.text()).toBe(200);
+    const body = (await scan.json()) as Record<string, unknown>;
+    // Contract: every documented field is present, currency defaults to USD,
+    // lineItems is always an array. The values themselves are nondeterministic
+    // for a non-receipt test image; the contract is what we assert.
+    for (const k of [
+      "vendor",
+      "date",
+      "subtotal",
+      "taxAmount",
+      "tipAmount",
+      "totalAmount",
+      "description",
+      "currency",
+      "lineItems",
+    ]) {
+      expect(body).toHaveProperty(k);
+    }
+    expect(body.currency).toBe("USD");
+    expect(Array.isArray(body.lineItems)).toBe(true);
+  });
+
+  test("OCR backend: forcing Tesseract fallback exercises the in-process OCR path", async ({
+    isolatedOrg,
+  }) => {
+    const upload = await isolatedOrg.request.post(
+      "/api/expenses/upload-receipt",
+      {
+        headers: { "x-csrf-token": isolatedOrg.csrf },
+        multipart: {
+          receipt: {
+            name: "tess.png",
+            mimeType: "image/png",
+            buffer: Buffer.from(SCAN_PNG_B64, "base64"),
+          },
+        },
+      },
+    );
+    expect(upload.status(), await upload.text()).toBe(200);
+    const { url } = (await upload.json()) as { url: string };
+
+    // The `x-e2e-force-ocr-provider: tesseract` header is honored only when
+    // NODE_ENV !== "production"; it bypasses the Groq SDK call so the
+    // server-side Tesseract fallback runs. This is the only way to drive
+    // the fallback path deterministically without unsetting GROQ_API_KEY
+    // for the whole test process.
+    const scan = await isolatedOrg.request.post(
+      "/api/expenses/scan-receipt",
+      {
+        headers: {
+          "x-csrf-token": isolatedOrg.csrf,
+          "x-e2e-force-ocr-provider": "tesseract",
+        },
+        data: { receiptUrl: url },
+      },
+    );
+    expect(scan.status(), await scan.text()).toBe(200);
+    const body = (await scan.json()) as Record<string, unknown>;
+    // Same contract shape as the Groq path — the route normalizes both
+    // providers into a single response shape.
+    for (const k of [
+      "vendor",
+      "totalAmount",
+      "currency",
+      "lineItems",
+    ]) {
+      expect(body).toHaveProperty(k);
+    }
+    expect(body.currency).toBe("USD");
+    expect(Array.isArray(body.lineItems)).toBe(true);
+  });
+
+  test("OCR frontend: scan response populates the new-expense form", async ({
     page,
     isolatedOrg,
   }) => {
-    // Frontend contract: when the scan endpoint returns only `vendor` (the
-    // shape Tesseract produces on low-confidence images, vs Groq's full
-    // extraction), the new-expense form still pre-fills the vendor field.
-    // Note: the Groq-vs-Tesseract selection itself happens server-side in
-    // `/api/expenses/scan-receipt` and is covered by the unit-level tests in
-    // `server/lib/llm-providers.test.ts`; Playwright cannot intercept the
-    // server-side Groq SDK call.
+    // Frontend contract test using a stubbed scan response so the
+    // assertions are deterministic regardless of which OCR provider the
+    // backend would have invoked. The backend OCR path is covered by the
+    // two preceding tests.
     await apiBoundary.fulfill(
       page,
       "**/api/expenses/upload-receipt",
@@ -85,7 +186,7 @@ test.describe("Expenses — OCR + filters + lifecycle (#440)", () => {
       { url: "/api/uploads/receipts/stub2.png", filename: "stub2.png" },
     );
     await apiBoundary.fulfill(page, "**/api/expenses/scan-receipt", 200, {
-      vendor: "Tesseract Fallback Co",
+      vendor: "Form Populated Co",
     });
     await tesseractStub.success(page);
 
@@ -99,10 +200,10 @@ test.describe("Expenses — OCR + filters + lifecycle (#440)", () => {
     await input.setInputFiles({
       name: "fallback.png",
       mimeType: "image/png",
-      buffer: Buffer.from(TINY_PNG_B64, "base64"),
+      buffer: Buffer.from(SCAN_PNG_B64, "base64"),
     });
     await expect(page.getByTestId("input-expense-vendor")).toHaveValue(
-      "Tesseract Fallback Co",
+      "Form Populated Co",
       { timeout: 15000 },
     );
   });

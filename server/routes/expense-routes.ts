@@ -458,7 +458,16 @@ app.post("/api/expenses/scan-receipt", requireAuth, async (req, res) => {
     const groqApiKey = process.env.GROQ_API_KEY;
     let extracted: any = null;
 
-    if (groqApiKey) {
+    // Test-only escape hatch: when not in production, allow E2E specs to
+    // force the Tesseract fallback path so we can deterministically cover
+    // it without uninstalling the GROQ_API_KEY env var. Honored only when
+    // NODE_ENV !== "production"; the header is ignored in production.
+    const forceProvider =
+      process.env.NODE_ENV !== "production"
+        ? (req.header("x-e2e-force-ocr-provider") || "").toLowerCase()
+        : "";
+
+    if (groqApiKey && forceProvider !== "tesseract") {
       console.log("[OCR] Using Groq AI vision for receipt scan");
       const Groq = (await import("groq-sdk")).default;
       const groq = new Groq({ apiKey: groqApiKey });

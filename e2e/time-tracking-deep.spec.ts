@@ -84,22 +84,24 @@ test.describe("Time tracking — submit + dialog selectors + week-nav (#440)", (
     await expect(submitBtn).toBeEnabled();
     await submitBtn.click();
 
-    // The backend timesheet for this week must transition to SUBMITTED.
-    await expect
-      .poll(
-        async () => {
-          const wk = await isolatedOrg.request.get(
-            `/api/timesheets/my-week?weekStartDate=${weekStart}`,
-          );
-          if (wk.status() !== 200) return null;
-          const body = (await wk.json()) as {
-            timesheet?: { status?: string } | null;
-          };
-          return body.timesheet?.status ?? null;
-        },
-        { timeout: 15000 },
-      )
-      .toBe("SUBMITTED");
+    // UI-visible state transition: the "Submitted • Awaiting approval"
+    // banner appears and the submit button is replaced by the recall
+    // button, both gated on `weekData.timesheet.status === "SUBMITTED"`.
+    await expect(page.getByTestId("banner-submitted")).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(page.getByTestId("button-recall-week")).toBeVisible();
+    await expect(page.getByTestId("button-submit-timesheet")).toHaveCount(0);
+
+    // Backend confirmation that the UI state reflects persisted state.
+    const wk = await isolatedOrg.request.get(
+      `/api/timesheets/my-week?weekStartDate=${weekStart}`,
+    );
+    expect(wk.status()).toBe(200);
+    const body = (await wk.json()) as {
+      timesheet?: { status?: string } | null;
+    };
+    expect(body.timesheet?.status).toBe("SUBMITTED");
   });
 
   test("add-time dialog: project + service + notes + billable controls all interactable", async ({
