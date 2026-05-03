@@ -29,10 +29,76 @@ test.describe("Public marketing home", () => {
     const errors = trackErrors(page);
     await page.goto("/");
     await expect(page.locator('[data-testid="marketing-nav"]')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('[data-testid="announcement-bar"]')).toBeVisible();
     await expect(page.locator('[data-testid="hero-cta-start-free"]').first()).toBeVisible();
     await expect(page.locator('[data-testid="section-home-marketing-os"]').first()).toBeVisible();
     await expect(page.locator('[data-testid="cta-start-free-trial"]').first()).toBeVisible();
     expect(realErrors(errors), `home page errors: ${errors.join(" | ")}`).toEqual([]);
+  });
+
+  test("hero dashboard mockup renders KPI showcase + revenue/team panels", async ({ page }) => {
+    await page.goto("/");
+    // KPI tiles inside the hero dashboard mockup (six labelled stats).
+    for (const label of ["REVENUE MTD", "COLLECTED", "OUTSTANDING", "OVERDUE", "NET CASH", "TEAM"]) {
+      await expect(page.getByText(label, { exact: true }).first()).toBeVisible({ timeout: 15000 });
+    }
+    // Concrete dollar values render (driven by component state, not just static labels).
+    await expect(page.getByText("$47,850").first()).toBeVisible();
+    await expect(page.getByText("$38,200").first()).toBeVisible();
+    // Adjacent revenue trend + team utilization panels.
+    await expect(page.getByText(/Revenue Trend/i).first()).toBeVisible();
+    await expect(page.getByText(/Team Utilization/i).first()).toBeVisible();
+  });
+
+  test("feature/before-after sections render with comparison content", async ({ page }) => {
+    await page.goto("/");
+    // Before/after section
+    await expect(page.getByText(/before/i).first()).toBeVisible({ timeout: 15000 });
+    // "Why firms switch" feature pillars (FeatureGrid)
+    const why = page.getByText(/Why firms switch/i).first();
+    await why.scrollIntoViewIfNeeded();
+    await expect(why).toBeVisible();
+    // FeatureGrid pain/value tiles include the per-user cost narrative
+    await expect(page.getByText(/Zero per-user fees/i).first()).toBeVisible();
+    // Testimonial / what-firms-saying section
+    const testi = page.getByText(/What firms are saying/i).first();
+    await testi.scrollIntoViewIfNeeded();
+    await expect(testi).toBeVisible();
+  });
+
+  test("nav exposes Log In + Start Free Trial CTAs that route correctly", async ({ page }) => {
+    await page.goto("/");
+    const nav = page.locator('[data-testid="marketing-nav"]');
+    await expect(nav).toBeVisible({ timeout: 15000 });
+
+    // Log In → /login
+    const login = nav.getByRole("link", { name: /Log In/i }).first();
+    await expect(login).toBeVisible();
+    await Promise.all([
+      page.waitForURL(/\/login(\?|$)/, { timeout: 15000 }),
+      login.click(),
+    ]);
+
+    // Back to home, then Start Free Trial → /signup
+    await page.goto("/");
+    const startTrial = page.locator('[data-testid="marketing-nav"]').getByRole("link", { name: /Start Free Trial/i }).first();
+    await expect(startTrial).toBeVisible();
+    await Promise.all([
+      page.waitForURL(/\/signup(\?|$)/, { timeout: 15000 }),
+      startTrial.click(),
+    ]);
+    await expect(page.locator('[data-testid="signup-form-card"]')).toBeVisible({ timeout: 15000 });
+  });
+
+  test("announcement-bar Features link navigates to /features", async ({ page }) => {
+    await page.goto("/");
+    const link = page.locator('[data-testid="link-announcement-features"]').first();
+    await expect(link).toBeVisible({ timeout: 15000 });
+    await Promise.all([
+      page.waitForURL(/\/features(\?|$)/, { timeout: 15000 }),
+      link.click(),
+    ]);
+    await expect(page.locator('[data-testid="features-heading"]')).toBeVisible({ timeout: 15000 });
   });
 
   test("hero Start Free CTA navigates to /signup", async ({ page }) => {

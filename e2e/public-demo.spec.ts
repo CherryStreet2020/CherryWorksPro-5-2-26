@@ -10,6 +10,8 @@ import { test, expect } from "@playwright/test";
 
 test.use({ navigationTimeout: 30_000 });
 
+// Every interactive mockup section that exists in client/src/pages/marketing/demo.tsx.
+// Keep this list in sync with `data-testid="demo-section-*"` in that file.
 const SECTIONS = [
   "demo-section-dashboard",
   "demo-section-time",
@@ -19,8 +21,18 @@ const SECTIONS = [
   "demo-section-reports",
   "demo-section-gl",
   "demo-section-bank-recon",
+  "demo-section-payouts",
+  "demo-section-stripe",
+  "demo-section-api",
   "demo-section-marketing-os",
+  "demo-section-accessibility",
   "demo-section-client-portal",
+  "demo-section-multi-currency",
+  "demo-section-timesheet-approval",
+  "demo-section-team-onboarding",
+  "demo-section-estimates",
+  "demo-section-import-wizard",
+  "demo-section-cherry-assist",
   "demo-section-mission-control",
 ];
 

@@ -90,15 +90,115 @@ test.describe("Static marketing pages — CTA deep-links", () => {
     await expect(page.locator('[data-testid="input-contact-name"]')).toBeVisible({ timeout: 15000 });
   });
 
-  test("/terms and /privacy render without page errors", async ({ page }) => {
+  test("/features → ImportShowcase competitor cards each route to the right page", async ({ page }) => {
+    await page.goto("/features");
+    // Source of truth: ImportShowcase.platforms in client/src/pages/marketing/features.tsx
+    // (FreshBooks intentionally points to the /compare hub.)
+    const tiles: Array<{ id: string; href: RegExp }> = [
+      { id: "switch-card-freshbooks", href: /\/compare$/ },
+      { id: "switch-card-quickbooks", href: /\/switch-from-quickbooks$/ },
+      { id: "switch-card-harvest", href: /\/switch-from-harvest$/ },
+      { id: "switch-card-xero", href: /\/switch-from-xero$/ },
+      { id: "switch-card-wave", href: /\/switch-from-wave$/ },
+      { id: "switch-card-bigtime", href: /\/switch-from-bigtime$/ },
+      { id: "switch-card-scoro", href: /\/switch-from-scoro$/ },
+      { id: "switch-card-paymo", href: /\/switch-from-paymo$/ },
+    ];
+    for (const t of tiles) {
+      const tile = page.locator(`[data-testid="${t.id}"]`).first();
+      await tile.scrollIntoViewIfNeeded();
+      await expect(tile, `${t.id} should be visible`).toBeVisible({ timeout: 15000 });
+      const href = await tile.locator("xpath=ancestor::a[1]").getAttribute("href");
+      expect(href, `${t.id} href`).toMatch(t.href);
+    }
+  });
+
+  test("/about → mission pillars + timeline milestones render", async ({ page }) => {
+    await page.goto("/about");
+    await expect(page.locator('[data-testid="mission-heading"]')).toBeVisible({ timeout: 15000 });
+    // Three pillar cards
+    for (const i of [0, 1, 2]) {
+      await expect(page.locator(`[data-testid="mission-pillar-${i}"]`)).toBeVisible();
+    }
+    await expect(page.locator('[data-testid="timeline-heading"]')).toBeVisible();
+    await expect(page.locator('[data-testid="timeline-milestone-0"]')).toBeVisible();
+  });
+
+  test("/integrations → first integration card is mounted", async ({ page }) => {
+    await page.goto("/integrations");
+    await expect(page.locator('[data-testid="link-zapier"]')).toBeVisible({ timeout: 15000 });
+    // At least a few integration cards rendered
+    const cards = page.locator('[data-testid^="card-integration-"]');
+    const count = await cards.count();
+    expect(count, "integrations page should render at least one card").toBeGreaterThan(0);
+    await expect(cards.first()).toBeVisible();
+  });
+
+  test("/security → numbered policy sections render", async ({ page }) => {
+    await page.goto("/security");
+    await expect(page.locator('[data-testid="heading-security-title"]')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('[data-testid="text-security-subtitle"]')).toBeVisible();
+    // Multiple sections (1..N) — assert first three exist.
+    for (const n of [1, 2, 3]) {
+      await expect(page.locator(`[data-testid="section-security-${n}"]`)).toBeVisible();
+    }
+  });
+
+  test("footer newsletter form is mounted with email validation + submit", async ({ page }) => {
+    await page.goto("/");
+    const emailInput = page.locator('[data-testid="input-newsletter-email"]');
+    await emailInput.scrollIntoViewIfNeeded();
+    await expect(emailInput).toBeVisible({ timeout: 15000 });
+    // The browser's native email validation handles obvious garbage; we assert
+    // the input enforces it (type=email, required) so users can't silently
+    // subscribe with a malformed value. Server-side success is exercised by
+    // newsletter-specific tests in #439's suite.
+    expect(await emailInput.getAttribute("type")).toBe("email");
+    expect(await emailInput.getAttribute("required")).not.toBeNull();
+    await expect(page.locator('[data-testid="button-newsletter-subscribe"]')).toBeVisible();
+  });
+
+  test("footer social links (when configured) point to external profiles", async ({ page }) => {
+    await page.goto("/");
+    // Social links are conditionally rendered based on SOCIAL_*_URL env vars.
+    // If they're configured we assert their hrefs/target; otherwise we record
+    // that the footer is mounted without them, so the test stays meaningful
+    // in both deployment configs.
+    const li = page.locator('[data-testid="link-social-linkedin"]');
+    const x = page.locator('[data-testid="link-social-twitter"]');
+    await page.locator('[data-testid="newsletter-heading"]').scrollIntoViewIfNeeded();
+    const liCount = await li.count();
+    const xCount = await x.count();
+    if (liCount > 0) {
+      expect(await li.getAttribute("href")).toMatch(/linkedin\.com/i);
+      expect(await li.getAttribute("target")).toBe("_blank");
+      expect((await li.getAttribute("rel")) ?? "").toMatch(/noopener/);
+    }
+    if (xCount > 0) {
+      expect(await x.getAttribute("href")).toMatch(/(twitter|x)\.com/i);
+      expect(await x.getAttribute("target")).toBe("_blank");
+      expect((await x.getAttribute("rel")) ?? "").toMatch(/noopener/);
+    }
+    // At least the footer brand block should be present either way.
+    await expect(page.locator('[data-testid="newsletter-heading"]')).toBeVisible();
+  });
+
+  test("/terms and /privacy render with body content + clickable footer", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (err) => errors.push(`pageerror: ${err.message}`));
 
-    await page.goto("/terms");
-    await expect(page.locator("h1").first()).toBeVisible({ timeout: 15000 });
-
-    await page.goto("/privacy");
-    await expect(page.locator("h1").first()).toBeVisible({ timeout: 15000 });
+    for (const path of ["/terms", "/privacy"]) {
+      await page.goto(path);
+      // Page itself renders an h1 with substantive text.
+      const h1 = page.locator("h1").first();
+      await expect(h1).toBeVisible({ timeout: 15000 });
+      const txt = (await h1.innerText()).trim();
+      expect(txt.length, `${path} h1 should have non-trivial text`).toBeGreaterThan(3);
+      // Footer (with newsletter) is rendered on every public page including legal.
+      const newsletter = page.locator('[data-testid="newsletter-heading"]');
+      await newsletter.scrollIntoViewIfNeeded();
+      await expect(newsletter).toBeVisible();
+    }
 
     const real = errors.filter(
       (e) =>
