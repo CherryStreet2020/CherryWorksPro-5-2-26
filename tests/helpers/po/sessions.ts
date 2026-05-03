@@ -231,3 +231,107 @@ export async function openPageWithStorageState(
 export async function teardownRoleSeedOrg(seed: RoleSeedOrg): Promise<void> {
   await deleteIsolatedOrg(seed.orgId).catch(() => undefined);
 }
+
+// ---------------------------------------------------------------------------
+// Playwright fixture wiring.
+//
+// Exposed here (rather than only in fixtures.ts) so the public API of
+// this module matches the task spec ("sessions.ts exports
+// seedManagerPage, seedTeamMemberPage worker fixtures") and so any
+// future test harness can compose them independently.
+// ---------------------------------------------------------------------------
+import type { Fixtures, Browser, PlaywrightWorkerArgs, PlaywrightTestArgs } from "@playwright/test";
+
+export interface RoleSessionWorkerFixtures {
+  roleSeedOrg: RoleSeedOrg;
+  managerStorageStatePath: string;
+  teamMemberStorageStatePath: string;
+  /** Role-seed org's ADMIN user. Independent of the shared dean@... admin. */
+  roleAdminStorageStatePath: string;
+}
+
+export interface RoleSessionTestFixtures {
+  /** Per-test page authenticated as the role-seed org's MANAGER. Read-only by convention. */
+  seedManagerPage: Page;
+  /** Per-test page authenticated as the role-seed org's TEAM_MEMBER. Read-only by convention. */
+  seedTeamMemberPage: Page;
+  /** Per-test page authenticated as the role-seed org's ADMIN — never the shared dean@... admin. */
+  seedRoleAdminPage: Page;
+}
+
+export const roleSessionFixtures: Fixtures<
+  RoleSessionTestFixtures,
+  RoleSessionWorkerFixtures,
+  PlaywrightTestArgs,
+  PlaywrightWorkerArgs
+> = {
+  roleSeedOrg: [
+    // eslint-disable-next-line no-empty-pattern
+    async ({}, use) => {
+      const seed = await createRoleSeedOrg();
+      try {
+        await use(seed);
+      } finally {
+        await teardownRoleSeedOrg(seed);
+      }
+    },
+    { scope: "worker" },
+  ],
+
+  roleAdminStorageStatePath: [
+    async ({ roleSeedOrg }, use, workerInfo) => {
+      const file = await persistRoleStorageState(
+        workerInfo.workerIndex,
+        "ADMIN",
+        roleSeedOrg.users.ADMIN.email,
+        roleSeedOrg.users.ADMIN.password,
+        workerInfo.project.name,
+      );
+      await use(file);
+    },
+    { scope: "worker" },
+  ],
+
+  managerStorageStatePath: [
+    async ({ roleSeedOrg }, use, workerInfo) => {
+      const file = await persistRoleStorageState(
+        workerInfo.workerIndex,
+        "MANAGER",
+        roleSeedOrg.users.MANAGER.email,
+        roleSeedOrg.users.MANAGER.password,
+        workerInfo.project.name,
+      );
+      await use(file);
+    },
+    { scope: "worker" },
+  ],
+
+  teamMemberStorageStatePath: [
+    async ({ roleSeedOrg }, use, workerInfo) => {
+      const file = await persistRoleStorageState(
+        workerInfo.workerIndex,
+        "TEAM_MEMBER",
+        roleSeedOrg.users.TEAM_MEMBER.email,
+        roleSeedOrg.users.TEAM_MEMBER.password,
+        workerInfo.project.name,
+      );
+      await use(file);
+    },
+    { scope: "worker" },
+  ],
+
+  seedRoleAdminPage: async ({ browser, roleAdminStorageStatePath }, use) => {
+    const { page, close } = await openPageWithStorageState(browser as Browser, roleAdminStorageStatePath);
+    try { await use(page); } finally { await close(); }
+  },
+
+  seedManagerPage: async ({ browser, managerStorageStatePath }, use) => {
+    const { page, close } = await openPageWithStorageState(browser as Browser, managerStorageStatePath);
+    try { await use(page); } finally { await close(); }
+  },
+
+  seedTeamMemberPage: async ({ browser, teamMemberStorageStatePath }, use) => {
+    const { page, close } = await openPageWithStorageState(browser as Browser, teamMemberStorageStatePath);
+    try { await use(page); } finally { await close(); }
+  },
+};

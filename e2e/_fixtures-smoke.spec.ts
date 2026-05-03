@@ -17,10 +17,12 @@ import {
   graphStub,
   gmailStub,
   groqStub,
+  tesseractStub,
   frankfurterStub,
   clearbitStub,
   plaidStub,
   resendStub,
+  type StripeWebhookOptions,
 } from "../tests/helpers/po/stubs";
 
 test.describe.configure({ mode: "parallel" });
@@ -39,6 +41,15 @@ test.describe("Shared fixture library (Task #435)", () => {
     expect(r.status()).toBe(200);
     const body = await r.json();
     expect(body.role).toBe("TEAM_MEMBER");
+  });
+
+  test("seedRoleAdminPage is authenticated as a non-shared ADMIN", async ({ seedRoleAdminPage }) => {
+    const r = await seedRoleAdminPage.request.get("/api/auth/me");
+    expect(r.status()).toBe(200);
+    const body = await r.json();
+    expect(body.role).toBe("ADMIN");
+    // Critical constraint: must NOT be the seeded dean@cherrystconsulting.com admin.
+    expect(body.email).not.toBe("dean@cherrystconsulting.com");
   });
 
   test("setOrgTier downgrade engages the Approvals UpgradeWall", async ({
@@ -166,9 +177,80 @@ test.describe("Shared fixture library (Task #435)", () => {
   });
 
   test("resendStub.build produces a well-formed inbound bounce payload", () => {
-    const payload = resendStub.build({ type: "email.bounced", to: "x@y.test" }) as any;
+    const payload = resendStub.build({ type: "email.bounced", to: "x@y.test" }) as {
+      type: string;
+      data: { to: string[]; bounce: { type: string } };
+    };
     expect(payload.type).toBe("email.bounced");
     expect(payload.data.to).toEqual(["x@y.test"]);
     expect(payload.data.bounce.type).toBe("permanent");
+  });
+
+  test("stripeStub.buildEvent produces a well-formed checkout.session.completed event", () => {
+    const opts: StripeWebhookOptions = { type: "checkout.session.completed" };
+    const ev = stripeStub.buildEvent(opts) as {
+      object: string;
+      type: string;
+      data: { object: { id: string } };
+    };
+    expect(ev.object).toBe("event");
+    expect(ev.type).toBe("checkout.session.completed");
+    expect(ev.data.object.id).toBe("cs_test_e2e");
+  });
+
+  test("tesseract + groq timeout stubs install without throwing", async ({ browser }) => {
+    // Tesseract is in-process — its stub is documented as a no-op
+    // marker (see stubs.ts). We exercise it here so the lint and
+    // smoke coverage both prove it's wired up.
+    const ctx = await browser.newContext();
+    try {
+      const page = await ctx.newPage();
+      await page.goto("about:blank");
+      await tesseractStub.success(page);
+      await tesseractStub.failure(page);
+      await tesseractStub.timeout(page);
+
+      // Groq timeout — verify the route handler is registered. We
+      // don't actually wait HANG_MS; instead we register the timeout
+      // route on a fresh page and immediately race a fetch with a
+      // 1500ms abort signal — the abort wins, proving the request
+      // was hung by the stub rather than fast-failed by network.
+      await groqStub.timeout(page);
+      const result = await page.evaluate(async () => {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 1500);
+        try {
+          await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            signal: ctrl.signal,
+          });
+          return "completed";
+        } catch (e: unknown) {
+          return (e as Error).name;
+        } finally {
+          clearTimeout(timer);
+        }
+      });
+      expect(result).toBe("AbortError");
+    } finally {
+      await ctx.close();
+    }
+  });
+});
+
+test.describe("firmProfileComplete option fixture (Task #435)", () => {
+  test.describe("default (true)", () => {
+    test("isolatedOrg pre-completes the firm profile", async ({ isolatedOrg }) => {
+      const r = await isolatedOrg.request.get("/api/implementation-status");
+      expect((await r.json()).firmProfileComplete).toBe(true);
+    });
+  });
+
+  test.describe("opt-out via test.use", () => {
+    test.use({ firmProfileComplete: false });
+    test("isolatedOrg leaves the firm profile incomplete", async ({ isolatedOrg }) => {
+      const r = await isolatedOrg.request.get("/api/implementation-status");
+      expect((await r.json()).firmProfileComplete).toBe(false);
+    });
   });
 });

@@ -41,7 +41,12 @@
  * relevant `*_API_KEY` env to the empty string in the test env, which
  * makes the server module short-circuit to a deterministic error).
  */
-import type { Page, Route } from "@playwright/test";
+import type {
+  APIRequestContext,
+  APIResponse,
+  Page,
+  Route,
+} from "@playwright/test";
 
 type Variant = "success" | "failure" | "timeout";
 
@@ -83,6 +88,18 @@ async function hang(route: Route): Promise<void> {
 // `setOrgTier(...)` from ./tier.ts (no Stripe contact at all). This stub
 // covers the BROWSER-side Checkout redirect URL.
 // ============================================================================
+export interface StripeWebhookOptions {
+  type?: string;
+  data?: Record<string, unknown>;
+  /** Override the secret header. Default sends an "e2e-test" placeholder
+   * — works against any test-env webhook handler with signature
+   * verification disabled (set STRIPE_WEBHOOK_SECRET="" or
+   * STRIPE_WEBHOOK_VERIFY=0 in the test env). */
+  signature?: string;
+  /** Endpoint path. Default: `/api/webhooks/stripe`. */
+  endpoint?: string;
+}
+
 export const stripeStub = {
   async success(page: Page, sessionId = "cs_test_e2e"): Promise<void> {
     await page.route(/checkout\.stripe\.com/, async (route) => {
@@ -101,6 +118,53 @@ export const stripeStub = {
   },
   async timeout(page: Page): Promise<void> {
     await page.route(/checkout\.stripe\.com/, hang);
+  },
+  /**
+   * Build a Stripe webhook event body matching Stripe's `Event` shape.
+   * Use with `fireWebhook` (or directly via your own request context).
+   */
+  buildEvent(opts: StripeWebhookOptions = {}): Record<string, unknown> {
+    const type = opts.type ?? "checkout.session.completed";
+    const id = `evt_e2e_${Math.random().toString(36).slice(2, 10)}`;
+    return {
+      id,
+      object: "event",
+      api_version: "2024-04-10",
+      created: Math.floor(Date.now() / 1000),
+      type,
+      livemode: false,
+      pending_webhooks: 1,
+      request: { id: null, idempotency_key: null },
+      data: {
+        object: opts.data ?? {
+          id: "cs_test_e2e",
+          object: "checkout.session",
+          customer: "cus_e2e",
+          subscription: "sub_e2e",
+          metadata: {},
+        },
+      },
+    };
+  },
+  /**
+   * POST a Stripe webhook event to the local server's webhook endpoint.
+   * Returns the response so the spec can assert on the handler's reply.
+   * Uses a placeholder `Stripe-Signature` header — the test env must
+   * disable signature verification (e.g. `STRIPE_WEBHOOK_VERIFY=0`).
+   */
+  async fireWebhook(
+    request: APIRequestContext,
+    opts: StripeWebhookOptions = {},
+  ): Promise<APIResponse> {
+    const event = this.buildEvent(opts);
+    const endpoint = opts.endpoint ?? "/api/webhooks/stripe";
+    return request.post(endpoint, {
+      headers: {
+        "content-type": "application/json",
+        "stripe-signature": opts.signature ?? "t=0,v1=e2e-stub",
+      },
+      data: JSON.stringify(event),
+    });
   },
 };
 

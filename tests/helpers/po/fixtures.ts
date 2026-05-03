@@ -1,23 +1,28 @@
 /**
- * Playwright test fixtures for the parallel-safe E2E layer (Task #432).
+ * Playwright test fixtures for the parallel-safe E2E layer (Tasks #432 + #435).
  *
- * Specs that import `test` from this module get two new fixtures on top
- * of the stock Playwright `test`:
+ * Specs that import `test` from this module get the following fixtures
+ * on top of the stock Playwright `test`:
  *
- *   - `isolatedOrg`   : per-test fresh org + admin (auto-cleanup),
- *                       plus a logged-in `APIRequestContext` and CSRF
- *                       token. Use for any spec that does CRUD against
- *                       a tenant — multiple of these can run in
- *                       parallel without racing each other or the
- *                       shared seed admin.
- *   - `seedAdminPage` : a `Page` already authenticated as the shared
- *                       seed admin via cached storageState (one
- *                       login per worker, not per test). Use for
- *                       read-only specs that just need *an* authed
- *                       session against the existing seeded data.
+ *   - `isolatedOrg`         : per-test fresh org + admin (auto-cleanup),
+ *                             plus a logged-in `APIRequestContext` and
+ *                             CSRF token. Honors the
+ *                             `firmProfileComplete` option fixture.
+ *   - `firmProfileComplete` : Playwright option fixture (default `true`).
+ *                             `test.use({ firmProfileComplete: false })`
+ *                             switches the gated-surface assertion path.
+ *   - `seedAdminPage`       : worker-cached page for the SHARED seed
+ *                             admin (legacy). Read-only.
+ *   - `seedRoleAdminPage`   : worker-cached page for the role-seed
+ *                             org's ADMIN — never the shared dean@...
+ *                             admin. Read-only by convention.
+ *   - `seedManagerPage`     : worker-cached page for the role-seed org's
+ *                             MANAGER. Read-only by convention.
+ *   - `seedTeamMemberPage`  : worker-cached page for the role-seed org's
+ *                             TEAM_MEMBER. Read-only by convention.
  *
- * Specs that don't need either keep using the stock `test` import from
- * `@playwright/test`. This file is purely additive.
+ * Specs that don't need any of this keep using the stock `test` import
+ * from `@playwright/test`. This file is purely additive.
  */
 import {
   test as base,
@@ -36,11 +41,9 @@ import {
 import { loginApi, ADMIN_EMAIL, PRIMARY_ADMIN_PASS, FALLBACK_ADMIN_PASS, BASE } from "./auth";
 import { request as pwRequest } from "@playwright/test";
 import {
-  createRoleSeedOrg,
-  persistRoleStorageState,
-  openPageWithStorageState,
-  teardownRoleSeedOrg,
-  type RoleSeedOrg,
+  roleSessionFixtures,
+  type RoleSessionTestFixtures,
+  type RoleSessionWorkerFixtures,
 } from "./sessions";
 
 export interface IsolatedOrgFixture extends IsolatedOrg {
@@ -48,52 +51,28 @@ export interface IsolatedOrgFixture extends IsolatedOrg {
   csrf: string;
 }
 
-interface Fixtures {
-  /**
-   * Per-test isolated org. Each call to `test(...)` that destructures
-   * `isolatedOrg` gets a brand-new org/admin pair that is torn down
-   * after the test finishes.
-   */
+interface Fixtures extends RoleSessionTestFixtures {
   isolatedOrg: IsolatedOrgFixture;
-  /**
-   * Per-worker authenticated `Page` for the shared seed admin. The
-   * underlying storageState is cached in `test-results/storage/` and
-   * reused across every test in the worker — no per-test login dance.
-   */
   seedAdminPage: Page;
   /**
-   * Per-worker authenticated `Page` for a MANAGER user seeded into the
-   * worker's role-seed org (see Task #435 / sessions.ts).
-   * READ-ONLY by convention — see sessions.ts docstring.
+   * Task #435 — Playwright option fixture controlling whether the
+   * `isolatedOrg` fixture pre-populates orgs.email + address_city so
+   * `AdminSetupGate` lets admin navigation through. Defaults to `true`.
+   * Override per-spec via `test.use({ firmProfileComplete: false })`.
    */
-  seedManagerPage: Page;
-  /**
-   * Per-worker authenticated `Page` for a TEAM_MEMBER user. Same
-   * read-only convention.
-   */
-  seedTeamMemberPage: Page;
+  firmProfileComplete: boolean;
 }
 
-interface WorkerFixtures {
-  /**
-   * Path to the worker-scoped seed-admin storageState file. Materialised
-   * lazily on first use. Deleted along with `test-results/` between
-   * runs.
-   */
+interface WorkerFixtures extends RoleSessionWorkerFixtures {
   seedAdminStorageStatePath: string;
-  /**
-   * Per-worker isolated org with ADMIN/MANAGER/TEAM_MEMBER users.
-   * Lazily created on first use of any per-role page fixture, torn
-   * down at worker shutdown.
-   */
-  roleSeedOrg: RoleSeedOrg;
-  managerStorageStatePath: string;
-  teamMemberStorageStatePath: string;
 }
 
 const STORAGE_DIR = resolve(process.cwd(), "test-results/storage");
 
 export const test = base.extend<Fixtures, WorkerFixtures>({
+  // Option fixture — see Fixtures interface for docs.
+  firmProfileComplete: [true, { option: true }],
+
   seedAdminStorageStatePath: [
     // eslint-disable-next-line no-empty-pattern -- Playwright requires the fixture-arg destructure even when no other fixtures are read.
     async ({}, use, workerInfo) => {
@@ -124,9 +103,8 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
     }
   },
 
-  // eslint-disable-next-line no-empty-pattern -- Playwright requires the fixture-arg destructure even when no other fixtures are read.
-  isolatedOrg: async ({}, use) => {
-    const iso = await createIsolatedOrg();
+  isolatedOrg: async ({ firmProfileComplete }, use) => {
+    const iso = await createIsolatedOrg({ firmProfileComplete });
     const { request, csrf } = await buildIsolatedRequest(iso);
     try {
       await use({ ...iso, request, csrf });
@@ -136,67 +114,10 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
     }
   },
 
-  // Task #435 — per-worker role-seed org + role-scoped storageState
-  // files. The org is created lazily on first use of any per-role page
-  // and torn down at worker shutdown.
-  roleSeedOrg: [
-    // eslint-disable-next-line no-empty-pattern -- Playwright requires the fixture-arg destructure even when no other fixtures are read.
-    async ({}, use) => {
-      const seed = await createRoleSeedOrg();
-      try {
-        await use(seed);
-      } finally {
-        await teardownRoleSeedOrg(seed);
-      }
-    },
-    { scope: "worker" },
-  ],
-
-  managerStorageStatePath: [
-    async ({ roleSeedOrg }, use, workerInfo) => {
-      const file = await persistRoleStorageState(
-        workerInfo.workerIndex,
-        "MANAGER",
-        roleSeedOrg.users.MANAGER.email,
-        roleSeedOrg.users.MANAGER.password,
-        workerInfo.project.name,
-      );
-      await use(file);
-    },
-    { scope: "worker" },
-  ],
-
-  teamMemberStorageStatePath: [
-    async ({ roleSeedOrg }, use, workerInfo) => {
-      const file = await persistRoleStorageState(
-        workerInfo.workerIndex,
-        "TEAM_MEMBER",
-        roleSeedOrg.users.TEAM_MEMBER.email,
-        roleSeedOrg.users.TEAM_MEMBER.password,
-        workerInfo.project.name,
-      );
-      await use(file);
-    },
-    { scope: "worker" },
-  ],
-
-  seedManagerPage: async ({ browser, managerStorageStatePath }, use) => {
-    const { page, close } = await openPageWithStorageState(browser, managerStorageStatePath);
-    try {
-      await use(page);
-    } finally {
-      await close();
-    }
-  },
-
-  seedTeamMemberPage: async ({ browser, teamMemberStorageStatePath }, use) => {
-    const { page, close } = await openPageWithStorageState(browser, teamMemberStorageStatePath);
-    try {
-      await use(page);
-    } finally {
-      await close();
-    }
-  },
+  // Task #435 — role-seed org + per-role pre-auth pages. Defined in
+  // ./sessions.ts so its public API matches the task spec; spread in
+  // here so a single `test` import gives you everything.
+  ...roleSessionFixtures,
 });
 
 export { expect, ADMIN_EMAIL, PRIMARY_ADMIN_PASS, FALLBACK_ADMIN_PASS, BASE };
