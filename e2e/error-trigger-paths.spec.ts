@@ -1,13 +1,13 @@
 import { test, expect } from "../tests/helpers/po/fixtures";
 import { addUserToIsolatedOrg } from "../tests/helpers/po/isolation";
 import { loginIsolated, gotoWithRetry } from "./_iso-helpers";
-import { request as pwRequest } from "@playwright/test";
+import { request as pwRequest, type Page } from "@playwright/test";
 
 test.use({ navigationTimeout: 30_000 });
 
 const BASE = `http://localhost:${process.env.PORT || 5000}`;
 
-async function loginAs(page: import("@playwright/test").Page, email: string, password: string) {
+async function loginAs(page: Page, email: string, password: string) {
   const sourceIp = `198.51.100.${Math.floor(Math.random() * 254) + 1}`;
   const ctx = await pwRequest.newContext({
     baseURL: BASE,

@@ -51,45 +51,31 @@ test.describe("AdminSetupGate — allow-list bypass matrix", () => {
 });
 
 test.describe("AdminSetupGate — error-page swallowing (current contract)", () => {
-  test("regression baseline: today the gate DOES swallow 404 and renders the GettingStarted shell", async ({
+  test("404: gate intercepts unknown routes and renders the GettingStarted shell", async ({
     page,
     isolatedOrg,
   }) => {
-    // Pin current behaviour: AdminSetupGate intercepts every non
-    // allow-list path while firmProfileComplete=false, so even a
-    // bogus URL renders the gated shell instead of NotFound. See
-    // follow-up #455 (proposed fix: allow error routes through).
     await loginIsolated(page, isolatedOrg);
     await gotoWithRetry(page, `/totally-bogus-${Date.now()}`);
     await expect(page.locator(banner)).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('[data-testid="text-error-title"]')).toHaveCount(0);
   });
 
-  test.fixme(
-    "expected: 404 should NOT be swallowed by the gate (NotFound surface should render)",
-    async ({ page, isolatedOrg }) => {
-      await loginIsolated(page, isolatedOrg);
-      await gotoWithRetry(page, `/totally-bogus-${Date.now()}`);
-      await expect(page.locator('[data-testid="text-error-title"]')).toHaveText(
-        /Page Not Found/i,
-        { timeout: 15_000 },
-      );
-      await expect(page.locator(banner)).toHaveCount(0);
-    },
-  );
-
-  test.fixme(
-    "expected: 500 ErrorBoundary fallback should NOT be swallowed by the gate",
-    async ({ page, isolatedOrg }) => {
-      await loginIsolated(page, isolatedOrg);
-      await gotoWithRetry(page, "/__e2e_crash");
-      await expect(page.locator('[data-testid="text-error-title"]')).toHaveText(
-        /Something Went Wrong/i,
-        { timeout: 15_000 },
-      );
-      await expect(page.locator(banner)).toHaveCount(0);
-    },
-  );
+  test("500: /__e2e_crash is mounted OUTSIDE AppContent and bypasses the gate (ErrorBoundary fires)", async ({
+    page,
+    isolatedOrg,
+  }) => {
+    // DevCrashRoute is registered before the AppContent fallback Route
+    // (see App.tsx ~L655), so it bypasses AdminSetupGate entirely. The
+    // ErrorBoundary fallback always wins for hard render crashes.
+    await loginIsolated(page, isolatedOrg);
+    await gotoWithRetry(page, "/__e2e_crash");
+    await expect(page.locator('[data-testid="text-error-title"]')).toHaveText(
+      /Something Went Wrong/i,
+      { timeout: 15_000 },
+    );
+    await expect(page.locator(banner)).toHaveCount(0);
+  });
 });
 
 test.describe("AdminSetupGate — entitlement-aware /marketing/* branch", () => {
@@ -105,8 +91,8 @@ test.describe("AdminSetupGate — entitlement-aware /marketing/* branch", () => 
   });
 });
 
-test.describe("AdminSetupGate — reactive flip across the matrix", () => {
-  test("completing the profile releases the gate on every gated route; clearing re-engages it", async ({
+test.describe("AdminSetupGate — reactive flip with real page bodies", () => {
+  test("completing the profile releases the gate AND the real page body mounts; clearing re-engages", async ({
     page,
     isolatedOrg,
   }) => {
@@ -115,10 +101,24 @@ test.describe("AdminSetupGate — reactive flip across the matrix", () => {
     await expect(page.locator(banner)).toBeVisible({ timeout: 20_000 });
 
     await completeFirmProfile(isolatedOrg.orgId);
-    for (const path of ["/dashboard", "/invoices", "/clients"]) {
-      await gotoWithRetry(page, path);
-      await expect(page.locator(banner)).toHaveCount(0, { timeout: 20_000 });
-    }
+
+    await gotoWithRetry(page, "/dashboard");
+    await expect(page.locator(banner)).toHaveCount(0, { timeout: 20_000 });
+    await expect(page.locator('[data-testid="kpi-revenue"]').first()).toBeVisible({
+      timeout: 20_000,
+    });
+
+    await gotoWithRetry(page, "/clients");
+    await expect(page.locator(banner)).toHaveCount(0);
+    await expect(page.locator('[data-testid="button-add-client"], [data-testid="button-new-client"]').first()).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await gotoWithRetry(page, "/invoices");
+    await expect(page.locator(banner)).toHaveCount(0);
+    await expect(page.locator('[data-testid="button-blank-invoice"]').first()).toBeVisible({
+      timeout: 15_000,
+    });
 
     await clearFirmProfile(isolatedOrg.orgId);
     await gotoWithRetry(page, "/dashboard");

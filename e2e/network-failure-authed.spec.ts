@@ -1,4 +1,6 @@
-import { test, expect, type Route } from "../tests/helpers/po/fixtures";
+import { test, expect } from "../tests/helpers/po/fixtures";
+import type { IsolatedOrgFixture } from "../tests/helpers/po/fixtures";
+import type { Route } from "@playwright/test";
 import { loginIsolated } from "./_iso-helpers";
 
 test.use({ navigationTimeout: 30_000 });
@@ -21,7 +23,7 @@ function makeOneShotPostAborter() {
   };
 }
 
-async function seedClient(iso: any, label: string) {
+async function seedClient(iso: IsolatedOrgFixture, label: string) {
   const r = await iso.request.post("/api/clients", {
     data: { name: `${label} ${Date.now().toString(36)}` },
     headers: { "X-CSRF-Token": iso.csrf },
@@ -30,7 +32,7 @@ async function seedClient(iso: any, label: string) {
   return r.json();
 }
 
-async function seedInvoice(iso: any, clientId: string) {
+async function seedInvoice(iso: IsolatedOrgFixture, clientId: string) {
   const r = await iso.request.post("/api/invoices", {
     data: {
       clientId,
@@ -50,23 +52,12 @@ async function seedInvoice(iso: any, clientId: string) {
 }
 
 test.describe("Network failure — authed payment record", () => {
-  test("aborted POST surfaces error toast, dialog stays mounted, retry POST returns 200", async ({
+  test("aborted POST surfaces error toast; retry POST returns < 400", async ({
     page,
     isolatedOrg,
   }) => {
     const ab = makeOneShotPostAborter();
-    let secondPostStatus: number | null = null;
-    await page.route("**/api/payments", async (route) => {
-      const isPost = route.request().method() === "POST";
-      await ab.handler(route);
-      if (isPost && ab.postAttempts() === 2) {
-        // Race-safe: capture final response status from the network for the retry.
-        try {
-          const resp = await route.request().response();
-          secondPostStatus = resp?.status() ?? null;
-        } catch {}
-      }
-    });
+    await page.route("**/api/payments", ab.handler);
 
     const client = await seedClient(isolatedOrg, "NF Pay");
     const invoice = await seedInvoice(isolatedOrg, client.id);
@@ -79,21 +70,18 @@ test.describe("Network failure — authed payment record", () => {
     await loginIsolated(page, isolatedOrg);
     await page.goto("/payments");
     await page.locator('[data-testid="button-record-payment"]').click();
-
     await page.locator('[data-testid="select-payment-invoice"]').click();
     await page.locator('[role="option"]').first().click();
     await page.locator('[data-testid="input-payment-amount"]').fill("50");
 
     const submit = page.locator('[data-testid="button-submit-payment"]');
     await submit.click();
-    // Error surface = destructive toast titled "Error".
     await expect(page.getByRole("status").filter({ hasText: /Error/i }).first()).toBeVisible({
       timeout: 10_000,
     });
-    expect(ab.postAttempts(), "first POST should be aborted exactly once").toBe(1);
+    expect(ab.postAttempts()).toBe(1);
     await expect(submit).toBeEnabled({ timeout: 10_000 });
 
-    // Retry: must succeed and the dialog (form) must close.
     const retrySuccess = page.waitForResponse(
       (r) => r.url().includes("/api/payments") && r.request().method() === "POST" && r.status() < 400,
       { timeout: 15_000 },
@@ -101,12 +89,12 @@ test.describe("Network failure — authed payment record", () => {
     await submit.click();
     const retryResp = await retrySuccess;
     expect(retryResp.status()).toBeLessThan(400);
-    expect(ab.postAttempts(), "retry should issue a second POST").toBe(2);
+    expect(ab.postAttempts()).toBe(2);
   });
 });
 
 test.describe("Network failure — authed expense create", () => {
-  test("aborted POST surfaces error toast; retry POST returns 200 and form closes", async ({
+  test("aborted POST surfaces error toast; retry POST returns < 400", async ({
     page,
     isolatedOrg,
   }) => {
@@ -134,7 +122,7 @@ test.describe("Network failure — authed expense create", () => {
     await expect(page.getByRole("status").filter({ hasText: /Error/i }).first()).toBeVisible({
       timeout: 10_000,
     });
-    expect(ab.postAttempts(), "first POST should be aborted exactly once").toBe(1);
+    expect(ab.postAttempts()).toBe(1);
     await expect(save).toBeVisible({ timeout: 10_000 });
 
     const retrySuccess = page.waitForResponse(
@@ -144,12 +132,12 @@ test.describe("Network failure — authed expense create", () => {
     await save.click();
     const retryResp = await retrySuccess;
     expect(retryResp.status()).toBeLessThan(400);
-    expect(ab.postAttempts(), "retry should issue a second POST").toBe(2);
+    expect(ab.postAttempts()).toBe(2);
   });
 });
 
 test.describe("Network failure — authed invoice send", () => {
-  test("aborted POST surfaces error toast; retry POST returns 200", async ({
+  test("aborted POST surfaces error toast; retry POST returns < 400", async ({
     page,
     isolatedOrg,
   }) => {
@@ -176,7 +164,7 @@ test.describe("Network failure — authed invoice send", () => {
     await expect(page.getByRole("status").filter({ hasText: /Error|Failed/i }).first()).toBeVisible({
       timeout: 10_000,
     });
-    expect(ab.postAttempts(), "first POST should be aborted exactly once").toBe(1);
+    expect(ab.postAttempts()).toBe(1);
     await expect(confirm).toBeVisible({ timeout: 10_000 });
 
     const retrySuccess = page.waitForResponse(
@@ -186,6 +174,6 @@ test.describe("Network failure — authed invoice send", () => {
     await confirm.click();
     const retryResp = await retrySuccess;
     expect(retryResp.status()).toBeLessThan(400);
-    expect(ab.postAttempts(), "retry should issue a second POST").toBe(2);
+    expect(ab.postAttempts()).toBe(2);
   });
 });

@@ -5,14 +5,8 @@ test.use({ navigationTimeout: 30_000 });
 
 test.describe("Transient 401 on boot — authed Marketing OS race", () => {
   test.fixme(
-    "one-shot 401 on /api/auth/me during boot does not blow away an already-valid session",
+    "silent retry: one-shot 401 on /api/auth/me does not blow away an already-valid session",
     async ({ page, isolatedOrg }) => {
-      // Establish a real session first (cookies + CSRF), then navigate
-      // to the dashboard with a one-shot 401 stub on /api/auth/me to
-      // mimic a session-restore race. Today the queryClient does NOT
-      // silently retry the boot probe, so the dashboard fails to mount.
-      // Pinned as fixme so the contract starts asserting the moment a
-      // silent retry is added (see follow-up #455).
       await loginIsolated(page, isolatedOrg);
       let meHits = 0;
       await page.route("**/api/auth/me", async (route) => {
@@ -35,11 +29,8 @@ test.describe("Transient 401 on boot — authed Marketing OS race", () => {
   );
 
   test.fixme(
-    "one-shot 401 on /api/csrf-token during boot does not break the next mutation",
+    "silent retry: one-shot 401 on /api/csrf-token does not break the next mutation",
     async ({ page, isolatedOrg }) => {
-      // Same race for the CSRF probe: a transient 401 should be
-      // followed by a silent retry so subsequent mutations have a
-      // valid token. Today no retry exists; pinned as fixme.
       await loginIsolated(page, isolatedOrg);
       let csrfHits = 0;
       await page.route("**/api/csrf-token", async (route) => {
@@ -62,11 +53,8 @@ test.describe("Transient 401 on boot — authed Marketing OS race", () => {
   );
 
   test.fixme(
-    "one-shot 401 on /api/marketing/brand-info does not crash the marketing-OS surface",
+    "silent retry: one-shot 401 on /api/marketing/brand-info does not crash the marketing-OS surface",
     async ({ page, isolatedOrg }) => {
-      // Marketing OS embed bootstrap calls /api/marketing/brand-info.
-      // A transient 401 should not propagate to a crashed/empty UI.
-      // No retry today → pinned as fixme.
       await loginIsolated(page, isolatedOrg);
       let hits = 0;
       await page.route("**/api/marketing/brand-info**", async (route) => {
@@ -90,9 +78,6 @@ test.describe("Transient 401 on boot — authed Marketing OS race", () => {
     page,
     isolatedOrg,
   }) => {
-    // Live counterpart to the three fixme tests: documents the
-    // current behaviour so a future silent-retry change must update
-    // BOTH this baseline and flip the fixme tests above.
     await loginIsolated(page, isolatedOrg);
     let meHits = 0;
     await page.route("**/api/auth/me", async (route) => {
@@ -107,7 +92,6 @@ test.describe("Transient 401 on boot — authed Marketing OS race", () => {
       return route.continue();
     });
     await gotoWithRetry(page, "/dashboard");
-    // The KPI deck does NOT paint on the first boot probe.
     await expect(page.locator('[data-testid="kpi-revenue"]')).toHaveCount(0, {
       timeout: 8_000,
     });
