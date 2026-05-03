@@ -132,6 +132,69 @@ test.describe("Marketing OS — campaign metrics + scheduled-send", () => {
     expect(rows[0].n).toBeGreaterThanOrEqual(1);
   });
 
+  test("metrics endpoint reports terminal-status counts after a drain", async ({
+    isolatedOrg,
+  }) => {
+    const { request, csrf, orgId } = isolatedOrg;
+    await setEntitlement(orgId, "marketing_os", true);
+    const brand = await createBrand(isolatedOrg, {
+      name: "Met", slug: "met", domain: "met.test", fromEmail: "noreply@met.test",
+    });
+    await request.post(`${BASE}/api/marketing/contacts`, {
+      headers: HDRS(csrf),
+      data: { brandId: brand.id, firstName: "M", lastName: "1", email: "m1@met.test" },
+    });
+    const camp = await (await request.post(`${BASE}/api/marketing/campaigns`, {
+      headers: HDRS(csrf),
+      data: {
+        brandId: brand.id, name: "Met Camp", subject: "Hi", body: "<p/>",
+        fromEmail: "noreply@met.test", fromName: "M", audienceType: "all",
+      },
+    })).json();
+    await pool.query(
+      `UPDATE marketing_campaigns SET send_at = NOW() - INTERVAL '60 seconds' WHERE id = $1`,
+      [camp.id],
+    );
+    await processScheduledCampaigns(new Date());
+    const res = await request.get(`${BASE}/api/marketing/campaigns/${camp.id}/metrics`);
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.campaignId).toBe(camp.id);
+    expect(typeof body.sent).toBe("number");
+    expect(typeof body.failed).toBe("number");
+    expect(typeof body.permanentFailure).toBe("number");
+    expect(typeof body.totalAttempts).toBe("number");
+    expect(body.totalAttempts).toBeGreaterThanOrEqual(1);
+  });
+
+  test("UI — campaign detail page renders metrics tiles", async ({
+    page, isolatedOrg,
+  }) => {
+    test.setTimeout(45_000);
+    const { request, csrf, orgId } = isolatedOrg;
+    await setEntitlement(orgId, "marketing_os", true);
+    const brand = await createBrand(isolatedOrg, {
+      name: "Detail UI", slug: "det-ui", domain: "det-ui.test", fromEmail: "noreply@det-ui.test",
+    });
+    const camp = await (await request.post(`${BASE}/api/marketing/campaigns`, {
+      headers: HDRS(csrf),
+      data: {
+        brandId: brand.id, name: "Detail UI Camp", subject: "S", body: "<p/>",
+        fromEmail: "noreply@det-ui.test", fromName: "D", audienceType: "all",
+      },
+    })).json();
+    await loginIsolated(page, isolatedOrg);
+    await page.goto(`/marketing/campaigns/${camp.id}`);
+    await expect(
+      page.locator('[data-testid="text-campaign-detail-name"]'),
+    ).toContainText("Detail UI Camp", { timeout: 15_000 });
+    await expect(page.locator('[data-testid="row-campaign-metrics"]')).toBeVisible();
+    await expect(page.locator('[data-testid="tile-metric-sent"]')).toBeVisible();
+    await expect(page.locator('[data-testid="tile-metric-failed"]')).toBeVisible();
+    await expect(page.locator('[data-testid="tile-metric-permanent"]')).toBeVisible();
+    await expect(page.locator('[data-testid="tile-metric-recipients"]')).toBeVisible();
+  });
+
   test("UI — campaigns row + failures dialog", async ({ page, isolatedOrg }) => {
     const { request, csrf, orgId } = isolatedOrg;
     await setEntitlement(orgId, "marketing_os", true);

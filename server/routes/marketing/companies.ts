@@ -163,6 +163,25 @@ export function registerCompanyRoutes(app: Express): void {
     }
   });
 
+  // GET /api/marketing/companies/:id/contacts — list linked prospects
+  app.get(
+    "/api/marketing/companies/:id/contacts",
+    flagGate,
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const orgId = req.session.orgId!;
+        const id = idParam.parse(req.params.id);
+        const company = await storage.getMarketingCompany(id, orgId);
+        if (!company) return res.status(404).json({ message: "Not found" });
+        const rows = await storage.listProspectsByCompany(orgId, id);
+        return res.json(rows);
+      } catch (err) {
+        return res.status(400).json({ message: errMsg(err) });
+      }
+    },
+  );
+
   // POST /api/marketing/companies/:id/convert — convert to PSO client
   app.post(
     "/api/marketing/companies/:id/convert",

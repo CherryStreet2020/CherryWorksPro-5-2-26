@@ -36,6 +36,14 @@ test.describe("Marketing OS — company-detail deep", () => {
     })).json();
     expect(linked.companyId).toBe(company.id);
 
+    const cocs = await request.get(
+      `${BASE}/api/marketing/companies/${company.id}/contacts`,
+    );
+    expect(cocs.status()).toBe(200);
+    const cocsBody = await cocs.json();
+    expect(Array.isArray(cocsBody)).toBe(true);
+    expect(cocsBody.some((r: { id: string }) => r.id === linked.id)).toBe(true);
+
     const del = await request.delete(
       `${BASE}/api/marketing/companies/${company.id}`,
       { headers: HDRS(csrf) },

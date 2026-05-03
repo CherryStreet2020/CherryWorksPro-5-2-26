@@ -170,6 +170,28 @@ export function registerContactRoutes(app: Express): void {
     }
   });
 
+  // GET /api/marketing/contacts/:id/activities — per-prospect timeline
+  app.get(
+    "/api/marketing/contacts/:id/activities",
+    flagGate,
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const id = idParam.parse(req.params.id);
+        const orgId = req.session.orgId!;
+        const limit = req.query.limit ? Number(req.query.limit) : undefined;
+        const types = parseTagIdsQuery(req.query.types);
+        const rows = await storage.listActivitiesByContact(orgId, id, {
+          limit,
+          types: types.length > 0 ? types : undefined,
+        });
+        return res.json(rows);
+      } catch (err) {
+        return res.status(400).json({ message: errMsg(err) });
+      }
+    },
+  );
+
   // POST /api/marketing/contacts/:id/unsubscribe — self-service unsubscribe
   app.post("/api/marketing/contacts/:id/unsubscribe", flagGate, requireAuth, async (req: Request, res: Response) => {
     try {

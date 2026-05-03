@@ -1,8 +1,4 @@
 // Task #441 — Marketing OS audit §2.3: contact-detail deep flows.
-// Note: per-prospect activities GET endpoint is not wired
-// (contact-detail page hits /api/marketing/contacts/:id/activities,
-// which 404s); see follow-up task #449. UI assertion verifies dialog
-// closure + brand-firehose persistence in lieu of in-page list refresh.
 import { test, expect } from "../tests/helpers/po/fixtures";
 import { setEntitlement } from "../tests/helpers/po/tier";
 import { BASE } from "../tests/helpers/po/auth";
@@ -89,6 +85,27 @@ test.describe("Marketing OS — contact-detail deep", () => {
       `${BASE}/api/marketing/contacts/${contact.id}`,
     )).json();
     expect(refetched.unsubscribedAt).toBeTruthy();
+  });
+
+  test("per-prospect activities endpoint returns the contact's timeline", async ({
+    isolatedOrg,
+  }) => {
+    const { request, csrf, orgId } = isolatedOrg;
+    await setEntitlement(orgId, "marketing_os", true);
+    const brand = await createBrand(isolatedOrg, { name: "Tl", slug: "tl" });
+    const c = await (await request.post(`${BASE}/api/marketing/contacts`, {
+      headers: HDRS(csrf),
+      data: { brandId: brand.id, firstName: "Time", lastName: "Line", email: "tl@tl.test" },
+    })).json();
+    await request.post(`${BASE}/api/marketing/activities`, {
+      headers: HDRS(csrf),
+      data: { brandId: brand.id, prospectId: c.id, type: "note", payload: { body: "hello" } },
+    });
+    const res = await request.get(`${BASE}/api/marketing/contacts/${c.id}/activities`);
+    expect(res.status()).toBe(200);
+    const arr = await res.json();
+    expect(Array.isArray(arr)).toBe(true);
+    expect(arr.some((a: { type: string }) => a.type === "note")).toBe(true);
   });
 
   test("UI — log-activity dialog persists a note via the firehose", async ({

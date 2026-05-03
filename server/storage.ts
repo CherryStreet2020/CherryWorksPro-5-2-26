@@ -6537,6 +6537,52 @@ export class DatabaseStorage {
     }));
   }
 
+  /**
+   * Per-campaign delivery metrics aggregated from email_send_attempts.
+   * Returns counts by terminal status plus distinct recipient count.
+   */
+  async getCampaignSendMetrics(
+    orgId: string,
+    campaignId: string,
+  ): Promise<{
+    sent: number;
+    failed: number;
+    permanentFailure: number;
+    totalAttempts: number;
+    distinctRecipients: number;
+  }> {
+    const rows = await db.execute(sql`
+      SELECT status, COUNT(*)::int AS n,
+             COUNT(DISTINCT recipient_email)::int AS distinct_n
+      FROM email_send_attempts
+      WHERE org_id = ${orgId}
+        AND kind = 'campaign'
+        AND campaign_id = ${campaignId}
+      GROUP BY status
+    `);
+    const data = (rows as { rows?: Array<Record<string, unknown>> }).rows
+      ?? (rows as unknown as Array<Record<string, unknown>>);
+    let sent = 0, failed = 0, permanentFailure = 0, totalAttempts = 0;
+    for (const r of (data ?? [])) {
+      const n = Number(r.n ?? 0);
+      totalAttempts += n;
+      if (r.status === "success") sent += n;
+      else if (r.status === "failed") failed += n;
+      else if (r.status === "permanent_failure") permanentFailure += n;
+    }
+    const distRows = await db.execute(sql`
+      SELECT COUNT(DISTINCT recipient_email)::int AS n
+      FROM email_send_attempts
+      WHERE org_id = ${orgId}
+        AND kind = 'campaign'
+        AND campaign_id = ${campaignId}
+    `);
+    const distData = (distRows as { rows?: Array<Record<string, unknown>> }).rows
+      ?? (distRows as unknown as Array<Record<string, unknown>>);
+    const distinctRecipients = Number((distData?.[0]?.n) ?? 0);
+    return { sent, failed, permanentFailure, totalAttempts, distinctRecipients };
+  }
+
   // ── Sprint 2p: immediate-dispatch "Send Now" helpers ─────────────────
   // These two methods support POST /api/marketing/campaigns/:id/send-now
   // which dispatches a campaign synchronously via Resend.
@@ -7867,6 +7913,22 @@ export class DatabaseStorage {
       .from(marketingProspects)
       .where(and(eq(marketingProspects.id, id), eq(marketingProspects.orgId, orgId)));
     return row;
+  }
+
+  async listProspectsByCompany(
+    orgId: string,
+    companyId: string,
+  ): Promise<MarketingProspect[]> {
+    return db
+      .select()
+      .from(marketingProspects)
+      .where(and(
+        eq(marketingProspects.orgId, orgId),
+        eq(marketingProspects.companyId, companyId),
+        isNull(marketingProspects.deletedAt),
+      ))
+      .orderBy(desc(marketingProspects.createdAt))
+      .limit(500);
   }
 
   async createProspect(data: InsertMarketingProspect): Promise<MarketingProspect> {

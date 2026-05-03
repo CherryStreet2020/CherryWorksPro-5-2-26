@@ -209,6 +209,30 @@ export function registerMarketingCampaignRoutes(app: Express) {
     }
   });
 
+  // Per-campaign metrics tiles: success / failure / permanent_failure
+  // counts plus distinct recipients. Powers the campaign-detail page.
+  app.get(
+    "/api/marketing/campaigns/:id/metrics",
+    flagGate,
+    requireAdminOrManager,
+    async (req: Request, res: Response) => {
+      try {
+        const id = paramId(req);
+        const orgId = req.session.orgId!;
+        const camp = await storage.getCampaign(id, orgId);
+        if (!camp) return res.status(404).json({ message: "Campaign not found" });
+        const metrics = await storage.getCampaignSendMetrics(orgId, id);
+        return res.json({
+          campaignId: id,
+          sentAt: camp.sentAt,
+          ...metrics,
+        });
+      } catch (err: unknown) {
+        return res.status(400).json({ message: errMsg(err) });
+      }
+    },
+  );
+
   app.post("/api/marketing/campaigns", flagGate, requireAdminOrManager, async (req: Request, res: Response) => {
     try {
       const parsed = createCampaignBody.parse(req.body);

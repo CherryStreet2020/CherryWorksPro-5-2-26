@@ -155,6 +155,7 @@ const CompaniesListPage = lazy(() => lazyRetry(() => import("@/pages/marketing-o
 const TagsListPage = lazy(() => lazyRetry(() => import("@/pages/marketing-os/tags")));
 const SegmentsListPage = lazy(() => lazyRetry(() => import("@/pages/marketing-os/segments")));
 const CampaignsPage = lazy(() => lazyRetry(() => import("@/pages/marketing-os/campaigns")));
+const CampaignDetailPage = lazy(() => lazyRetry(() => import("@/pages/marketing-os/campaign-detail")));
 const SequencesPage = lazy(() => lazyRetry(() => import("@/pages/marketing-os/sequences")));
 const ActivityFirehosePage = lazy(() => lazyRetry(() => import("@/pages/marketing-os/activity")));
 const CompanyDetailPage = lazy(() => lazyRetry(() => import("@/pages/marketing-os/company-detail")));
@@ -325,6 +326,7 @@ function Router() {
           <Route path="/marketing/companies">{() => <ManagerRoute component={CompaniesListPage} />}</Route>
           <Route path="/marketing/tags">{() => <ManagerRoute component={TagsListPage} />}</Route>
           <Route path="/marketing/segments">{() => <ManagerRoute component={SegmentsListPage} />}</Route>
+          <Route path="/marketing/campaigns/:id">{() => <ManagerRoute component={CampaignDetailPage} />}</Route>
           <Route path="/marketing/campaigns">{() => <ManagerRoute component={CampaignsPage} />}</Route>
           <Route path="/marketing/sequences">{() => <ManagerRoute component={SequencesPage} />}</Route>
           <Route path="/marketing/activity">{() => <ManagerRoute component={ActivityFirehosePage} />}</Route>
