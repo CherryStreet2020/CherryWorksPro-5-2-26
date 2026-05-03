@@ -1,12 +1,3 @@
-/**
- * Error surfaces — organic trigger paths (Task #444, audit §3.5).
- *
- *   - 403: TEAM_MEMBER → /admin/data (AdminRoute renders Error403).
- *   - 404: authed user → unknown route (Switch catch-all → NotFound).
- *   - 500: authed user → /__e2e_crash (dev-only Route that throws on
- *          render → ErrorBoundary fallback). The route is stripped
- *          from production via `import.meta.env.DEV` in App.tsx.
- */
 import { test, expect } from "../tests/helpers/po/fixtures";
 import { addUserToIsolatedOrg } from "../tests/helpers/po/isolation";
 import { loginIsolated, gotoWithRetry } from "./_iso-helpers";

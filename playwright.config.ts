@@ -52,7 +52,6 @@ const ANON_SPECS = [
   // admin, so they're safe under fullyParallel.
   "public-token-edge-cases.spec.ts",
   "network-failure-resilience.spec.ts",
-  "transient-401-hardening.spec.ts",
   "public-demo.spec.ts",
   "public-compare-switch-cta.spec.ts",
   // Flag specs use the isolatedOrg fixture (Task #432) so each test

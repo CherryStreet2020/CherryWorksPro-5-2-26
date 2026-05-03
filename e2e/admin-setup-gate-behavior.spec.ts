@@ -1,11 +1,3 @@
-/**
- * AdminSetupGate behaviour matrix (Task #444, audit §6.1.1).
- *
- * Allow-list (admin-setup-gate.tsx): ["/getting-started", "/profile"]
- * + /marketing/* when `marketing_os` is active OR brands exist.
- * Every other authenticated route is gated and rendered as the
- * GettingStarted shell while `firmProfileComplete = false`.
- */
 import { test, expect } from "../tests/helpers/po/fixtures";
 import { loginIsolated, gotoWithRetry } from "./_iso-helpers";
 import {
@@ -31,7 +23,7 @@ const ALLOW_LIST = ["/getting-started", "/profile"];
 
 const banner = '[data-testid="banner-firm-profile-incomplete"]';
 
-test.describe("AdminSetupGate — gated routes", () => {
+test.describe("AdminSetupGate — gated route matrix", () => {
   for (const path of GATED_ROUTES) {
     test(`gates ${path} when firm profile is incomplete`, async ({
       page,
@@ -40,14 +32,12 @@ test.describe("AdminSetupGate — gated routes", () => {
       await loginIsolated(page, isolatedOrg);
       await gotoWithRetry(page, path);
       await expect(page.locator(banner)).toBeVisible({ timeout: 20_000 });
-      // Page-specific anchors must NOT be visible while the gated
-      // shell is up (proves the real page never mounted).
       await expect(page.locator('[data-testid="kpi-revenue"]')).toHaveCount(0);
     });
   }
 });
 
-test.describe("AdminSetupGate — allow-list bypass", () => {
+test.describe("AdminSetupGate — allow-list bypass matrix", () => {
   for (const path of ALLOW_LIST) {
     test(`bypasses ${path} even with incomplete firm profile`, async ({
       page,
@@ -58,6 +48,48 @@ test.describe("AdminSetupGate — allow-list bypass", () => {
       await expect(page.locator(banner)).toHaveCount(0, { timeout: 15_000 });
     });
   }
+});
+
+test.describe("AdminSetupGate — error-page swallowing (current contract)", () => {
+  test("regression baseline: today the gate DOES swallow 404 and renders the GettingStarted shell", async ({
+    page,
+    isolatedOrg,
+  }) => {
+    // Pin current behaviour: AdminSetupGate intercepts every non
+    // allow-list path while firmProfileComplete=false, so even a
+    // bogus URL renders the gated shell instead of NotFound. See
+    // follow-up #455 (proposed fix: allow error routes through).
+    await loginIsolated(page, isolatedOrg);
+    await gotoWithRetry(page, `/totally-bogus-${Date.now()}`);
+    await expect(page.locator(banner)).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[data-testid="text-error-title"]')).toHaveCount(0);
+  });
+
+  test.fixme(
+    "expected: 404 should NOT be swallowed by the gate (NotFound surface should render)",
+    async ({ page, isolatedOrg }) => {
+      await loginIsolated(page, isolatedOrg);
+      await gotoWithRetry(page, `/totally-bogus-${Date.now()}`);
+      await expect(page.locator('[data-testid="text-error-title"]')).toHaveText(
+        /Page Not Found/i,
+        { timeout: 15_000 },
+      );
+      await expect(page.locator(banner)).toHaveCount(0);
+    },
+  );
+
+  test.fixme(
+    "expected: 500 ErrorBoundary fallback should NOT be swallowed by the gate",
+    async ({ page, isolatedOrg }) => {
+      await loginIsolated(page, isolatedOrg);
+      await gotoWithRetry(page, "/__e2e_crash");
+      await expect(page.locator('[data-testid="text-error-title"]')).toHaveText(
+        /Something Went Wrong/i,
+        { timeout: 15_000 },
+      );
+      await expect(page.locator(banner)).toHaveCount(0);
+    },
+  );
 });
 
 test.describe("AdminSetupGate — entitlement-aware /marketing/* branch", () => {
@@ -73,8 +105,8 @@ test.describe("AdminSetupGate — entitlement-aware /marketing/* branch", () => 
   });
 });
 
-test.describe("AdminSetupGate — reactive flip", () => {
-  test("completing the profile releases the gate; clearing re-engages it", async ({
+test.describe("AdminSetupGate — reactive flip across the matrix", () => {
+  test("completing the profile releases the gate on every gated route; clearing re-engages it", async ({
     page,
     isolatedOrg,
   }) => {
@@ -83,8 +115,10 @@ test.describe("AdminSetupGate — reactive flip", () => {
     await expect(page.locator(banner)).toBeVisible({ timeout: 20_000 });
 
     await completeFirmProfile(isolatedOrg.orgId);
-    await gotoWithRetry(page, "/dashboard");
-    await expect(page.locator(banner)).toHaveCount(0, { timeout: 20_000 });
+    for (const path of ["/dashboard", "/invoices", "/clients"]) {
+      await gotoWithRetry(page, path);
+      await expect(page.locator(banner)).toHaveCount(0, { timeout: 20_000 });
+    }
 
     await clearFirmProfile(isolatedOrg.orgId);
     await gotoWithRetry(page, "/dashboard");

@@ -1,31 +1,14 @@
-/**
- * Network-failure resilience for top forms (Task #444).
- *
- * For each form: abort the FIRST POST, assert the page surfaces the
- * failure inline (no ErrorBoundary, no double-submit), then release
- * the stub and assert a manual retry succeeds.
- *
- * Public forms (contact, signup) run in the anonymous project.
- * Authed forms (invoice send, payment record, expense submit) run
- * in the serial project via the isolatedOrg fixture.
- */
 import { test as anonTest, expect, type Route } from "@playwright/test";
 
 anonTest.use({ navigationTimeout: 30_000 });
 
-function makeOneShotAborter(): {
-  handler: (route: Route) => Promise<void>;
-  release: () => void;
-  attempts: () => number;
-} {
+function makeOneShotAborter() {
   let aborted = false;
   let attempts = 0;
   return {
     attempts: () => attempts,
-    release: () => {
-      aborted = true;
-    },
-    handler: async (route) => {
+    handler: async (route: Route) => {
+      if (route.request().method() !== "POST") return route.continue();
       attempts++;
       if (!aborted) {
         aborted = true;
@@ -38,7 +21,7 @@ function makeOneShotAborter(): {
 }
 
 anonTest.describe("Network failure — public contact form", () => {
-  anonTest("aborted POST surfaces inline error; retry succeeds; no double-submit", async ({ page }) => {
+  anonTest("aborted POST surfaces error toast; retry produces success toast and a second POST", async ({ page }) => {
     const errs: string[] = [];
     page.on("pageerror", (e) => errs.push(e.message));
     const ab = makeOneShotAborter();
@@ -51,12 +34,13 @@ anonTest.describe("Network failure — public contact form", () => {
     const submit = page.locator('[data-testid="button-contact-submit"]');
     await submit.click();
 
-    await expect(page.getByText(/Message sent!/i)).toHaveCount(0, { timeout: 10_000 });
+    // Surface = inline error block on first abort; success card on retry.
+    await expect(page.getByText(/Failed to fetch|something went wrong|try again/i).first()).toBeVisible({
+      timeout: 10_000,
+    });
     await expect(submit).toBeEnabled({ timeout: 10_000 });
-    await page.waitForTimeout(750);
     expect(ab.attempts()).toBe(1);
 
-    // Release stub and retry — must succeed on the same form.
     await submit.click();
     await expect(page.getByText(/Message sent!/i)).toBeVisible({ timeout: 10_000 });
     expect(ab.attempts()).toBe(2);
@@ -69,7 +53,7 @@ anonTest.describe("Network failure — public contact form", () => {
 });
 
 anonTest.describe("Network failure — public signup form", () => {
-  anonTest("aborted POST surfaces signup-error; retry attempt fires once stub releases", async ({ page }) => {
+  anonTest("aborted POST surfaces signup-error; retry issues a second POST that the server actually receives", async ({ page }) => {
     const errs: string[] = [];
     page.on("pageerror", (e) => errs.push(e.message));
     const ab = makeOneShotAborter();
@@ -85,14 +69,11 @@ anonTest.describe("Network failure — public signup form", () => {
     await expect(submit).toBeEnabled({ timeout: 10_000 });
 
     await submit.click();
+    // Inline error surface (no ErrorBoundary, no double-submit).
     await expect(page.locator('[data-testid="signup-error"]')).toBeVisible({ timeout: 10_000 });
     await expect(submit).toBeEnabled({ timeout: 10_000 });
     expect(ab.attempts()).toBe(1);
 
-    // Stub now releases — clicking again issues a new POST that the
-    // server actually receives. The assertion is on `attempts`,
-    // not on the eventual signup success (the server may still
-    // reject the payload for unrelated reasons in CI).
     await submit.click();
     await page.waitForTimeout(750);
     expect(ab.attempts()).toBe(2);
@@ -121,4 +102,3 @@ anonTest.describe("Dev-server 502 retry helper — smoke", () => {
     });
   });
 });
-

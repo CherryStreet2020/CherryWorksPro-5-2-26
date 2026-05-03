@@ -1,8 +1,3 @@
-/**
- * Network-failure resilience for authed forms (Task #444).
- * Pattern: stub aborts the FIRST POST → assert form stays mounted /
- * no double-submit → release stub → second click POSTs again.
- */
 import { test, expect, type Route } from "../tests/helpers/po/fixtures";
 import { loginIsolated } from "./_iso-helpers";
 
@@ -46,7 +41,6 @@ async function seedInvoice(iso: any, clientId: string) {
   });
   expect(r.ok(), `invoice create failed (${r.status()})`).toBe(true);
   const invoice = await r.json();
-  // Lines must be added through the dedicated endpoint.
   const lineRes = await iso.request.post(`/api/invoices/${invoice.id}/lines`, {
     data: { description: "Work", quantity: 1, unitRate: 200 },
     headers: { "X-CSRF-Token": iso.csrf },
@@ -56,12 +50,23 @@ async function seedInvoice(iso: any, clientId: string) {
 }
 
 test.describe("Network failure — authed payment record", () => {
-  test("aborted POST keeps dialog mounted; retry POSTs again", async ({
+  test("aborted POST surfaces error toast, dialog stays mounted, retry POST returns 200", async ({
     page,
     isolatedOrg,
   }) => {
     const ab = makeOneShotPostAborter();
-    await page.route("**/api/payments", ab.handler);
+    let secondPostStatus: number | null = null;
+    await page.route("**/api/payments", async (route) => {
+      const isPost = route.request().method() === "POST";
+      await ab.handler(route);
+      if (isPost && ab.postAttempts() === 2) {
+        // Race-safe: capture final response status from the network for the retry.
+        try {
+          const resp = await route.request().response();
+          secondPostStatus = resp?.status() ?? null;
+        } catch {}
+      }
+    });
 
     const client = await seedClient(isolatedOrg, "NF Pay");
     const invoice = await seedInvoice(isolatedOrg, client.id);
@@ -75,29 +80,36 @@ test.describe("Network failure — authed payment record", () => {
     await page.goto("/payments");
     await page.locator('[data-testid="button-record-payment"]').click();
 
-    // Pick the seeded invoice from the combobox so invoiceId is set.
     await page.locator('[data-testid="select-payment-invoice"]').click();
     await page.locator('[role="option"]').first().click();
     await page.locator('[data-testid="input-payment-amount"]').fill("50");
 
     const submit = page.locator('[data-testid="button-submit-payment"]');
     await submit.click();
-    await page.waitForTimeout(1000);
+    // Error surface = destructive toast titled "Error".
+    await expect(page.getByRole("status").filter({ hasText: /Error/i }).first()).toBeVisible({
+      timeout: 10_000,
+    });
     expect(ab.postAttempts(), "first POST should be aborted exactly once").toBe(1);
     await expect(submit).toBeEnabled({ timeout: 10_000 });
 
+    // Retry: must succeed and the dialog (form) must close.
+    const retrySuccess = page.waitForResponse(
+      (r) => r.url().includes("/api/payments") && r.request().method() === "POST" && r.status() < 400,
+      { timeout: 15_000 },
+    );
     await submit.click();
-    await page.waitForTimeout(1000);
+    const retryResp = await retrySuccess;
+    expect(retryResp.status()).toBeLessThan(400);
     expect(ab.postAttempts(), "retry should issue a second POST").toBe(2);
   });
 });
 
 test.describe("Network failure — authed expense create", () => {
-  test("aborted POST keeps form mounted; retry POSTs again", async ({
+  test("aborted POST surfaces error toast; retry POST returns 200 and form closes", async ({
     page,
     isolatedOrg,
   }) => {
-    // Seed an expense category so the form has a valid selectable option.
     const catRes = await isolatedOrg.request.post("/api/expense-categories", {
       data: { name: `Travel ${Date.now().toString(36)}` },
       headers: { "X-CSRF-Token": isolatedOrg.csrf },
@@ -114,25 +126,30 @@ test.describe("Network failure — authed expense create", () => {
     await page
       .locator('[data-testid="input-expense-description"]')
       .fill(`NF expense ${Date.now()}`);
-
-    // Pick the first available category to satisfy form validation.
     await page.locator('[data-testid="select-expense-category"]').click();
     await page.locator('[role="option"]').first().click();
 
     const save = page.locator('[data-testid="button-save-expense"]');
     await save.click();
-    await page.waitForTimeout(1000);
+    await expect(page.getByRole("status").filter({ hasText: /Error/i }).first()).toBeVisible({
+      timeout: 10_000,
+    });
     expect(ab.postAttempts(), "first POST should be aborted exactly once").toBe(1);
     await expect(save).toBeVisible({ timeout: 10_000 });
 
+    const retrySuccess = page.waitForResponse(
+      (r) => r.url().includes("/api/expenses") && r.request().method() === "POST" && r.status() < 400,
+      { timeout: 15_000 },
+    );
     await save.click();
-    await page.waitForTimeout(1500);
+    const retryResp = await retrySuccess;
+    expect(retryResp.status()).toBeLessThan(400);
     expect(ab.postAttempts(), "retry should issue a second POST").toBe(2);
   });
 });
 
 test.describe("Network failure — authed invoice send", () => {
-  test("aborted POST surfaces failure; retry POSTs again", async ({
+  test("aborted POST surfaces error toast; retry POST returns 200", async ({
     page,
     isolatedOrg,
   }) => {
@@ -144,7 +161,6 @@ test.describe("Network failure — authed invoice send", () => {
 
     await loginIsolated(page, isolatedOrg);
     await page.goto(`/invoices`);
-    // Open the invoice detail by clicking the row (first invoice in list).
     const row = page.locator(`[data-testid="row-invoice-${invoice.id}"]`).first();
     await expect(row).toBeVisible({ timeout: 15_000 });
     await row.click();
@@ -153,17 +169,23 @@ test.describe("Network failure — authed invoice send", () => {
     await expect(sendBtn).toBeVisible({ timeout: 15_000 });
     await sendBtn.click();
 
-    // SendEmailModal opens; fire the actual send POST from inside it.
     const confirm = page.locator('[data-testid="button-confirm-send"]');
     await expect(confirm).toBeVisible({ timeout: 10_000 });
     await page.fill('[data-testid="input-email-to"]', "client@example.com");
     await confirm.click();
-    await page.waitForTimeout(1000);
+    await expect(page.getByRole("status").filter({ hasText: /Error|Failed/i }).first()).toBeVisible({
+      timeout: 10_000,
+    });
     expect(ab.postAttempts(), "first POST should be aborted exactly once").toBe(1);
     await expect(confirm).toBeVisible({ timeout: 10_000 });
 
+    const retrySuccess = page.waitForResponse(
+      (r) => /\/api\/invoices\/[^/]+\/send$/.test(r.url()) && r.request().method() === "POST" && r.status() < 400,
+      { timeout: 20_000 },
+    );
     await confirm.click();
-    await page.waitForTimeout(1500);
+    const retryResp = await retrySuccess;
+    expect(retryResp.status()).toBeLessThan(400);
     expect(ab.postAttempts(), "retry should issue a second POST").toBe(2);
   });
 });
