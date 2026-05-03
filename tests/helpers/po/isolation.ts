@@ -31,7 +31,7 @@
  */
 import { Pool } from "pg";
 import bcrypt from "bcryptjs";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { request as pwRequest, type APIRequestContext } from "@playwright/test";
@@ -409,7 +409,19 @@ export const BASE = `http://localhost:${process.env.PORT || 5000}`;
 export async function buildIsolatedRequest(
   iso: IsolatedOrg,
 ): Promise<{ request: APIRequestContext; csrf: string }> {
-  const ctx = await pwRequest.newContext({ baseURL: BASE });
+  // Per-call source IP isolates this context from the per-IP login
+  // limiter (15min/100). Without it, running >100 isolatedOrg-using
+  // specs in a single worker exhausts the bucket — Express has
+  // `trust proxy = 1`, so X-Forwarded-For becomes req.ip and is
+  // what express-rate-limit's default keyGenerator hashes on.
+  // Task #443: this fix unblocks running the full task-#443 spec
+  // batch in a single serial worker.
+  const b = randomBytes(2);
+  const sourceIp = `198.51.${b[0]}.${(b[1] % 254) + 1}`;
+  const ctx = await pwRequest.newContext({
+    baseURL: BASE,
+    extraHTTPHeaders: { "X-Forwarded-For": sourceIp },
+  });
   const loginRes = await ctx.post(`${BASE}/api/auth/login`, {
     data: { email: iso.email, password: iso.password },
   });
