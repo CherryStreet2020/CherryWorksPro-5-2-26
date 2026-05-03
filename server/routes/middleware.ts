@@ -336,10 +336,27 @@ export function getRateLimitInfo() {
   };
 }
 
+// Endpoints reachable while a session is mfaPending=true. Everything else
+// must wait until the user completes the TOTP/recovery challenge. Keep this
+// list narrow: it should only let the user finish (or abandon) MFA.
+const MFA_PENDING_ALLOWLIST = new Set<string>([
+  "/api/mfa/totp/setup",
+  "/api/mfa/totp/verify",
+  "/api/mfa/totp/validate",
+  "/api/mfa/status",
+  "/api/auth/logout",
+]);
+
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.session.userId) {
     console.warn(`[auth] 401 Unauthorized: no session userId for ${req.method} ${req.path}`);
     return res.status(401).json({ message: "Unauthorized" });
+  }
+  // Block protected surface while MFA is still pending. Without this gate,
+  // a password-only login against an MFA-enforced org would yield a usable
+  // session even though the second factor was never satisfied.
+  if (req.session.mfaPending && !MFA_PENDING_ALLOWLIST.has(req.path)) {
+    return res.status(401).json({ message: "MFA required", mfaPending: true });
   }
   try {
     const user = await storage.getUserById(req.session.userId);

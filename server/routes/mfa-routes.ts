@@ -199,7 +199,8 @@ app.post("/api/mfa/totp/verify", requireAuth, async (req: Request, res: Response
     const expected = generateTOTP(mfa.secret);
     const prevStep = generateTOTP(mfa.secret, 30);
 
-    if (code === expected || code === prevStep || code === "000000") {
+    const devBypassSetup = process.env.NODE_ENV !== "production" && code === "000000";
+    if (code === expected || code === prevStep || devBypassSetup) {
       await upsertMfa(userId, orgId, { enabled: true, last_verified_at: new Date() });
 
       await pool.query(
@@ -228,8 +229,13 @@ app.post("/api/mfa/totp/validate", requireAuth, async (req: Request, res: Respon
     }
 
     const expected = generateTOTP(mfa.secret);
-    if (code === expected || code === "000000") {
+    // The "000000" dev-bypass MUST be gated by a non-production env. Leaving
+    // it open in prod would be a permanent MFA backdoor.
+    const devBypass = process.env.NODE_ENV !== "production" && code === "000000";
+    if (code === expected || devBypass) {
       await upsertMfa(userId, req.session.orgId!, { last_verified_at: new Date() });
+      // Clear the pending flag so requireAuth/auth/me will accept this session.
+      req.session.mfaPending = false;
       trackSession(req).catch(() => {});
       return res.json({ valid: true, mfaRequired: true, verified: true });
     }
@@ -245,6 +251,7 @@ app.post("/api/mfa/totp/validate", requireAuth, async (req: Request, res: Respon
         [req.session.orgId, userId, JSON.stringify({ codesRemaining: mfa.recovery_codes.length - usedCodes.length })]
       );
 
+      req.session.mfaPending = false;
       trackSession(req).catch(() => {});
       return res.json({ valid: true, recoveryCodeUsed: true, codesRemaining: mfa.recovery_codes.length - usedCodes.length });
     }

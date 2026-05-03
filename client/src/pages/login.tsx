@@ -1,18 +1,20 @@
 import { useState, useEffect, useRef } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
+import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
-import { Eye, EyeOff, Building2, ArrowLeft } from "lucide-react";
+import { Eye, EyeOff, Building2, ArrowLeft, ShieldCheck } from "lucide-react";
 import { BrandLockup } from "@/components/shared/brand-lockup";
 import { useToast } from "@/hooks/use-toast";
 import { SEO } from "@/components/seo";
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, refetchUser } = useAuth();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -20,6 +22,9 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [orgPickerOrgs, setOrgPickerOrgs] = useState<Array<{ slug: string; name: string }> | null>(null);
   const [autoPicking, setAutoPicking] = useState<{ slug: string; name: string } | null>(null);
+  const [mfaPhase, setMfaPhase] = useState<null | "code" | "setup">(null);
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaError, setMfaError] = useState("");
   const autoPickAbortRef = useRef<AbortController | null>(null);
   const autoPickCancelledRef = useRef(false);
 
@@ -36,7 +41,15 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     try {
-      await login("", email, password);
+      const data = await login("", email, password);
+      if (data?.requiresMfaCode) {
+        setMfaPhase("code");
+        return;
+      }
+      if (data?.requiresMfaSetup) {
+        setMfaPhase("setup");
+        return;
+      }
     } catch (err: any) {
       const raw = err?.message || "";
       try {
@@ -89,6 +102,33 @@ export default function LoginPage() {
     }
   };
 
+  const handleMfaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setMfaError("");
+    try {
+      const res = await apiRequest("POST", "/api/mfa/totp/validate", { code: mfaCode.trim() });
+      const data = await res.json();
+      if (data?.valid) {
+        await refetchUser();
+        navigate("/");
+        return;
+      }
+      setMfaError("Invalid code");
+    } catch (err: any) {
+      setMfaError("Invalid code");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const cancelMfa = () => {
+    setMfaPhase(null);
+    setMfaCode("");
+    setMfaError("");
+    setError("");
+  };
+
   const cancelAutoPick = () => {
     autoPickCancelledRef.current = true;
     if (autoPickAbortRef.current) {
@@ -127,7 +167,105 @@ export default function LoginPage() {
           }}
         >
           <CardContent className="p-8">
-            {orgPickerOrgs ? (
+            {mfaPhase === "code" ? (
+              <div data-testid="state-mfa-code">
+                <div className="mb-6">
+                  <div className="flex items-center gap-2 mb-2">
+                    <ShieldCheck className="w-5 h-5" style={{ color: "var(--color-accent)" }} />
+                    <h2 className="text-lg font-semibold" style={{ color: "var(--lux-text)" }}>Two-factor authentication</h2>
+                  </div>
+                  <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>
+                    Enter the 6-digit code from your authenticator app
+                  </p>
+                </div>
+                <form onSubmit={handleMfaSubmit} className="space-y-5">
+                  <div className="space-y-2">
+                    <Label htmlFor="mfa-code" className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+                      Authentication code
+                    </Label>
+                    <Input
+                      id="mfa-code"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      placeholder="123456"
+                      maxLength={10}
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value)}
+                      required
+                      autoFocus
+                      data-testid="input-mfa-code"
+                      style={{
+                        background: "var(--lux-bg)",
+                        borderColor: "var(--lux-border)",
+                        color: "var(--lux-text)",
+                        letterSpacing: "0.3em",
+                        textAlign: "center",
+                        fontSize: "18px",
+                      }}
+                    />
+                    <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>
+                      Or paste a recovery code if you've lost your device.
+                    </p>
+                  </div>
+                  {mfaError && (
+                    <div className="rounded-lg px-3 py-2.5" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}>
+                      <p className="text-sm font-medium" style={{ color: "#ef4444" }} data-testid="text-mfa-error">{mfaError}</p>
+                    </div>
+                  )}
+                  <Button
+                    type="submit"
+                    className="w-full text-white h-11 font-semibold"
+                    disabled={loading || mfaCode.trim().length < 6}
+                    data-testid="button-mfa-verify"
+                    style={{ background: "var(--gradient-brand)" }}
+                  >
+                    {loading ? "Verifying..." : "Verify"}
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={cancelMfa}
+                    className="w-full flex items-center justify-center gap-1 text-sm font-medium cursor-pointer"
+                    style={{ color: "var(--lux-text-muted)" }}
+                    data-testid="button-mfa-cancel"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    Back
+                  </button>
+                </form>
+              </div>
+            ) : mfaPhase === "setup" ? (
+              <div data-testid="state-mfa-setup-required">
+                <div className="mb-6">
+                  <div className="flex items-center gap-2 mb-2">
+                    <ShieldCheck className="w-5 h-5" style={{ color: "var(--color-accent)" }} />
+                    <h2 className="text-lg font-semibold" style={{ color: "var(--lux-text)" }}>Set up two-factor authentication</h2>
+                  </div>
+                  <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>
+                    Your organization requires admins to enable an authenticator app before signing in.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  className="w-full text-white h-11 font-semibold"
+                  data-testid="button-mfa-setup-continue"
+                  onClick={() => navigate("/settings/security")}
+                  style={{ background: "var(--gradient-brand)" }}
+                >
+                  Continue to setup
+                </Button>
+                <button
+                  type="button"
+                  onClick={cancelMfa}
+                  className="mt-4 w-full flex items-center justify-center gap-1 text-sm font-medium cursor-pointer"
+                  style={{ color: "var(--lux-text-muted)" }}
+                  data-testid="button-mfa-cancel"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  Back
+                </button>
+              </div>
+            ) : orgPickerOrgs ? (
               autoPicking ? (
                 <div data-testid="state-auto-pick">
                   <div className="mb-6">

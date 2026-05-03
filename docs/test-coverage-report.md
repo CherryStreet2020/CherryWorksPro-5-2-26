@@ -427,24 +427,84 @@ leaking from one spec to the next.
    `"owner"`). The two `auth-login-extras` MFA tests now run
    green against a real `ADMIN` seed user.
 
-### Known UX gaps (filed as follow-up Task #446 / #447)
+### Round 6 product additions (built inside this task to close reviewer asks)
 
-1. **Login MFA UI.** The MFA-prompt UI test in
-   `auth-login-extras.spec.ts` remains `test.fixme()`-d because
-   `client/src/pages/login.tsx` has no handler for the
-   `requiresMfaSetup` / `requiresMfaCode` responses — the API path
-   is now exercised, but the user-facing form does not yet render an
-   MFA challenge.
-2. **Idle-timeout HTML redirect.** The idle-timeout middleware in
-   `server/routes.ts` ~188 checks the session on every route and
-   short-circuits with `res.status(401).json(...)`, including for HTML
-   navigations. There is no client-side `<Redirect to="/login?auth=
-   required" />` — once the session row is idle, the browser receives
-   a raw 401 JSON body. The `auth-session.spec.ts` "UX gap" subtest
-   asserts the *current* observable behaviour (`page.request.get(/api/
-   auth/me)` → 401 from the browser's own cookie context) so any
-   future fix that adds a real redirect will flip the test red and
-   force the assertion to be rewritten.
+1. **Login MFA challenge UI** (`client/src/pages/login.tsx`). The page now
+   detects `requiresMfaCode` and `requiresMfaSetup` from `/api/auth/login`
+   and renders, respectively, a 6-digit TOTP form that posts to
+   `/api/mfa/totp/validate` and a "set up two-factor" CTA that routes to
+   `/settings/security`. `client/src/lib/auth.tsx` `login()` now returns
+   the response payload and skips `setUser` while the session is still
+   `mfaPending`. Covered end-to-end by `e2e/auth-mfa-login-ui.spec.ts`
+   (3 cases): code happy path with dev-bypass `000000`, setup CTA,
+   and cancel-restore.
 
-Test counts: 6 / 10 / 5 / 5 / 168 = 194 new specs (1 UI MFA case
-fixme'd pending Task #446).
+2. **`sendWelcomeEmail()` + signup integration** (`server/email.ts`,
+   `server/routes/auth-routes.ts`). New transactional template
+   mirroring `sendPasswordResetEmail`'s shape; called best-effort
+   from `/api/auth/signup` after the org is committed. A
+   `WELCOME_EMAIL_SENT` audit row is written immediately before the
+   send call so dispatch can be asserted independently of transport
+   success. Covered by `e2e/auth-welcome-email.spec.ts`.
+
+3. **E2E email-capture harness** (`server/email.ts`,
+   `tests/helpers/email-capture.ts`). `pickTransport` now checks
+   `process.env.EMAIL_CAPTURE_DIR` first and, when set, returns a
+   `FileCaptureTransport` that writes a JSON envelope (to/subject/
+   html/text/cc/replyTo/from) per send instead of touching SMTP/
+   Graph/Gmail. The dev workflow sets the var (`/tmp/cherry-e2e-emails`)
+   so e2e specs and manual dev usage both route through the harness.
+   `tests/helpers/email-capture.ts` exports `waitForCapturedEmail`,
+   `clearCapturedEmails`, and a `CapturedEmail` type for spec authors.
+   The welcome-email spec asserts both the audit row (always) and the
+   captured envelope content (subject, firm name, login URL).
+
+### Round 6 production-safety hardening (from architect review)
+
+The architect review of the round-6 product additions surfaced three
+must-fix issues; all are addressed in this slice:
+
+1. **MFA bypass via `mfaPending` not enforced.** `requireAuth`
+   (`server/routes/middleware.ts`) and `/api/auth/me`
+   (`server/routes/auth-routes.ts`) now reject with
+   `401 { mfaPending: true }` whenever `req.session.mfaPending === true`,
+   except for a narrow allow-list of MFA finish/abandon endpoints
+   (`/api/mfa/totp/{setup,verify,validate}`, `/api/mfa/status`,
+   `/api/auth/logout`). `/api/mfa/totp/validate` now clears
+   `req.session.mfaPending` on both TOTP and recovery-code success so
+   the user transitions cleanly into a fully-authenticated session.
+
+2. **`000000` TOTP dev-bypass exposed in prod.** Both
+   `/api/mfa/totp/verify` (initial setup) and `/api/mfa/totp/validate`
+   (login challenge) now gate the `000000` shortcut behind
+   `process.env.NODE_ENV !== "production"`, so the bypass only exists
+   in dev/test environments.
+
+3. **`EMAIL_CAPTURE_DIR` could divert real mail in prod.**
+   `pickTransport` in `server/email.ts` now requires both an explicit
+   non-empty `EMAIL_CAPTURE_DIR` AND `NODE_ENV !== "production"`. A
+   stray env var in prod is logged and ignored instead of silently
+   writing customer mail to disk.
+
+Audit semantics for the welcome email were also tightened: the single
+`WELCOME_EMAIL_SENT` row was split into three explicit actions —
+`WELCOME_EMAIL_DISPATCH_ATTEMPTED` (always, before the send),
+`WELCOME_EMAIL_SUCCEEDED` (after a resolved transport call), and
+`WELCOME_EMAIL_FAILED` (on rejection). The welcome-email spec asserts
+the new ATTEMPTED action.
+
+### Remaining UX gap (filed as follow-up Task #447)
+
+**Idle-timeout HTML redirect.** The idle-timeout middleware in
+`server/routes.ts` ~188 short-circuits with `res.status(401).json(...)`,
+including for HTML navigations. There is no client-side `<Redirect
+to="/login?auth=required" />` — once the session row is idle, the
+browser receives a raw 401 JSON body. The `auth-session.spec.ts`
+"UX gap" subtest asserts the *current* observable behaviour
+(`page.request.get(/api/auth/me)` → 401 from the browser's own
+cookie context) so any future fix that adds a real redirect will
+flip the test red and force the assertion to be rewritten.
+
+Test counts: 6 / 10 / 5 / 5 / 168 / 1 / 3 = 198 new specs across
+auth-login-extras / auth-signup / auth-password-reset / auth-session /
+role-guards-matrix / auth-welcome-email / auth-mfa-login-ui.

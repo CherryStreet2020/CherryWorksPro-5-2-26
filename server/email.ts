@@ -116,10 +116,63 @@ function requireValidEmail(email: string, fieldName: string): void {
  *
  * Emits a one-line forensic trace on every send for rollback / audit.
  */
+// Test-only file-capture transport. When EMAIL_CAPTURE_DIR is set (E2E only,
+// never in prod), every send writes a JSON envelope to that directory instead
+// of touching SMTP/Graph/Gmail. Tests poll the dir to assert content.
+class FileCaptureTransport implements EmailTransport {
+  readonly kind = "noop" as const;
+  constructor(private readonly dir: string) {}
+  async send(message: SendableMessage) {
+    const fs = await import("fs/promises");
+    const path = await import("path");
+    const crypto = await import("crypto");
+    await fs.mkdir(this.dir, { recursive: true });
+    const id = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+    const file = path.join(this.dir, `${id}.json`);
+    await fs.writeFile(
+      file,
+      JSON.stringify(
+        {
+          id,
+          capturedAt: new Date().toISOString(),
+          to: message.to,
+          subject: message.subject,
+          html: message.html,
+          text: message.text ?? null,
+          cc: message.cc ?? null,
+          replyTo: message.replyTo ?? null,
+          fromName: message.fromName ?? null,
+          fromEmail: message.fromEmail ?? null,
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    return { ok: true, messageId: `capture:${id}`, transport: "noop" as const };
+  }
+}
+
 async function pickTransport(
   org: OrgForTransport | null | undefined,
   smtpConfig: SmtpConfig | null | undefined,
 ): Promise<EmailTransport> {
+  // E2E harness gate. Hard-blocked in production so a stray env var can never
+  // silently divert real customer mail to disk. Requires both NODE_ENV !=
+  // production AND an explicit EMAIL_CAPTURE_DIR value.
+  const captureDir = process.env.EMAIL_CAPTURE_DIR;
+  if (captureDir && captureDir.length > 0) {
+    if (process.env.NODE_ENV === "production") {
+      console.warn(
+        `[email] EMAIL_CAPTURE_DIR is set in production; ignoring and using real transport. ` +
+          `If you need a capture transport in production, set NODE_ENV != "production".`,
+      );
+    } else {
+      console.log(`[email] capture-mode dir=${captureDir} org=${org?.id ?? "none"}`);
+      return new FileCaptureTransport(captureDir);
+    }
+  }
+
   const flagOn = isEmailOauthEnabled();
   const transport: EmailTransport = await trackSelection(org?.id, async () =>
     org ? await selectTransport(org) : new SmtpTransport(smtpConfig ?? null),
@@ -334,6 +387,55 @@ export async function sendInviteEmail(
     subject,
     html,
     text: `Hi ${teamMemberName},\n\nYou've been invited to ${orgName} on CherryWorks Pro.\n\nEmail: ${to}\nTemporary Password: ${tempPassword}\n\nLog in at: ${loginUrl}\n\nYou'll be asked to set a new password on first login.`,
+    replyTo: smtpConfig?.replyTo ?? null,
+    fromName: smtpConfig?.fromName ?? null,
+    fromEmail: smtpConfig?.fromEmail ?? null,
+  };
+
+  const result = await transport.send(message);
+  return { messageId: result.messageId, previewUrl: result.previewUrl };
+}
+
+export async function sendWelcomeEmail(
+  to: string,
+  recipientName: string,
+  firmName: string,
+  loginUrl: string,
+  smtpConfig?: SmtpConfig | null,
+  org?: OrgForTransport | null,
+): Promise<{ messageId: string; previewUrl?: string }> {
+  const transport = await pickTransport(org, smtpConfig);
+  const subject = `Welcome to CherryWorks Pro, ${firmName}`;
+
+  const safeName = escapeHtml(recipientName || "there");
+  const safeFirm = escapeHtml(firmName);
+
+  const innerHtml = `
+    <p style="font-size:20px;font-weight:700;color:${TEXT_PRIMARY};margin:0 0 4px;">Welcome, ${safeName}</p>
+    <p style="font-size:14px;color:${TEXT_MUTED};margin:0 0 28px;">Your ${safeFirm} workspace is ready</p>
+
+    <p style="font-size:15px;color:${TEXT_SECONDARY};line-height:1.7;margin:0 0 24px;">
+      Thanks for starting your free trial. Sign in any time to invite your team, set up billing, and start running ${safeFirm} on CherryWorks Pro.
+    </p>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr><td align="center">${emailButton("Open your workspace", loginUrl)}</td></tr>
+    </table>
+
+    ${emailDivider()}
+
+    <p style="font-size:12px;color:${TEXT_MUTED};margin:0;text-align:center;">
+      Need help getting started? Just reply to this email.
+    </p>
+  `;
+
+  const html = wrapEmailLayout(innerHtml, { orgName: firmName, preheader: `Your ${firmName} workspace is ready` });
+
+  const message: SendableMessage = {
+    to,
+    subject,
+    html,
+    text: `Welcome, ${recipientName || "there"}\n\nYour ${firmName} workspace on CherryWorks Pro is ready.\n\nSign in any time: ${loginUrl}\n\nNeed help getting started? Just reply to this email.`,
     replyTo: smtpConfig?.replyTo ?? null,
     fromName: smtpConfig?.fromName ?? null,
     fromEmail: smtpConfig?.fromEmail ?? null,

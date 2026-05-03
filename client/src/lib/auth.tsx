@@ -5,7 +5,7 @@ import { apiRequest, queryClient, ensureCSRFToken } from "./queryClient";
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (orgSlug: string, email: string, password: string, options?: { signal?: AbortSignal }) => Promise<void>;
+  login: (orgSlug: string, email: string, password: string, options?: { signal?: AbortSignal }) => Promise<any>;
   logout: () => Promise<void>;
   refetchUser: () => Promise<void>;
 }
@@ -39,12 +39,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (data.needsOrgPick) {
       throw new Error(JSON.stringify(data));
     }
+    // MFA flows: server returns {requiresMfaSetup} or {requiresMfaCode} and
+    // leaves the session in mfaPending state. Surface to the caller so the
+    // login page can render the TOTP challenge UI without setting `user`.
+    if (data.requiresMfaSetup || data.requiresMfaCode) {
+      await ensureCSRFToken(true);
+      return data;
+    }
     if (orgSlug) {
       try { localStorage.setItem("lastOrgSlug", orgSlug); } catch {}
     }
     queryClient.clear();
     setUser(data);
     await ensureCSRFToken(true);
+    return data;
   }, []);
 
   const logout = useCallback(async () => {

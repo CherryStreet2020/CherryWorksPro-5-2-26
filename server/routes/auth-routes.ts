@@ -6,7 +6,7 @@ import { orgs, auditLogs, signupSchema, loginSchema, passwordResetTokens, users 
 import { sanitizeErrorMessage, requireAuth, loginLimiter, signupLimiter, passwordChangeLimiter, forgotPasswordLimiter, setCSRFToken, awaitSessionSave } from "./middleware";
 import { hashPassword, comparePasswords, validatePasswordStrength, needsRehash, rehashAndUpdate } from "../auth";
 import { randomBytes, createHash } from "crypto";
-import { sendPasswordResetEmail, getSmtpConfigFromOrg } from "../email";
+import { sendPasswordResetEmail, sendWelcomeEmail, getSmtpConfigFromOrg } from "../email";
 import { getMfa, isOrgMfaEnforcedForAdmins } from "./mfa-routes";
 import { trackSession, removeSessionByHash, hashSessionId } from "./session-routes";
 import multer from "multer";
@@ -209,6 +209,11 @@ app.post("/api/auth/login", loginLimiter, awaitSessionSave, async (req, res) => 
 app.get("/api/auth/me", async (req, res) => {
   if (!req.session.userId) {
     return res.status(401).json({ message: "Not authenticated" });
+  }
+  // Block the user payload while MFA is still pending so the client can't
+  // treat the partial password-only session as authenticated.
+  if (req.session.mfaPending) {
+    return res.status(401).json({ message: "MFA required", mfaPending: true });
   }
   const user = await storage.getUserById(req.session.userId);
   if (user && !user.isActive) {
@@ -425,6 +430,46 @@ app.post("/api/auth/signup", signupLimiter, awaitSessionSave, async (req, res) =
       entityId: org.id,
       details: { firmName: parsed.firmName, plan: parsed.plan, email: parsed.email },
     });
+
+    // Welcome email (best-effort: never block signup on email failure).
+    // Welcome email is dispatched best-effort. We write three audit rows so
+    // operators can disambiguate intent vs outcome:
+    //   WELCOME_EMAIL_DISPATCH_ATTEMPTED — always, before the send call
+    //   WELCOME_EMAIL_SUCCEEDED          — after a resolved transport call
+    //   WELCOME_EMAIL_FAILED             — on rejected transport call
+    const proto = (req.headers["x-forwarded-proto"] as string)?.split(",")[0] || req.protocol || "http";
+    const host = (req.headers["x-forwarded-host"] as string)?.split(",")[0] || req.get("host") || "localhost";
+    const loginUrl = `${proto}://${host}/login`;
+    storage.createAuditLog({
+      orgId: org.id,
+      userId: user.id,
+      action: "WELCOME_EMAIL_DISPATCH_ATTEMPTED",
+      entityType: "user",
+      entityId: user.id,
+      details: { email: parsed.email, firmName: parsed.firmName },
+    }).catch(() => {});
+    sendWelcomeEmail(parsed.email, fullName, parsed.firmName, loginUrl, null, org)
+      .then(() => {
+        storage.createAuditLog({
+          orgId: org.id,
+          userId: user.id,
+          action: "WELCOME_EMAIL_SUCCEEDED",
+          entityType: "user",
+          entityId: user.id,
+          details: { email: parsed.email },
+        }).catch(() => {});
+      })
+      .catch((err) => {
+        console.error("[signup] sendWelcomeEmail failed:", err?.message || err);
+        storage.createAuditLog({
+          orgId: org.id,
+          userId: user.id,
+          action: "WELCOME_EMAIL_FAILED",
+          entityType: "user",
+          entityId: user.id,
+          details: { email: parsed.email, error: String(err?.message || err) },
+        }).catch(() => {});
+      });
 
     const { password: _, ...safeUser } = user;
     return res.json({

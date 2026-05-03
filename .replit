@@ -47,7 +47,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "MARKETING_OS_ENABLED=true VITE_MARKETING_OS_ENABLED=true EMAIL_OAUTH_ENABLED=true VITE_EMAIL_OAUTH_ENABLED=true npm run dev"
+args = "EMAIL_CAPTURE_DIR=/tmp/cherry-e2e-emails MARKETING_OS_ENABLED=true VITE_MARKETING_OS_ENABLED=true EMAIL_OAUTH_ENABLED=true VITE_EMAIL_OAUTH_ENABLED=true npm run dev"
 waitForPort = 5000
 
 [userenv]
