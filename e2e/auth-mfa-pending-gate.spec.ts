@@ -129,4 +129,47 @@ test.describe.serial("auth » MFA pending session gate", () => {
 
     await ctx.dispose();
   });
+
+  test("enrolled user in mfaPending=code cannot reach /api/mfa/totp/setup or /verify (overwrite-secret bypass)", async ({ baseURL }) => {
+    const seed = await seedMfaAdmin();
+    createdOrgIds.push(seed.orgId);
+
+    const ctx: APIRequestContext = await playwrightRequest.newContext({
+      baseURL,
+      extraHTTPHeaders: { "x-forwarded-for": freshIp() },
+    });
+
+    const loginRes = await ctx.post("/api/auth/login", {
+      data: { email: seed.email, password: PASS },
+    });
+    expect(loginRes.status()).toBe(200);
+    expect((await loginRes.json()).requiresMfaCode).toBe(true);
+
+    const csrfRes = await ctx.get("/api/csrf-token");
+    const csrfToken = (await csrfRes.json()).token as string;
+
+    // Attack: try to overwrite the existing enabled TOTP secret via /setup
+    // and confirm with /verify. Both must be blocked.
+    const setup = await ctx.post("/api/mfa/totp/setup", {
+      headers: { "x-csrf-token": csrfToken },
+    });
+    expect(setup.status()).toBe(401);
+    expect((await setup.json()).mfaPending).toBe(true);
+
+    const verify = await ctx.post("/api/mfa/totp/verify", {
+      data: { code: "000000" },
+      headers: { "x-csrf-token": csrfToken },
+    });
+    expect(verify.status()).toBe(401);
+    expect((await verify.json()).mfaPending).toBe(true);
+
+    // The enrolled secret must be untouched in the database.
+    const { rows } = await pool.query(
+      `SELECT secret FROM mfa_enrollments WHERE user_id = $1`,
+      [seed.userId],
+    );
+    expect(rows[0]?.secret).toBe("JBSWY3DPEHPK3PXP");
+
+    await ctx.dispose();
+  });
 });

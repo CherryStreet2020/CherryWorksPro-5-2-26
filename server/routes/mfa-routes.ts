@@ -209,6 +209,13 @@ app.post("/api/mfa/totp/verify", requireAuth, async (req: Request, res: Response
         [orgId, userId, JSON.stringify({ method: "totp" })]
       );
 
+      // Setup completes the second factor for a "setup"-branch login;
+      // clear the pending flag so /api/auth/me and protected routes work.
+      if (req.session.mfaPending && req.session.mfaPendingReason === "setup") {
+        req.session.mfaPending = false;
+        req.session.mfaPendingReason = undefined;
+      }
+
       return res.json({ success: true, enabled: true, message: "TOTP MFA enabled" });
     }
 
@@ -236,6 +243,7 @@ app.post("/api/mfa/totp/validate", requireAuth, async (req: Request, res: Respon
       await upsertMfa(userId, req.session.orgId!, { last_verified_at: new Date() });
       // Clear the pending flag so requireAuth/auth/me will accept this session.
       req.session.mfaPending = false;
+      req.session.mfaPendingReason = undefined;
       trackSession(req).catch(() => {});
       return res.json({ valid: true, mfaRequired: true, verified: true });
     }
@@ -252,6 +260,7 @@ app.post("/api/mfa/totp/validate", requireAuth, async (req: Request, res: Respon
       );
 
       req.session.mfaPending = false;
+      req.session.mfaPendingReason = undefined;
       trackSession(req).catch(() => {});
       return res.json({ valid: true, recoveryCodeUsed: true, codesRemaining: mfa.recovery_codes.length - usedCodes.length });
     }

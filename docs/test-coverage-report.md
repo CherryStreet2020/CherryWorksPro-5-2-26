@@ -481,12 +481,27 @@ must-fix issues; all are addressed in this slice:
    TOTP and recovery-code success so the user transitions cleanly
    into a fully-authenticated session.
 
-   Regression coverage: `e2e/auth-mfa-pending-gate.spec.ts` logs in
-   an MFA-enforced admin, asserts `/api/auth/me`, a `requireAdmin`
-   endpoint (`/api/admin/audit-logs/actions`), and a
-   `requireManagerOrAbove` endpoint (`/api/clients`) all return
-   `401 { mfaPending: true }`, then verifies all three return `200`
-   after `/api/mfa/totp/validate` succeeds with the dev bypass code.
+   The allowlist is reason-aware via a new
+   `req.session.mfaPendingReason` field set by `/api/auth/login`.
+   `"code"` (existing enrollment) only permits
+   `/api/mfa/totp/validate` (plus `/status` and `/api/auth/logout`);
+   `"setup"` (no enrollment yet) only permits `/api/mfa/totp/setup`
+   and `/api/mfa/totp/verify`. Without this split, an attacker who
+   has only the password could call `/api/mfa/totp/setup` to
+   overwrite an enrolled user's enabled TOTP secret and forge a new
+   factor — a complete MFA bypass surfaced in the round-3 architect
+   review.
+
+   Regression coverage in `e2e/auth-mfa-pending-gate.spec.ts`:
+   - logs in an MFA-enforced admin, asserts `/api/auth/me`, a
+     `requireAdmin` endpoint (`/api/admin/audit-logs/actions`), and
+     a `requireManagerOrAbove` endpoint (`/api/clients`) all return
+     `401 { mfaPending: true }`, then verifies all three return
+     `200` after `/api/mfa/totp/validate` succeeds.
+   - second case proves the overwrite-secret bypass is closed:
+     `/api/mfa/totp/setup` and `/verify` both return
+     `401 { mfaPending: true }` for a `code`-branch session, and
+     the existing enrolled secret in `mfa_enrollments` is unchanged.
 
 2. **`000000` TOTP dev-bypass exposed in prod.** Both
    `/api/mfa/totp/verify` (initial setup) and `/api/mfa/totp/validate`
@@ -526,7 +541,7 @@ fixture as the rest of the suite and proves the
 `/api/auth/forgot-password` flow actually reaches the transport, not
 just the audit row.
 
-Test counts: 6 / 10 / 6 / 5 / 168 / 1 / 3 / 1 = 200 new specs across
+Test counts: 6 / 10 / 6 / 5 / 168 / 1 / 3 / 2 = 201 new specs across
 auth-login-extras / auth-signup / auth-password-reset / auth-session /
 role-guards-matrix / auth-welcome-email / auth-mfa-login-ui /
 auth-mfa-pending-gate.

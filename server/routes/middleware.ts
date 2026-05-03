@@ -336,15 +336,27 @@ export function getRateLimitInfo() {
   };
 }
 
-// Endpoints reachable while a session is mfaPending=true. Everything else
-// must wait until the user completes the TOTP/recovery challenge. Keep this
-// list narrow: it should only let the user finish (or abandon) MFA.
-const MFA_PENDING_ALLOWLIST = new Set<string>([
-  "/api/mfa/totp/setup",
-  "/api/mfa/totp/verify",
-  "/api/mfa/totp/validate",
+// Endpoints reachable while mfaPending=true regardless of reason. These let
+// the user query their state or abandon the half-finished login.
+const MFA_PENDING_ALWAYS_ALLOWED = new Set<string>([
   "/api/mfa/status",
   "/api/auth/logout",
+]);
+
+// Endpoints reachable only while mfaPending=true AND the session is in
+// the "setup" branch (no enabled enrollment exists yet). Allowing these
+// during a "code" branch would let an attacker who has only the password
+// overwrite the user's enabled TOTP secret and forge a new factor —
+// a complete MFA bypass.
+const MFA_PENDING_SETUP_ONLY = new Set<string>([
+  "/api/mfa/totp/setup",
+  "/api/mfa/totp/verify",
+]);
+
+// Endpoint reachable only while mfaPending=true AND the session is in the
+// "code" branch (user already has an enabled enrollment to validate against).
+const MFA_PENDING_CODE_ONLY = new Set<string>([
+  "/api/mfa/totp/validate",
 ]);
 
 /**
@@ -353,13 +365,20 @@ const MFA_PENDING_ALLOWLIST = new Set<string>([
  * (requireAuth, requireAdmin, requireManagerOrAbove, requirePlatformOperator,
  * etc.) before any role/permission check, otherwise a password-only session
  * for an MFA-enforced user could reach role-protected endpoints.
+ *
+ * The reason-aware allowlist prevents a "code"-branch (already-enrolled)
+ * session from calling /api/mfa/totp/setup or verify to overwrite the
+ * existing enabled secret without first validating the existing factor.
  */
 export function rejectIfMfaPending(req: Request, res: Response): boolean {
-  if (req.session?.mfaPending && !MFA_PENDING_ALLOWLIST.has(req.path)) {
-    res.status(401).json({ message: "MFA required", mfaPending: true });
-    return true;
-  }
-  return false;
+  if (!req.session?.mfaPending) return false;
+  const path = req.path;
+  if (MFA_PENDING_ALWAYS_ALLOWED.has(path)) return false;
+  const reason = req.session.mfaPendingReason;
+  if (reason === "setup" && MFA_PENDING_SETUP_ONLY.has(path)) return false;
+  if (reason === "code" && MFA_PENDING_CODE_ONLY.has(path)) return false;
+  res.status(401).json({ message: "MFA required", mfaPending: true });
+  return true;
 }
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -482,7 +501,8 @@ export async function requirePlatformOperator(req: Request, res: Response, next:
   // Match the existence-hiding contract of this gate: when MFA is pending,
   // platform-operator surface must look identical to "not found" rather than
   // leaking the existence of the route via a 401-with-mfaPending body.
-  if (req.session.mfaPending && !MFA_PENDING_ALLOWLIST.has(req.path)) {
+  // Existence-hiding contract: even MFA pending sessions must look like 404.
+  if (req.session.mfaPending) {
     return res.status(404).json({ message: "Not found" });
   }
   const ok = await isPlatformOperatorUserId(req.session.userId);

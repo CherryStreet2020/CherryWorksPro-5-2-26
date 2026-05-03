@@ -110,6 +110,7 @@ app.post("/api/auth/login", loginLimiter, awaitSessionSave, async (req, res) => 
               req.session.role = user.role;
               req.session.lastActivity = Date.now();
               req.session.mfaPending = true;
+              req.session.mfaPendingReason = "setup";
               setCSRFToken(res);
               return res.json({ requiresMfaSetup: true });
             });
@@ -122,6 +123,7 @@ app.post("/api/auth/login", loginLimiter, awaitSessionSave, async (req, res) => 
             req.session.role = user.role;
             req.session.lastActivity = Date.now();
             req.session.mfaPending = true;
+            req.session.mfaPendingReason = "code";
             setCSRFToken(res);
             return res.json({ requiresMfaCode: true });
           });
