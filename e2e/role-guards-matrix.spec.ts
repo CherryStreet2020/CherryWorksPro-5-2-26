@@ -43,7 +43,13 @@ const MANAGER_ROUTES = [
   "/team",
   "/import",
   "/admin/rate-matrix/00000000-0000-0000-0000-000000000000",
+  // Marketing-OS detail/import routes (gated on marketingOsActive in
+  // App.tsx ~319; the workflow exports VITE_MARKETING_OS_ENABLED=true
+  // so all three siblings register as concrete ManagerRoute paths).
+  "/marketing/contacts/import",
+  "/marketing/contacts/00000000-0000-0000-0000-000000000000",
   "/marketing/contacts",
+  "/marketing/companies/00000000-0000-0000-0000-000000000000",
   "/marketing/companies",
   "/marketing/tags",
   "/marketing/segments",

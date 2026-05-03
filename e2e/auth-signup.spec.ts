@@ -207,18 +207,28 @@ test.describe("/signup multi-tenant email semantics", () => {
   });
 });
 
-test.describe("/signup duplicate email (in-org)", () => {
-  // The signup endpoint short-circuits at
-  // `getUserByOrgSlugAndEmail(slug, email)` before Stripe is ever
-  // called (auth-routes.ts ~338) — so when the auto-suffixed slug
-  // collides AND the email is already in that org we return 400.
-  // Triggered here by re-using the same firmName + email twice.
-  test("identical firmName + email on a second signup is rejected", async () => {
+test.describe("/signup multi-tenant duplicate-email contract", () => {
+  // Intentional production semantics: signup auto-suffixes the org
+  // slug (auth-routes.ts ~334), then the dup-email guard checks
+  // `getUserByOrgSlugAndEmail(NEW_slug, email)`, which is by
+  // definition empty for a fresh slug. So the same (firmName, email)
+  // pair signing up twice is *not* rejected — it creates a second
+  // org with a `-1`-suffixed slug and a new user row scoped to it.
+  //
+  // What this test pins down deterministically:
+  //   1. Both signups return 200.
+  //   2. Two distinct user rows exist for the same email, each in
+  //      its own org.
+  //   3. The first user's `org_id` is never re-pointed to the second
+  //      org (no silent merge).
+  //   4. The second org's slug is the `-1`-suffixed variant of the
+  //      first (proving the auto-suffix path actually fired).
+  test("same email + same firmName creates two isolated orgs and never re-points the first user", async () => {
     const id = randomBytes(4).toString("hex");
     const firmName = `${ISO_SLUG_PREFIX}${getRunId()}_dup_${id}`;
     const email = `dup-${id}@e2e-dup-${id}.test`;
     const password = `DupPass!${id}A1`;
-    let createdOrgId: string | null = null;
+    const createdOrgIds: string[] = [];
     const ctx = await freshApiContext();
     try {
       const first = await ctx.post(`${BASE}/api/auth/signup`, {
@@ -226,28 +236,36 @@ test.describe("/signup duplicate email (in-org)", () => {
       });
       if (first.status() === 503) test.skip(true, "STRIPE_SECRET_KEY missing");
       expect(first.status()).toBe(200);
-      createdOrgId = (await first.json()).org.id;
+      const firstBody = await first.json();
+      createdOrgIds.push(firstBody.org.id);
+      const firstSlug: string = firstBody.org.slug;
 
-      // Second attempt: same firmName auto-suffixes the slug, but the
-      // dup-email check uses the ORIGINAL slug pattern so this still 400s
-      // because the slug-suffix check runs after a second user lookup.
-      // We assert at minimum that the second signup does NOT silently
-      // succeed with the same (org, email) pair.
       const second = await ctx.post(`${BASE}/api/auth/signup`, {
         data: { firmName, firstName: "Dup2", lastName: "Test", email, password },
       });
-      // Either rejected outright (400) or, if it succeeded under a new
-      // slug, the original (org, email) pair must remain the FIRST
-      // org's user — never re-pointed.
+      expect(second.status()).toBe(200);
+      const secondBody = await second.json();
+      createdOrgIds.push(secondBody.org.id);
+
+      // Auto-suffix proof: second slug = first slug + "-N" (N>=1).
+      expect(secondBody.org.slug).toMatch(
+        new RegExp(`^${firstSlug.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}-\\d+$`),
+      );
+      expect(secondBody.org.id).not.toBe(firstBody.org.id);
+
+      // No silent merge: each org owns its own user row for this email,
+      // and the first user's org_id is unchanged.
       const { rows } = await pool.query(
-        `SELECT org_id FROM users WHERE email = $1 ORDER BY created_at ASC LIMIT 1`,
+        `SELECT id, org_id FROM users WHERE email = $1 ORDER BY created_at ASC`,
         [email],
       );
-      expect(rows[0].org_id).toBe(createdOrgId);
-      expect([200, 400]).toContain(second.status());
+      expect(rows).toHaveLength(2);
+      expect(rows[0].org_id).toBe(firstBody.org.id);
+      expect(rows[1].org_id).toBe(secondBody.org.id);
+      expect(rows[0].id).not.toBe(rows[1].id);
     } finally {
-      if (createdOrgId) {
-        await deleteIsolatedOrg(createdOrgId).catch(() => undefined);
+      for (const oid of createdOrgIds) {
+        await deleteIsolatedOrg(oid).catch(() => undefined);
       }
       await ctx.dispose();
     }
