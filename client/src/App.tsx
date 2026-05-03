@@ -599,7 +599,16 @@ function AppContent() {
   if (user.role === "ADMIN") {
     return (
       <AdminSetupGate>
-        <AuthenticatedLayout />
+        <Switch>
+          {import.meta.env.DEV && (
+            <Route path="/__gate_crash">
+              {() => {
+                throw new Error("[e2e] gated render crash");
+              }}
+            </Route>
+          )}
+          <Route><AuthenticatedLayout /></Route>
+        </Switch>
       </AdminSetupGate>
     );
   }

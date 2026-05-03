@@ -3,13 +3,10 @@ import { loginIsolated, gotoWithRetry } from "./_iso-helpers";
 
 test.use({ navigationTimeout: 30_000 });
 
-test.describe("Help panel — persistence (audit §6.2)", () => {
+test.describe("Help panel — persistence", () => {
   test.fixme(
     "auto-closes after at least three in-app navigations",
     async ({ page, isolatedOrg }) => {
-      // Audit finding: opening the Knowledge Base panel and walking
-      // through several routes should auto-close it. Pinned as fixme;
-      // see follow-up #455 for the implementation.
       await loginIsolated(page, isolatedOrg);
       await gotoWithRetry(page, "/dashboard");
       await page.locator('[data-testid="button-help"]').click();

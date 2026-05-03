@@ -103,10 +103,7 @@ orgTest.describe("Estimate token — real used semantics", () => {
     const anon = await pwRequest.newContext({ baseURL: BASE_URL });
     try {
       const first = await anon.post(`/api/public/estimates/${token}/accept`);
-      const firstStatus = first.status();
-      expect([200, 429]).toContain(firstStatus);
-      // Second accept must NOT succeed — either rate-limited or rejected
-      // because the estimate is no longer SENT.
+      expect([200, 429]).toContain(first.status());
       const second = await anon.post(`/api/public/estimates/${token}/accept`);
       expect([400, 404, 429]).toContain(second.status());
     } finally {
@@ -131,11 +128,8 @@ orgTest.describe("Cross-org / wrong-org token semantics", () => {
     const anonA = await pwRequest.newContext({ baseURL: BASE_URL });
     const anonB = await pwRequest.newContext({ baseURL: BASE_URL });
     try {
-      // Possession works (no per-org session is checked — token IS auth).
       expect((await anonA.get(`/api/public/portal/${client.portalToken}`)).status()).toBe(200);
       expect((await anonB.get(`/api/public/portal/${client.portalToken}`)).status()).toBe(200);
-      // A token that does not belong to this lookup space (synthetic
-      // "from another org") must 404 and never 5xx.
       const wrong = await anonA.get(`/api/public/portal/${SYNTHETIC_64}`);
       expect([404, 429]).toContain(wrong.status());
     } finally {

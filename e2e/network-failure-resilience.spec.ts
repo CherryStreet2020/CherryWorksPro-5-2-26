@@ -78,10 +78,6 @@ anonTest.describe("Network failure — public signup form", () => {
     );
     await submit.click();
     const retryResp = await retry;
-    // Recovery contract = the second POST actually reaches the server
-    // (not a network abort). Status may be 200 (success) OR a server
-    // validation 4xx — either proves the recovery path; only 5xx /
-    // network failure would indicate a regression.
     expect(retryResp.status()).toBeLessThan(500);
     expect(ab.attempts()).toBe(2);
 

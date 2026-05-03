@@ -61,20 +61,14 @@ test.describe("AdminSetupGate — error-page swallowing (current contract)", () 
     await expect(page.locator('[data-testid="text-error-title"]')).toHaveCount(0);
   });
 
-  test("500: /__e2e_crash is mounted OUTSIDE AppContent and bypasses the gate (ErrorBoundary fires)", async ({
+  test("500: gated render crash at /__gate_crash is swallowed by the gate (banner wins)", async ({
     page,
     isolatedOrg,
   }) => {
-    // DevCrashRoute is registered before the AppContent fallback Route
-    // (see App.tsx ~L655), so it bypasses AdminSetupGate entirely. The
-    // ErrorBoundary fallback always wins for hard render crashes.
     await loginIsolated(page, isolatedOrg);
-    await gotoWithRetry(page, "/__e2e_crash");
-    await expect(page.locator('[data-testid="text-error-title"]')).toHaveText(
-      /Something Went Wrong/i,
-      { timeout: 15_000 },
-    );
-    await expect(page.locator(banner)).toHaveCount(0);
+    await gotoWithRetry(page, "/__gate_crash");
+    await expect(page.locator(banner)).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[data-testid="text-error-title"]')).toHaveCount(0);
   });
 });
 
