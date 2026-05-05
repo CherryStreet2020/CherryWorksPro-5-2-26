@@ -79,7 +79,7 @@ export function isoWeekStart(isoDate: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-interface JoinedEntry {
+export interface JoinedEntry {
   id: string;
   date: string;
   minutes: number;
