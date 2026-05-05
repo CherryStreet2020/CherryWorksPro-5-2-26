@@ -157,6 +157,9 @@ export function InvoiceDetailRows({
                   }}
                   data-testid={`${testIdPrefix}-tag-${it.id}`}
                 >
+                  {/* Task #465: the spec calls for a "billable tag";
+                      we use "Billable" / "Internal" to match the
+                      existing in-app worklog vocabulary. */}
                   {it.billable ? "Billable" : "Internal"}
                 </span>
               </div>

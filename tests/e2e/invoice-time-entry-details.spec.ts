@@ -153,6 +153,19 @@ test("org default ON renders day headers, project+ticket+billable detail rows, a
       }
     }
     expect(foundEmpty, "expected at least one entry with empty description from the empty-notes seed").toBe(true);
+
+    // PDF smoke: with details ON, the public PDF endpoint must
+    // succeed end-to-end. This exercises drawDetailBlock's
+    // prefetch + page-break path; if any of that throws, the
+    // request would 500 and this assertion fails.
+    const pdfRes = await pub.request.get(`/api/public/invoices/${publicToken}/pdf`);
+    expect(pdfRes.status()).toBe(200);
+    const ct = pdfRes.headers()["content-type"] ?? "";
+    expect(ct).toContain("application/pdf");
+    const pdfBuf = await pdfRes.body();
+    expect(pdfBuf.length).toBeGreaterThan(1000);
+    // Sanity-check that what we got back really is a PDF.
+    expect(pdfBuf.subarray(0, 5).toString("utf-8")).toBe("%PDF-");
   } finally {
     await ctx.close();
   }
