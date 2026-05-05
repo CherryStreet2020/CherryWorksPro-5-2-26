@@ -210,31 +210,192 @@ function getTheme(name: string): ThemeColors {
 
 const logoBaseDir = path.join(process.cwd(), "uploads", "logos");
 
-function resolveLogoPath(logoUrl: string | null | undefined): string | null {
-  if (!logoUrl) return null;
-  try {
-    const filename = path.basename(logoUrl);
-    const fp = path.join(logoBaseDir, filename);
-    if (fs.existsSync(fp)) return fp;
-  } catch {}
+// Bounded in-memory cache of resolved logo bytes keyed by logoUrl. Each
+// entry expires after LOGO_CACHE_TTL_MS so a logo replaced via the
+// settings UI shows up on the next PDF generation without a server
+// restart. Negative results (null bytes) are cached too so a stale URL
+// doesn't trigger a network round-trip on every generation.
+const LOGO_CACHE_TTL_MS = 5 * 60 * 1000;
+const LOGO_CACHE_MAX = 64;
+const logoBytesCache = new Map<string, { bytes: Buffer | null; expiresAt: number }>();
+
+function getCachedLogo(key: string): Buffer | null | undefined {
+  const hit = logoBytesCache.get(key);
+  if (!hit) return undefined;
+  if (hit.expiresAt < Date.now()) {
+    logoBytesCache.delete(key);
+    return undefined;
+  }
+  return hit.bytes;
+}
+
+function setCachedLogo(key: string, bytes: Buffer | null): void {
+  if (logoBytesCache.size >= LOGO_CACHE_MAX) {
+    const firstKey = logoBytesCache.keys().next().value;
+    if (firstKey) logoBytesCache.delete(firstKey);
+  }
+  logoBytesCache.set(key, { bytes, expiresAt: Date.now() + LOGO_CACHE_TTL_MS });
+}
+
+function deriveBaseUrl(): string | null {
+  const fromEnv = process.env.APP_BASE_URL || process.env.BASE_URL;
+  if (fromEnv) return fromEnv.replace(/\/$/, "");
+  const replitDomain = process.env.REPLIT_DOMAINS?.split(",")[0]?.trim();
+  if (replitDomain) return `https://${replitDomain}`;
   return null;
+}
+
+// SSRF guard: every host the logo loader is permitted to fetch from.
+// Built from APP_BASE_URL / BASE_URL / every comma-separated entry in
+// REPLIT_DOMAINS, plus the explicit local dev origins. We do this with
+// `URL` parsing (not substring match) so attacker-controlled values
+// like `https://evil.com#cherry-app.replit.app` can't slip past.
+function getAllowedLogoHosts(): Set<string> {
+  const hosts = new Set<string>();
+  const add = (u: string | undefined | null) => {
+    if (!u) return;
+    try {
+      hosts.add(new URL(u).host.toLowerCase());
+    } catch {
+      // ignore malformed entries
+    }
+  };
+  add(process.env.APP_BASE_URL);
+  add(process.env.BASE_URL);
+  const domains = process.env.REPLIT_DOMAINS?.split(",") ?? [];
+  for (const d of domains) {
+    const t = d.trim();
+    if (!t) continue;
+    add(t.startsWith("http") ? t : `https://${t}`);
+  }
+  // Dev fallbacks — these are the only HTTP origins ever allowed.
+  hosts.add("localhost:5000");
+  hosts.add("127.0.0.1:5000");
+  return hosts;
+}
+
+// Allowed pathname prefixes inside an allowed host. Anything outside
+// these prefixes (e.g. `/api/admin/...`, `/internal/metadata`) is
+// rejected — even for a same-host URL — so a malicious admin can't
+// pivot the PDF route into an arbitrary same-origin GET.
+const ALLOWED_LOGO_PATH_PREFIXES = [
+  "/api/public-objects/org-logos/",
+  "/api/public-objects/brand-logos/",
+  "/api/uploads/logos/",
+] as const;
+
+function isAllowedLogoUrl(absoluteUrl: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(absoluteUrl);
+  } catch {
+    return false;
+  }
+  // Loopback and private IP literals are never allowed in production.
+  // (We still allow `localhost:5000` for dev — handled by the host
+  // allowlist above.)
+  const allowedHosts = getAllowedLogoHosts();
+  if (!allowedHosts.has(u.host.toLowerCase())) return false;
+  // Only https in production. Allow http for the explicit dev hosts.
+  if (u.protocol !== "https:" && u.protocol !== "http:") return false;
+  if (u.protocol === "http:") {
+    const isDevHost = u.host === "localhost:5000" || u.host === "127.0.0.1:5000";
+    if (!isDevHost) return false;
+  }
+  return ALLOWED_LOGO_PATH_PREFIXES.some((p) => u.pathname.startsWith(p));
+}
+
+// Loads logo image bytes for embedding into a PDF. Accepts:
+//   - https:// URLs whose host is in our allowlist (APP_BASE_URL /
+//     REPLIT_DOMAINS) AND whose path starts with one of our public
+//     object-storage / legacy uploads prefixes — used by hosted logos.
+//   - /api/public-objects/... or /api/uploads/logos/... relative paths
+//     (resolved against APP_BASE_URL / REPLIT_DOMAINS, with a local-disk
+//     fallback for legacy `/api/uploads/logos/` URLs that may still exist
+//     pre-migration)
+//   - null/undefined → null
+// Any error (404, network failure, decode failure) returns null silently
+// so the PDF still renders without a logo. Anything outside the
+// allowlist (e.g. attacker-supplied http://169.254.169.254/) is rejected
+// silently — no fetch is issued.
+export async function loadLogoBytes(
+  logoUrl: string | null | undefined,
+): Promise<Buffer | null> {
+  if (!logoUrl) return null;
+  const cacheKey = logoUrl;
+  const cached = getCachedLogo(cacheKey);
+  if (cached !== undefined) return cached;
+
+  // Local-disk fast path for legacy /api/uploads/logos/<file> URLs that
+  // were uploaded before the move to object storage. The migration nulls
+  // these in the DB on production, but in dev the file may still exist.
+  if (logoUrl.startsWith("/api/uploads/logos/")) {
+    try {
+      const filename = path.basename(logoUrl);
+      const fp = path.join(logoBaseDir, filename);
+      if (fs.existsSync(fp)) {
+        const bytes = fs.readFileSync(fp);
+        setCachedLogo(cacheKey, bytes);
+        return bytes;
+      }
+    } catch {
+      // fall through to URL fetch
+    }
+  }
+
+  let absoluteUrl: string | null = null;
+  if (/^https?:\/\//i.test(logoUrl)) {
+    absoluteUrl = logoUrl;
+  } else if (logoUrl.startsWith("/")) {
+    const base = deriveBaseUrl();
+    if (base) absoluteUrl = base + logoUrl;
+  }
+
+  if (!absoluteUrl || !isAllowedLogoUrl(absoluteUrl)) {
+    setCachedLogo(cacheKey, null);
+    return null;
+  }
+
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    const res = await fetch(absoluteUrl, { signal: ctrl.signal, redirect: "manual" });
+    clearTimeout(timer);
+    // Reject redirects so a 302 from an allowed host can't be used to
+    // bounce the fetch to an internal target.
+    if (res.status >= 300 && res.status < 400) {
+      setCachedLogo(cacheKey, null);
+      return null;
+    }
+    if (!res.ok) {
+      setCachedLogo(cacheKey, null);
+      return null;
+    }
+    const arr = await res.arrayBuffer();
+    const bytes = Buffer.from(arr);
+    setCachedLogo(cacheKey, bytes);
+    return bytes;
+  } catch {
+    setCachedLogo(cacheKey, null);
+    return null;
+  }
 }
 
 function embedLogo(
   doc: InstanceType<typeof PDFDocument>,
-  logoPath: string | null,
+  logoBytes: Buffer | null,
   x: number,
   y: number,
   maxW: number,
   maxH: number,
 ): number {
-  if (!logoPath) return 0;
+  if (!logoBytes || logoBytes.length === 0) return 0;
   try {
-    const img = (doc as any).openImage(logoPath);
+    const img = (doc as any).openImage(logoBytes);
     const ratio = Math.min(maxW / img.width, maxH / img.height, 1);
     const w = img.width * ratio;
     const h = img.height * ratio;
-    doc.image(logoPath, x, y, { width: w, height: h });
+    doc.image(logoBytes, x, y, { width: w, height: h });
     return w + 12;
   } catch {
     return 0;
@@ -273,6 +434,10 @@ function isLuxury(themeName: string): boolean {
   return themeName !== "modern" && themeName !== "minimal" && themeName !== "bold" && themeName !== "classic";
 }
 
+// X coordinate where the right-side meta block (INVOICE NO / STATUS /
+// ISSUED / DUE) begins. Kept in sync with drawLuxuryMetaBlock's labelX.
+const LX_META_LABEL_X = 380;
+
 function drawLuxuryHeader(
   doc: InstanceType<typeof PDFDocument>,
   orgName: string,
@@ -280,29 +445,53 @@ function drawLuxuryHeader(
   orgPhone: string,
   orgEmail: string,
   orgWebsite: string,
-  docTypeLabel: string,
-  logoFile: string | null,
+  _docTypeLabel: string,
+  logoBytes: Buffer | null,
 ): number {
   const theme = getTheme("luxury");
   const y = LX.mt;
-  const logoW = embedLogo(doc, logoFile, LX.ml, y, 48, 48);
+  const logoW = embedLogo(doc, logoBytes, LX.ml, y, 48, 48);
   const nameX = LX.ml + logoW;
+  // Reserve a 16pt gutter before the meta block so descenders / accent
+  // rule never touch the right column. Clamped to ≥160 so very wide
+  // logos still leave usable name width (PDFKit will ellipsize the rest).
+  const nameMaxW = Math.max(160, LX_META_LABEL_X - 16 - nameX);
   doc.fontSize(28).fillColor(theme.headerText).font("Helvetica-Bold")
-    .text(orgName, nameX, y, { characterSpacing: 1.5 });
-  const nameH = doc.heightOfString(orgName, { width: 300, characterSpacing: 1.5 });
+    .text(orgName, nameX, y, {
+      characterSpacing: 1.5,
+      width: nameMaxW,
+      ellipsis: true,
+      lineBreak: false,
+    });
+  const nameH = doc.heightOfString(orgName, {
+    width: nameMaxW,
+    characterSpacing: 1.5,
+    lineBreak: false,
+  });
   const accentY = y + nameH + 4;
   doc.moveTo(nameX, accentY).lineTo(nameX + 60, accentY)
     .strokeColor(theme.accent).lineWidth(2).stroke();
 
+  // Per-field measured height — multi-line addresses (e.g. street + city
+  // separated by a literal newline) stack correctly without overrunning
+  // the next field. Same nameMaxW guarantees no spill into the meta column.
+  const infoMaxW = nameMaxW;
   let infoY = y + nameH + 14;
   doc.fontSize(9).fillColor(theme.textMuted).font("Helvetica");
-  if (orgAddress) { doc.text(orgAddress, nameX, infoY); infoY += 13; }
-  if (orgPhone) { doc.text(orgPhone, nameX, infoY); infoY += 13; }
-  if (orgEmail) { doc.text(orgEmail, nameX, infoY); infoY += 13; }
-  if (orgWebsite) { doc.text(orgWebsite, nameX, infoY); infoY += 13; }
+  const drawInfoLine = (text: string) => {
+    if (!text) return;
+    doc.text(text, nameX, infoY, { width: infoMaxW });
+    infoY += doc.heightOfString(text, { width: infoMaxW }) + 2;
+  };
+  drawInfoLine(orgAddress);
+  drawInfoLine(orgPhone);
+  drawInfoLine(orgEmail);
+  drawInfoLine(orgWebsite);
 
-  doc.fontSize(9).fillColor("#94a3b8").font("Helvetica")
-    .text(docTypeLabel, LX.ml, y, { align: "right", width: LX_CONTENT_W, characterSpacing: 3 });
+  // The right-aligned "INVOICE" / "ESTIMATE" wordmark used to live at
+  // `LX_RIGHT` and competed with the meta block (which already starts
+  // with "INVOICE NO"). Dropping it removes the collision; the doc type
+  // is conveyed by the meta block label.
 
   const ruleY = Math.max(infoY + 6, y + 68);
   doc.moveTo(LX.ml, ruleY).lineTo(LX_RIGHT, ruleY)
@@ -447,6 +636,11 @@ export async function generateInvoicePdf(
     throw new Error(`Cannot generate PDF: ${errors.join("; ")}`);
   }
 
+  // Resolve the logo bytes BEFORE entering the Promise executor below
+  // (PDFKit's draw loop must stay synchronous; the executor cannot be
+  // async without breaking the resolve/reject contract).
+  const logoBytes = await loadLogoBytes(org?.logoUrl);
+
   return new Promise((resolve, reject) => {
     const themeName = org?.invoiceTheme || "luxury";
     const theme = getTheme(themeName);
@@ -470,7 +664,6 @@ export async function generateInvoicePdf(
     const dateFmt = org?.dateFormat || null;
     const issuedFormatted = fmtDate(invoice.issuedDate, dateFmt);
     const dueFormatted = fmtDate(invoice.dueDate, dateFmt);
-    const logoFile = resolveLogoPath(org?.logoUrl);
 
     let y: number;
     let pageNum = 1;
@@ -479,7 +672,7 @@ export async function generateInvoicePdf(
     const contentW = contentRight - contentLeft;
 
     if (luxury) {
-      y = drawLuxuryHeader(doc, orgName, orgAddress, orgPhone, orgEmail, orgWebsite, "INVOICE", logoFile);
+      y = drawLuxuryHeader(doc, orgName, orgAddress, orgPhone, orgEmail, orgWebsite, "INVOICE", logoBytes);
 
       const metaRows: [string, string][] = [
         ["INVOICE NO", invoice.number],
@@ -681,7 +874,7 @@ export async function generateInvoicePdf(
     } else {
       if (themeName === "modern") {
         doc.rect(0, 0, 612, 100).fill(theme.headerBg);
-        const logoW = embedLogo(doc, logoFile, 50, 22, 50, 50);
+        const logoW = embedLogo(doc, logoBytes, 50, 22, 50, 50);
         doc.fontSize(22).fillColor(theme.headerText).font("Helvetica-Bold").text(orgName, 50 + logoW, 30);
         doc.fontSize(10).fillColor("#94a3b8").font("Helvetica");
         if (orgPhone) doc.text(orgPhone, 50 + logoW, 56);
@@ -693,7 +886,7 @@ export async function generateInvoicePdf(
         y = 120;
       } else if (themeName === "bold") {
         doc.rect(0, 0, 612, 120).fill(theme.headerBg);
-        const logoW = embedLogo(doc, logoFile, 50, 20, 50, 50);
+        const logoW = embedLogo(doc, logoBytes, 50, 20, 50, 50);
         doc.fontSize(26).fillColor(theme.headerText).font("Helvetica-Bold").text(orgName, 50 + logoW, 28);
         doc.fontSize(10).fillColor("rgba(255,255,255,0.7)").font("Helvetica");
         let hy = 58;
@@ -706,7 +899,7 @@ export async function generateInvoicePdf(
         doc.text(`Due: ${dueFormatted}`, 350, 102, { align: "right", width: 212 });
         y = 140;
       } else if (themeName === "minimal") {
-        const logoW = embedLogo(doc, logoFile, 50, 44, 40, 40);
+        const logoW = embedLogo(doc, logoBytes, 50, 44, 40, 40);
         doc.fontSize(11).fillColor(theme.textMuted).font("Helvetica").text(orgName.toUpperCase(), 50 + logoW, 50, { characterSpacing: 3 });
         y = 68;
         doc.fontSize(9).fillColor("#cbd5e1").font("Helvetica");
@@ -718,7 +911,7 @@ export async function generateInvoicePdf(
         doc.fontSize(16).fillColor(theme.text).font("Helvetica-Bold").text(invoice.number, 400, 64, { align: "right", width: 162 });
         doc.fontSize(9).fillColor(theme.textMuted).font("Helvetica").text(`${issuedFormatted}  ·  Due ${dueFormatted}`, 350, 84, { align: "right", width: 212 });
       } else {
-        const logoW = embedLogo(doc, logoFile, 50, 44, 50, 50);
+        const logoW = embedLogo(doc, logoBytes, 50, 44, 50, 50);
         doc.fontSize(22).fillColor(theme.headerText).font("Helvetica-Bold").text(orgName, 50 + logoW, 50);
         doc.fontSize(10).fillColor(theme.textMuted).font("Helvetica");
         y = 78;
@@ -1003,6 +1196,8 @@ export async function generateEstimatePdf(
   if (estimate.lines && estimate.lines.length > MAX_PDF_LINE_ITEMS) {
     throw new Error(`Estimate has ${estimate.lines.length} line items, exceeding the maximum of ${MAX_PDF_LINE_ITEMS}. Please split this estimate into smaller estimates.`);
   }
+  // Resolve the logo bytes BEFORE the synchronous PDFKit draw loop.
+  const logoBytes = await loadLogoBytes(org?.logoUrl);
   return new Promise((resolve, reject) => {
     const themeName = org?.invoiceTheme || "luxury";
     const theme = getTheme(themeName);
@@ -1026,7 +1221,6 @@ export async function generateEstimatePdf(
     const dateFmt = org?.dateFormat || null;
     const issuedFormatted = fmtDate(estimate.issuedDate, dateFmt);
     const expiryFormatted = estimate.expiryDate ? fmtDate(estimate.expiryDate, dateFmt) : null;
-    const logoFile = resolveLogoPath(org?.logoUrl);
 
     let y: number;
     let pageNum = 1;
@@ -1034,7 +1228,7 @@ export async function generateEstimatePdf(
     const contentRight = luxury ? LX_RIGHT : 562;
 
     if (luxury) {
-      y = drawLuxuryHeader(doc, orgName, orgAddress, orgPhone, orgEmail, orgWebsite, "ESTIMATE", logoFile);
+      y = drawLuxuryHeader(doc, orgName, orgAddress, orgPhone, orgEmail, orgWebsite, "ESTIMATE", logoBytes);
 
       const metaRows: [string, string][] = [
         ["ESTIMATE NO", estimate.number],
@@ -1144,7 +1338,7 @@ export async function generateEstimatePdf(
       drawLuxuryFooter(doc, y, orgName, pageNum);
 
     } else {
-      const logoW = embedLogo(doc, logoFile, 50, 44, 50, 50);
+      const logoW = embedLogo(doc, logoBytes, 50, 44, 50, 50);
       doc.fontSize(22).fillColor(theme.headerText).font("Helvetica-Bold").text(orgName, 50 + logoW, 50);
       doc.fontSize(10).fillColor(theme.textMuted).font("Helvetica");
       y = 78;
@@ -1289,6 +1483,8 @@ export async function generateExpenseReceiptPdf(
   expense: ExpenseReceiptData,
   org?: OrgBranding,
 ): Promise<Buffer> {
+  // Resolve the logo bytes BEFORE the synchronous PDFKit draw loop.
+  const logoBytes = await loadLogoBytes(org?.logoUrl);
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "LETTER", margin: 50 });
     const chunks: Buffer[] = [];
@@ -1304,9 +1500,8 @@ export async function generateExpenseReceiptPdf(
     const orgAddress = org?.address || "";
     const orgPhone = org?.phone || "";
     const orgEmail = org?.email || "";
-    const logoFile = resolveLogoPath(org?.logoUrl);
 
-    const logoW = embedLogo(doc, logoFile, 50, 44, 50, 50);
+    const logoW = embedLogo(doc, logoBytes, 50, 44, 50, 50);
     doc.fontSize(22).fillColor("#0f172a").font("Helvetica-Bold").text(orgName, 50 + logoW, 50);
     doc.fontSize(10).fillColor("#94a3b8").font("Helvetica");
     let y = 78;

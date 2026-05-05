@@ -14,6 +14,11 @@ import { newsletterSubscribers } from "@shared/schema";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { randomUUID } from "crypto";
+import {
+  ObjectStorageService,
+  objectStorageClient,
+} from "../replit_integrations/object_storage";
 
 export function buildAccountDeletionScheduledEmailHtml(opts: { orgName: string; formattedDate: string }): string {
   const { orgName, formattedDate } = opts;
@@ -645,14 +650,65 @@ app.patch("/api/org/settings", settingsUpdateLimiter, requireAdmin, async (req, 
     parsed.data.reminderDaysOverdue = nums.join(",");
   }
 
+  // Task #467 SSRF hardening: PDF generation fetches `orgs.logo_url`
+  // server-side, so an admin who could set this to an arbitrary URL
+  // (e.g. `http://169.254.169.254/...`, internal services, or an
+  // attacker-hosted endpoint) could pivot the PDF route into an SSRF
+  // gadget. Restrict the writable value to:
+  //   1. null / empty (clearing the logo)
+  //   2. an absolute URL whose host is one of our app origins AND whose
+  //      path is a hosted org-logo / brand-logo / legacy uploads path
+  //   3. an app-relative path with the same prefix constraint
+  // Anything else is rejected. Note: the dedicated POST `/api/org/logo`
+  // upload route is the canonical way to set a logo and always produces
+  // a value that satisfies these checks.
   if (parsed.data.logoUrl) {
-    try {
-      const u = new URL(parsed.data.logoUrl);
-      if (!["http:", "https:"].includes(u.protocol)) {
-        return res.status(400).json({ message: "Logo URL must use http or https protocol" });
+    const allowedPrefixes = [
+      "/api/public-objects/org-logos/",
+      "/api/public-objects/brand-logos/",
+      "/api/uploads/logos/",
+    ];
+    const buildAllowedHosts = (): Set<string> => {
+      const out = new Set<string>();
+      const add = (raw: string | undefined | null) => {
+        if (!raw) return;
+        try { out.add(new URL(raw).host.toLowerCase()); } catch {}
+      };
+      add(process.env.APP_BASE_URL);
+      add(process.env.BASE_URL);
+      for (const d of (process.env.REPLIT_DOMAINS?.split(",") ?? [])) {
+        const t = d.trim();
+        if (!t) continue;
+        add(t.startsWith("http") ? t : `https://${t}`);
       }
-    } catch {
-      return res.status(400).json({ message: "Logo URL is not a valid URL" });
+      out.add("localhost:5000");
+      out.add("127.0.0.1:5000");
+      return out;
+    };
+    let pathnameToCheck: string | null = null;
+    if (parsed.data.logoUrl.startsWith("/")) {
+      pathnameToCheck = parsed.data.logoUrl.split("?")[0].split("#")[0];
+    } else {
+      try {
+        const u = new URL(parsed.data.logoUrl);
+        if (!["http:", "https:"].includes(u.protocol)) {
+          return res.status(400).json({ message: "Logo URL must use http or https protocol" });
+        }
+        const allowedHosts = buildAllowedHosts();
+        if (!allowedHosts.has(u.host.toLowerCase())) {
+          return res.status(400).json({
+            message: "Logo URL host is not allowed. Use the org logo upload endpoint instead.",
+          });
+        }
+        pathnameToCheck = u.pathname;
+      } catch {
+        return res.status(400).json({ message: "Logo URL is not a valid URL" });
+      }
+    }
+    if (!pathnameToCheck || !allowedPrefixes.some((p) => pathnameToCheck!.startsWith(p))) {
+      return res.status(400).json({
+        message: "Logo URL path is not allowed. Use the org logo upload endpoint instead.",
+      });
     }
   }
 
@@ -902,13 +958,36 @@ app.get("/api/admin/expense-categories", requireAdmin, async (req, res) => {
   } catch (err: any) { return res.status(500).json({ message: sanitizeErrorMessage(err) }); }
 });
 
-// Logo upload
+// ──────────────────────────────────────────────────────────────────────
+// Org logo upload
+//
+// Task #467: prior implementation wrote files to local disk
+// (`uploads/logos/<orgId>.<ext>` served via `/api/uploads/logos/`),
+// which is ephemeral on every production redeploy — orgs that uploaded
+// a logo would silently lose it after the next deploy. This route now
+// streams the buffer straight to the same Replit Object Storage bucket
+// used by brand logos (mirroring server/routes/brands.ts) and persists
+// a fully-qualified https URL in `orgs.logo_url`.
+//
+// The legacy GET handler at `/api/uploads/logos/:filename` is preserved
+// so any in-flight bookmarks or stale email images still 404 cleanly
+// (instead of bringing down the route entirely) and so dev environments
+// that never migrated their files keep rendering.
+// ──────────────────────────────────────────────────────────────────────
 const logoDir = path.join(process.cwd(), "uploads", "logos");
 fs.mkdirSync(logoDir, { recursive: true });
 
 const ALLOWED_LOGO_MIMETYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 const ALLOWED_LOGO_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp"]);
 const DANGEROUS_LOGO_EXTENSIONS = new Set([".exe", ".bat", ".cmd", ".com", ".msi", ".scr", ".pif", ".js", ".vbs", ".svg", ".html", ".htm", ".php"]);
+const MIME_FROM_EXT: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+};
+const ORG_LOGOS_PREFIX = "org-logos";
 
 function sanitizeLogoFilename(original: string): string {
   let name = path.basename(original);
@@ -918,8 +997,25 @@ function sanitizeLogoFilename(original: string): string {
   return name.substring(0, 200);
 }
 
+function appBaseUrlFromReq(req: Request): string {
+  const fromEnv = process.env.APP_BASE_URL || process.env.BASE_URL;
+  if (fromEnv) return fromEnv.replace(/\/$/, "");
+  const replitDomain = process.env.REPLIT_DOMAINS?.split(",")[0]?.trim();
+  if (replitDomain) return `https://${replitDomain}`;
+  return `${req.protocol}://${req.get("host")}`.replace(/\/$/, "");
+}
+
+function splitBucketAndObject(fullPath: string): { bucketName: string; objectName: string } {
+  const cleaned = fullPath.startsWith("/") ? fullPath.slice(1) : fullPath;
+  const parts = cleaned.split("/");
+  if (parts.length < 2) throw new Error(`Invalid bucket path: ${fullPath}`);
+  return { bucketName: parts[0], objectName: parts.slice(1).join("/") };
+}
+
+// In-memory multer: we stream the buffer straight to object storage
+// (no disk hop, so a failed mid-upload can't leave junk in `uploads/logos/`).
 const logoUpload = multer({
-  dest: logoDir,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
@@ -948,30 +1044,89 @@ app.post("/api/org/logo", requireAdmin, (req, res, next) => {
   });
 }, async (req, res) => {
   try {
-    const file = req.file as Express.Multer.File;
+    const file = req.file as Express.Multer.File | undefined;
     if (!file) return res.status(400).json({ message: "No file uploaded. Accepted: JPG, PNG, GIF, WebP (max 5MB). SVG files are not accepted for security reasons." });
     const ext = path.extname(sanitizeLogoFilename(file.originalname)).toLowerCase() || ".png";
     if (!ALLOWED_LOGO_EXTENSIONS.has(ext)) {
-      try { fs.unlinkSync(file.path); } catch {}
       return res.status(400).json({ message: `File extension "${ext}" is not allowed` });
     }
-    const newName = `${req.session.orgId}${ext}`;
-    const destPath = path.join(logoDir, newName);
-    if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-    fs.renameSync(file.path, destPath);
-    const logoUrl = `/api/uploads/logos/${newName}`;
+
+    const orgId = req.session.orgId!;
+    const objectStorageService = new ObjectStorageService();
+    const publicPaths = objectStorageService.getPublicObjectSearchPaths();
+    const publicRoot = publicPaths[0];
+    // Suffix with a uuid so cached browser/CDN copies of the previous
+    // logo aren't served when the admin replaces it.
+    const filename = `${orgId}-${randomUUID()}${ext}`;
+    const fullObjectPath = `${publicRoot.replace(/\/$/, "")}/${ORG_LOGOS_PREFIX}/${filename}`;
+    const { bucketName, objectName } = splitBucketAndObject(fullObjectPath);
+    const bucket = objectStorageClient.bucket(bucketName);
+    const objectFile = bucket.file(objectName);
+    const contentType =
+      MIME_FROM_EXT[ext] ||
+      (file.mimetype !== "application/octet-stream" ? file.mimetype : "application/octet-stream");
+
+    await objectFile.save(file.buffer, {
+      contentType,
+      resumable: false,
+      metadata: { cacheControl: "public, max-age=31536000, immutable" },
+    });
+
+    const logoUrl = `${appBaseUrlFromReq(req)}/api/public-objects/${ORG_LOGOS_PREFIX}/${filename}`;
+
+    // Best-effort: capture the previous URL so we can evict the old
+    // hosted file after the DB write succeeds. If the DB write fails we
+    // delete the just-uploaded object to avoid orphans.
+    let prevLogoUrl: string | null = null;
     try {
-      await storage.updateOrg(req.session.orgId!, { logoUrl });
+      const orgRow = await storage.getOrg(orgId);
+      prevLogoUrl = (orgRow?.logoUrl as string | null) ?? null;
+    } catch {
+      // non-fatal
+    }
+
+    try {
+      await storage.updateOrg(orgId, { logoUrl });
     } catch (dbErr) {
-      try { fs.unlinkSync(destPath); } catch {}
+      try {
+        await objectStorageClient.bucket(bucketName).file(objectName).delete({ ignoreNotFound: true });
+      } catch {}
       throw dbErr;
     }
+
+    // Evict the previous hosted org-logo file (skip data URLs, external
+    // URLs, and the legacy local-disk URL prefix).
+    if (prevLogoUrl) {
+      const marker = `/api/public-objects/${ORG_LOGOS_PREFIX}/`;
+      const idx = prevLogoUrl.indexOf(marker);
+      if (idx !== -1) {
+        const prevName = prevLogoUrl.slice(idx + marker.length);
+        if (prevName && prevName !== filename) {
+          const prevPath = `${publicRoot.replace(/\/$/, "")}/${ORG_LOGOS_PREFIX}/${prevName}`;
+          try {
+            const { bucketName: pBucket, objectName: pObject } = splitBucketAndObject(prevPath);
+            await objectStorageClient.bucket(pBucket).file(pObject).delete({ ignoreNotFound: true });
+          } catch {
+            // swallow — eviction failures must never break the upload response
+          }
+        }
+      }
+      // Best-effort cleanup of any stale local-disk file from the
+      // pre-Task-#467 implementation.
+      if (prevLogoUrl.startsWith("/api/uploads/logos/")) {
+        try {
+          const stale = path.join(logoDir, path.basename(prevLogoUrl));
+          if (fs.existsSync(stale)) fs.unlinkSync(stale);
+        } catch {}
+      }
+    }
+
     await storage.createAuditLog({
-      orgId: req.session.orgId!,
+      orgId,
       userId: req.session.userId!,
       action: "ORG_LOGO_UPDATED",
       entityType: "org",
-      entityId: req.session.orgId!,
+      entityId: orgId,
       details: {},
     });
     return res.json({ logoUrl });
@@ -981,18 +1136,70 @@ app.post("/api/org/logo", requireAdmin, (req, res, next) => {
 });
 app.delete("/api/org/logo", requireAdmin, async (req, res) => {
   try {
-    const org = await storage.getOrg(req.session.orgId!);
-    if (org?.logoUrl) {
-      const filename = path.basename(org.logoUrl);
-      const fp = path.join(logoDir, filename);
-      if (fs.existsSync(fp)) fs.unlinkSync(fp);
+    const orgId = req.session.orgId!;
+    const org = await storage.getOrg(orgId);
+    const prev = org?.logoUrl as string | null | undefined;
+
+    // Evict hosted file if it lives in our object-storage bucket.
+    if (prev) {
+      const marker = `/api/public-objects/${ORG_LOGOS_PREFIX}/`;
+      const idx = prev.indexOf(marker);
+      if (idx !== -1) {
+        const prevName = prev.slice(idx + marker.length);
+        if (prevName) {
+          try {
+            const objectStorageService = new ObjectStorageService();
+            const publicPaths = objectStorageService.getPublicObjectSearchPaths();
+            const publicRoot = publicPaths[0];
+            const prevPath = `${publicRoot.replace(/\/$/, "")}/${ORG_LOGOS_PREFIX}/${prevName}`;
+            const { bucketName: pBucket, objectName: pObject } = splitBucketAndObject(prevPath);
+            await objectStorageClient.bucket(pBucket).file(pObject).delete({ ignoreNotFound: true });
+          } catch {
+            // swallow — DB still gets nulled out below
+          }
+        }
+      }
+      // Legacy local-disk fallback.
+      if (prev.startsWith("/api/uploads/logos/")) {
+        try {
+          const fp = path.join(logoDir, path.basename(prev));
+          if (fs.existsSync(fp)) fs.unlinkSync(fp);
+        } catch {}
+      }
     }
-    await storage.updateOrg(req.session.orgId!, { logoUrl: null });
+
+    await storage.updateOrg(orgId, { logoUrl: null });
     return res.json({ success: true });
   } catch (err: any) {
     return res.status(500).json({ message: sanitizeErrorMessage(err) });
   }
 });
+// Public read endpoint for object-storage hosted org logos. Mirrors the
+// brand-logos endpoint pattern from server/routes/brands.ts so emails
+// and unauthenticated invoice previews can render the logo without an
+// auth round-trip.
+app.get("/api/public-objects/org-logos/:filename", async (req: Request, res: Response) => {
+  try {
+    const rawFilename = req.params.filename;
+    const filename = path.basename(Array.isArray(rawFilename) ? rawFilename[0] : String(rawFilename));
+    if (!filename || filename.includes("/") || filename.includes("..")) {
+      return res.status(400).json({ message: "Invalid filename" });
+    }
+    const ext = path.extname(filename).toLowerCase();
+    if (!ALLOWED_LOGO_EXTENSIONS.has(ext)) {
+      return res.status(400).json({ message: "Invalid filename" });
+    }
+    const objectStorageService = new ObjectStorageService();
+    const file = await objectStorageService.searchPublicObject(`${ORG_LOGOS_PREFIX}/${filename}`);
+    if (!file) return res.status(404).json({ message: "Not found" });
+    await objectStorageService.downloadObject(file, res, 31536000);
+    return;
+  } catch (err: any) {
+    return res.status(500).json({ message: sanitizeErrorMessage(err) });
+  }
+});
+// Legacy local-disk read endpoint. Kept so dev environments that never
+// migrated still work; in production the migration nulls these URLs.
 app.get("/api/uploads/logos/:filename", (req, res) => {
   const fp = path.join(logoDir, path.basename(req.params.filename));
   if (!fs.existsSync(fp)) return res.status(404).json({ message: "Not found" });

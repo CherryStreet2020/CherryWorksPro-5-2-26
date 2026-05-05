@@ -279,6 +279,106 @@ test("manual invoice shows 'Additional worklog' section with unbilled client tim
   }
 });
 
+// Task #467: durable org-logo storage + luxury-header collision repair.
+// Uploads a tiny PNG via the org logo endpoint and asserts:
+//   1. The route persists the logo in Replit Object Storage (URL contains
+//      `/api/public-objects/org-logos/`, NOT the legacy
+//      `/api/uploads/logos/` local-disk prefix).
+//   2. GET on that public URL returns the bytes (no auth required).
+//   3. The luxury-themed invoice PDF renders without throwing now that
+//      the loader resolves logos through https → object storage.
+//   4. DELETE on the org logo route clears the URL.
+test("org logo upload persists to object storage, serves publicly, and luxury PDF renders cleanly", async ({
+  isolatedOrg,
+  browser,
+}) => {
+  // Smallest valid 1×1 transparent PNG: enough bytes for PDFKit to embed
+  // without tripping the 4s loader timeout in dev.
+  const pngBytes = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+    "base64",
+  );
+
+  const uploadRes = await isolatedOrg.request.post("/api/org/logo", {
+    headers: { "X-CSRF-Token": isolatedOrg.csrf },
+    multipart: {
+      logo: {
+        name: "test-logo.png",
+        mimeType: "image/png",
+        buffer: pngBytes,
+      },
+    },
+  });
+  expect(
+    uploadRes.ok(),
+    `org logo upload failed: ${uploadRes.status()} ${await uploadRes.text()}`,
+  ).toBe(true);
+  const uploadJson = await uploadRes.json();
+  expect(typeof uploadJson.logoUrl).toBe("string");
+  expect(uploadJson.logoUrl).toContain("/api/public-objects/org-logos/");
+  // Critical regression guard: must not be the legacy ephemeral path.
+  expect(uploadJson.logoUrl).not.toContain("/api/uploads/logos/");
+
+  // Org settings now reflects the new URL.
+  const settingsRes = await isolatedOrg.request.get("/api/org/settings");
+  expect(settingsRes.ok()).toBe(true);
+  const settings = await settingsRes.json();
+  expect(settings.logoUrl).toBe(uploadJson.logoUrl);
+
+  // The hosted logo is publicly readable. Use a fresh unauth context.
+  const anonCtx = await browser.newContext();
+  try {
+    const anonPage = await anonCtx.newPage();
+    const fetchRes = await anonPage.request.get(uploadJson.logoUrl);
+    expect(fetchRes.status()).toBe(200);
+    const fetchedBuf = await fetchRes.body();
+    expect(fetchedBuf.length).toBe(pngBytes.length);
+    expect(fetchedBuf.equals(pngBytes)).toBe(true);
+  } finally {
+    await anonCtx.close();
+  }
+
+  // Build a sent invoice and render its luxury PDF; the loader must
+  // pull the logo via the absolute https URL without crashing the route.
+  const client = await seedClient(isolatedOrg);
+  const project = await seedProject(isolatedOrg, client.id, { name: "Logo Co" });
+  await addProjectMember(isolatedOrg, project.id, isolatedOrg.userId, 150);
+  const today = new Date();
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  await seedTimeEntry(isolatedOrg, project.id, {
+    date: fmt(today),
+    minutes: 60,
+    billable: true,
+    notes: "LOGO-001 logo render smoke test",
+  });
+  const draft = await generateInvoice(isolatedOrg, client.id);
+  const sent = await sendInvoice(isolatedOrg, draft.id);
+
+  const pdfCtx = await browser.newContext();
+  try {
+    const pdfPage = await pdfCtx.newPage();
+    const pdfRes = await pdfPage.request.get(`/api/public/invoices/${sent.publicToken}/pdf`);
+    expect(
+      pdfRes.status(),
+      `expected 200 from PDF route with object-storage logo; got ${pdfRes.status()}`,
+    ).toBe(200);
+    const pdfBuf = await pdfRes.body();
+    expect(pdfBuf.subarray(0, 5).toString("utf-8")).toBe("%PDF-");
+    // Real content (not an error stub).
+    expect(pdfBuf.length).toBeGreaterThan(1000);
+  } finally {
+    await pdfCtx.close();
+  }
+
+  // Cleanup: DELETE clears the URL.
+  const delRes = await isolatedOrg.request.delete("/api/org/logo", {
+    headers: { "X-CSRF-Token": isolatedOrg.csrf },
+  });
+  expect(delRes.ok(), `org logo DELETE failed: ${delRes.status()} ${await delRes.text()}`).toBe(true);
+  const settingsAfter = await (await isolatedOrg.request.get("/api/org/settings")).json();
+  expect(settingsAfter.logoUrl ?? null).toBeNull();
+});
+
 test("flipping the per-invoice override works on a locked (sent) invoice and leaves money totals unchanged", async ({
   isolatedOrg,
   browser,
