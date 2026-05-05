@@ -36,9 +36,6 @@ interface PublicInvoiceData {
   paidAmount: string;
   outstanding: string;
   stripeEnabled: boolean;
-  // Task #465 — set true when the org or per-invoice override turns
-  // on the time-entry breakdown. `lineDetails[lineId]` is the ordered
-  // stream of day/entry/week items for that aggregated line.
   showTimeEntryDetails?: boolean;
   lineDetails?: Record<string, DetailItem[]>;
 }

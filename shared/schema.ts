@@ -111,11 +111,6 @@ export const orgs = pgTable("orgs", {
   dateFormat: varchar("date_format", { length: 20 }).default("MM/DD/YYYY"),
   taxCalculationMode: varchar("tax_calculation_mode", { length: 30 }).notNull().default("tax_after_discount"),
   defaultBillRate: integer("default_bill_rate").notNull().default(125),
-  // Task #465 — org-level default for whether invoice templates render
-  // the underlying time-entry detail block under each aggregated line.
-  // Off by default so the existing rendering is unchanged. A nullable
-  // override on `invoices.show_time_entry_details` lets a single invoice
-  // diverge from the org default.
   showTimeEntryDetails: boolean("show_time_entry_details").notNull().default(false),
   apiKey: text("api_key"),
   onboardingComplete: boolean("onboarding_complete").notNull().default(false),
@@ -568,11 +563,7 @@ export const invoices = pgTable("invoices", {
     .default("0"),
   publicToken: varchar("public_token", { length: 64 }).unique(),
   notes: text("notes"),
-  // Task #465 — per-invoice override of the org-level
-  // `showTimeEntryDetails` toggle. NULL means "use org default".
-  // True/false explicitly forces the detail block on or off for
-  // this single invoice without changing org config. Money totals
-  // are unaffected — this only changes the display layer.
+  // Per-invoice override of orgs.showTimeEntryDetails. NULL = use org default.
   showTimeEntryDetails: boolean("show_time_entry_details"),
   sourceEstimateId: varchar("source_estimate_id", { length: 36 }).references(() => estimates.id),
   lastReminderSentAt: timestamp("last_reminder_sent_at"),
@@ -1441,9 +1432,6 @@ export const updateInvoiceSchema = z.object({
   notes: z.string().max(5000, "Must be at most 5000 characters").nullable().optional(),
   currency: z.string().length(3).optional(),
   exchangeRate: z.string().optional(),
-  // Task #465 — per-invoice override of the org-level worklog detail
-  // toggle. `null` clears the override (falls back to the org default),
-  // `true`/`false` explicitly opts this single invoice in or out.
   showTimeEntryDetails: z.boolean().nullable().optional(),
 });
 

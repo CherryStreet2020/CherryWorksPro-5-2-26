@@ -275,11 +275,6 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
     },
   });
 
-  // Task #465 — fetch the per-line worklog detail breakdown plus the
-  // effective flag for the currently-open invoice. Disabled when the
-  // detail panel is closed so we don't pay for the join until needed.
-  // The "in-app preview" reuses this same payload so it stays
-  // visually consistent with the public web view and the PDF.
   const { data: invoiceDetails } = useQuery<{
     showTimeEntryDetails: boolean;
     override: boolean | null;
@@ -1557,12 +1552,6 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
             )}
 
             <FormSection title="Line Items">
-              {/* Task #465 — per-invoice override of the org-level
-                  "show time-entry breakdown" toggle. Lets users flip
-                  the detail block on/off for a single invoice without
-                  changing org config. "Use default" clears the
-                  override and falls back to the org setting. Money
-                  totals are unaffected. */}
               {viewInvoice && invoiceDetails && (
                 <div
                   className="flex items-center justify-between gap-4 mb-3 px-3 py-2.5 rounded-lg"
@@ -1619,10 +1608,6 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
                   </thead>
                   <tbody>
                     {viewInvoice.lines?.flatMap((line) => {
-                      // Task #465 — render the worklog detail rows directly
-                      // under each non-header invoice line so the breakdown
-                      // appears beneath its aggregate line, never grouped at
-                      // the bottom of the table.
                       const detailItems =
                         invoiceDetails?.showTimeEntryDetails && !line.isHeader
                           ? invoiceDetails.lineDetails?.[line.id]

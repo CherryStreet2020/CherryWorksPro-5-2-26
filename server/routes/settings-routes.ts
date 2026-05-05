@@ -613,9 +613,6 @@ app.patch("/api/org/settings", settingsUpdateLimiter, requireAdmin, async (req, 
     website: z.string().nullable().optional(),
     logoUrl: z.string().nullable().optional(),
     invoiceTheme: z.enum(["classic", "modern", "minimal", "bold"]).optional(),
-    // Task #465 — org-level default for whether invoice templates render
-    // the underlying time-entry detail block. Per-invoice override lives
-    // on `invoices.show_time_entry_details`.
     showTimeEntryDetails: z.boolean().optional(),
     autoPostJournalEntries: z.boolean().optional(),
     reminderEnabled: z.boolean().optional(),

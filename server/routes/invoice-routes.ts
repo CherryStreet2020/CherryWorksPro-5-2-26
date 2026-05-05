@@ -575,11 +575,8 @@ app.patch(
 
       const parsed = updateInvoiceSchema.parse(req.body);
 
-      // `showTimeEntryDetails` is a display-only override (no
-      // money impact) and must be settable on locked invoices too (sent,
-      // paid, void). If it's the only field on the patch, allow it; if
-      // it's bundled with financial fields, the regular editability guard
-      // still applies for the rest.
+      // showTimeEntryDetails is display-only and may be patched on locked
+      // invoices. Other (financial) fields still hit the editability guard.
       const isDisplayOnlyPatch =
         parsed.showTimeEntryDetails !== undefined &&
         Object.keys(parsed).every((k) => k === "showTimeEntryDetails");
@@ -624,9 +621,6 @@ app.patch(
         await db.update(invoices).set(updates).where(eq(invoices.id, invoice.id));
       }
 
-      // Per-invoice override for the worklog detail block.
-      // `null` clears the override (falls back to org default), true/false
-      // forces the toggle for this invoice. Money totals untouched.
       if (parsed.showTimeEntryDetails !== undefined) {
         await db.update(invoices)
           .set({ showTimeEntryDetails: parsed.showTimeEntryDetails })
@@ -1153,10 +1147,6 @@ app.post(
   },
 );
 
-// Return the per-line worklog detail breakdown plus the
-// effective `showTimeEntryDetails` flag for an invoice. Used by the
-// in-app invoice detail panel to render the same day-grouped table
-// shown on the public client portal and the PDF.
 app.get("/api/invoices/:id/details", requireManagerOrAbove, async (req, res) => {
   try {
     const orgId = req.session.orgId!;
@@ -1169,8 +1159,6 @@ app.get("/api/invoices/:id/details", requireManagerOrAbove, async (req, res) => 
       invoice.showTimeEntryDetails,
       orgData?.showTimeEntryDetails,
     );
-    // Skip the join when the flag is off — flag state is still
-    // returned so the toggle can flip without a refetch.
     const detailMap = showDetails
       ? await getInvoiceTimeEntryDetails(invoice.id, orgId)
       : new Map();
@@ -1199,9 +1187,7 @@ app.get("/api/invoices/:id/pdf", requireManagerOrAbove, async (req, res) => {
     const { getInvoiceTimeEntryDetails, resolveShowTimeEntryDetails } = await import("../invoice-details");
     const orgData = await storage.getOrg(orgId);
     const dlBaseUrl = (process.env.BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
-    // Pre-fetch detail rows before the synchronous pdfkit draw loop.
-    // (renderer must stay synchronous). Skip the join entirely when the
-    // effective flag is off so the no-detail rendering stays unchanged.
+    // Pre-fetch detail rows; the pdfkit draw loop is synchronous.
     const showDetails = resolveShowTimeEntryDetails(
       invoice.showTimeEntryDetails,
       orgData?.showTimeEntryDetails,
@@ -1264,10 +1250,6 @@ app.get("/api/public/invoices/:token", publicTokenLimiter, async (req, res) => {
 
     const client = await storage.getClientById(invoice.clientId, invoice.orgId);
 
-    // When the worklog-details flag is on, ship
-    // per-line detail items alongside `lines` so the public web view
-    // renders the same day-grouped breakdown as the PDF. The flag itself
-    // is also returned so the renderer doesn't have to recompute it.
     const orgData = await storage.getOrg(invoice.orgId);
     const { getInvoiceTimeEntryDetails, resolveShowTimeEntryDetails } = await import("../invoice-details");
     const showDetails = resolveShowTimeEntryDetails(

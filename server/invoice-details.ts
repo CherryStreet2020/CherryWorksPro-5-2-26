@@ -2,10 +2,8 @@ import { db } from "./db";
 import { timeEntries, invoiceLines, projects, users, services } from "@shared/schema";
 import { and, asc, eq, inArray } from "drizzle-orm";
 
-// Display-only helper: groups a sent invoice's underlying time
-// entries into day headers + entry rows + weekly subtotals per line.
-// Money totals remain driven exclusively by invoice_lines. All
-// queries are org-scoped.
+// Display-only: groups a sent invoice's time entries into day/entry/week
+// rows per line. Money totals come from invoice_lines. Queries are org-scoped.
 
 export interface DetailDayHeader {
   kind: "day";
@@ -36,9 +34,8 @@ export interface DetailWeekFooter {
 
 export type DetailItem = DetailDayHeader | DetailEntryRow | DetailWeekFooter;
 
-// Parses a leading "ABS-150" style ticket reference out of notes.
-// Separator order: " - " before ": " before whitespace so a dash
-// separator wins instead of being consumed by `\s+`.
+// Parses a leading "ABS-150" ticket ref out of notes.
+// Separator order: " - " before ": " before whitespace.
 export function extractTicketRef(notes: string | null | undefined): {
   ticket: string | null;
   description: string;
@@ -93,10 +90,7 @@ export interface JoinedEntry {
   serviceName: string | null;
 }
 
-// Returns a Map<lineId, DetailItem[]> for every line on this invoice
-// that has attached time entries. Empty Map when there is nothing
-// to render. All joins are org-scoped to defend against stale
-// cross-tenant FKs.
+// Returns Map<lineId, DetailItem[]> for invoice lines with time entries.
 export async function getInvoiceTimeEntryDetails(
   invoiceId: string,
   orgId: string,
@@ -124,11 +118,7 @@ export async function getInvoiceTimeEntryDetails(
       serviceName: services.name,
     })
     .from(timeEntries)
-    // Use leftJoin so that historically-deleted projects/users do not silently
-    // drop time entries from the worklog detail. Money totals come from
-    // invoice_lines, but the detail block must still surface every entry that
-    // was rolled into a line — even if its project or assignee was later
-    // removed. Fallback labels are applied below.
+    // leftJoin so deleted projects/users don't drop entries; fallback labels below.
     .leftJoin(
       projects,
       and(eq(timeEntries.projectId, projects.id), eq(projects.orgId, orgId)),
@@ -168,8 +158,7 @@ export async function getInvoiceTimeEntryDetails(
   return out;
 }
 
-// Pure: turns a date-asc / startTime-asc list of joined entries into
-// the day/entry/week item stream rendered by the PDF and web layers.
+// Turns a date-asc list of joined entries into the day/entry/week item stream.
 export function buildDetailItems(entries: JoinedEntry[]): DetailItem[] {
   const items: DetailItem[] = [];
   let currentDay: string | null = null;
