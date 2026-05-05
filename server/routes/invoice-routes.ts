@@ -1149,14 +1149,14 @@ app.get("/api/invoices/:id/details", requireManagerOrAbove, async (req, res) => 
     const orgData = await storage.getOrg(orgId);
     const { getInvoiceTimeEntryDetails, resolveShowTimeEntryDetails } = await import("../invoice-details");
     const showDetails = resolveShowTimeEntryDetails(
-      (invoice as any).showTimeEntryDetails,
+      invoice.showTimeEntryDetails,
       orgData?.showTimeEntryDetails,
     );
     const detailMap = await getInvoiceTimeEntryDetails(invoice.id, orgId);
     const lineDetails = Object.fromEntries(detailMap);
     return res.json({
       showTimeEntryDetails: showDetails,
-      override: (invoice as any).showTimeEntryDetails ?? null,
+      override: invoice.showTimeEntryDetails ?? null,
       orgDefault: !!orgData?.showTimeEntryDetails,
       lineDetails,
     });
@@ -1182,7 +1182,7 @@ app.get("/api/invoices/:id/pdf", requireManagerOrAbove, async (req, res) => {
     // (renderer must stay synchronous). Skip the join entirely when the
     // effective flag is off so the no-detail rendering stays unchanged.
     const showDetails = resolveShowTimeEntryDetails(
-      (invoice as any).showTimeEntryDetails,
+      invoice.showTimeEntryDetails,
       orgData?.showTimeEntryDetails,
     );
     const lineDetails = showDetails
@@ -1250,7 +1250,7 @@ app.get("/api/public/invoices/:token", publicTokenLimiter, async (req, res) => {
     const orgData = await storage.getOrg(invoice.orgId);
     const { getInvoiceTimeEntryDetails, resolveShowTimeEntryDetails } = await import("../invoice-details");
     const showDetails = resolveShowTimeEntryDetails(
-      (invoice as any).showTimeEntryDetails,
+      invoice.showTimeEntryDetails,
       orgData?.showTimeEntryDetails,
     );
     const detailMap = showDetails
@@ -1312,7 +1312,7 @@ app.get("/api/public/invoices/:token/pdf", publicTokenLimiter, async (req, res) 
     // Task #465 — public PDF respects the same effective flag as the
     // authenticated PDF and the public web view.
     const showDetails = resolveShowTimeEntryDetails(
-      (invoice as any).showTimeEntryDetails,
+      invoice.showTimeEntryDetails,
       orgData?.showTimeEntryDetails,
     );
     const lineDetails = showDetails

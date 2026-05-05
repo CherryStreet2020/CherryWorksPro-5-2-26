@@ -59,15 +59,17 @@ function drawDetailBlock(
   const blockW = blockRight - blockLeft;
   // Column geometry inside the detail block.
   const cTime = blockLeft;
-  const cTimeW = 64;
-  const cTicket = cTime + cTimeW + 6;
-  const cTicketW = 60;
+  const cTimeW = 60;
+  const cProject = cTime + cTimeW + 6;
+  const cProjectW = 90;
+  const cTicket = cProject + cProjectW + 6;
+  const cTicketW = 50;
   const cDesc = cTicket + cTicketW + 6;
-  const cTagW = 56;
-  const cHrsW = 36;
+  const cTagW = 52;
+  const cHrsW = 34;
   const cTag = blockRight - cTagW;
-  const cHrs = cTag - 8 - cHrsW;
-  const cDescW = cHrs - 8 - cDesc;
+  const cHrs = cTag - 6 - cHrsW;
+  const cDescW = cHrs - 6 - cDesc;
 
   let y = startY + 4;
 
@@ -97,10 +99,12 @@ function drawDetailBlock(
         : "—";
       doc.fontSize(8).font("Helvetica").fillColor(mutedColor)
         .text(timeText, cTime, y, { width: cTimeW });
+      doc.font("Helvetica").fillColor(textColor)
+        .text(it.project, cProject, y, { width: cProjectW, ellipsis: true, height: 11 });
       doc.font("Helvetica-Bold").fillColor(textColor)
         .text(it.ticket || "", cTicket, y, { width: cTicketW });
       doc.font("Helvetica").fillColor(mutedColor)
-        .text(it.description || it.project, cDesc, y, { width: cDescW, lineGap: 1, ellipsis: true, height: 11 });
+        .text(it.description || "", cDesc, y, { width: cDescW, lineGap: 1, ellipsis: true, height: 11 });
       doc.font("Helvetica").fillColor(textColor)
         .text(formatHM(it.hours), cHrs, y, { width: cHrsW, align: "right" });
       doc.fontSize(7).fillColor(it.billable ? accentColor : "#94a3b8")

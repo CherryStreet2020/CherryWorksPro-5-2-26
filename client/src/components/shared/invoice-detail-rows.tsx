@@ -120,8 +120,17 @@ export function InvoiceDetailRows({
                   {timeText}
                 </span>
                 <span
+                  className="shrink-0 truncate"
+                  style={{ color: "var(--lux-text)", width: 110 }}
+                  title={it.project}
+                  data-testid={`${testIdPrefix}-project-${it.id}`}
+                >
+                  {it.project}
+                </span>
+                <span
                   className="font-semibold shrink-0"
                   style={{ color: "var(--lux-text)", width: 70 }}
+                  data-testid={`${testIdPrefix}-ticket-${it.id}`}
                 >
                   {it.ticket || ""}
                 </span>
@@ -129,6 +138,7 @@ export function InvoiceDetailRows({
                   className="flex-1 truncate"
                   style={{ color: "var(--lux-text-muted)" }}
                   title={it.description || it.project}
+                  data-testid={`${testIdPrefix}-desc-${it.id}`}
                 >
                   {it.description || it.project}
                 </span>
