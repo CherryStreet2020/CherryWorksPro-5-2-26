@@ -106,23 +106,34 @@ function drawDetailBlock(
       doc.moveTo(blockLeft, y - 2).lineTo(blockRight, y - 2)
         .strokeColor("#e5e7eb").lineWidth(0.4).stroke();
     } else if (it.kind === "entry") {
-      ensureSpace(1);
       const timeText = it.startTime && it.endTime
         ? `${it.startTime}–${it.endTime}`
         : "—";
+      doc.fontSize(8);
+      const descText = it.description || "";
+      const projectText = it.project || "";
+      doc.font("Helvetica");
+      const descH = descText
+        ? doc.heightOfString(descText, { width: cDescW, lineGap: 1 })
+        : 11;
+      const projectH = projectText
+        ? doc.heightOfString(projectText, { width: cProjectW })
+        : 11;
+      const rowH = Math.max(12, descH, projectH) + 2;
+      ensureSpace(1, rowH);
       doc.fontSize(8).font("Helvetica").fillColor(mutedColor)
         .text(timeText, cTime, y, { width: cTimeW });
       doc.font("Helvetica").fillColor(textColor)
-        .text(it.project, cProject, y, { width: cProjectW, ellipsis: true, height: 11 });
+        .text(projectText, cProject, y, { width: cProjectW });
       doc.font("Helvetica-Bold").fillColor(textColor)
         .text(it.ticket || "", cTicket, y, { width: cTicketW });
       doc.font("Helvetica").fillColor(mutedColor)
-        .text(it.description || "", cDesc, y, { width: cDescW, lineGap: 1, ellipsis: true, height: 11 });
+        .text(descText, cDesc, y, { width: cDescW, lineGap: 1 });
       doc.font("Helvetica").fillColor(textColor)
         .text(formatHM(it.hours), cHrs, y, { width: cHrsW, align: "right" });
       doc.fontSize(7).fillColor(it.billable ? accentColor : "#94a3b8")
         .text(it.billable ? "BILLABLE" : "UNBILLED", cTag, y, { width: cTagW, align: "right", characterSpacing: 0.5 });
-      y += 12;
+      y += rowH;
     } else if (it.kind === "week") {
       ensureSpace(1, 14);
       y += 2;
