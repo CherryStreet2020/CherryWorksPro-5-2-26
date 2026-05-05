@@ -43,6 +43,16 @@ async function buildSentInvoiceWithTwoBillableEntries(iso: any) {
     billable: true,
     notes: "ACME-102 fixed redirect bug",
   });
+  // One additional entry with effectively-empty notes — proves the
+  // description column on web renders blank instead of falling back
+  // to the project name. The notes column requires len >= 1, but
+  // extractTicketRef trims so " " yields { ticket: null, description: "" }.
+  await seedTimeEntry(iso, project.id, {
+    date: fmt(today),
+    minutes: 30,
+    billable: true,
+    notes: " ",
+  });
   const draft = await generateInvoice(iso, client.id);
   const sent = await sendInvoice(iso, draft.id);
   return { client, project, invoice: { ...draft, ...sent }, publicToken: sent.publicToken };
@@ -119,6 +129,30 @@ test("org default ON renders day headers, project+ticket+billable detail rows, a
     // Weekly subtotal row.
     const weekRows = pub.locator('[data-testid^="public-detail-"][data-testid*="-week-"]');
     expect(await weekRows.count()).toBeGreaterThanOrEqual(1);
+
+    // The empty-notes entry must render an empty description cell —
+    // we never substitute the project name into the description column.
+    // Walk every entry's description span and assert at least one is
+    // an empty string while its project cell is still populated.
+    const allDescTestIds = await pub
+      .locator('[data-testid^="public-detail-"][data-testid*="-desc-"]')
+      .evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")));
+    let foundEmpty = false;
+    for (const tid of allDescTestIds) {
+      if (!tid) continue;
+      const descText = (await pub.locator(`[data-testid="${tid}"]`).textContent()) ?? "";
+      const entryId = tid.split("-desc-")[1];
+      const projectText = (
+        await pub.locator(`[data-testid$="-project-${entryId}"]`).textContent()
+      )?.trim() ?? "";
+      if (descText.trim() === "") {
+        // Empty description — project column must still be populated
+        // (the project name MUST NOT have leaked into the description).
+        expect(projectText).toBe("Acme Rebuild");
+        foundEmpty = true;
+      }
+    }
+    expect(foundEmpty, "expected at least one entry with empty description from the empty-notes seed").toBe(true);
   } finally {
     await ctx.close();
   }

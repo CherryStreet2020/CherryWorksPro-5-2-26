@@ -137,10 +137,10 @@ export function InvoiceDetailRows({
                 <span
                   className="flex-1 truncate"
                   style={{ color: "var(--lux-text-muted)" }}
-                  title={it.description || it.project}
+                  title={it.description || ""}
                   data-testid={`${testIdPrefix}-desc-${it.id}`}
                 >
-                  {it.description || it.project}
+                  {it.description || ""}
                 </span>
                 <span
                   className="font-mono tabular-nums shrink-0"
