@@ -285,7 +285,7 @@ export async function registerRoutes(
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "img-src 'self' data: blob: https://logo.clearbit.com https://www.google.com",
         "connect-src 'self' https://checkout.stripe.com https://api.stripe.com",
-        "frame-src https://checkout.stripe.com https://js.stripe.com",
+        "frame-src 'self' blob: https://checkout.stripe.com https://js.stripe.com",
         "font-src 'self' https://fonts.gstatic.com",
         "object-src 'none'",
         "base-uri 'self'",
