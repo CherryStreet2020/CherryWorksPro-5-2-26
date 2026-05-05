@@ -169,6 +169,62 @@ test("org default ON renders day headers, project+ticket+billable detail rows, a
   }
 });
 
+test("PDF pagination: many detail rows produce a multi-page PDF without throwing or orphaning headers", async ({
+  isolatedOrg,
+  browser,
+}) => {
+  // Seed enough time entries to guarantee the worklog detail block
+  // overflows a single PDF page, exercising drawDetailBlock's
+  // page-break + "TIME (cont.)" header re-emission and the
+  // anti-orphan day-header reservation.
+  const client = await seedClient(isolatedOrg);
+  const project = await seedProject(isolatedOrg, client.id, { name: "Pagination Co" });
+  await addProjectMember(isolatedOrg, project.id, isolatedOrg.userId, 150);
+
+  // 60 entries spanning 60 distinct days → 60 day headers + 60 entries
+  // + ~9 weekly subtotals. Comfortably overflows a single Letter page.
+  const baseDate = new Date("2025-09-01T12:00:00Z");
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  for (let i = 0; i < 60; i++) {
+    const d = new Date(baseDate.getTime() + i * 24 * 60 * 60 * 1000);
+    await seedTimeEntry(isolatedOrg, project.id, {
+      date: fmt(d),
+      minutes: 60,
+      billable: true,
+      notes: `PAG-${100 + i} entry ${i}`,
+    });
+  }
+  const draft = await generateInvoice(isolatedOrg, client.id);
+  const sent = await sendInvoice(isolatedOrg, draft.id);
+
+  // Turn detail rendering on for this invoice.
+  const flipOn = await patchJson(isolatedOrg, `/api/invoices/${draft.id}`, {
+    showTimeEntryDetails: true,
+  });
+  expect(flipOn.ok(), `override flip failed: ${flipOn.status()} ${await flipOn.text()}`).toBe(true);
+
+  const ctx = await browser.newContext();
+  const pub = await ctx.newPage();
+  try {
+    const pdfRes = await pub.request.get(`/api/public/invoices/${sent.publicToken}/pdf`);
+    expect(pdfRes.status()).toBe(200);
+    const pdfBuf = await pdfRes.body();
+    expect(pdfBuf.subarray(0, 5).toString("utf-8")).toBe("%PDF-");
+
+    // Count page-object markers in the PDF stream. PDFKit emits one
+    // `/Type /Page\n` per page (the catalog's `/Pages` parent is
+    // `/Type /Pages` — note the trailing 's' — so this regex is safe).
+    const raw = pdfBuf.toString("latin1");
+    const pageMatches = raw.match(/\/Type\s*\/Page(?!s)/g) || [];
+    expect(
+      pageMatches.length,
+      `expected multi-page PDF from 60 detail entries; got ${pageMatches.length} page(s) in ${pdfBuf.length}-byte PDF`,
+    ).toBeGreaterThanOrEqual(2);
+  } finally {
+    await ctx.close();
+  }
+});
+
 test("flipping the per-invoice override works on a locked (sent) invoice and leaves money totals unchanged", async ({
   isolatedOrg,
   browser,
