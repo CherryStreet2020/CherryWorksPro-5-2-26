@@ -160,9 +160,24 @@ export async function getInvoiceTimeEntryDetails(
       serviceName: services.name,
     })
     .from(timeEntries)
-    .innerJoin(projects, eq(timeEntries.projectId, projects.id))
-    .innerJoin(users, eq(timeEntries.userId, users.id))
-    .leftJoin(services, eq(timeEntries.serviceId, services.id))
+    // Multi-tenant hardening: every join predicate enforces orgId in
+    // addition to the FK match so a stale or malicious cross-tenant
+    // pointer can never surface another org's project / user /
+    // service in this org's invoice detail block. The `services`
+    // join is left so a null serviceId still returns the row, but
+    // when present the service must also belong to this org.
+    .innerJoin(
+      projects,
+      and(eq(timeEntries.projectId, projects.id), eq(projects.orgId, orgId)),
+    )
+    .innerJoin(
+      users,
+      and(eq(timeEntries.userId, users.id), eq(users.orgId, orgId)),
+    )
+    .leftJoin(
+      services,
+      and(eq(timeEntries.serviceId, services.id), eq(services.orgId, orgId)),
+    )
     .where(and(
       eq(timeEntries.orgId, orgId),
       eq(timeEntries.invoiced, true),
