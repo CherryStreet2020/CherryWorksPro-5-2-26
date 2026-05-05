@@ -594,10 +594,30 @@ app.post("/api/public/contact", apiLimiter, async (req, res) => {
   }
 });
 app.get("/api/org/settings", requireAdmin, async (req, res) => {
-  const org = await storage.getOrg(req.session.orgId!);
+  const orgId = req.session.orgId!;
+  const org = await storage.getOrg(orgId);
   if (!org) return res.status(404).json({ message: "Org not found" });
   const { smtpPass, ...safeOrg } = org;
-  res.json(maskSensitiveFields(safeOrg as any));
+  // Task #468: surface lightweight signals so the invoice viewer can
+  // gate the "upload your logo" banner. New orgs with no invoices and
+  // no clients shouldn't be nagged before they've done anything yet —
+  // the prompt only matters once they're about to send branded output.
+  // We count only *issued* invoices (status != DRAFT) so an org that
+  // is just experimenting with a draft doesn't trip the banner; a
+  // single client is enough to count as "ready to brand outgoing
+  // material" though.
+  const [issuedInvoiceCountRow, clientCount] = await Promise.all([
+    db.select({ count: sql<number>`count(*)::int` })
+      .from(invoices)
+      .where(and(eq(invoices.orgId, orgId), sql`${invoices.status} <> 'DRAFT'`)),
+    storage.getClientCount(orgId),
+  ]);
+  const issuedInvoiceCount = Number(issuedInvoiceCountRow[0]?.count) || 0;
+  res.json({
+    ...maskSensitiveFields(safeOrg as any),
+    hasInvoices: issuedInvoiceCount > 0,
+    hasClients: clientCount > 0,
+  });
 });
 app.patch("/api/org/settings", settingsUpdateLimiter, requireAdmin, async (req, res) => {
   const schema = z.object({

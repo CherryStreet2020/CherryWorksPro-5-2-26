@@ -1575,8 +1575,17 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
                 one. The dismissal persists in localStorage per-org so it
                 doesn't nag forever. The customer-facing public invoice
                 page (client/src/pages/public-invoice.tsx) intentionally
-                does NOT show this banner. */}
-            {orgSettings && !orgSettings.logoUrl && !uploadLogoBannerDismissed && (
+                does NOT show this banner.
+
+                Task #468: only show this prompt once the org has at least
+                one invoice or one client — i.e. they're actually about to
+                send something branded. Brand-new orgs with no data yet
+                shouldn't see the nag from day one. The hasInvoices /
+                hasClients flags come from /api/org/settings. */}
+            {orgSettings
+              && !orgSettings.logoUrl
+              && !uploadLogoBannerDismissed
+              && (orgSettings.hasInvoices || orgSettings.hasClients) && (
               <div
                 className="flex items-start gap-3 px-3 py-2.5 rounded-md text-xs"
                 style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)", color: "#92400e" }}

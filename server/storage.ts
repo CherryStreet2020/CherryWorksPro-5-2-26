@@ -1357,6 +1357,14 @@ export class DatabaseStorage {
     return Number(result?.count) || 0;
   }
 
+  async getClientCount(orgId: string): Promise<number> {
+    const [result] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(clients)
+      .where(eq(clients.orgId, orgId));
+    return Number(result?.count) || 0;
+  }
+
   async getInvoice(id: string, orgId: string) {
     const [row] = await db
       .select({
