@@ -124,11 +124,16 @@ export async function getInvoiceTimeEntryDetails(
       serviceName: services.name,
     })
     .from(timeEntries)
-    .innerJoin(
+    // Use leftJoin so that historically-deleted projects/users do not silently
+    // drop time entries from the worklog detail. Money totals come from
+    // invoice_lines, but the detail block must still surface every entry that
+    // was rolled into a line — even if its project or assignee was later
+    // removed. Fallback labels are applied below.
+    .leftJoin(
       projects,
       and(eq(timeEntries.projectId, projects.id), eq(projects.orgId, orgId)),
     )
-    .innerJoin(
+    .leftJoin(
       users,
       and(eq(timeEntries.userId, users.id), eq(users.orgId, orgId)),
     )
@@ -148,7 +153,11 @@ export async function getInvoiceTimeEntryDetails(
   for (const r of rows) {
     if (!r.invoiceLineId || !lineIdSet.has(r.invoiceLineId)) continue;
     const list = byLine.get(r.invoiceLineId) || [];
-    list.push(r as JoinedEntry);
+    list.push({
+      ...r,
+      projectName: r.projectName ?? "(deleted project)",
+      userName: r.userName ?? "(deleted user)",
+    } as JoinedEntry);
     byLine.set(r.invoiceLineId, list);
   }
 
