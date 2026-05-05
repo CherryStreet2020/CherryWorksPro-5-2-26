@@ -19,6 +19,7 @@ import {
   seedTimeEntry,
   generateInvoice,
   patchJson,
+  postJson,
   sendInvoice,
 } from "./_helpers";
 
@@ -191,6 +192,88 @@ test("PDF pagination: many detail rows produce a multi-page PDF without throwing
       pageMatches.length,
       `expected multi-page PDF from 60 detail entries; got ${pageMatches.length} page(s) in ${pdfBuf.length}-byte PDF`,
     ).toBeGreaterThanOrEqual(2);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("manual invoice shows 'Additional worklog' section with unbilled client time entries when org default ON", async ({
+  isolatedOrg,
+  browser,
+}) => {
+  // Org default ON so manual invoices auto-show worklog detail.
+  const orgPatch = await patchJson(isolatedOrg, "/api/org/settings", {
+    showTimeEntryDetails: true,
+  });
+  expect(orgPatch.ok(), `org settings PATCH failed: ${orgPatch.status()} ${await orgPatch.text()}`).toBe(true);
+
+  const client = await seedClient(isolatedOrg);
+  const project = await seedProject(isolatedOrg, client.id, { name: "Manual Co" });
+  await addProjectMember(isolatedOrg, project.id, isolatedOrg.userId, 150);
+
+  const today = new Date();
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  // Two unbilled entries — never linked to an invoice line via the generate flow.
+  await seedTimeEntry(isolatedOrg, project.id, {
+    date: fmt(today),
+    minutes: 75,
+    billable: true,
+    notes: "MAN-201 manual prep work",
+  });
+  await seedTimeEntry(isolatedOrg, project.id, {
+    date: fmt(today),
+    minutes: 45,
+    billable: true,
+    notes: "MAN-202 client review",
+  });
+
+  // Manually create a draft invoice (no /api/invoices/generate).
+  const issuedDate = fmt(today);
+  const dueDate = fmt(new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000));
+  const createRes = await postJson(isolatedOrg, "/api/invoices", {
+    clientId: client.id,
+    issuedDate,
+    dueDate,
+    currency: "USD",
+    status: "DRAFT",
+  });
+  expect(createRes.ok(), `manual invoice create failed: ${createRes.status()} ${await createRes.text()}`).toBe(true);
+  const draft = await createRes.json();
+
+  // Add a manual line item (no time-entry link).
+  const lineRes = await postJson(isolatedOrg, `/api/invoices/${draft.id}/lines`, {
+    description: "Flat consulting fee",
+    quantity: 1,
+    unitRate: 500,
+  });
+  expect(lineRes.ok(), `add line failed: ${lineRes.status()} ${await lineRes.text()}`).toBe(true);
+
+  const sent = await sendInvoice(isolatedOrg, draft.id);
+
+  const ctx = await browser.newContext();
+  const pub = await ctx.newPage();
+  try {
+    await pub.goto(`/i/${sent.publicToken}`);
+    await pub.waitForSelector('[data-testid="card-public-invoice"]', { timeout: 15000 });
+
+    // The unallocated section header appears.
+    const header = pub.locator('[data-testid="row-public-unallocated-worklog-header"]');
+    await expect(header).toBeVisible();
+
+    // At least one entry row from the unallocated bucket renders.
+    const entryRows = pub.locator('[data-testid^="public-detail-unallocated-"][data-testid*="-entry-"]');
+    expect(await entryRows.count()).toBeGreaterThanOrEqual(1);
+
+    // The MAN-201/MAN-202 ticket prefixes appear somewhere in the unallocated rows.
+    const unallocText = (await pub.locator('[data-testid="card-public-invoice"]').textContent()) ?? "";
+    expect(unallocText).toMatch(/MAN-20[12]/);
+
+    // The PDF still renders cleanly.
+    const pdfRes = await pub.request.get(`/api/public/invoices/${sent.publicToken}/pdf`);
+    expect(pdfRes.status()).toBe(200);
+    const pdfBuf = await pdfRes.body();
+    expect(pdfBuf.subarray(0, 5).toString("utf-8")).toBe("%PDF-");
+    expect(pdfBuf.length).toBeGreaterThan(1000);
   } finally {
     await ctx.close();
   }

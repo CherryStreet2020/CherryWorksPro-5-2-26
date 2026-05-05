@@ -1674,6 +1674,39 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
                       );
                       return detailRow ? [lineRow, detailRow] : [lineRow];
                     })}
+                    {(() => {
+                      const unallocated = invoiceDetails?.showTimeEntryDetails
+                        ? invoiceDetails.lineDetails?.["__unallocated__"]
+                        : undefined;
+                      if (!unallocated || unallocated.length === 0) return null;
+                      const cs = isEditable && canManage ? 5 : 4;
+                      return (
+                        <>
+                          <tr
+                            key="unallocated-header"
+                            style={{ borderTop: "1px solid var(--lux-border)" }}
+                            data-testid="row-unallocated-worklog-header"
+                          >
+                            <td
+                              colSpan={cs}
+                              className="px-4 py-2 text-sm font-bold uppercase tracking-wider"
+                              style={{
+                                color: "var(--lux-text)",
+                                background: "var(--lux-surface-alt)",
+                              }}
+                            >
+                              Additional worklog (unbilled time for this client)
+                            </td>
+                          </tr>
+                          <InvoiceDetailRows
+                            key="unallocated-rows"
+                            items={unallocated}
+                            colSpan={cs}
+                            testIdPrefix="inapp-detail-unallocated"
+                          />
+                        </>
+                      );
+                    })()}
                   </tbody>
                   <tfoot>
                     <tr style={{ borderTop: "1px solid var(--lux-border)" }}>
