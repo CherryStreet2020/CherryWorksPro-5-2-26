@@ -4,6 +4,11 @@ import * as fs from "fs";
 import * as path from "path";
 import type { DetailItem } from "./invoice-details";
 import { formatHM } from "./invoice-details";
+// Re-export so existing imports (`server/pdf.ts` is the historical home
+// of this guard, and `tests/unit/pdf-logo-loader-ssrf.test.ts` imports
+// it from here) keep working after the Task #474 extraction.
+import { isAllowedLogoUrl } from "./lib/logo-url-allowlist";
+export { isAllowedLogoUrl };
 
 interface InvoiceWithDetails {
   id: string;
@@ -245,69 +250,10 @@ function deriveBaseUrl(): string | null {
   return null;
 }
 
-// SSRF guard: every host the logo loader is permitted to fetch from.
-// Built from APP_BASE_URL / BASE_URL / every comma-separated entry in
-// REPLIT_DOMAINS, plus the explicit local dev origins. We do this with
-// `URL` parsing (not substring match) so attacker-controlled values
-// like `https://evil.com#cherry-app.replit.app` can't slip past.
-function getAllowedLogoHosts(): Set<string> {
-  const hosts = new Set<string>();
-  const add = (u: string | undefined | null) => {
-    if (!u) return;
-    try {
-      hosts.add(new URL(u).host.toLowerCase());
-    } catch {
-      // ignore malformed entries
-    }
-  };
-  add(process.env.APP_BASE_URL);
-  add(process.env.BASE_URL);
-  const domains = process.env.REPLIT_DOMAINS?.split(",") ?? [];
-  for (const d of domains) {
-    const t = d.trim();
-    if (!t) continue;
-    add(t.startsWith("http") ? t : `https://${t}`);
-  }
-  // Dev fallbacks — these are the only HTTP origins ever allowed.
-  hosts.add("localhost:5000");
-  hosts.add("127.0.0.1:5000");
-  return hosts;
-}
-
-// Allowed pathname prefixes inside an allowed host. Anything outside
-// these prefixes (e.g. `/api/admin/...`, `/internal/metadata`) is
-// rejected — even for a same-host URL — so a malicious admin can't
-// pivot the PDF route into an arbitrary same-origin GET.
-const ALLOWED_LOGO_PATH_PREFIXES = [
-  "/api/public-objects/org-logos/",
-  "/api/public-objects/brand-logos/",
-  "/api/uploads/logos/",
-] as const;
-
-// Exported for the SSRF regression suite at
-// `tests/unit/pdf-logo-loader-ssrf.test.ts`. That suite pins the
-// host + path allowlist behaviour so a future refactor can't silently
-// re-open the SSRF hole closed by Task #467.
-export function isAllowedLogoUrl(absoluteUrl: string): boolean {
-  let u: URL;
-  try {
-    u = new URL(absoluteUrl);
-  } catch {
-    return false;
-  }
-  // Loopback and private IP literals are never allowed in production.
-  // (We still allow `localhost:5000` for dev — handled by the host
-  // allowlist above.)
-  const allowedHosts = getAllowedLogoHosts();
-  if (!allowedHosts.has(u.host.toLowerCase())) return false;
-  // Only https in production. Allow http for the explicit dev hosts.
-  if (u.protocol !== "https:" && u.protocol !== "http:") return false;
-  if (u.protocol === "http:") {
-    const isDevHost = u.host === "localhost:5000" || u.host === "127.0.0.1:5000";
-    if (!isDevHost) return false;
-  }
-  return ALLOWED_LOGO_PATH_PREFIXES.some((p) => u.pathname.startsWith(p));
-}
+// SSRF guard for logo URLs lives in `server/lib/logo-url-allowlist.ts`
+// (Task #474). `isAllowedLogoUrl` is imported and re-exported at the
+// top of this file so legacy callers and the regression suite keep
+// working unchanged.
 
 // Loads logo image bytes for embedding into a PDF. Accepts:
 //   - https:// URLs whose host is in our allowlist (APP_BASE_URL /

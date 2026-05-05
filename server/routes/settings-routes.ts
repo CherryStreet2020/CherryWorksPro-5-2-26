@@ -19,6 +19,10 @@ import {
   ObjectStorageService,
   objectStorageClient,
 } from "../replit_integrations/object_storage";
+import {
+  isAllowedLogoPath,
+  isAllowedLogoUrl,
+} from "../lib/logo-url-allowlist";
 
 export function buildAccountDeletionScheduledEmailHtml(opts: { orgName: string; formattedDate: string }): string {
   const { orgName, formattedDate } = opts;
@@ -683,52 +687,34 @@ app.patch("/api/org/settings", settingsUpdateLimiter, requireAdmin, async (req, 
   // upload route is the canonical way to set a logo and always produces
   // a value that satisfies these checks.
   if (parsed.data.logoUrl) {
-    const allowedPrefixes = [
-      "/api/public-objects/org-logos/",
-      "/api/public-objects/brand-logos/",
-      "/api/uploads/logos/",
-    ];
-    const buildAllowedHosts = (): Set<string> => {
-      const out = new Set<string>();
-      const add = (raw: string | undefined | null) => {
-        if (!raw) return;
-        try { out.add(new URL(raw).host.toLowerCase()); } catch {}
-      };
-      add(process.env.APP_BASE_URL);
-      add(process.env.BASE_URL);
-      for (const d of (process.env.REPLIT_DOMAINS?.split(",") ?? [])) {
-        const t = d.trim();
-        if (!t) continue;
-        add(t.startsWith("http") ? t : `https://${t}`);
-      }
-      out.add("localhost:5000");
-      out.add("127.0.0.1:5000");
-      return out;
-    };
-    let pathnameToCheck: string | null = null;
+    // Host + path + protocol allowlist is shared with `loadLogoBytes()`
+    // in `server/pdf.ts` via `server/lib/logo-url-allowlist.ts`
+    // (Task #474). Absolute URLs go through the full `isAllowedLogoUrl`
+    // check so a future tweak to the protocol or host policy can't
+    // drift between the two call sites. The relative-path branch only
+    // gets the path check because the PDF loader resolves relative
+    // URLs against APP_BASE_URL/REPLIT_DOMAINS at fetch time.
     if (parsed.data.logoUrl.startsWith("/")) {
-      pathnameToCheck = parsed.data.logoUrl.split("?")[0].split("#")[0];
+      const pathnameToCheck = parsed.data.logoUrl.split("?")[0].split("#")[0];
+      if (!isAllowedLogoPath(pathnameToCheck)) {
+        return res.status(400).json({
+          message: "Logo URL path is not allowed. Use the org logo upload endpoint instead.",
+        });
+      }
     } else {
+      // Reject obviously-malformed values up front so we can return a
+      // clearer 400 than the generic "not allowed" message.
       try {
-        const u = new URL(parsed.data.logoUrl);
-        if (!["http:", "https:"].includes(u.protocol)) {
-          return res.status(400).json({ message: "Logo URL must use http or https protocol" });
-        }
-        const allowedHosts = buildAllowedHosts();
-        if (!allowedHosts.has(u.host.toLowerCase())) {
-          return res.status(400).json({
-            message: "Logo URL host is not allowed. Use the org logo upload endpoint instead.",
-          });
-        }
-        pathnameToCheck = u.pathname;
+        // eslint-disable-next-line no-new
+        new URL(parsed.data.logoUrl);
       } catch {
         return res.status(400).json({ message: "Logo URL is not a valid URL" });
       }
-    }
-    if (!pathnameToCheck || !allowedPrefixes.some((p) => pathnameToCheck!.startsWith(p))) {
-      return res.status(400).json({
-        message: "Logo URL path is not allowed. Use the org logo upload endpoint instead.",
-      });
+      if (!isAllowedLogoUrl(parsed.data.logoUrl)) {
+        return res.status(400).json({
+          message: "Logo URL is not allowed. Use the org logo upload endpoint instead.",
+        });
+      }
     }
   }
 
