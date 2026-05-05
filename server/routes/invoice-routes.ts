@@ -805,7 +805,15 @@ app.post(
           const smtpConfig = getSmtpConfigFromOrg(orgData);
           let pdfBuffer: Buffer | undefined;
           if (fullInvoice) {
-            pdfBuffer = await generateInvoicePdf(fullInvoice, orgData, baseUrl);
+            const { getInvoiceTimeEntryDetails, resolveShowTimeEntryDetails } = await import("../invoice-details");
+            const showDetails = resolveShowTimeEntryDetails(
+              fullInvoice.showTimeEntryDetails,
+              orgData?.showTimeEntryDetails,
+            );
+            const lineDetails = showDetails
+              ? await getInvoiceTimeEntryDetails(fullInvoice.id, orgId)
+              : undefined;
+            pdfBuffer = await generateInvoicePdf(fullInvoice, orgData, baseUrl, lineDetails);
           }
           const billingContacts = await storage.getBillingContactsByClient(invoice.clientId, orgId);
           const ccEmails = billingContacts.map(c => c.email).filter(Boolean) as string[];
@@ -1020,7 +1028,16 @@ app.post(
           const fullInvoice = await storage.getInvoice(invoice.id, orgId);
           const orgData = await storage.getOrg(orgId);
           const smtpConfig = getSmtpConfigFromOrg(orgData);
-          const pdfBuffer = await generateInvoicePdf(fullInvoice || invoice, orgData, baseUrl);
+          const invoiceForPdf = fullInvoice || invoice;
+          const { getInvoiceTimeEntryDetails, resolveShowTimeEntryDetails } = await import("../invoice-details");
+          const showDetails = resolveShowTimeEntryDetails(
+            invoiceForPdf.showTimeEntryDetails,
+            orgData?.showTimeEntryDetails,
+          );
+          const lineDetails = showDetails
+            ? await getInvoiceTimeEntryDetails(invoiceForPdf.id, orgId)
+            : undefined;
+          const pdfBuffer = await generateInvoicePdf(invoiceForPdf, orgData, baseUrl, lineDetails);
           const billingContacts = await storage.getBillingContactsByClient(invoice.clientId, orgId);
           const ccEmails = billingContacts.map(c => c.email).filter(Boolean) as string[];
           await sendInvoiceEmail(toEmail, subject, body, pdfBuffer, smtpConfig, ccEmails.length > 0 ? ccEmails : undefined, orgData);
