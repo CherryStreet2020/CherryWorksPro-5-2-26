@@ -26,8 +26,6 @@ async function buildSentInvoiceWithTwoBillableEntries(iso: any) {
   const client = await seedClient(iso);
   const project = await seedProject(iso, client.id, { name: "Acme Rebuild" });
   await addProjectMember(iso, project.id, iso.userId, 175);
-  // Two billable entries on different days so we get a day header per
-  // day plus a weekly subtotal row in the detail block.
   const today = new Date();
   const yday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
@@ -43,8 +41,7 @@ async function buildSentInvoiceWithTwoBillableEntries(iso: any) {
     billable: true,
     notes: "ACME-102 fixed redirect bug",
   });
-  // Whitespace-only notes — proves the desc cell renders blank
-  // (no project-name fallback). Notes column requires len >= 1.
+  // Whitespace-only notes proves the desc cell renders blank (no project-name fallback).
   await seedTimeEntry(iso, project.id, {
     date: fmt(today),
     minutes: 30,
@@ -62,13 +59,11 @@ test("org default OFF + invoice override null renders no worklog detail rows on 
 }) => {
   const { publicToken } = await buildSentInvoiceWithTwoBillableEntries(isolatedOrg);
 
-  // Org default is false by default; we don't touch it.
   const ctx = await browser.newContext();
   const pub = await ctx.newPage();
   try {
     await pub.goto(`/i/${publicToken}`);
     await pub.waitForSelector('[data-testid="card-public-invoice"]', { timeout: 15000 });
-    // No public-detail-* rows should be in the DOM.
     const dayRows = pub.locator('[data-testid^="public-detail-"][data-testid*="-day-"]');
     const entryRows = pub.locator('[data-testid^="public-detail-"][data-testid*="-entry-"]');
     expect(await dayRows.count()).toBe(0);
@@ -84,7 +79,6 @@ test("org default ON renders day headers, project+ticket+billable detail rows, a
 }) => {
   const { publicToken } = await buildSentInvoiceWithTwoBillableEntries(isolatedOrg);
 
-  // Flip the org default on.
   const orgPatch = await patchJson(isolatedOrg, "/api/org/settings", {
     showTimeEntryDetails: true,
   });
@@ -96,20 +90,15 @@ test("org default ON renders day headers, project+ticket+billable detail rows, a
     await pub.goto(`/i/${publicToken}`);
     await pub.waitForSelector('[data-testid="card-public-invoice"]', { timeout: 15000 });
 
-    // At least one day header (we logged on 2 days but the auto-aggregator
-    // groups by client/project/rate, so both days should land under one
-    // line and produce 2 day headers).
     const dayRows = pub.locator('[data-testid^="public-detail-"][data-testid*="-day-"]');
     expect(await dayRows.count()).toBeGreaterThanOrEqual(1);
 
-    // At least one entry row, with project / ticket / billable tag visible.
     const entryRows = pub.locator('[data-testid^="public-detail-"][data-testid*="-entry-"]');
     const entryCount = await entryRows.count();
     expect(entryCount).toBeGreaterThanOrEqual(1);
 
     const firstEntryTestId = await entryRows.first().getAttribute("data-testid");
     expect(firstEntryTestId).toBeTruthy();
-    // Pull the entryId out of the testid: public-detail-{i}-entry-{id}
     const entryId = firstEntryTestId!.split("-entry-")[1];
 
     const project = pub.locator(`[data-testid$="-project-${entryId}"]`).first();
@@ -124,14 +113,10 @@ test("org default ON renders day headers, project+ticket+billable detail rows, a
     await expect(tag).toBeVisible();
     expect((await tag.textContent())?.trim()).toBe("Billable");
 
-    // Weekly subtotal row.
     const weekRows = pub.locator('[data-testid^="public-detail-"][data-testid*="-week-"]');
     expect(await weekRows.count()).toBeGreaterThanOrEqual(1);
 
-    // The empty-notes entry must render an empty description cell —
-    // we never substitute the project name into the description column.
-    // Walk every entry's description span and assert at least one is
-    // an empty string while its project cell is still populated.
+    // Empty-notes entry must render empty desc; project name never leaks into description.
     const allDescTestIds = await pub
       .locator('[data-testid^="public-detail-"][data-testid*="-desc-"]')
       .evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")));
@@ -144,25 +129,18 @@ test("org default ON renders day headers, project+ticket+billable detail rows, a
         await pub.locator(`[data-testid$="-project-${entryId}"]`).textContent()
       )?.trim() ?? "";
       if (descText.trim() === "") {
-        // Empty description — project column must still be populated
-        // (the project name MUST NOT have leaked into the description).
         expect(projectText).toBe("Acme Rebuild");
         foundEmpty = true;
       }
     }
     expect(foundEmpty, "expected at least one entry with empty description from the empty-notes seed").toBe(true);
 
-    // PDF smoke: with details ON, the public PDF endpoint must
-    // succeed end-to-end. This exercises drawDetailBlock's
-    // prefetch + page-break path; if any of that throws, the
-    // request would 500 and this assertion fails.
     const pdfRes = await pub.request.get(`/api/public/invoices/${publicToken}/pdf`);
     expect(pdfRes.status()).toBe(200);
     const ct = pdfRes.headers()["content-type"] ?? "";
     expect(ct).toContain("application/pdf");
     const pdfBuf = await pdfRes.body();
     expect(pdfBuf.length).toBeGreaterThan(1000);
-    // Sanity-check that what we got back really is a PDF.
     expect(pdfBuf.subarray(0, 5).toString("utf-8")).toBe("%PDF-");
   } finally {
     await ctx.close();
@@ -173,16 +151,12 @@ test("PDF pagination: many detail rows produce a multi-page PDF without throwing
   isolatedOrg,
   browser,
 }) => {
-  // Seed enough time entries to guarantee the worklog detail block
-  // overflows a single PDF page, exercising drawDetailBlock's
-  // page-break + "TIME (cont.)" header re-emission and the
-  // anti-orphan day-header reservation.
+  // 60 entries on 60 distinct days overflow a single Letter page and exercise
+  // drawDetailBlock's page-break + "TIME (cont.)" header re-emission path.
   const client = await seedClient(isolatedOrg);
   const project = await seedProject(isolatedOrg, client.id, { name: "Pagination Co" });
   await addProjectMember(isolatedOrg, project.id, isolatedOrg.userId, 150);
 
-  // 60 entries spanning 60 distinct days → 60 day headers + 60 entries
-  // + ~9 weekly subtotals. Comfortably overflows a single Letter page.
   const baseDate = new Date("2025-09-01T12:00:00Z");
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
   for (let i = 0; i < 60; i++) {
@@ -197,7 +171,6 @@ test("PDF pagination: many detail rows produce a multi-page PDF without throwing
   const draft = await generateInvoice(isolatedOrg, client.id);
   const sent = await sendInvoice(isolatedOrg, draft.id);
 
-  // Turn detail rendering on for this invoice.
   const flipOn = await patchJson(isolatedOrg, `/api/invoices/${draft.id}`, {
     showTimeEntryDetails: true,
   });
@@ -211,9 +184,7 @@ test("PDF pagination: many detail rows produce a multi-page PDF without throwing
     const pdfBuf = await pdfRes.body();
     expect(pdfBuf.subarray(0, 5).toString("utf-8")).toBe("%PDF-");
 
-    // Count page-object markers in the PDF stream. PDFKit emits one
-    // `/Type /Page\n` per page (the catalog's `/Pages` parent is
-    // `/Type /Pages` — note the trailing 's' — so this regex is safe).
+    // PDFKit emits one `/Type /Page` per page; `(?!s)` skips the catalog's `/Pages` parent.
     const raw = pdfBuf.toString("latin1");
     const pageMatches = raw.match(/\/Type\s*\/Page(?!s)/g) || [];
     expect(
@@ -231,7 +202,6 @@ test("flipping the per-invoice override works on a locked (sent) invoice and lea
 }) => {
   const { invoice, publicToken } = await buildSentInvoiceWithTwoBillableEntries(isolatedOrg);
 
-  // Capture the public total BEFORE any toggling.
   const ctxA = await browser.newContext();
   const pubA = await ctxA.newPage();
   let baselineTotal: string | null = null;
@@ -246,9 +216,7 @@ test("flipping the per-invoice override works on a locked (sent) invoice and lea
   }
   expect(baselineTotal).toBeTruthy();
 
-  // The invoice is SENT (locked). Flip the per-invoice override on. The
-  // PATCH must succeed even though the editability guard normally
-  // blocks edits to sent invoices, because this is a display-only flag.
+  // Display-only PATCH must succeed on a SENT (locked) invoice.
   const flipOn = await patchJson(isolatedOrg, `/api/invoices/${invoice.id}`, {
     showTimeEntryDetails: true,
   });
