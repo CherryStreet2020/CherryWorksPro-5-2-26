@@ -607,25 +607,11 @@ function drawLuxuryFooter(
   doc.text(`${orgName}  |  Page ${pageNum}`, LX.ml, y, { align: "center", width: LX_CONTENT_W });
 }
 
-// Shared header layout helpers for non-luxury themes.
-//
-// Task #475 fix: the classic / modern / bold / minimal / default branches
-// used to draw the org address, phone, email, and website each with no
-// width constraint and advance Y by a hardcoded 14pt regardless of how
-// many lines the field actually rendered. A multi-line address (street\n
-// city\ncountry) therefore overlapped the next field AND bled into the
-// right-side meta column. These helpers (a) cap each block to a measured
-// max-width that ends before the right meta column, (b) advance Y by the
-// real rendered height of each block, and (c) let modern/bold grow their
-// filled header bars to fit the actual content.
 const HEADER_LEFT_X = 50;
 const HEADER_RIGHT_META_X = 350;
 const HEADER_LEFT_GUTTER = 16;
-const HEADER_RIGHT_META_W = 212; // 562 (page right) - 350
+const HEADER_RIGHT_META_W = 212;
 
-// Compute the rendered logo width (incl. 12pt right gap) WITHOUT drawing.
-// Lets us pre-measure the left text column before deciding the size of a
-// filled colored header bar (modern / bold). Mirrors embedLogo's math.
 function measureLogoWidth(
   doc: InstanceType<typeof PDFDocument>,
   logoBytes: Buffer | null,
@@ -642,9 +628,6 @@ function measureLogoWidth(
   }
 }
 
-// Total stacked height of `lines` for the current font face / size, given
-// the per-line maxW and inter-line gap. Empty lines are skipped so a
-// missing phone or website doesn't leave a phantom row.
 function measureHeaderInfoHeight(
   doc: InstanceType<typeof PDFDocument>,
   fontSize: number,
@@ -664,9 +647,6 @@ function measureHeaderInfoHeight(
   return total;
 }
 
-// Draws each non-empty line bounded to maxW and advances by the measured
-// rendered height of that line. Returns the Y immediately after the last
-// line (no trailing gap).
 function drawHeaderInfoLines(
   doc: InstanceType<typeof PDFDocument>,
   textX: number,
@@ -698,9 +678,6 @@ interface HeaderMetaRow {
   gap?: number;
 }
 
-// Right-aligned meta column with measured row heights. Returns Y after
-// the last row (no trailing gap). Width caps each row so a long status
-// or date string never spills off the page.
 function drawHeaderMetaRows(
   doc: InstanceType<typeof PDFDocument>,
   x: number,
@@ -990,12 +967,6 @@ export async function generateInvoicePdf(
       drawLuxuryFooter(doc, y, orgName, pageNum, payOnlineText);
 
     } else {
-      // Task #475: every non-luxury branch below uses width-bounded,
-      // measured-height stacking for the org info column AND the right
-      // meta column so multi-line addresses (e.g. "225 Cherry Street,
-      // Suite 74K\nNew York, NY, 10002\nUnited States") never collide
-      // with the next field or with the right-side meta. Filled-bar
-      // themes (modern, bold) grow their bar to fit the measured content.
       let headerBottomY: number;
 
       if (themeName === "modern") {
@@ -1005,11 +976,9 @@ export async function generateInvoicePdf(
         const rightW = 162;
         const rightX = 400;
 
-        // Pre-measure left + right columns to size the colored bar.
         const nameH = doc.font("Helvetica-Bold").fontSize(22)
           .heightOfString(orgName, { width: leftMaxW, lineBreak: false });
         const infoStartY = 30 + nameH + 6;
-        // Modern intentionally hides address (compact bar). Phone + email only.
         const infoH = measureHeaderInfoHeight(doc, 10, leftMaxW, [orgPhone, orgEmail], 2);
         const numH = doc.font("Helvetica-Bold").fontSize(22)
           .heightOfString(invoice.number, { width: rightW });
@@ -1095,7 +1064,6 @@ export async function generateInvoicePdf(
           [orgAddress, orgPhone], 2,
         );
 
-        // Right meta column - measured.
         doc.font("Helvetica").fontSize(9).fillColor(theme.textMuted)
           .text("INVOICE", rightX + 100, 50, { align: "right", width: rightW - 100 });
         const numH = doc.font("Helvetica-Bold").fontSize(16)
@@ -1115,7 +1083,6 @@ export async function generateInvoicePdf(
           .strokeColor("#e2e8f0").lineWidth(0.3).stroke();
         headerBottomY = dividerY + 10;
       } else {
-        // Default / classic theme — the bug-reported branch.
         const logoW = embedLogo(doc, logoBytes, 50, 44, 50, 50);
         const textX = 50 + logoW;
         const leftMaxW = Math.max(120, HEADER_RIGHT_META_X - HEADER_LEFT_GUTTER - textX);
@@ -1132,8 +1099,6 @@ export async function generateInvoicePdf(
           [orgAddress, orgPhone, orgEmail, orgWebsite], 2,
         );
 
-        // Right meta column - measured. Was hardcoded at y=80/96/112,
-        // which collided with multi-line addresses on the left.
         doc.font("Helvetica-Bold").fontSize(24).fillColor(theme.text)
           .text(invoice.number, rightX, 50, { align: "right", width: rightW });
         const numH = doc.heightOfString(invoice.number, { width: rightW });
@@ -1148,9 +1113,6 @@ export async function generateInvoicePdf(
         headerBottomY = Math.max(leftEndY, rightEndY);
       }
 
-      // Modern reprints Issued/Due below the colored bar (the bar itself
-      // shows only INVOICE label + number + status). Bold puts everything
-      // inside the bar.
       y = headerBottomY;
       if (themeName === "modern") {
         doc.font("Helvetica").fontSize(10).fillColor(theme.textMuted);
