@@ -22,6 +22,10 @@ import {
   postJson,
   sendInvoice,
 } from "./_helpers";
+import { execFileSync } from "node:child_process";
+import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 async function buildSentInvoiceWithTwoBillableEntries(iso: any) {
   const client = await seedClient(iso);
@@ -451,3 +455,276 @@ test("flipping the per-invoice override works on a locked (sent) invoice and lea
   }
   expect(totalAfterClear).toBe(baselineTotal);
 });
+
+// Task #475: regression for "PDF header collisions" — repro'd from the
+// reported CSC-INV-0001 layout (multi-line address "225 Cherry Street,
+// Suite 74K\nNew York, NY, 10002\nUnited States" + phone + email +
+// website). For each non-luxury theme we assert:
+//
+//   1. The fields the theme actually renders all appear in the PDF text.
+//   2. They stack in the correct row order (address line 1 → 2 → 3 →
+//      phone → email → website), so multi-line addresses no longer
+//      collide with the next field.
+//   3. No left-column word's bbox xMax crosses into the right-meta
+//      column's bbox xMin (the *real* visual collision the user saw).
+//   4. The "BILL TO" block sits below the entire stacked header, so a
+//      tall multi-line header doesn't bleed into the client block.
+//
+// Per-theme `fields` map: each non-luxury theme intentionally renders
+// a different subset of the org info column. This matches the
+// PRE-existing rendering choices (modern is a compact bar, minimal
+// hides email/website, bold drops the website) — Task #475 is purely
+// about layout collisions for whichever fields the theme renders, NOT
+// about adding/removing fields per theme. Adjust this map only when
+// the source-of-truth render order in `server/pdf.ts` actually changes.
+type HdrField = "address1" | "address2" | "address3" | "phone" | "email" | "website";
+const THEMES: Array<{ name: "classic" | "modern" | "bold" | "minimal"; fields: HdrField[] }> = [
+  { name: "classic", fields: ["address1", "address2", "address3", "phone", "email", "website"] },
+  { name: "modern",  fields: ["phone", "email"] },
+  { name: "bold",    fields: ["address1", "address2", "address3", "phone", "email"] },
+  { name: "minimal", fields: ["address1", "address2", "address3", "phone"] },
+];
+for (const { name: theme, fields: expectedFields } of THEMES) {
+test(`${theme} theme: multi-line org address + phone + email + right meta render without header collisions`, async ({
+  isolatedOrg,
+}) => {
+  // Note: /api/org/settings does not accept org `name`. The isolated
+  // fixture's org name (E2E Iso ...) is fine for this test — the bug
+  // we're regressing is purely about the address/phone/email/website
+  // stack vs. the right-side meta column, not the org-name line.
+  const orgPatch = await patchJson(isolatedOrg, "/api/org/settings", {
+    invoiceTheme: theme,
+    // Reproduce the user's exact 3-line address shape.
+    address: "225 Cherry Street, Suite 74K\nNew York, NY, 10002\nUnited States",
+    phone: "(929) 724-2979",
+    email: "hi@cherrystconsulting.com",
+    website: "https://cherrystconsulting.com",
+  });
+  expect(
+    orgPatch.ok(),
+    `org settings PATCH failed: ${orgPatch.status()} ${await orgPatch.text()}`,
+  ).toBe(true);
+
+  // Read back the canonical org name + invoice prefix the PDF will use.
+  const orgGet = await isolatedOrg.request.get("/api/org/settings");
+  expect(orgGet.ok(), `GET /api/org/settings failed: ${orgGet.status()}`).toBe(true);
+  const orgSettings = await orgGet.json();
+  const orgName: string = orgSettings.name;
+  expect(typeof orgName).toBe("string");
+  expect(orgName.length).toBeGreaterThan(0);
+
+  const client = await seedClient(isolatedOrg);
+  const project = await seedProject(isolatedOrg, client.id, { name: "Header Co" });
+  await addProjectMember(isolatedOrg, project.id, isolatedOrg.userId, 175);
+  const today = new Date();
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  await seedTimeEntry(isolatedOrg, project.id, {
+    date: fmt(today),
+    minutes: 60,
+    billable: true,
+    notes: "HDR-001 header layout regression seed",
+  });
+  const draft = await generateInvoice(isolatedOrg, client.id);
+  const sent = await sendInvoice(isolatedOrg, draft.id);
+  // Invoice "number" field on the row is what the PDF renders as the
+  // big right-side header (e.g. "INV-0001"). `sendInvoice` returns the
+  // updated row, but fall back to the draft if not present.
+  const invoiceNumber: string = sent.number ?? draft.number;
+  expect(typeof invoiceNumber).toBe("string");
+  expect(invoiceNumber.length).toBeGreaterThan(0);
+
+  // Use the authenticated invoice PDF endpoint instead of the public
+  // one — the public route has a strict per-IP rate limiter (5/min)
+  // that 429s when this parameterized test runs all four themes back
+  // to back. The authenticated endpoint exercises the same `pdf.ts`
+  // generator code path (where the Task #475 fix lives), so this is
+  // a fully equivalent regression surface for header layout.
+  const pdfRes = await isolatedOrg.request.get(`/api/invoices/${draft.id}/pdf`);
+  expect(pdfRes.status()).toBe(200);
+  const pdfBuf = await pdfRes.body();
+  expect(pdfBuf.subarray(0, 5).toString("utf-8")).toBe("%PDF-");
+  expect(pdfBuf.length).toBeGreaterThan(1000);
+
+  // Decode the PDF in two complementary ways:
+  //   - `pdftotext -layout`: preserves column/row order, one text row
+  //     per output line. Used for "this field is below that field" checks.
+  //   - `pdftotext -bbox-layout`: emits per-word bounding boxes (xMin,
+  //     yMin, xMax, yMax) so we can test true horizontal overlap, which
+  //     the layout-text view can't see (two columns can share a Y row
+  //     while still being visually separated by whitespace).
+  const dir = mkdtempSync(join(tmpdir(), "pdf-hdr-"));
+  const pdfPath = join(dir, "invoice.pdf");
+  let layoutText = "";
+  let bboxXml = "";
+  try {
+    writeFileSync(pdfPath, pdfBuf);
+    layoutText = execFileSync("pdftotext", ["-layout", pdfPath, "-"], {
+      encoding: "utf-8",
+      timeout: 10000,
+    });
+    bboxXml = execFileSync("pdftotext", ["-bbox-layout", pdfPath, "-"], {
+      encoding: "utf-8",
+      timeout: 10000,
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+
+  const lines = layoutText.split("\n");
+
+  // Helper: line index where the *first* substring match appears, or -1.
+  const findLine = (needle: string): number =>
+    lines.findIndex((ln) => ln.includes(needle));
+
+  // Per-theme diagnostic: dump first 30 lines if anything looks off.
+  // (Cheap to keep — fires only on a real assertion failure path below.)
+  const dumpLayout = () =>
+    `\n[${theme}] layoutText (first 30 lines):\n` +
+    lines.slice(0, 30).map((l, i) => `  ${i.toString().padStart(2)}: ${l}`).join("\n");
+
+  // 1. Every theme-relevant header field rendered.
+  // Map field key → (label, search needle). Each theme's expected
+  // fields are looked up from this dict.
+  const fieldDefs: Record<HdrField, { label: string; needle: string }> = {
+    address1: { label: "address street line",   needle: "225 Cherry Street, Suite 74K" },
+    address2: { label: "address city/zip line", needle: "New York, NY, 10002" },
+    address3: { label: "address country line",  needle: "United States" },
+    phone:    { label: "phone",                 needle: "(929) 724-2979" },
+    email:    { label: "email",                 needle: "hi@cherrystconsulting.com" },
+    // "https://" prefix is unique to the website line — substring matching
+    // on "cherrystconsulting.com" alone collides with the email line.
+    website:  { label: "website",               needle: "https://cherrystconsulting.com" },
+  };
+  // The minimal theme renders the org name as orgName.toUpperCase(),
+  // so substring search must be case-insensitive to find the header
+  // (otherwise we'd find the same string lower in the body — e.g. in
+  // the footer "Pay online at ..." line — and the stack-order check
+  // would fail spuriously).
+  const orgNameLc = orgName.toLowerCase();
+  const idxOrgName = lines.findIndex((ln) => ln.toLowerCase().includes(orgNameLc));
+  const idxInvoiceNum = findLine(invoiceNumber);
+
+  const expectFound = (label: string, idx: number) => {
+    expect(idx, `expected ${label} to appear in PDF text rows; got -1${dumpLayout()}`).toBeGreaterThanOrEqual(0);
+  };
+  expectFound("org name", idxOrgName);
+  expectFound("invoice number", idxInvoiceNum);
+
+  // Resolve the indexes of only the fields this theme actually renders.
+  const fieldIdx: Partial<Record<HdrField, number>> = {};
+  for (const f of expectedFields) {
+    const def = fieldDefs[f];
+    const i = findLine(def.needle);
+    expectFound(`${theme} ${def.label}`, i);
+    fieldIdx[f] = i;
+  }
+
+  // 2. The left-column header fields stack in the correct row order
+  //    (whatever subset this theme renders). Strict less-than means
+  //    each field lives on its own row — i.e. no two left-column fields
+  //    share a row, which is the exact bug Task #475 fixed.
+  for (let i = 0; i < expectedFields.length - 1; i++) {
+    const a = expectedFields[i];
+    const b = expectedFields[i + 1];
+    expect(
+      fieldIdx[a]!,
+      `${theme}: ${fieldDefs[a].label} (row ${fieldIdx[a]}) should sit ABOVE ${fieldDefs[b].label} (row ${fieldIdx[b]})${dumpLayout()}`,
+    ).toBeLessThan(fieldIdx[b]!);
+  }
+  // Org name always sits above the first rendered info field.
+  if (expectedFields.length > 0) {
+    expect(idxOrgName).toBeLessThan(fieldIdx[expectedFields[0]]!);
+  }
+
+  // 3. No left-column header text visually overlaps the right-side
+  //    meta column. The broken header's bug was that the address text
+  //    overflowed past the meta column's left edge — i.e. its bbox
+  //    xMax encroached on the meta-column words' bbox xMin range.
+  //    A shared text row is fine (org name + invoice number always
+  //    share row 0 by design) AS LONG AS their X ranges don't overlap.
+  //
+  //    We parse `pdftotext -bbox-layout` (an XML doc with per-word
+  //    <word xMin xMax yMin yMax> elements) and compute a horizontal
+  //    "left address text" extent vs. a "right meta text" extent. If
+  //    the address xMax >= meta xMin, the columns are visually colliding.
+  const wordRe = /<word\s+xMin="([\d.]+)"\s+yMin="([\d.]+)"\s+xMax="([\d.]+)"\s+yMax="([\d.]+)"\s*>([^<]*)<\/word>/g;
+  type Word = { xMin: number; yMin: number; xMax: number; yMax: number; text: string };
+  const words: Word[] = [];
+  for (let m: RegExpExecArray | null; (m = wordRe.exec(bboxXml)); ) {
+    words.push({
+      xMin: Number(m[1]),
+      yMin: Number(m[2]),
+      xMax: Number(m[3]),
+      yMax: Number(m[4]),
+      text: m[5],
+    });
+  }
+  expect(words.length, "expected pdftotext -bbox-layout to return word boxes").toBeGreaterThan(0);
+
+  // The right meta column carries the invoice number (always present
+  // in big bold text). Anchor the column edge using the invoice
+  // number's bbox xMin — that's the most reliable per-theme signal of
+  // where the right column starts. (Status/Issued/Due labels vary per
+  // theme: classic+bold use "Status:" + "Issued:" + "Due:"; modern
+  // shows only "INVOICE" + status in the bar then reprints Issued/Due
+  // below; minimal compresses dates into a single "·"-joined row.)
+  const numWords = invoiceNumber
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((tok) => words.find((w) => w.text === tok))
+    .filter((w): w is Word => !!w);
+  expect(
+    numWords.length,
+    `expected invoice number "${invoiceNumber}" tokens in bbox output`,
+  ).toBeGreaterThan(0);
+  const rightColumnLeftEdge = Math.min(...numWords.map((w) => w.xMin));
+
+  // The left-column words to test for horizontal overlap. Per-theme
+  // needle list so we only check the fields this theme actually renders.
+  const fieldNeedles: Record<HdrField, string[]> = {
+    address1: ["225", "Cherry", "Street,", "Suite", "74K"],
+    address2: ["New", "York,", "NY,", "10002"],
+    address3: ["United", "States"],
+    phone:    ["(929)", "724-2979"],
+    email:    ["hi@cherrystconsulting.com"],
+    website:  ["https://cherrystconsulting.com"],
+  };
+  const headerNeedles = expectedFields.flatMap((f) => fieldNeedles[f]);
+  const leftHeaderWords = words.filter((w) =>
+    headerNeedles.some((n) => w.text === n || w.text.includes(n)),
+  );
+  expect(
+    leftHeaderWords.length,
+    `expected to find left-column header words for theme ${theme} in the bbox output`,
+  ).toBeGreaterThan(0);
+
+  // The strict horizontal-overlap check: every left header word must
+  // end (xMax) before the right-meta column begins (rightColumnLeftEdge).
+  // Allow 0.5pt of tolerance for floating-point drift.
+  for (const w of leftHeaderWords) {
+    expect(
+      w.xMax,
+      `left header word "${w.text}" extends to xMax=${w.xMax.toFixed(2)} which ` +
+        `overlaps the right-meta column starting at xMin=${rightColumnLeftEdge.toFixed(2)}`,
+    ).toBeLessThan(rightColumnLeftEdge - 0.5);
+  }
+
+  // 4. BILL TO must sit BELOW the entire stacked header — including
+  //    the last rendered left-column field. Before the fix, BILL TO
+  //    was hardcoded at y=140 so a tall multi-line header bled into
+  //    it. Note: most themes render "BILL TO" with letter-spacing, so
+  //    the layout text shows it as "B I L L  TO" — match on a regex
+  //    that survives that.
+  const idxBillTo = lines.findIndex((ln) => /B\s*I\s*L\s*L/.test(ln));
+  expectFound("BILL TO row", idxBillTo);
+  if (expectedFields.length > 0) {
+    const lastField = expectedFields[expectedFields.length - 1];
+    expect(
+      idxBillTo,
+      `${theme}: BILL TO (row ${idxBillTo}) should sit BELOW last header field ${fieldDefs[lastField].label} (row ${fieldIdx[lastField]})${dumpLayout()}`,
+    ).toBeGreaterThan(fieldIdx[lastField]!);
+  }
+  // BILL TO is also below the invoice number row.
+  expect(idxBillTo).toBeGreaterThan(idxInvoiceNum);
+});
+}

@@ -607,6 +607,124 @@ function drawLuxuryFooter(
   doc.text(`${orgName}  |  Page ${pageNum}`, LX.ml, y, { align: "center", width: LX_CONTENT_W });
 }
 
+// Shared header layout helpers for non-luxury themes.
+//
+// Task #475 fix: the classic / modern / bold / minimal / default branches
+// used to draw the org address, phone, email, and website each with no
+// width constraint and advance Y by a hardcoded 14pt regardless of how
+// many lines the field actually rendered. A multi-line address (street\n
+// city\ncountry) therefore overlapped the next field AND bled into the
+// right-side meta column. These helpers (a) cap each block to a measured
+// max-width that ends before the right meta column, (b) advance Y by the
+// real rendered height of each block, and (c) let modern/bold grow their
+// filled header bars to fit the actual content.
+const HEADER_LEFT_X = 50;
+const HEADER_RIGHT_META_X = 350;
+const HEADER_LEFT_GUTTER = 16;
+const HEADER_RIGHT_META_W = 212; // 562 (page right) - 350
+
+// Compute the rendered logo width (incl. 12pt right gap) WITHOUT drawing.
+// Lets us pre-measure the left text column before deciding the size of a
+// filled colored header bar (modern / bold). Mirrors embedLogo's math.
+function measureLogoWidth(
+  doc: InstanceType<typeof PDFDocument>,
+  logoBytes: Buffer | null,
+  maxW: number,
+  maxH: number,
+): number {
+  if (!logoBytes || logoBytes.length === 0) return 0;
+  try {
+    const img = (doc as any).openImage(logoBytes);
+    const ratio = Math.min(maxW / img.width, maxH / img.height, 1);
+    return img.width * ratio + 12;
+  } catch {
+    return 0;
+  }
+}
+
+// Total stacked height of `lines` for the current font face / size, given
+// the per-line maxW and inter-line gap. Empty lines are skipped so a
+// missing phone or website doesn't leave a phantom row.
+function measureHeaderInfoHeight(
+  doc: InstanceType<typeof PDFDocument>,
+  fontSize: number,
+  maxW: number,
+  lines: string[],
+  gap: number = 2,
+): number {
+  doc.font("Helvetica").fontSize(fontSize);
+  let total = 0;
+  let count = 0;
+  for (const line of lines) {
+    if (!line) continue;
+    total += doc.heightOfString(line, { width: maxW });
+    count++;
+  }
+  if (count > 0) total += (count - 1) * gap;
+  return total;
+}
+
+// Draws each non-empty line bounded to maxW and advances by the measured
+// rendered height of that line. Returns the Y immediately after the last
+// line (no trailing gap).
+function drawHeaderInfoLines(
+  doc: InstanceType<typeof PDFDocument>,
+  textX: number,
+  startY: number,
+  maxW: number,
+  fontSize: number,
+  color: string,
+  lines: string[],
+  gap: number = 2,
+): number {
+  doc.font("Helvetica").fontSize(fontSize).fillColor(color);
+  let y = startY;
+  let drewAny = false;
+  for (const line of lines) {
+    if (!line) continue;
+    if (drewAny) y += gap;
+    doc.text(line, textX, y, { width: maxW });
+    y += doc.heightOfString(line, { width: maxW });
+    drewAny = true;
+  }
+  return y;
+}
+
+interface HeaderMetaRow {
+  text: string;
+  font?: string;
+  size?: number;
+  color?: string;
+  gap?: number;
+}
+
+// Right-aligned meta column with measured row heights. Returns Y after
+// the last row (no trailing gap). Width caps each row so a long status
+// or date string never spills off the page.
+function drawHeaderMetaRows(
+  doc: InstanceType<typeof PDFDocument>,
+  x: number,
+  startY: number,
+  width: number,
+  rows: HeaderMetaRow[],
+): number {
+  let y = startY;
+  let drewAny = false;
+  for (const r of rows) {
+    if (!r.text) continue;
+    const font = r.font ?? "Helvetica";
+    const size = r.size ?? 10;
+    const color = r.color ?? "#64748b";
+    const gap = r.gap ?? 2;
+    if (drewAny) y += gap;
+    doc.font(font).fontSize(size).fillColor(color);
+    doc.text(r.text, x, y, { width, align: "right" });
+    y += doc.heightOfString(r.text, { width });
+    drewAny = true;
+  }
+  return y;
+}
+
 export async function generateInvoicePdf(
   invoice: InvoiceWithDetails,
   org?: OrgBranding,
@@ -872,67 +990,173 @@ export async function generateInvoicePdf(
       drawLuxuryFooter(doc, y, orgName, pageNum, payOnlineText);
 
     } else {
+      // Task #475: every non-luxury branch below uses width-bounded,
+      // measured-height stacking for the org info column AND the right
+      // meta column so multi-line addresses (e.g. "225 Cherry Street,
+      // Suite 74K\nNew York, NY, 10002\nUnited States") never collide
+      // with the next field or with the right-side meta. Filled-bar
+      // themes (modern, bold) grow their bar to fit the measured content.
+      let headerBottomY: number;
+
       if (themeName === "modern") {
-        doc.rect(0, 0, 612, 100).fill(theme.headerBg);
-        const logoW = embedLogo(doc, logoBytes, 50, 22, 50, 50);
-        doc.fontSize(22).fillColor(theme.headerText).font("Helvetica-Bold").text(orgName, 50 + logoW, 30);
-        doc.fontSize(10).fillColor("#94a3b8").font("Helvetica");
-        if (orgPhone) doc.text(orgPhone, 50 + logoW, 56);
-        if (orgEmail) doc.text(orgEmail, 50 + logoW, 70);
-        doc.rect(0, 100, 612, 3).fill(theme.accent);
-        doc.fontSize(11).fillColor("#94a3b8").font("Helvetica").text("INVOICE", 400, 30, { align: "right", width: 162 });
-        doc.fontSize(22).fillColor(theme.headerText).font("Helvetica-Bold").text(invoice.number, 400, 46, { align: "right", width: 162 });
-        doc.fontSize(10).fillColor("#94a3b8").font("Helvetica").text(`${invoice.status}`, 400, 74, { align: "right", width: 162 });
-        y = 120;
+        const logoW = measureLogoWidth(doc, logoBytes, 50, 50);
+        const textX = 50 + logoW;
+        const leftMaxW = Math.max(120, HEADER_RIGHT_META_X - HEADER_LEFT_GUTTER - textX);
+        const rightW = 162;
+        const rightX = 400;
+
+        // Pre-measure left + right columns to size the colored bar.
+        const nameH = doc.font("Helvetica-Bold").fontSize(22)
+          .heightOfString(orgName, { width: leftMaxW, lineBreak: false });
+        const infoStartY = 30 + nameH + 6;
+        // Modern intentionally hides address (compact bar). Phone + email only.
+        const infoH = measureHeaderInfoHeight(doc, 10, leftMaxW, [orgPhone, orgEmail], 2);
+        const numH = doc.font("Helvetica-Bold").fontSize(22)
+          .heightOfString(invoice.number, { width: rightW });
+        const labelH = doc.font("Helvetica").fontSize(11)
+          .heightOfString("INVOICE", { width: rightW });
+        const statusH = doc.font("Helvetica").fontSize(10)
+          .heightOfString(invoice.status, { width: rightW });
+        const rightBottom = 30 + labelH + 4 + numH + 8 + statusH;
+        const leftBottom = infoStartY + infoH;
+        const barH = Math.max(100, leftBottom + 16, rightBottom + 16);
+
+        doc.rect(0, 0, 612, barH).fill(theme.headerBg);
+        embedLogo(doc, logoBytes, 50, 22, 50, 50);
+        doc.font("Helvetica-Bold").fontSize(22).fillColor(theme.headerText)
+          .text(orgName, textX, 30, { width: leftMaxW, ellipsis: true, lineBreak: false });
+        drawHeaderInfoLines(doc, textX, infoStartY, leftMaxW, 10, "#94a3b8",
+          [orgPhone, orgEmail], 2);
+        doc.rect(0, barH, 612, 3).fill(theme.accent);
+        doc.font("Helvetica").fontSize(11).fillColor("#94a3b8")
+          .text("INVOICE", rightX, 30, { align: "right", width: rightW });
+        doc.font("Helvetica-Bold").fontSize(22).fillColor(theme.headerText)
+          .text(invoice.number, rightX, 30 + labelH + 4, { align: "right", width: rightW });
+        doc.font("Helvetica").fontSize(10).fillColor("#94a3b8")
+          .text(invoice.status, rightX, 30 + labelH + 4 + numH + 8, { align: "right", width: rightW });
+        headerBottomY = barH + 6;
       } else if (themeName === "bold") {
-        doc.rect(0, 0, 612, 120).fill(theme.headerBg);
-        const logoW = embedLogo(doc, logoBytes, 50, 20, 50, 50);
-        doc.fontSize(26).fillColor(theme.headerText).font("Helvetica-Bold").text(orgName, 50 + logoW, 28);
-        doc.fontSize(10).fillColor("rgba(255,255,255,0.7)").font("Helvetica");
-        let hy = 58;
-        if (orgAddress) { doc.text(orgAddress, 50 + logoW, hy); hy += 14; }
-        if (orgPhone) { doc.text(orgPhone, 50 + logoW, hy); hy += 14; }
-        if (orgEmail) { doc.text(orgEmail, 50 + logoW, hy); }
-        doc.fontSize(32).fillColor(theme.headerText).font("Helvetica-Bold").text(invoice.number, 350, 30, { align: "right", width: 212 });
-        doc.fontSize(12).fillColor("rgba(255,255,255,0.8)").font("Helvetica").text(invoice.status, 350, 70, { align: "right", width: 212 });
-        doc.fontSize(10).text(`Issued: ${issuedFormatted}`, 350, 88, { align: "right", width: 212 });
-        doc.text(`Due: ${dueFormatted}`, 350, 102, { align: "right", width: 212 });
-        y = 140;
+        const logoW = measureLogoWidth(doc, logoBytes, 50, 50);
+        const textX = 50 + logoW;
+        const leftMaxW = Math.max(120, HEADER_RIGHT_META_X - HEADER_LEFT_GUTTER - textX);
+        const rightW = HEADER_RIGHT_META_W;
+        const rightX = HEADER_RIGHT_META_X;
+        const infoColor = "rgba(255,255,255,0.7)";
+        const metaColor = "rgba(255,255,255,0.8)";
+
+        const nameH = doc.font("Helvetica-Bold").fontSize(26)
+          .heightOfString(orgName, { width: leftMaxW, lineBreak: false });
+        const infoStartY = 28 + nameH + 6;
+        const infoH = measureHeaderInfoHeight(doc, 10, leftMaxW,
+          [orgAddress, orgPhone, orgEmail], 2);
+        const leftBottom = infoStartY + infoH;
+
+        const numH = doc.font("Helvetica-Bold").fontSize(32)
+          .heightOfString(invoice.number, { width: rightW });
+        const statusH = doc.font("Helvetica").fontSize(12)
+          .heightOfString(invoice.status, { width: rightW });
+        const issuedH = doc.font("Helvetica").fontSize(10)
+          .heightOfString(`Issued: ${issuedFormatted}`, { width: rightW });
+        const dueH = doc.font("Helvetica").fontSize(10)
+          .heightOfString(`Due: ${dueFormatted}`, { width: rightW });
+        const rightBottom = 30 + numH + 10 + statusH + 4 + issuedH + 2 + dueH;
+        const barH = Math.max(120, leftBottom + 16, rightBottom + 16);
+
+        doc.rect(0, 0, 612, barH).fill(theme.headerBg);
+        embedLogo(doc, logoBytes, 50, 20, 50, 50);
+        doc.font("Helvetica-Bold").fontSize(26).fillColor(theme.headerText)
+          .text(orgName, textX, 28, { width: leftMaxW, ellipsis: true, lineBreak: false });
+        drawHeaderInfoLines(doc, textX, infoStartY, leftMaxW, 10, infoColor,
+          [orgAddress, orgPhone, orgEmail], 2);
+        doc.font("Helvetica-Bold").fontSize(32).fillColor(theme.headerText)
+          .text(invoice.number, rightX, 30, { align: "right", width: rightW });
+        const statusY = 30 + numH + 10;
+        doc.font("Helvetica").fontSize(12).fillColor(metaColor)
+          .text(invoice.status, rightX, statusY, { align: "right", width: rightW });
+        const issuedY = statusY + statusH + 4;
+        doc.font("Helvetica").fontSize(10).fillColor(metaColor)
+          .text(`Issued: ${issuedFormatted}`, rightX, issuedY, { align: "right", width: rightW });
+        doc.font("Helvetica").fontSize(10).fillColor(metaColor)
+          .text(`Due: ${dueFormatted}`, rightX, issuedY + issuedH + 2, { align: "right", width: rightW });
+        headerBottomY = barH + 6;
       } else if (themeName === "minimal") {
         const logoW = embedLogo(doc, logoBytes, 50, 44, 40, 40);
-        doc.fontSize(11).fillColor(theme.textMuted).font("Helvetica").text(orgName.toUpperCase(), 50 + logoW, 50, { characterSpacing: 3 });
-        y = 68;
-        doc.fontSize(9).fillColor("#cbd5e1").font("Helvetica");
-        if (orgAddress) { doc.text(orgAddress, 50 + logoW, y); y += 12; }
-        if (orgPhone) { doc.text(orgPhone, 50 + logoW, y); y += 12; }
-        doc.moveTo(50, y + 4).lineTo(562, y + 4).strokeColor("#e2e8f0").lineWidth(0.3).stroke();
-        y += 14;
-        doc.fontSize(9).fillColor(theme.textMuted).font("Helvetica").text("INVOICE", 450, 50, { align: "right", width: 112 });
-        doc.fontSize(16).fillColor(theme.text).font("Helvetica-Bold").text(invoice.number, 400, 64, { align: "right", width: 162 });
-        doc.fontSize(9).fillColor(theme.textMuted).font("Helvetica").text(`${issuedFormatted}  ·  Due ${dueFormatted}`, 350, 84, { align: "right", width: 212 });
+        const textX = 50 + logoW;
+        const leftMaxW = Math.max(120, HEADER_RIGHT_META_X - HEADER_LEFT_GUTTER - textX);
+        const rightW = HEADER_RIGHT_META_W;
+        const rightX = HEADER_RIGHT_META_X;
+
+        doc.font("Helvetica").fontSize(11).fillColor(theme.textMuted)
+          .text(orgName.toUpperCase(), textX, 50, {
+            width: leftMaxW, characterSpacing: 3, ellipsis: true, lineBreak: false,
+          });
+        const leftEndY = drawHeaderInfoLines(
+          doc, textX, 68, leftMaxW, 9, "#cbd5e1",
+          [orgAddress, orgPhone], 2,
+        );
+
+        // Right meta column - measured.
+        doc.font("Helvetica").fontSize(9).fillColor(theme.textMuted)
+          .text("INVOICE", rightX + 100, 50, { align: "right", width: rightW - 100 });
+        const numH = doc.font("Helvetica-Bold").fontSize(16)
+          .heightOfString(invoice.number, { width: rightW });
+        doc.font("Helvetica-Bold").fontSize(16).fillColor(theme.text)
+          .text(invoice.number, rightX, 64, { align: "right", width: rightW });
+        const datesY = 64 + numH + 4;
+        doc.font("Helvetica").fontSize(9).fillColor(theme.textMuted)
+          .text(`${issuedFormatted}  ·  Due ${dueFormatted}`, rightX, datesY, {
+            align: "right", width: rightW,
+          });
+        const datesH = doc.heightOfString(`${issuedFormatted}  ·  Due ${dueFormatted}`, { width: rightW });
+        const rightEndY = datesY + datesH;
+
+        const dividerY = Math.max(leftEndY, rightEndY) + 6;
+        doc.moveTo(50, dividerY).lineTo(562, dividerY)
+          .strokeColor("#e2e8f0").lineWidth(0.3).stroke();
+        headerBottomY = dividerY + 10;
       } else {
+        // Default / classic theme — the bug-reported branch.
         const logoW = embedLogo(doc, logoBytes, 50, 44, 50, 50);
-        doc.fontSize(22).fillColor(theme.headerText).font("Helvetica-Bold").text(orgName, 50 + logoW, 50);
-        doc.fontSize(10).fillColor(theme.textMuted).font("Helvetica");
-        y = 78;
-        if (orgAddress) { doc.text(orgAddress, 50 + logoW, y); y += 14; }
-        if (orgPhone) { doc.text(orgPhone, 50 + logoW, y); y += 14; }
-        if (orgEmail) { doc.text(orgEmail, 50 + logoW, y); y += 14; }
-        if (orgWebsite) { doc.text(orgWebsite, 50 + logoW, y); y += 14; }
-        doc.fontSize(24).fillColor(theme.text).font("Helvetica-Bold").text(invoice.number, 350, 50, { align: "right" });
-        doc.fontSize(11).fillColor(theme.textMuted).font("Helvetica");
-        doc.text(`Status: ${invoice.status}`, 350, 80, { align: "right" });
-        doc.text(`Issued: ${issuedFormatted}`, 350, 96, { align: "right" });
-        doc.text(`Due: ${dueFormatted}`, 350, 112, { align: "right" });
+        const textX = 50 + logoW;
+        const leftMaxW = Math.max(120, HEADER_RIGHT_META_X - HEADER_LEFT_GUTTER - textX);
+        const rightW = HEADER_RIGHT_META_W;
+        const rightX = HEADER_RIGHT_META_X;
+
+        doc.font("Helvetica-Bold").fontSize(22).fillColor(theme.headerText)
+          .text(orgName, textX, 50, {
+            width: leftMaxW, ellipsis: true, lineBreak: false,
+          });
+        const nameH = doc.heightOfString(orgName, { width: leftMaxW, lineBreak: false });
+        const leftEndY = drawHeaderInfoLines(
+          doc, textX, 50 + nameH + 6, leftMaxW, 10, theme.textMuted,
+          [orgAddress, orgPhone, orgEmail, orgWebsite], 2,
+        );
+
+        // Right meta column - measured. Was hardcoded at y=80/96/112,
+        // which collided with multi-line addresses on the left.
+        doc.font("Helvetica-Bold").fontSize(24).fillColor(theme.text)
+          .text(invoice.number, rightX, 50, { align: "right", width: rightW });
+        const numH = doc.heightOfString(invoice.number, { width: rightW });
+        const rightEndY = drawHeaderMetaRows(
+          doc, rightX, 50 + numH + 6, rightW,
+          [
+            { text: `Status: ${invoice.status}`, size: 11, color: theme.textMuted },
+            { text: `Issued: ${issuedFormatted}`, size: 11, color: theme.textMuted },
+            { text: `Due: ${dueFormatted}`, size: 11, color: theme.textMuted },
+          ],
+        );
+        headerBottomY = Math.max(leftEndY, rightEndY);
       }
 
-      if (themeName !== "bold") {
-        if (themeName === "modern") {
-          doc.fontSize(10).fillColor(theme.textMuted).font("Helvetica");
-          doc.text(`Issued: ${issuedFormatted}`, 50, y);
-          doc.text(`Due: ${dueFormatted}`, 200, y);
-          y += 20;
-        }
+      // Modern reprints Issued/Due below the colored bar (the bar itself
+      // shows only INVOICE label + number + status). Bold puts everything
+      // inside the bar.
+      y = headerBottomY;
+      if (themeName === "modern") {
+        doc.font("Helvetica").fontSize(10).fillColor(theme.textMuted);
+        doc.text(`Issued: ${issuedFormatted}`, 50, y + 14);
+        doc.text(`Due: ${dueFormatted}`, 200, y + 14);
+        y += 14 + doc.heightOfString(`Issued: ${issuedFormatted}`) + 2;
       }
 
       y = Math.max(y, themeName === "minimal" ? 110 : 140) + 16;
@@ -1338,22 +1562,39 @@ export async function generateEstimatePdf(
       drawLuxuryFooter(doc, y, orgName, pageNum);
 
     } else {
+      // Task #475: same width-bounded, measured-height stacking the
+      // invoice generator now uses for non-luxury themes. Multi-line
+      // org address no longer overlaps phone / email / right meta.
       const logoW = embedLogo(doc, logoBytes, 50, 44, 50, 50);
-      doc.fontSize(22).fillColor(theme.headerText).font("Helvetica-Bold").text(orgName, 50 + logoW, 50);
-      doc.fontSize(10).fillColor(theme.textMuted).font("Helvetica");
-      y = 78;
-      if (orgAddress) { doc.text(orgAddress, 50 + logoW, y); y += 14; }
-      if (orgPhone) { doc.text(orgPhone, 50 + logoW, y); y += 14; }
-      if (orgEmail) { doc.text(orgEmail, 50 + logoW, y); y += 14; }
+      const textX = 50 + logoW;
+      const leftMaxW = Math.max(120, HEADER_RIGHT_META_X - HEADER_LEFT_GUTTER - textX);
+      const rightW = HEADER_RIGHT_META_W;
+      const rightX = HEADER_RIGHT_META_X;
 
-      doc.fontSize(24).fillColor(theme.text).font("Helvetica-Bold").text(estimate.number, 350, 50, { align: "right" });
-      doc.fontSize(11).fillColor(theme.textMuted).font("Helvetica");
-      doc.text(`ESTIMATE`, 350, 80, { align: "right" });
-      doc.text(`Status: ${estimate.status}`, 350, 96, { align: "right" });
-      doc.text(`Issued: ${issuedFormatted}`, 350, 112, { align: "right" });
-      if (expiryFormatted) doc.text(`Expires: ${expiryFormatted}`, 350, 128, { align: "right" });
+      doc.font("Helvetica-Bold").fontSize(22).fillColor(theme.headerText)
+        .text(orgName, textX, 50, {
+          width: leftMaxW, ellipsis: true, lineBreak: false,
+        });
+      const nameH = doc.heightOfString(orgName, { width: leftMaxW, lineBreak: false });
+      const leftEndY = drawHeaderInfoLines(
+        doc, textX, 50 + nameH + 6, leftMaxW, 10, theme.textMuted,
+        [orgAddress, orgPhone, orgEmail, orgWebsite], 2,
+      );
 
-      y = Math.max(y, 140) + 16;
+      doc.font("Helvetica-Bold").fontSize(24).fillColor(theme.text)
+        .text(estimate.number, rightX, 50, { align: "right", width: rightW });
+      const numH = doc.heightOfString(estimate.number, { width: rightW });
+      const metaRows: HeaderMetaRow[] = [
+        { text: "ESTIMATE", size: 11, color: theme.textMuted },
+        { text: `Status: ${estimate.status}`, size: 11, color: theme.textMuted },
+        { text: `Issued: ${issuedFormatted}`, size: 11, color: theme.textMuted },
+      ];
+      if (expiryFormatted) {
+        metaRows.push({ text: `Expires: ${expiryFormatted}`, size: 11, color: theme.textMuted });
+      }
+      const rightEndY = drawHeaderMetaRows(doc, rightX, 50 + numH + 6, rightW, metaRows);
+
+      y = Math.max(leftEndY, rightEndY, 140) + 16;
       doc.fontSize(9).fillColor(theme.textMuted).font("Helvetica-Bold").text("PREPARED FOR", 50, y, { characterSpacing: 1 });
       y += 16;
       doc.fontSize(13).fillColor(theme.text).font("Helvetica-Bold").text(estimate.clientName, 50, y);
@@ -1501,23 +1742,39 @@ export async function generateExpenseReceiptPdf(
     const orgPhone = org?.phone || "";
     const orgEmail = org?.email || "";
 
+    // Task #475: width-bounded, measured-height stacking so multi-line
+    // org address can't collide with the right-side EXPENSE RECEIPT
+    // / status / date / ID column.
     const logoW = embedLogo(doc, logoBytes, 50, 44, 50, 50);
-    doc.fontSize(22).fillColor("#0f172a").font("Helvetica-Bold").text(orgName, 50 + logoW, 50);
-    doc.fontSize(10).fillColor("#94a3b8").font("Helvetica");
-    let y = 78;
-    if (orgAddress) { doc.text(orgAddress, 50 + logoW, y); y += 14; }
-    if (orgPhone) { doc.text(orgPhone, 50 + logoW, y); y += 14; }
-    if (orgEmail) { doc.text(orgEmail, 50 + logoW, y); y += 14; }
+    const textX = 50 + logoW;
+    const leftMaxW = Math.max(120, HEADER_RIGHT_META_X - HEADER_LEFT_GUTTER - textX);
+    const rightW = HEADER_RIGHT_META_W;
+    const rightX = HEADER_RIGHT_META_X;
 
-    doc.fontSize(20).fillColor("#0f172a").font("Helvetica-Bold").text("EXPENSE RECEIPT", 350, 50, { align: "right" });
+    doc.font("Helvetica-Bold").fontSize(22).fillColor("#0f172a")
+      .text(orgName, textX, 50, { width: leftMaxW, ellipsis: true, lineBreak: false });
+    const nameH = doc.heightOfString(orgName, { width: leftMaxW, lineBreak: false });
+    const leftEndY = drawHeaderInfoLines(
+      doc, textX, 50 + nameH + 6, leftMaxW, 10, "#94a3b8",
+      [orgAddress, orgPhone, orgEmail], 2,
+    );
+
+    doc.font("Helvetica-Bold").fontSize(20).fillColor("#0f172a")
+      .text("EXPENSE RECEIPT", rightX, 50, { align: "right", width: rightW });
+    const labelH = doc.heightOfString("EXPENSE RECEIPT", { width: rightW });
     const statusColors: Record<string, string> = {
       DRAFT: "#6b7280", SUBMITTED: "#3b82f6", APPROVED: "#22c55e", REJECTED: "#b91c1c", REIMBURSED: "#a855f7",
     };
-    doc.fontSize(12).fillColor(statusColors[expense.status] || "#6b7280").font("Helvetica-Bold")
-      .text(expense.status, 350, 76, { align: "right" });
-    doc.fontSize(10).fillColor("#64748b").font("Helvetica")
-      .text(`Date: ${expense.date}`, 350, 96, { align: "right" });
-    doc.text(`ID: ${expense.id.slice(0, 8)}...`, 350, 112, { align: "right" });
+    const rightEndY = drawHeaderMetaRows(
+      doc, rightX, 50 + labelH + 6, rightW,
+      [
+        { text: expense.status, font: "Helvetica-Bold", size: 12, color: statusColors[expense.status] || "#6b7280" },
+        { text: `Date: ${expense.date}`, size: 10, color: "#64748b", gap: 4 },
+        { text: `ID: ${expense.id.slice(0, 8)}...`, size: 10, color: "#64748b" },
+      ],
+    );
+
+    let y = Math.max(leftEndY, rightEndY);
 
     if (expense.status === "APPROVED" || expense.status === "REIMBURSED") {
       doc.save();
