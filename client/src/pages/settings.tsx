@@ -955,14 +955,6 @@ export default function SettingsPage() {
                       </button>
                     ))}
                   </div>
-                  {/* Org-level default for whether invoice
-                      templates render the underlying time-entry breakdown
-                      (day headers, per-entry rows with time / project /
-                      ticket / description / hours / billable tag, weekly
-                      subtotal). Off by default. Per-invoice override on the
-                      invoice detail page lets users flip this for a single
-                      invoice. Money totals stay driven exclusively by line
-                      items. */}
                   <div
                     className="flex items-start justify-between gap-4 mt-6 pt-6"
                     style={{ borderTop: "1px solid var(--lux-border)" }}
