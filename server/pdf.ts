@@ -284,7 +284,11 @@ const ALLOWED_LOGO_PATH_PREFIXES = [
   "/api/uploads/logos/",
 ] as const;
 
-function isAllowedLogoUrl(absoluteUrl: string): boolean {
+// Exported for the SSRF regression suite at
+// `tests/unit/pdf-logo-loader-ssrf.test.ts`. That suite pins the
+// host + path allowlist behaviour so a future refactor can't silently
+// re-open the SSRF hole closed by Task #467.
+export function isAllowedLogoUrl(absoluteUrl: string): boolean {
   let u: URL;
   try {
     u = new URL(absoluteUrl);
@@ -318,6 +322,10 @@ function isAllowedLogoUrl(absoluteUrl: string): boolean {
 // so the PDF still renders without a logo. Anything outside the
 // allowlist (e.g. attacker-supplied http://169.254.169.254/) is rejected
 // silently — no fetch is issued.
+//
+// The SSRF guard is pinned by `tests/unit/pdf-logo-loader-ssrf.test.ts`
+// (Task #470). That suite also covers the parallel guard in PATCH
+// /api/org/settings, so changes here should keep both call sites in sync.
 export async function loadLogoBytes(
   logoUrl: string | null | undefined,
 ): Promise<Buffer | null> {
