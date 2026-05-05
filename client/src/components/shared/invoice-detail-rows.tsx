@@ -1,13 +1,3 @@
-/**
- * Task #465 — render the time-entry detail block for one aggregated
- * invoice line. Used by both the public client portal page and the
- * in-app invoice detail panel so the two views stay byte-equivalent.
- *
- * Pure presentation: never recomputes money totals. The `items`
- * stream is built server-side by `getInvoiceTimeEntryDetails` and the
- * `kind` discriminator decides which row variant to render.
- */
-
 export type DetailItem =
   | { kind: "day"; date: string; weekday: string; totalHours: number }
   | {
@@ -42,7 +32,6 @@ export function InvoiceDetailRows({
   testIdPrefix,
 }: {
   items: DetailItem[];
-  /** Number of columns in the parent table (so the detail rows span fully). */
   colSpan: number;
   testIdPrefix: string;
 }) {
@@ -91,7 +80,7 @@ export function InvoiceDetailRows({
               >
                 This week: {formatHM(it.billableHours)} billable
                 {" + "}
-                {formatHM(it.internalHours)} internal ={" "}
+                {formatHM(it.internalHours)} unbilled ={" "}
                 <span className="font-semibold not-italic">
                   {formatHM(it.totalHours)}
                 </span>
@@ -157,10 +146,7 @@ export function InvoiceDetailRows({
                   }}
                   data-testid={`${testIdPrefix}-tag-${it.id}`}
                 >
-                  {/* Task #465: the spec calls for a "billable tag";
-                      we use "Billable" / "Internal" to match the
-                      existing in-app worklog vocabulary. */}
-                  {it.billable ? "Billable" : "Internal"}
+                  {it.billable ? "Billable" : "Unbilled"}
                 </span>
               </div>
             </td>

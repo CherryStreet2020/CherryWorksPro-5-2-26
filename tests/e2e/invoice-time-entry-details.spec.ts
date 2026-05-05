@@ -1,5 +1,5 @@
 /**
- * Task #465 — Optional invoice worklog/time-entry detail rendering.
+ * E2E coverage for optional invoice worklog/time-entry detail rendering.
  *
  * Covers:
  * - Org-level default off + invoice override null → public page renders
@@ -43,10 +43,8 @@ async function buildSentInvoiceWithTwoBillableEntries(iso: any) {
     billable: true,
     notes: "ACME-102 fixed redirect bug",
   });
-  // One additional entry with effectively-empty notes — proves the
-  // description column on web renders blank instead of falling back
-  // to the project name. The notes column requires len >= 1, but
-  // extractTicketRef trims so " " yields { ticket: null, description: "" }.
+  // Whitespace-only notes — proves the desc cell renders blank
+  // (no project-name fallback). Notes column requires len >= 1.
   await seedTimeEntry(iso, project.id, {
     date: fmt(today),
     minutes: 30,

@@ -7,11 +7,8 @@ import {
   resolveShowTimeEntryDetails,
 } from "../../server/invoice-details";
 
-/**
- * Task #465 — pure-function tests for the worklog detail helper. The
- * SQL-shaped helper (`getInvoiceTimeEntryDetails`) is exercised by the
- * Playwright e2e in `tests/e2e/invoice-time-entry-details.spec.ts`.
- */
+// Unit tests for the pure helpers in server/invoice-details.ts.
+// SQL/integration coverage lives in the Playwright e2e.
 
 describe("extractTicketRef", () => {
   it("returns null ticket and empty description for null/empty notes", () => {

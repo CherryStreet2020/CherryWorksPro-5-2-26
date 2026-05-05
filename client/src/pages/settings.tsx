@@ -955,7 +955,7 @@ export default function SettingsPage() {
                       </button>
                     ))}
                   </div>
-                  {/* Task #465 — org-level default for whether invoice
+                  {/* Org-level default for whether invoice
                       templates render the underlying time-entry breakdown
                       (day headers, per-entry rows with time / project /
                       ticket / description / hours / billable tag, weekly

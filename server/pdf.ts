@@ -27,17 +27,10 @@ interface InvoiceWithDetails {
   currency?: string;
 }
 
-/**
- * Task #465 — render the time-entry detail block for a single
- * aggregated invoice line. Pure layout: never recomputes money totals.
- * Returns the new y-cursor; caller must respect it.
- *
- * `addPage` is invoked when a row would be orphaned at the page
- * bottom; the caller passes a `bottomLimit` (typically 720) and a
- * `pageReset(doc)` callback that re-establishes column header / fonts
- * after `doc.addPage()` so the table layout stays consistent across
- * pages.
- */
+// Renders the per-line time-entry block. Caller passes
+// `onPageBreak()` which must add a new page and return the new
+// top-y; this helper then re-emits its own column header on every
+// continuation page. Returns the new y cursor.
 function drawDetailBlock(
   doc: InstanceType<typeof PDFDocument>,
   startY: number,
@@ -57,7 +50,6 @@ function drawDetailBlock(
   const blockLeft = leftX + indent;
   const blockRight = rightX - 4;
   const blockW = blockRight - blockLeft;
-  // Column geometry inside the detail block.
   const cTime = blockLeft;
   const cTimeW = 60;
   const cProject = cTime + cTimeW + 6;
@@ -73,17 +65,33 @@ function drawDetailBlock(
 
   let y = startY + 4;
 
+  const drawHeader = (continued: boolean): number => {
+    doc.fontSize(7).font("Helvetica-Bold").fillColor(mutedColor);
+    const label = continued ? "TIME (cont.)" : "TIME";
+    doc.text(label, cTime, y, { width: cTimeW, characterSpacing: 0.5 });
+    doc.text("PROJECT", cProject, y, { width: cProjectW, characterSpacing: 0.5 });
+    doc.text("TICKET", cTicket, y, { width: cTicketW, characterSpacing: 0.5 });
+    doc.text("DESCRIPTION", cDesc, y, { width: cDescW, characterSpacing: 0.5 });
+    doc.text("HRS", cHrs, y, { width: cHrsW, align: "right", characterSpacing: 0.5 });
+    doc.text("STATUS", cTag, y, { width: cTagW, align: "right", characterSpacing: 0.5 });
+    y += 11;
+    doc.moveTo(blockLeft, y - 2).lineTo(blockRight, y - 2)
+      .strokeColor("#cbd5e1").lineWidth(0.6).stroke();
+    return y;
+  };
+
+  drawHeader(false);
+
   const ensureSpace = (rows: number, rowH: number = 12) => {
     if (y + rows * rowH > bottomLimit) {
       y = onPageBreak();
+      drawHeader(true);
     }
   };
 
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
     if (it.kind === "day") {
-      // Never orphan a day header at the bottom: require room for at least
-      // the header + one entry row.
       ensureSpace(2, 14);
       doc.fontSize(8.5).font("Helvetica-Bold").fillColor(textColor)
         .text(it.weekday, cTime, y, { width: blockW - 60, characterSpacing: 0.5 });
@@ -108,7 +116,7 @@ function drawDetailBlock(
       doc.font("Helvetica").fillColor(textColor)
         .text(formatHM(it.hours), cHrs, y, { width: cHrsW, align: "right" });
       doc.fontSize(7).fillColor(it.billable ? accentColor : "#94a3b8")
-        .text(it.billable ? "BILLABLE" : "INTERNAL", cTag, y, { width: cTagW, align: "right", characterSpacing: 0.5 });
+        .text(it.billable ? "BILLABLE" : "UNBILLED", cTag, y, { width: cTagW, align: "right", characterSpacing: 0.5 });
       y += 12;
     } else if (it.kind === "week") {
       ensureSpace(1, 14);
@@ -116,7 +124,7 @@ function drawDetailBlock(
       doc.moveTo(blockLeft, y).lineTo(blockRight, y)
         .strokeColor("#e5e7eb").lineWidth(0.4).stroke();
       y += 4;
-      const wkLabel = `This week: ${formatHM(it.billableHours)} billable + ${formatHM(it.internalHours)} internal = ${formatHM(it.totalHours)}`;
+      const wkLabel = `This week: ${formatHM(it.billableHours)} billable + ${formatHM(it.internalHours)} unbilled = ${formatHM(it.totalHours)}`;
       doc.fontSize(7.5).font("Helvetica-Oblique").fillColor(mutedColor)
         .text(wkLabel, cTime, y, { width: blockW, align: "right" });
       doc.font("Helvetica");
@@ -414,12 +422,8 @@ export async function generateInvoicePdf(
   invoice: InvoiceWithDetails,
   org?: OrgBranding,
   baseUrl?: string,
-  /**
-   * Task #465 — per-line time-entry detail items, pre-fetched by the
-   * caller (PDF must stay synchronous inside the draw loop). When this
-   * map is omitted or empty, the renderer behaves identically to the
-   * pre-#465 build — no detail rows, no extra headers.
-   */
+  // Per-line detail items, pre-fetched by the caller (PDF draw loop
+  // must stay synchronous). Undefined / empty => no detail rows.
   lineDetails?: Map<string, DetailItem[]>,
 ): Promise<Buffer> {
   const errors: string[] = [];
@@ -538,9 +542,6 @@ export async function generateInvoicePdf(
         doc.font("Helvetica").fillColor(theme.text);
         y += rowHeight + 14;
 
-        // Task #465 — render the worklog detail block under this aggregated
-        // line, when the resolved org/per-invoice flag is on and this
-        // particular line has joined entries. Money totals stay untouched.
         const detailItems = (line.id && lineDetails) ? lineDetails.get(line.id) : undefined;
         if (detailItems && detailItems.length > 0) {
           y = drawDetailBlock(doc, y, detailItems, {
@@ -557,9 +558,6 @@ export async function generateInvoicePdf(
               return drawTableHeader(LX.mt);
             },
           });
-          // drawDetailBlock leaves the doc in a smaller font / muted color;
-          // restore the outer luxury-row state so subsequent lines render
-          // with the right typography.
           doc.font("Helvetica").fontSize(10).fillColor(theme.text);
         }
 
@@ -782,7 +780,6 @@ export async function generateInvoicePdf(
         doc.moveTo(50, y).lineTo(562, y).strokeColor(theme.tableBorder).lineWidth(themeName === "minimal" ? 0.3 : 0.5).stroke();
         y += 6;
 
-        // Task #465 — render time-entry detail block under this line.
         const detailItems = lineDetails?.get(line.id);
         if (detailItems && detailItems.length > 0) {
           y = drawDetailBlock(doc, y, detailItems, {
@@ -799,8 +796,6 @@ export async function generateInvoicePdf(
               return ny;
             },
           });
-          // Restore outer-row typography after the detail block, which
-          // leaves the doc in a smaller muted font.
           doc.font("Helvetica").fontSize(11).fillColor(theme.text);
         }
       }
