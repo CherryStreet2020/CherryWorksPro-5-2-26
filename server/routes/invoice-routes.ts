@@ -1152,7 +1152,13 @@ app.get("/api/invoices/:id/details", requireManagerOrAbove, async (req, res) => 
       invoice.showTimeEntryDetails,
       orgData?.showTimeEntryDetails,
     );
-    const detailMap = await getInvoiceTimeEntryDetails(invoice.id, orgId);
+    // Skip the detail join entirely when the effective flag is off so
+    // we don't pay the join cost just to populate a hidden render.
+    // Callers still see the resolved override/orgDefault state and
+    // can flip the flag without an extra round-trip.
+    const detailMap = showDetails
+      ? await getInvoiceTimeEntryDetails(invoice.id, orgId)
+      : new Map();
     const lineDetails = Object.fromEntries(detailMap);
     return res.json({
       showTimeEntryDetails: showDetails,

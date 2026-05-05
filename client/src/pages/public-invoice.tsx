@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { Fragment, useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -240,9 +240,11 @@ export default function PublicInvoicePage({ token }: { token: string }) {
                       );
                     }
                     return (
-                      <>
+                      // React.Fragment with a stable key avoids the
+                      // "each child in a list should have a unique key"
+                      // warning that the bare `<>` form produced.
+                      <Fragment key={`line-${i}`}>
                         <tr
-                          key={`line-${i}`}
                           style={{ borderTop: "1px solid var(--lux-border, #e2e8f0)" }}
                           data-testid={`row-public-line-${i}`}
                         >
@@ -270,7 +272,7 @@ export default function PublicInvoicePage({ token }: { token: string }) {
                             testIdPrefix={`public-detail-${i}`}
                           />
                         )}
-                      </>
+                      </Fragment>
                     );
                   })}
                 </tbody>
