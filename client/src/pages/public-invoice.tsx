@@ -6,8 +6,10 @@ import { Download, CreditCard, AlertCircle, FileText } from "lucide-react";
 import { formatMoney, formatDate, formatPercent, formatHours } from "@/components/shared/format";
 import { isValidStripeUrl } from "@/lib/url-validation";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { InvoiceDetailRows, type DetailItem } from "@/components/shared/invoice-detail-rows";
 
 interface PublicLine {
+  id?: string;
   description: string;
   quantity: string;
   unitRate: string;
@@ -34,6 +36,11 @@ interface PublicInvoiceData {
   paidAmount: string;
   outstanding: string;
   stripeEnabled: boolean;
+  // Task #465 — set true when the org or per-invoice override turns
+  // on the time-entry breakdown. `lineDetails[lineId]` is the ordered
+  // stream of day/entry/week items for that aggregated line.
+  showTimeEntryDetails?: boolean;
+  lineDetails?: Record<string, DetailItem[]>;
 }
 
 export default function PublicInvoicePage({ token }: { token: string }) {
@@ -215,42 +222,57 @@ export default function PublicInvoicePage({ token }: { token: string }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.lines.map((line, i) => (
-                    line.isHeader ? (
-                      <tr
-                        key={i}
-                        style={{ borderTop: "1px solid var(--lux-border, #e2e8f0)", background: "var(--lux-bg, #f8fafc)" }}
-                        data-testid={`row-public-header-${i}`}
-                      >
-                        <td colSpan={4} className="px-4 py-2 text-sm font-bold" style={{ color: "var(--lux-text)" }}>
-                          {line.description}
-                        </td>
-                      </tr>
-                    ) : (
-                    <tr
-                      key={i}
-                      style={{ borderTop: "1px solid var(--lux-border, #e2e8f0)" }}
-                      data-testid={`row-public-line-${i}`}
-                    >
-                      <td className="px-4 py-2.5" style={{ color: "var(--lux-text-secondary)" }}>
-                        {line.description}
-                      </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--lux-text-secondary)" }}>
-                        {formatHours(line.quantity)}
-                      </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--lux-text-secondary)" }}>
-                        {formatMoney(line.unitRate, data?.currency || "USD")}
-                      </td>
-                      <td
-                        className="px-4 py-2.5 text-right font-medium tabular-nums"
-                        style={{ color: "var(--lux-text)" }}
-                        data-testid={`text-public-line-amount-${i}`}
-                      >
-                        {formatMoney(line.amount, data?.currency || "USD")}
-                      </td>
-                    </tr>
-                    )
-                  ))}
+                  {data.lines.map((line, i) => {
+                    const detailItems = data.showTimeEntryDetails && line.id
+                      ? data.lineDetails?.[line.id]
+                      : undefined;
+                    if (line.isHeader) {
+                      return (
+                        <tr
+                          key={i}
+                          style={{ borderTop: "1px solid var(--lux-border, #e2e8f0)", background: "var(--lux-bg, #f8fafc)" }}
+                          data-testid={`row-public-header-${i}`}
+                        >
+                          <td colSpan={4} className="px-4 py-2 text-sm font-bold" style={{ color: "var(--lux-text)" }}>
+                            {line.description}
+                          </td>
+                        </tr>
+                      );
+                    }
+                    return (
+                      <>
+                        <tr
+                          key={`line-${i}`}
+                          style={{ borderTop: "1px solid var(--lux-border, #e2e8f0)" }}
+                          data-testid={`row-public-line-${i}`}
+                        >
+                          <td className="px-4 py-2.5" style={{ color: "var(--lux-text-secondary)" }}>
+                            {line.description}
+                          </td>
+                          <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--lux-text-secondary)" }}>
+                            {formatHours(line.quantity)}
+                          </td>
+                          <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--lux-text-secondary)" }}>
+                            {formatMoney(line.unitRate, data?.currency || "USD")}
+                          </td>
+                          <td
+                            className="px-4 py-2.5 text-right font-medium tabular-nums"
+                            style={{ color: "var(--lux-text)" }}
+                            data-testid={`text-public-line-amount-${i}`}
+                          >
+                            {formatMoney(line.amount, data?.currency || "USD")}
+                          </td>
+                        </tr>
+                        {detailItems && detailItems.length > 0 && (
+                          <InvoiceDetailRows
+                            items={detailItems}
+                            colSpan={4}
+                            testIdPrefix={`public-detail-${i}`}
+                          />
+                        )}
+                      </>
+                    );
+                  })}
                 </tbody>
                 <tfoot>
                   <tr style={{ borderTop: "1px solid var(--lux-border, #e2e8f0)" }}>

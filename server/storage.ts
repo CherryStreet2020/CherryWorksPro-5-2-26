@@ -1641,6 +1641,7 @@ export class DatabaseStorage {
         invoice: invoices,
         clientName: clients.name,
         clientEmail: clients.email,
+        clientLogoUrl: clients.logoUrl,
       })
       .from(invoices)
       .innerJoin(clients, eq(invoices.clientId, clients.id))
@@ -1658,6 +1659,7 @@ export class DatabaseStorage {
       ...row.invoice,
       clientName: row.clientName || "",
       clientEmail: row.clientEmail || "",
+      clientLogoUrl: row.clientLogoUrl || null,
       lines,
     };
   }

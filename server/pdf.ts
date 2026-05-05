@@ -2,6 +2,8 @@ import type { InvoiceLine } from "@shared/schema";
 import PDFDocument from "pdfkit";
 import * as fs from "fs";
 import * as path from "path";
+import type { DetailItem } from "./invoice-details";
+import { formatHM } from "./invoice-details";
 
 interface InvoiceWithDetails {
   id: string;
@@ -23,6 +25,102 @@ interface InvoiceWithDetails {
   lines: InvoiceLine[];
   publicToken?: string | null;
   currency?: string;
+}
+
+/**
+ * Task #465 — render the time-entry detail block for a single
+ * aggregated invoice line. Pure layout: never recomputes money totals.
+ * Returns the new y-cursor; caller must respect it.
+ *
+ * `addPage` is invoked when a row would be orphaned at the page
+ * bottom; the caller passes a `bottomLimit` (typically 720) and a
+ * `pageReset(doc)` callback that re-establishes column header / fonts
+ * after `doc.addPage()` so the table layout stays consistent across
+ * pages.
+ */
+function drawDetailBlock(
+  doc: InstanceType<typeof PDFDocument>,
+  startY: number,
+  items: DetailItem[],
+  opts: {
+    leftX: number;
+    rightX: number;
+    bottomLimit: number;
+    accentColor: string;
+    mutedColor: string;
+    textColor: string;
+    onPageBreak: () => number;
+  },
+): number {
+  const { leftX, rightX, bottomLimit, accentColor, mutedColor, textColor, onPageBreak } = opts;
+  const indent = 12;
+  const blockLeft = leftX + indent;
+  const blockRight = rightX - 4;
+  const blockW = blockRight - blockLeft;
+  // Column geometry inside the detail block.
+  const cTime = blockLeft;
+  const cTimeW = 64;
+  const cTicket = cTime + cTimeW + 6;
+  const cTicketW = 60;
+  const cDesc = cTicket + cTicketW + 6;
+  const cTagW = 56;
+  const cHrsW = 36;
+  const cTag = blockRight - cTagW;
+  const cHrs = cTag - 8 - cHrsW;
+  const cDescW = cHrs - 8 - cDesc;
+
+  let y = startY + 4;
+
+  const ensureSpace = (rows: number, rowH: number = 12) => {
+    if (y + rows * rowH > bottomLimit) {
+      y = onPageBreak();
+    }
+  };
+
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (it.kind === "day") {
+      // Never orphan a day header at the bottom: require room for at least
+      // the header + one entry row.
+      ensureSpace(2, 14);
+      doc.fontSize(8.5).font("Helvetica-Bold").fillColor(textColor)
+        .text(it.weekday, cTime, y, { width: blockW - 60, characterSpacing: 0.5 });
+      doc.fontSize(8).font("Helvetica").fillColor(mutedColor)
+        .text(`${formatHM(it.totalHours)} h`, cTime, y, { width: blockW, align: "right" });
+      y += 14;
+      doc.moveTo(blockLeft, y - 2).lineTo(blockRight, y - 2)
+        .strokeColor("#e5e7eb").lineWidth(0.4).stroke();
+    } else if (it.kind === "entry") {
+      ensureSpace(1);
+      const timeText = it.startTime && it.endTime
+        ? `${it.startTime}–${it.endTime}`
+        : "—";
+      doc.fontSize(8).font("Helvetica").fillColor(mutedColor)
+        .text(timeText, cTime, y, { width: cTimeW });
+      doc.font("Helvetica-Bold").fillColor(textColor)
+        .text(it.ticket || "", cTicket, y, { width: cTicketW });
+      doc.font("Helvetica").fillColor(mutedColor)
+        .text(it.description || it.project, cDesc, y, { width: cDescW, lineGap: 1, ellipsis: true, height: 11 });
+      doc.font("Helvetica").fillColor(textColor)
+        .text(formatHM(it.hours), cHrs, y, { width: cHrsW, align: "right" });
+      doc.fontSize(7).fillColor(it.billable ? accentColor : "#94a3b8")
+        .text(it.billable ? "BILLABLE" : "INTERNAL", cTag, y, { width: cTagW, align: "right", characterSpacing: 0.5 });
+      y += 12;
+    } else if (it.kind === "week") {
+      ensureSpace(1, 14);
+      y += 2;
+      doc.moveTo(blockLeft, y).lineTo(blockRight, y)
+        .strokeColor("#e5e7eb").lineWidth(0.4).stroke();
+      y += 4;
+      const wkLabel = `This week: ${formatHM(it.billableHours)} billable + ${formatHM(it.internalHours)} internal = ${formatHM(it.totalHours)}`;
+      doc.fontSize(7.5).font("Helvetica-Oblique").fillColor(mutedColor)
+        .text(wkLabel, cTime, y, { width: blockW, align: "right" });
+      doc.font("Helvetica");
+      y += 12;
+    }
+  }
+
+  return y + 4;
 }
 
 export interface OrgBranding {
@@ -312,6 +410,13 @@ export async function generateInvoicePdf(
   invoice: InvoiceWithDetails,
   org?: OrgBranding,
   baseUrl?: string,
+  /**
+   * Task #465 — per-line time-entry detail items, pre-fetched by the
+   * caller (PDF must stay synchronous inside the draw loop). When this
+   * map is omitted or empty, the renderer behaves identically to the
+   * pre-#465 build — no detail rows, no extra headers.
+   */
+  lineDetails?: Map<string, DetailItem[]>,
 ): Promise<Buffer> {
   const errors: string[] = [];
   if (!invoice.number) errors.push("Invoice number is missing");
@@ -428,6 +533,32 @@ export async function generateInvoicePdf(
           .text(fmt(amt), colX[3], y, { width: colW[3], align: "right" });
         doc.font("Helvetica").fillColor(theme.text);
         y += rowHeight + 14;
+
+        // Task #465 — render the worklog detail block under this aggregated
+        // line, when the resolved org/per-invoice flag is on and this
+        // particular line has joined entries. Money totals stay untouched.
+        const detailItems = (line.id && lineDetails) ? lineDetails.get(line.id) : undefined;
+        if (detailItems && detailItems.length > 0) {
+          y = drawDetailBlock(doc, y, detailItems, {
+            leftX: contentLeft,
+            rightX: contentRight,
+            bottomLimit: 700,
+            accentColor: theme.accent || "#0f172a",
+            mutedColor: "#64748b",
+            textColor: theme.text,
+            onPageBreak: () => {
+              drawLuxuryFooter(doc, 700, orgName, pageNum);
+              pageNum++;
+              doc.addPage({ size: "LETTER", margin: LX.ml });
+              return drawTableHeader(LX.mt);
+            },
+          });
+          // drawDetailBlock leaves the doc in a smaller font / muted color;
+          // restore the outer luxury-row state so subsequent lines render
+          // with the right typography.
+          doc.font("Helvetica").fontSize(10).fillColor(theme.text);
+        }
+
         doc.moveTo(contentLeft, y - 6).lineTo(contentRight, y - 6)
           .strokeColor("#f1f5f9").lineWidth(0.5).stroke();
       }
@@ -646,6 +777,28 @@ export async function generateInvoicePdf(
         y += rowHeight + 8;
         doc.moveTo(50, y).lineTo(562, y).strokeColor(theme.tableBorder).lineWidth(themeName === "minimal" ? 0.3 : 0.5).stroke();
         y += 6;
+
+        // Task #465 — render time-entry detail block under this line.
+        const detailItems = lineDetails?.get(line.id);
+        if (detailItems && detailItems.length > 0) {
+          y = drawDetailBlock(doc, y, detailItems, {
+            leftX: 50,
+            rightX: 562,
+            bottomLimit: 700,
+            accentColor: theme.accent,
+            mutedColor: theme.textMuted,
+            textColor: theme.text,
+            onPageBreak: () => {
+              doc.addPage();
+              const ny = drawTableHeader(50);
+              doc.font("Helvetica").fontSize(11).fillColor(theme.text);
+              return ny;
+            },
+          });
+          // Restore outer-row typography after the detail block, which
+          // leaves the doc in a smaller muted font.
+          doc.font("Helvetica").fontSize(11).fillColor(theme.text);
+        }
       }
 
       y += 16;

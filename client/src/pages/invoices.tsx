@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import { InvoiceDetailRows, type DetailItem } from "@/components/shared/invoice-detail-rows";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -270,6 +272,40 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
       const res = await fetch(`/api/invoices/${viewInvoice!.id}/revisions`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch revisions");
       return res.json();
+    },
+  });
+
+  // Task #465 — fetch the per-line worklog detail breakdown plus the
+  // effective flag for the currently-open invoice. Disabled when the
+  // detail panel is closed so we don't pay for the join until needed.
+  // The "in-app preview" reuses this same payload so it stays
+  // visually consistent with the public web view and the PDF.
+  const { data: invoiceDetails } = useQuery<{
+    showTimeEntryDetails: boolean;
+    override: boolean | null;
+    orgDefault: boolean;
+    lineDetails: Record<string, DetailItem[]>;
+  }>({
+    queryKey: ["/api/invoices", viewInvoice?.id, "details"],
+    enabled: !!viewInvoice,
+    queryFn: async () => {
+      const res = await fetch(`/api/invoices/${viewInvoice!.id}/details`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch invoice details");
+      return res.json();
+    },
+  });
+
+  const toggleInvoiceDetailsMutation = useMutation({
+    mutationFn: async ({ invoiceId, value }: { invoiceId: string; value: boolean | null }) => {
+      const res = await apiRequest("PATCH", `/api/invoices/${invoiceId}`, { showTimeEntryDetails: value });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices", viewInvoice?.id, "details"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
 
@@ -1521,6 +1557,52 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
             )}
 
             <FormSection title="Line Items">
+              {/* Task #465 — per-invoice override of the org-level
+                  "show time-entry breakdown" toggle. Lets users flip
+                  the detail block on/off for a single invoice without
+                  changing org config. "Use default" clears the
+                  override and falls back to the org setting. Money
+                  totals are unaffected. */}
+              {viewInvoice && invoiceDetails && (
+                <div
+                  className="flex items-center justify-between gap-4 mb-3 px-3 py-2.5 rounded-lg"
+                  style={{ background: "var(--lux-surface-alt)", border: "1px solid var(--lux-border)" }}
+                  data-testid="row-toggle-time-entry-details"
+                >
+                  <div className="flex flex-col">
+                    <span className="text-xs font-semibold" style={{ color: "var(--lux-text)" }}>
+                      Show worklog detail under each line
+                    </span>
+                    <span className="text-[11px]" style={{ color: "var(--lux-text-muted)" }}>
+                      {invoiceDetails.override === null
+                        ? `Using org default (${invoiceDetails.orgDefault ? "on" : "off"})`
+                        : `Overridden for this invoice (${invoiceDetails.override ? "on" : "off"})`}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Switch
+                      checked={!!invoiceDetails.showTimeEntryDetails}
+                      disabled={toggleInvoiceDetailsMutation.isPending}
+                      onCheckedChange={(checked) => {
+                        toggleInvoiceDetailsMutation.mutate({ invoiceId: viewInvoice.id, value: checked });
+                      }}
+                      data-testid="switch-show-time-entry-details"
+                    />
+                    {invoiceDetails.override !== null && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        disabled={toggleInvoiceDetailsMutation.isPending}
+                        onClick={() => toggleInvoiceDetailsMutation.mutate({ invoiceId: viewInvoice.id, value: null })}
+                        data-testid="button-clear-time-entry-details-override"
+                      >
+                        Use default
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
               <div
                 className="rounded-lg overflow-hidden overflow-x-auto"
                 style={{ border: "1px solid var(--lux-border)" }}
@@ -1536,8 +1618,24 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
                     </tr>
                   </thead>
                   <tbody>
-                    {viewInvoice.lines?.map((line) => (
-                      line.isHeader ? (
+                    {viewInvoice.lines?.flatMap((line) => {
+                      // Task #465 — render the worklog detail rows directly
+                      // under each non-header invoice line so the breakdown
+                      // appears beneath its aggregate line, never grouped at
+                      // the bottom of the table.
+                      const detailItems =
+                        invoiceDetails?.showTimeEntryDetails && !line.isHeader
+                          ? invoiceDetails.lineDetails?.[line.id]
+                          : undefined;
+                      const detailRow = detailItems && detailItems.length > 0 ? (
+                        <InvoiceDetailRows
+                          key={`details-${line.id}`}
+                          items={detailItems}
+                          colSpan={isEditable && canManage ? 5 : 4}
+                          testIdPrefix={`inapp-detail-${line.id}`}
+                        />
+                      ) : null;
+                      const lineRow = line.isHeader ? (
                         <tr key={line.id} style={{ borderTop: "1px solid var(--lux-border)" }} data-testid={`row-header-${line.id}`}>
                           <td colSpan={isEditable && canManage ? 5 : 4} className="px-4 py-2 text-sm font-bold" style={{ color: "var(--lux-text)", background: "var(--lux-surface-alt)" }}>{line.description}</td>
                         </tr>
@@ -1588,8 +1686,9 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
                           </>
                         )}
                       </tr>
-                      )
-                    ))}
+                      );
+                      return detailRow ? [lineRow, detailRow] : [lineRow];
+                    })}
                   </tbody>
                   <tfoot>
                     <tr style={{ borderTop: "1px solid var(--lux-border)" }}>

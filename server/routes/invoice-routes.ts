@@ -572,11 +572,21 @@ app.patch(
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
       }
-      if (!EDITABLE_STATUSES.includes(invoice.status)) {
-        return res.status(400).json({ message: "Cannot edit this invoice" });
-      }
 
       const parsed = updateInvoiceSchema.parse(req.body);
+
+      // Task #465 — `showTimeEntryDetails` is a display-only override (no
+      // money impact) and must be settable on locked invoices too (sent,
+      // paid, void). If it's the only field on the patch, allow it; if
+      // it's bundled with financial fields, the regular editability guard
+      // still applies for the rest.
+      const isDisplayOnlyPatch =
+        parsed.showTimeEntryDetails !== undefined &&
+        Object.keys(parsed).every((k) => k === "showTimeEntryDetails");
+
+      if (!isDisplayOnlyPatch && !EDITABLE_STATUSES.includes(invoice.status)) {
+        return res.status(400).json({ message: "Cannot edit this invoice" });
+      }
 
       if (Number(invoice.total) > 0 && (!invoice.lines || invoice.lines.length === 0)) {
         return res.status(400).json({ message: "Cannot save an invoice with a total greater than zero and no line items" });
@@ -612,6 +622,15 @@ app.patch(
         if (parsed.currency !== undefined) updates.currency = parsed.currency;
         if (parsed.exchangeRate !== undefined) updates.exchangeRate = parsed.exchangeRate;
         await db.update(invoices).set(updates).where(eq(invoices.id, invoice.id));
+      }
+
+      // Task #465 — per-invoice override for the worklog detail block.
+      // `null` clears the override (falls back to org default), true/false
+      // forces the toggle for this invoice. Money totals untouched.
+      if (parsed.showTimeEntryDetails !== undefined) {
+        await db.update(invoices)
+          .set({ showTimeEntryDetails: parsed.showTimeEntryDetails })
+          .where(and(eq(invoices.id, invoice.id), eq(invoices.orgId, orgId)));
       }
 
       const updated = await storage.getInvoice(invoice.id, orgId);
@@ -1117,6 +1136,35 @@ app.post(
   },
 );
 
+// Task #465 — return the per-line worklog detail breakdown plus the
+// effective `showTimeEntryDetails` flag for an invoice. Used by the
+// in-app invoice detail panel to render the same day-grouped table
+// shown on the public client portal and the PDF.
+app.get("/api/invoices/:id/details", requireManagerOrAbove, async (req, res) => {
+  try {
+    const orgId = req.session.orgId!;
+    const invoice = await storage.getInvoice(req.params.id as string, orgId);
+    if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+
+    const orgData = await storage.getOrg(orgId);
+    const { getInvoiceTimeEntryDetails, resolveShowTimeEntryDetails } = await import("../invoice-details");
+    const showDetails = resolveShowTimeEntryDetails(
+      (invoice as any).showTimeEntryDetails,
+      orgData?.showTimeEntryDetails,
+    );
+    const detailMap = await getInvoiceTimeEntryDetails(invoice.id, orgId);
+    const lineDetails = Object.fromEntries(detailMap);
+    return res.json({
+      showTimeEntryDetails: showDetails,
+      override: (invoice as any).showTimeEntryDetails ?? null,
+      orgDefault: !!orgData?.showTimeEntryDetails,
+      lineDetails,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ message: sanitizeErrorMessage(err) });
+  }
+});
+
 app.get("/api/invoices/:id/pdf", requireManagerOrAbove, async (req, res) => {
   try {
     const orgId = req.session.orgId!;
@@ -1127,9 +1175,20 @@ app.get("/api/invoices/:id/pdf", requireManagerOrAbove, async (req, res) => {
     }
 
     const { generateInvoicePdf } = await import("../pdf");
+    const { getInvoiceTimeEntryDetails, resolveShowTimeEntryDetails } = await import("../invoice-details");
     const orgData = await storage.getOrg(orgId);
     const dlBaseUrl = (process.env.BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
-    const pdfBuffer = await generateInvoicePdf(invoice, orgData, dlBaseUrl);
+    // Task #465 — pre-fetch detail rows once before pdfkit's draw loop
+    // (renderer must stay synchronous). Skip the join entirely when the
+    // effective flag is off so the no-detail rendering stays unchanged.
+    const showDetails = resolveShowTimeEntryDetails(
+      (invoice as any).showTimeEntryDetails,
+      orgData?.showTimeEntryDetails,
+    );
+    const lineDetails = showDetails
+      ? await getInvoiceTimeEntryDetails(invoice.id, orgId)
+      : undefined;
+    const pdfBuffer = await generateInvoicePdf(invoice, orgData, dlBaseUrl, lineDetails);
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
@@ -1184,6 +1243,23 @@ app.get("/api/public/invoices/:token", publicTokenLimiter, async (req, res) => {
 
     const client = await storage.getClientById(invoice.clientId, invoice.orgId);
 
+    // Task #465 — when the effective worklog-details flag is on, ship
+    // per-line detail items alongside `lines` so the public web view
+    // renders the same day-grouped breakdown as the PDF. The flag itself
+    // is also returned so the renderer doesn't have to recompute it.
+    const orgData = await storage.getOrg(invoice.orgId);
+    const { getInvoiceTimeEntryDetails, resolveShowTimeEntryDetails } = await import("../invoice-details");
+    const showDetails = resolveShowTimeEntryDetails(
+      (invoice as any).showTimeEntryDetails,
+      orgData?.showTimeEntryDetails,
+    );
+    const detailMap = showDetails
+      ? await getInvoiceTimeEntryDetails(invoice.id, invoice.orgId)
+      : null;
+    const lineDetails: Record<string, unknown> | undefined = detailMap
+      ? Object.fromEntries(detailMap)
+      : undefined;
+
     return res.json({
       number: invoice.number,
       status: invoice.status,
@@ -1193,6 +1269,7 @@ app.get("/api/public/invoices/:token", publicTokenLimiter, async (req, res) => {
       currency: invoice.currency,
       portalToken: client?.portalToken || null,
       lines: invoice.lines.map((l) => ({
+        id: l.id,
         description: l.description,
         quantity: l.quantity,
         unitRate: l.unitRate,
@@ -1209,6 +1286,8 @@ app.get("/api/public/invoices/:token", publicTokenLimiter, async (req, res) => {
       paidAmount: invoice.paidAmount,
       outstanding: outstanding.toFixed(2),
       stripeEnabled,
+      showTimeEntryDetails: showDetails,
+      lineDetails,
     });
   } catch {
     return res.status(500).json({ message: "Internal error" });
@@ -1227,9 +1306,19 @@ app.get("/api/public/invoices/:token/pdf", publicTokenLimiter, async (req, res) 
     }
 
     const { generateInvoicePdf } = await import("../pdf");
+    const { getInvoiceTimeEntryDetails, resolveShowTimeEntryDetails } = await import("../invoice-details");
     const orgData = await storage.getOrg(invoice.orgId);
     const pubBaseUrl = (process.env.BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
-    const pdfBuffer = await generateInvoicePdf(invoice, orgData, pubBaseUrl);
+    // Task #465 — public PDF respects the same effective flag as the
+    // authenticated PDF and the public web view.
+    const showDetails = resolveShowTimeEntryDetails(
+      (invoice as any).showTimeEntryDetails,
+      orgData?.showTimeEntryDetails,
+    );
+    const lineDetails = showDetails
+      ? await getInvoiceTimeEntryDetails(invoice.id, invoice.orgId)
+      : undefined;
+    const pdfBuffer = await generateInvoicePdf(invoice, orgData, pubBaseUrl, lineDetails);
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(

@@ -425,6 +425,7 @@ export default function SettingsPage() {
     reminderSubjectTemplate: "",
     reminderBodyTemplate: "",
     invoiceTheme: "classic",
+    showTimeEntryDetails: false,
     autoPostJournalEntries: true,
     defaultBillRate: "125",
     marketingSendMaxAttempts: "5",
@@ -532,6 +533,7 @@ export default function SettingsPage() {
         reminderSubjectTemplate: org.reminderSubjectTemplate || "",
         reminderBodyTemplate: org.reminderBodyTemplate || "",
         invoiceTheme: org.invoiceTheme || "classic",
+        showTimeEntryDetails: org.showTimeEntryDetails ?? false,
         autoPostJournalEntries: org.autoPostJournalEntries ?? true,
         defaultBillRate: String(org.defaultBillRate ?? 125),
         marketingSendMaxAttempts: String(org.marketingSendMaxAttempts ?? 5),
@@ -659,6 +661,7 @@ export default function SettingsPage() {
       reminderSubjectTemplate: form.reminderSubjectTemplate || null,
       reminderBodyTemplate: form.reminderBodyTemplate || null,
       invoiceTheme: form.invoiceTheme,
+      showTimeEntryDetails: !!form.showTimeEntryDetails,
       autoPostJournalEntries: form.autoPostJournalEntries,
       defaultBillRate: Number(form.defaultBillRate) || 125,
       marketingSendMaxAttempts: Math.max(1, Math.min(20, Number(form.marketingSendMaxAttempts) || 5)),
@@ -951,6 +954,36 @@ export default function SettingsPage() {
                         <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>{theme.desc}</p>
                       </button>
                     ))}
+                  </div>
+                  {/* Task #465 — org-level default for whether invoice
+                      templates render the underlying time-entry breakdown
+                      (day headers, per-entry rows with time / project /
+                      ticket / description / hours / billable tag, weekly
+                      subtotal). Off by default. Per-invoice override on the
+                      invoice detail page lets users flip this for a single
+                      invoice. Money totals stay driven exclusively by line
+                      items. */}
+                  <div
+                    className="flex items-start justify-between gap-4 mt-6 pt-6"
+                    style={{ borderTop: "1px solid var(--lux-border)" }}
+                    data-testid="row-org-show-time-entry-details"
+                  >
+                    <div className="flex-1">
+                      <Label className="text-sm font-semibold" style={{ color: "var(--lux-text)" }}>
+                        Show worklog detail on invoices
+                      </Label>
+                      <p className="text-xs mt-1" style={{ color: "var(--lux-text-muted)" }}>
+                        When on, every invoice (PDF, public web view, and in-app preview) shows the
+                        underlying day-by-day time entries — start/end time, project, ticket, hours,
+                        and billable tag — under each aggregated line. Per-invoice override is
+                        available from the invoice detail page.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={!!form.showTimeEntryDetails}
+                      onCheckedChange={(checked) => setForm({ ...form, showTimeEntryDetails: checked })}
+                      data-testid="switch-org-show-time-entry-details"
+                    />
                   </div>
                 </FormSection>
               </CardContent>
