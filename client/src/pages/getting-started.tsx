@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import type { LucideIcon } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import {
@@ -741,6 +742,8 @@ function StepComplete() {
   );
 }
 
+type NonAdminTile = { icon: LucideIcon; label: string; href: string; color: string; testId: string };
+
 function NonAdminComplete({ firstName, role }: { firstName?: string; role?: string }) {
   const [, navigate] = useLocation();
   const [show, setShow] = useState(false);
@@ -750,7 +753,7 @@ function NonAdminComplete({ firstName, role }: { firstName?: string; role?: stri
   const subhead = isManager
     ? "Your profile is ready. Head to your dashboard to review your team's projects and time."
     : "Your profile is ready. Head to your dashboard to start tracking time and submitting expenses.";
-  const tiles: { icon: any; label: string; href: string; color: string; testId: string }[] = isManager
+  const tiles: NonAdminTile[] = isManager
     ? [
         { icon: LayoutDashboard, label: "Dashboard", href: "/", color: "var(--mc-red)", testId: "tile-dashboard" },
         { icon: FolderKanban, label: "Projects", href: "/projects", color: "#3b82f6", testId: "tile-projects" },
@@ -1549,7 +1552,7 @@ export default function GettingStartedPage() {
   useDocumentTitle("Getting Started");
   const { user } = useAuth();
   const [, location] = useLocation();
-  const role = (user as any)?.role as string | undefined;
+  const role = user?.role;
   const isAdmin = role === "ADMIN";
   const isManager = role === "MANAGER";
 
@@ -1579,7 +1582,7 @@ export default function GettingStartedPage() {
   if (!isAdmin) {
     return (
       <div className="min-h-full flex items-center justify-center px-6 py-16" style={{ background: "var(--mc-page-bg)" }} data-testid="getting-started-non-admin">
-        <NonAdminComplete firstName={(user as any)?.firstName || (user as any)?.name?.split(" ")[0]} role={role} />
+        <NonAdminComplete firstName={user?.firstName || user?.name?.split(" ")[0] || undefined} role={role ?? undefined} />
       </div>
     );
   }
