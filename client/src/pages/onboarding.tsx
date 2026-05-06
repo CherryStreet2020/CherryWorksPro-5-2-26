@@ -109,7 +109,8 @@ export default function OnboardingPage() {
   }, [currentStep, profileValid, businessValid, paymentValid, addressValid]);
 
   if (!user || (user as any).onboardingComplete) {
-    return <Redirect to="/getting-started" />;
+    const role = (user as any)?.role;
+    return <Redirect to={role === "ADMIN" ? "/getting-started" : "/"} />;
   }
 
   const handleFinish = async () => {

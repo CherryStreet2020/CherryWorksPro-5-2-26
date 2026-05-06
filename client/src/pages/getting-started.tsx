@@ -1530,6 +1530,14 @@ export default function GettingStartedPage() {
     return <WelcomeScreen onStart={() => { setShowWelcome(false); }} role={role} />;
   }
 
+  if (!isAdmin) {
+    return (
+      <div className="min-h-full flex items-center justify-center px-6 py-16" style={{ background: "var(--mc-page-bg)" }} data-testid="getting-started-non-admin">
+        <StepComplete />
+      </div>
+    );
+  }
+
   const steps = status?.steps || [];
   const completedCount = status?.completedCount || 0;
   const progressPct = steps.length > 0 ? Math.round((completedCount / steps.length) * 100) : 0;
