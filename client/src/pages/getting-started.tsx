@@ -741,6 +741,52 @@ function StepComplete() {
   );
 }
 
+function NonAdminComplete({ firstName }: { firstName?: string }) {
+  const [, navigate] = useLocation();
+  const [show, setShow] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setShow(true), 100); return () => clearTimeout(t); }, []);
+  const greeting = firstName ? `You're all set, ${firstName}.` : "You're all set.";
+  const tiles: { icon: any; label: string; href: string; color: string; testId: string }[] = [
+    { icon: LayoutDashboard, label: "Dashboard", href: "/", color: "var(--mc-red)", testId: "tile-dashboard" },
+    { icon: Clock, label: "Track Time", href: "/time", color: "#3b82f6", testId: "tile-track-time" },
+    { icon: Receipt, label: "Submit Expense", href: "/expenses", color: "#a855f7", testId: "tile-submit-expense" },
+    { icon: UserCircle, label: "My Profile", href: "/settings", color: "var(--mc-green)", testId: "tile-my-profile" },
+  ];
+  return (
+    <div className="max-w-xl mx-auto text-center transition-all duration-700" style={{ opacity: show ? 1 : 0, transform: show ? "translateY(0)" : "translateY(20px)" }}>
+      <div className="w-24 h-24 rounded-3xl mx-auto mb-8 flex items-center justify-center" style={{ background: "var(--mc-green-bg)", boxShadow: "0 0 60px rgba(34,197,94,0.1)" }}>
+        <Rocket className="w-12 h-12" style={{ color: "var(--mc-green)" }} />
+      </div>
+      <h2 className="text-3xl md:text-4xl font-bold mc-text mb-4" data-testid="text-non-admin-greeting">{greeting}</h2>
+      <p className="text-lg mb-10" style={{ color: "var(--mc-text-secondary)" }}>
+        Your profile is ready. Head to your dashboard to start tracking time and submitting expenses.
+      </p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+        {tiles.map((t, i) => (
+          <button
+            key={i}
+            onClick={() => navigate(t.href)}
+            className="rounded-xl p-4 text-center cursor-pointer transition-all hover:scale-[1.03]"
+            style={{ background: "var(--mc-surface)", border: "1px solid var(--mc-border-subtle)" }}
+            data-testid={t.testId}
+          >
+            <t.icon className="w-6 h-6 mx-auto mb-2" style={{ color: t.color }} />
+            <p className="text-xs font-semibold" style={{ color: "var(--mc-text-muted)" }}>{t.label}</p>
+          </button>
+        ))}
+      </div>
+      <button
+        onClick={() => navigate("/")}
+        className="inline-flex items-center gap-3 px-10 py-4 text-lg font-bold text-white rounded-2xl cursor-pointer transition-all hover:scale-[1.03]"
+        style={{ background: "linear-gradient(135deg, #cf3339, #e74c3c)", boxShadow: "0 4px 30px rgba(207,51,57,0.4)" }}
+        data-testid="button-go-dashboard"
+      >
+        Go to Dashboard <ArrowRight className="w-5 h-5" />
+      </button>
+    </div>
+  );
+}
+
 function getGreeting(): string {
   const h = new Date().getHours();
   if (h < 12) return "Good morning";
@@ -1533,7 +1579,7 @@ export default function GettingStartedPage() {
   if (!isAdmin) {
     return (
       <div className="min-h-full flex items-center justify-center px-6 py-16" style={{ background: "var(--mc-page-bg)" }} data-testid="getting-started-non-admin">
-        <StepComplete />
+        <NonAdminComplete firstName={(user as any)?.firstName || (user as any)?.name?.split(" ")[0]} />
       </div>
     );
   }
