@@ -108,7 +108,10 @@ export default function OnboardingPage() {
     return true;
   }, [currentStep, profileValid, businessValid, paymentValid, addressValid]);
 
-  if (!user || (user as any).onboardingComplete) {
+  if (!user) {
+    return <Redirect to="/login?auth=required" />;
+  }
+  if ((user as any).onboardingComplete) {
     const role = (user as any)?.role;
     return <Redirect to={role === "ADMIN" ? "/getting-started" : "/"} />;
   }
