@@ -755,13 +755,13 @@ function NonAdminComplete({ firstName, role }: { firstName?: string; role?: stri
         { icon: LayoutDashboard, label: "Dashboard", href: "/", color: "var(--mc-red)", testId: "tile-dashboard" },
         { icon: FolderKanban, label: "Projects", href: "/projects", color: "#3b82f6", testId: "tile-projects" },
         { icon: Users, label: "Team", href: "/team", color: "#a855f7", testId: "tile-team" },
-        { icon: UserCircle, label: "My Profile", href: "/settings", color: "var(--mc-green)", testId: "tile-my-profile" },
+        { icon: UserCircle, label: "My Profile", href: "/profile", color: "var(--mc-green)", testId: "tile-my-profile" },
       ]
     : [
         { icon: LayoutDashboard, label: "Dashboard", href: "/", color: "var(--mc-red)", testId: "tile-dashboard" },
         { icon: Clock, label: "Track Time", href: "/time", color: "#3b82f6", testId: "tile-track-time" },
         { icon: Receipt, label: "Submit Expense", href: "/expenses", color: "#a855f7", testId: "tile-submit-expense" },
-        { icon: UserCircle, label: "My Profile", href: "/settings", color: "var(--mc-green)", testId: "tile-my-profile" },
+        { icon: UserCircle, label: "My Profile", href: "/profile", color: "var(--mc-green)", testId: "tile-my-profile" },
       ];
   return (
     <div className="max-w-xl mx-auto text-center transition-all duration-700" style={{ opacity: show ? 1 : 0, transform: show ? "translateY(0)" : "translateY(20px)" }}>
