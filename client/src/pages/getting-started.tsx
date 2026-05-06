@@ -1538,25 +1538,40 @@ export default function GettingStartedPage() {
   useDocumentTitle("Getting Started");
   const { user } = useAuth();
   const [, location] = useLocation();
+  const role = (user as any)?.role as string | undefined;
+  const isAdmin = role === "ADMIN";
+  const isManager = role === "MANAGER";
+
   const { data: status, isLoading } = useQuery<{ steps: Step[]; completedCount: number; totalSteps: number; allComplete: boolean }>({
     queryKey: ["/api/implementation-status"],
+    enabled: isAdmin,
   });
   const { data: onboardingStatus } = useQuery<{ onboardingComplete: boolean; completedSteps: number[]; totalSteps: number }>({
     queryKey: ["/api/onboarding/status"],
+    enabled: isAdmin,
   });
   const [showWelcome, setShowWelcome] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>("setup");
 
-  const { data: clients } = useQuery<any[]>({ queryKey: ["/api/clients"] });
-  const { data: kpis } = useQuery<any>({ queryKey: ["/api/reports/executive-kpis"] });
-  const { data: timeEntries } = useQuery<any[]>({ queryKey: ["/api/time-entries"] });
+  const { data: clients } = useQuery<any[]>({ queryKey: ["/api/clients"], enabled: isAdmin });
+  const { data: kpis } = useQuery<any>({ queryKey: ["/api/reports/executive-kpis"], enabled: isAdmin });
+  const { data: timeEntries } = useQuery<any[]>({ queryKey: ["/api/time-entries"], enabled: isAdmin });
 
   useEffect(() => {
+    if (!isAdmin) return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("welcome") === "true") {
       setShowWelcome(true);
     }
-  }, []);
+  }, [isAdmin]);
+
+  if (!isAdmin) {
+    return (
+      <div className="min-h-full flex items-center justify-center px-6 py-16" style={{ background: "var(--mc-page-bg)" }} data-testid="getting-started-non-admin">
+        <NonAdminComplete firstName={(user as any)?.firstName || (user as any)?.name?.split(" ")[0]} />
+      </div>
+    );
+  }
 
   if (isLoading) return (
     <div className="min-h-full flex items-center justify-center" style={{ background: "var(--mc-page-bg)" }}>
@@ -1567,21 +1582,10 @@ export default function GettingStartedPage() {
     </div>
   );
 
-  const role = (user as any)?.role as string | undefined;
   const stepConfig = getStepConfig(role);
-  const isAdmin = role === "ADMIN";
-  const isManager = role === "MANAGER";
 
   if (showWelcome) {
     return <WelcomeScreen onStart={() => { setShowWelcome(false); }} role={role} />;
-  }
-
-  if (!isAdmin) {
-    return (
-      <div className="min-h-full flex items-center justify-center px-6 py-16" style={{ background: "var(--mc-page-bg)" }} data-testid="getting-started-non-admin">
-        <NonAdminComplete firstName={(user as any)?.firstName || (user as any)?.name?.split(" ")[0]} />
-      </div>
-    );
   }
 
   const steps = status?.steps || [];
