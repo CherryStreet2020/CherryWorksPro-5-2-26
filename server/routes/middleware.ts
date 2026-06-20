@@ -303,10 +303,17 @@ export async function tenantRateLimiter(req: Request, res: Response, next: NextF
   if (!orgId) return next();
 
   let maxRpm = isTestEnv ? 1_000_000 : 600;
-  try {
-    const org = await storage.getOrg(orgId);
-    if (org?.rateLimitRpm && org.rateLimitRpm > 0) maxRpm = org.rateLimitRpm;
-  } catch {}
+  // In test mode keep the effectively-unlimited cap: the per-org override
+  // below would otherwise reset maxRpm to the org's stored rateLimitRpm
+  // (schema default 600, see shared/schema.ts), undoing the test bypass for
+  // the tenant bucket and re-introducing spurious 429s under the parallel
+  // suite. Production/dev are unaffected (isTestEnv is false there anyway).
+  if (!isTestEnv) {
+    try {
+      const org = await storage.getOrg(orgId);
+      if (org?.rateLimitRpm && org.rateLimitRpm > 0) maxRpm = org.rateLimitRpm;
+    } catch {}
+  }
 
   const tenantCheck = checkTokenBucket(tenantBuckets, `tenant:${orgId}`, maxRpm);
   if (!tenantCheck.allowed) {
