@@ -4155,9 +4155,16 @@ export class DatabaseStorage {
       let amountOwed = 0;
       const missingProjectIds = new Set<string>();
       for (const e of unpaidEntries) {
-        const rate = costRateByProject[e.projectId] || 0;
-        amountOwed += (e.minutes / 60) * rate;
+        // Use the rate snapshot captured when the hours were logged, falling
+        // back to the current project rate. This MUST match the per-entry math
+        // in the payout create handler and /api/my/earnings so the Outstanding
+        // Balance foots to the sum of the line items the admin and consultant
+        // see — round each line, then sum (not sum-then-round).
         const snapshotMissing = e.costRateSnapshot == null || String(e.costRateSnapshot) === "";
+        const rate = !snapshotMissing
+          ? Number(e.costRateSnapshot)
+          : (costRateByProject[e.projectId] || 0);
+        amountOwed += round2((e.minutes / 60) * rate);
         if (snapshotMissing && !costRateDefinedForProject[e.projectId]) {
           missingProjectIds.add(e.projectId);
         }

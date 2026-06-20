@@ -217,7 +217,10 @@ export default function PayoutsPage() {
   function openPayoutForTeamMember(c: TeamMemberSummary) {
     setSelectedTeamMember(c);
     setPayTeamMemberId(c.teamMemberId);
-    setPayAmount(String(c.amountOwed));
+    // Pre-fill the UNPAID TIME value only — never the combined balance, which
+    // also includes already-pending payouts and would double-pay them. For an
+    // itemized payout the server re-derives the total from the selected lines.
+    setPayAmount(String(c.unpaidTimeValue));
     setPayMethod(c.paymentMethod || "");
     setPayoutDialogOpen(true);
   }
@@ -457,7 +460,7 @@ export default function PayoutsPage() {
             <p className="text-sm py-8 text-center" style={{ color: "var(--lux-text-muted)" }}>No active team members found</p>
           ) : (
             <div className="space-y-2">
-              {summary.filter(c => c.amountOwed > 0).sort((a, b) => b.amountOwed - a.amountOwed).map(c => (
+              {summary.filter(c => c.unpaidTimeValue > 0).sort((a, b) => b.unpaidTimeValue - a.unpaidTimeValue).map(c => (
                 <div
                   key={c.teamMemberId}
                   className="flex items-center gap-3 p-3 rounded-lg transition-colors"
@@ -471,7 +474,7 @@ export default function PayoutsPage() {
                     </p>
                   </div>
                   <div className="text-right mr-3">
-                    <p className="text-sm font-bold tabular-nums" style={{ color: "#f59e0b" }}>{formatMoney(c.amountOwed, baseCurrency)}</p>
+                    <p className="text-sm font-bold tabular-nums" style={{ color: "#f59e0b" }}>{formatMoney(c.unpaidTimeValue, baseCurrency)}</p>
                     {c.paymentMethod && (
                       <p className="text-[10px]" style={{ color: "var(--lux-text-muted)" }}>via {c.paymentMethod}</p>
                     )}
@@ -481,9 +484,9 @@ export default function PayoutsPage() {
                   </Button>
                 </div>
               ))}
-              {summary.filter(c => c.amountOwed <= 0).length > 0 && (
+              {summary.filter(c => c.unpaidTimeValue <= 0).length > 0 && (
                 <p className="text-xs pt-2" style={{ color: "var(--lux-text-muted)" }}>
-                  {summary.filter(c => c.amountOwed <= 0).length} team member(s) fully paid
+                  {summary.filter(c => c.unpaidTimeValue <= 0).length} team member(s) with no unpaid time
                 </p>
               )}
             </div>
@@ -670,7 +673,7 @@ export default function PayoutsPage() {
                   <SelectTrigger data-testid="select-payout-team-member"><SelectValue placeholder="Select team member" /></SelectTrigger>
                   <SelectContent>
                     {summary?.map(c => (
-                      <SelectItem key={c.teamMemberId} value={c.teamMemberId}>{c.teamMemberName} — {formatMoney(c.amountOwed, baseCurrency)} owed</SelectItem>
+                      <SelectItem key={c.teamMemberId} value={c.teamMemberId}>{c.teamMemberName} — {formatMoney(c.unpaidTimeValue, baseCurrency)} unpaid</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
