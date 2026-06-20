@@ -59,8 +59,7 @@ waitForPort = 5000
 [userenv.development]
 
 [userenv.shared]
-BANKING_ENCRYPTION_KEY = "306f9d9cc8462c185557a6ecca355fe5d0a97e15b187e7c2c902705ac066f6a3"
-SMTP_ENCRYPTION_KEY = "2f9cae8a885f23164a70e5549f5525b8c22142a93249ee88dd7d3d13fb342cfa"
+# Encryption keys (BANKING_ENCRYPTION_KEY, SMTP_ENCRYPTION_KEY) live in Replit Secrets (encrypted store), NOT here. Never commit secrets to .replit.
 
 [userenv.production]
 SKIP_MIGRATION_REPLAY_CHECK = "1"
