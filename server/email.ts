@@ -39,35 +39,68 @@ export function encryptSmtpPassword(plaintext: string): string {
   return "v2:" + salt.toString("hex") + ":" + iv.toString("hex") + ":" + tag.toString("hex") + ":" + encrypted.toString("hex");
 }
 
-export function decryptSmtpPassword(ciphertext: string): string {
+/**
+ * Keys to try when decrypting, current key first. During a key rotation, set
+ * SMTP_ENCRYPTION_KEY to the new key and SMTP_ENCRYPTION_KEY_OLD to the previous
+ * key so existing ciphertext (stored SMTP passwords and OAuth refresh tokens)
+ * stays readable until it is re-encrypted under the new key. encryptSmtpPassword
+ * always uses the current key. Read dynamically so the fallback can be
+ * added/removed via env. AES-GCM throws on the wrong key, so trying each is safe.
+ */
+function smtpDecryptKeys(): string[] {
+  // The current key is required. If it is absent, decryptSmtpPassword must fail
+  // loudly (as before this change) rather than silently reading via the old key:
+  // in that same misconfiguration encryptSmtpPassword has no current key and
+  // stores NEW secrets as plaintext, so an old-key-only decrypt would mask a
+  // broken, insecure setup. The old key is only ever a *fallback* to the current.
+  if (!SMTP_ENCRYPTION_KEY) return [];
+  const keys = [SMTP_ENCRYPTION_KEY];
+  const old = process.env.SMTP_ENCRYPTION_KEY_OLD;
+  if (old && old !== SMTP_ENCRYPTION_KEY) keys.push(old);
+  return keys;
+}
+
+function decryptSmtpPasswordWithSecret(ciphertext: string, secret: string): string {
   if (ciphertext.startsWith("v2:")) {
-    if (!SMTP_ENCRYPTION_KEY) throw new Error("SMTP_ENCRYPTION_KEY is required to decrypt SMTP passwords");
     const parts = ciphertext.split(":");
     if (parts.length !== 5) throw new Error("Invalid v2 encrypted format");
     const salt = parts[1];
     const iv = Buffer.from(parts[2], "hex");
     const tag = Buffer.from(parts[3], "hex");
     const encrypted = Buffer.from(parts[4], "hex");
-    const key = deriveSmtpKey(SMTP_ENCRYPTION_KEY, salt);
+    const key = deriveSmtpKey(secret, salt);
     const decipher = createDecipheriv("aes-256-gcm", key, iv);
     decipher.setAuthTag(tag);
     return decipher.update(encrypted) + decipher.final("utf8");
   }
+  const key = deriveSmtpKey(secret, LEGACY_SMTP_SALT);
+  const parts = ciphertext.split(":");
+  if (parts.length !== 3) throw new Error("Invalid encrypted format");
+  const iv = Buffer.from(parts[0], "hex");
+  const tag = Buffer.from(parts[1], "hex");
+  const encrypted = Buffer.from(parts[2], "hex");
+  const decipher = createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(tag);
+  return decipher.update(encrypted) + decipher.final("utf8");
+}
 
-  if (ciphertext.includes(":")) {
-    if (!SMTP_ENCRYPTION_KEY) throw new Error("SMTP_ENCRYPTION_KEY is required to decrypt SMTP passwords");
-    const key = deriveSmtpKey(SMTP_ENCRYPTION_KEY, LEGACY_SMTP_SALT);
-    const parts = ciphertext.split(":");
-    if (parts.length !== 3) throw new Error("Invalid encrypted format");
-    const iv = Buffer.from(parts[0], "hex");
-    const tag = Buffer.from(parts[1], "hex");
-    const encrypted = Buffer.from(parts[2], "hex");
-    const decipher = createDecipheriv("aes-256-gcm", key, iv);
-    decipher.setAuthTag(tag);
-    return decipher.update(encrypted) + decipher.final("utf8");
+export function decryptSmtpPassword(ciphertext: string): string {
+  // Plaintext (no v2 prefix and no delimiter) is returned unchanged, matching
+  // prior behavior for unencrypted/legacy-plaintext values.
+  if (!ciphertext.startsWith("v2:") && !ciphertext.includes(":")) return ciphertext;
+  const keys = smtpDecryptKeys();
+  if (keys.length === 0) throw new Error("SMTP_ENCRYPTION_KEY is required to decrypt SMTP passwords");
+  let lastErr: unknown;
+  for (const secret of keys) {
+    try {
+      return decryptSmtpPasswordWithSecret(ciphertext, secret);
+    } catch (err) {
+      lastErr = err;
+    }
   }
-
-  return ciphertext;
+  throw lastErr instanceof Error
+    ? lastErr
+    : new Error("Failed to decrypt SMTP secret with any configured key");
 }
 
 export interface SmtpConfig {

@@ -250,8 +250,24 @@ export function encryptField(plaintext: string): string {
   return "enc:v2:" + salt.toString("hex") + ":" + iv.toString("hex") + ":" + tag.toString("hex") + ":" + encrypted.toString("hex");
 }
 
-export function decryptField(ciphertext: string): string {
-  if (!ciphertext.startsWith("enc:")) return ciphertext;
+/**
+ * Keys to try when decrypting, current key first. During a key rotation, set
+ * BANKING_ENCRYPTION_KEY to the new key and BANKING_ENCRYPTION_KEY_OLD to the
+ * previous key so existing ciphertext stays readable until it is re-encrypted
+ * under the new key (see SECURITY-replit-key-rotation-plan.md). encryptField
+ * always uses the current key, so new writes are immediately under the new key.
+ * Read dynamically so the fallback can be added/removed via env without a code
+ * change. AES-GCM authenticates on decrypt, so the wrong key throws rather than
+ * returning garbage — which makes "try current, then old" safe.
+ */
+function bankingDecryptKeys(): string[] {
+  const keys = [BANKING_ENCRYPTION_KEY];
+  const old = process.env.BANKING_ENCRYPTION_KEY_OLD;
+  if (old && old !== BANKING_ENCRYPTION_KEY) keys.push(old);
+  return keys;
+}
+
+function decryptFieldWithSecret(ciphertext: string, secret: string): string {
   const afterEnc = ciphertext.slice(4);
   if (afterEnc.startsWith("v2:")) {
     const parts = afterEnc.slice(3).split(":");
@@ -260,7 +276,7 @@ export function decryptField(ciphertext: string): string {
     const iv = Buffer.from(parts[1], "hex");
     const tag = Buffer.from(parts[2], "hex");
     const encrypted = Buffer.from(parts[3], "hex");
-    const key = deriveBankingKey(BANKING_ENCRYPTION_KEY, salt);
+    const key = deriveBankingKey(secret, salt);
     const decipher = createDecipheriv("aes-256-gcm", key, iv);
     decipher.setAuthTag(tag);
     return decipher.update(encrypted) + decipher.final("utf8");
@@ -270,10 +286,26 @@ export function decryptField(ciphertext: string): string {
   const iv = Buffer.from(parts[0], "hex");
   const tag = Buffer.from(parts[1], "hex");
   const encrypted = Buffer.from(parts[2], "hex");
-  const key = deriveBankingKey(BANKING_ENCRYPTION_KEY, LEGACY_BANKING_SALT);
+  const key = deriveBankingKey(secret, LEGACY_BANKING_SALT);
   const decipher = createDecipheriv("aes-256-gcm", key, iv);
   decipher.setAuthTag(tag);
   return decipher.update(encrypted) + decipher.final("utf8");
+}
+
+export function decryptField(ciphertext: string): string {
+  if (!ciphertext.startsWith("enc:")) return ciphertext;
+  const keys = bankingDecryptKeys();
+  let lastErr: unknown;
+  for (const secret of keys) {
+    try {
+      return decryptFieldWithSecret(ciphertext, secret);
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr instanceof Error
+    ? lastErr
+    : new Error("Failed to decrypt banking field with any configured key");
 }
 
 function encryptBankingFields(data: Record<string, unknown>): Record<string, unknown> {
