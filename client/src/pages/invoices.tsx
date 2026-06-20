@@ -232,6 +232,10 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
 
   const [linkCopied, setLinkCopied] = useState(false);
   const [sendEmailOpen, setSendEmailOpen] = useState(false);
+  // Task #467: per-org dismissal of the "upload your logo" banner that
+  // appears on the invoice viewer when the org has no logo set. Read on
+  // mount so a refresh doesn't re-show a previously-dismissed banner.
+  const [uploadLogoBannerDismissed, setUploadLogoBannerDismissed] = useState(false);
 
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
@@ -766,6 +770,21 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
     setPaymentOpen(false);
     setInternalNotes((inv as any).notes || "");
   }
+
+  // Task #467: hydrate the upload-logo banner dismissal flag from
+  // localStorage once we know the org id. Re-runs when the org changes
+  // (e.g. user switches orgs without a hard reload).
+  useEffect(() => {
+    const orgId = (orgSettings as any)?.id;
+    if (!orgId) return;
+    try {
+      const dismissed = window.localStorage.getItem(`cherry.uploadLogoBannerDismissed:${orgId}`);
+      setUploadLogoBannerDismissed(dismissed === "1");
+    } catch {
+      // localStorage may be unavailable (private mode, SSR) — fall back to showing the banner.
+      setUploadLogoBannerDismissed(false);
+    }
+  }, [(orgSettings as any)?.id]);
 
   useEffect(() => {
     if (initialInvoiceId && invoices && !initialIdHandled) {
@@ -1551,6 +1570,64 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
               </FormSection>
             )}
 
+            {/* Task #467: nudge admins (the only ones who land in this view)
+                to upload an org logo when their PDFs are rendering without
+                one. The dismissal persists in localStorage per-org so it
+                doesn't nag forever. The customer-facing public invoice
+                page (client/src/pages/public-invoice.tsx) intentionally
+                does NOT show this banner.
+
+                Task #468: only show this prompt once the org has at least
+                one invoice or one client — i.e. they're actually about to
+                send something branded. Brand-new orgs with no data yet
+                shouldn't see the nag from day one. The hasInvoices /
+                hasClients flags come from /api/org/settings. */}
+            {orgSettings
+              && !orgSettings.logoUrl
+              && !uploadLogoBannerDismissed
+              && (orgSettings.hasInvoices || orgSettings.hasClients) && (
+              <div
+                className="flex items-start gap-3 px-3 py-2.5 rounded-md text-xs"
+                style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)", color: "#92400e" }}
+                data-testid="banner-upload-logo-prompt"
+              >
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "#f59e0b" }} />
+                <div className="flex-1">
+                  <p className="font-medium" style={{ color: "var(--lux-text)" }}>
+                    Add your organization logo
+                  </p>
+                  <p className="mt-0.5" style={{ color: "var(--lux-text-muted)" }}>
+                    Your invoice PDFs and emails will look more professional with a logo at the top.
+                  </p>
+                  <Link
+                    href="/settings"
+                    className="inline-block mt-1.5 text-xs font-medium underline"
+                    style={{ color: "var(--color-accent)" }}
+                    data-testid="link-upload-logo"
+                  >
+                    Upload logo in settings →
+                  </Link>
+                </div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6 shrink-0"
+                  onClick={() => {
+                    try {
+                      const orgKey = (orgSettings as any)?.id || "default";
+                      window.localStorage.setItem(`cherry.uploadLogoBannerDismissed:${orgKey}`, "1");
+                    } catch {}
+                    setUploadLogoBannerDismissed(true);
+                  }}
+                  aria-label="Dismiss"
+                  title="Dismiss"
+                  data-testid="button-dismiss-upload-logo-banner"
+                >
+                  <XCircle className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            )}
+
             <FormSection title="Line Items">
               {viewInvoice && invoiceDetails && (
                 <div
@@ -1674,6 +1751,39 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
                       );
                       return detailRow ? [lineRow, detailRow] : [lineRow];
                     })}
+                    {(() => {
+                      const unallocated = invoiceDetails?.showTimeEntryDetails
+                        ? invoiceDetails.lineDetails?.["__unallocated__"]
+                        : undefined;
+                      if (!unallocated || unallocated.length === 0) return null;
+                      const cs = isEditable && canManage ? 5 : 4;
+                      return (
+                        <>
+                          <tr
+                            key="unallocated-header"
+                            style={{ borderTop: "1px solid var(--lux-border)" }}
+                            data-testid="row-unallocated-worklog-header"
+                          >
+                            <td
+                              colSpan={cs}
+                              className="px-4 py-2 text-sm font-bold uppercase tracking-wider"
+                              style={{
+                                color: "var(--lux-text)",
+                                background: "var(--lux-surface-alt)",
+                              }}
+                            >
+                              Additional worklog (unbilled time for this client)
+                            </td>
+                          </tr>
+                          <InvoiceDetailRows
+                            key="unallocated-rows"
+                            items={unallocated}
+                            colSpan={cs}
+                            testIdPrefix="inapp-detail-unallocated"
+                          />
+                        </>
+                      );
+                    })()}
                   </tbody>
                   <tfoot>
                     <tr style={{ borderTop: "1px solid var(--lux-border)" }}>

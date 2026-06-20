@@ -123,7 +123,7 @@ export const resetPasswordLimiter = rateLimit({
 
 export const publicTokenLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 10,
+  max: isTestEnv ? 1000 : 10,
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: "Too many requests, please try again later" },

@@ -1,6 +1,12 @@
 import { db } from "./db";
-import { timeEntries, invoiceLines, projects, users, services } from "@shared/schema";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { timeEntries, invoiceLines, invoices, projects, users, services } from "@shared/schema";
+import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+
+// Synthetic key used in the lineDetails Map for time entries that match the
+// invoice's client but were NOT rolled into a specific invoice line at
+// generation time (e.g. manually-created invoices). Frontend / PDF render
+// these as an "Additional worklog" section beneath the line items.
+export const UNALLOCATED_KEY = "__unallocated__";
 
 // Display-only: groups a sent invoice's time entries into day/entry/week
 // rows per line. Money totals come from invoice_lines. Queries are org-scoped.
@@ -91,17 +97,45 @@ export interface JoinedEntry {
 }
 
 // Returns Map<lineId, DetailItem[]> for invoice lines with time entries.
+//
+// In addition to entries linked to a line via time_entries.invoice_line_id
+// (the "rolled up at generation" case), this also surfaces entries that
+// belong to the invoice's client but have not been billed yet
+// (invoiced=false AND invoice_line_id IS NULL). Those entries are grouped
+// under the synthetic key UNALLOCATED_KEY so manually-created invoices can
+// still show a worklog section. They are deliberately limited to entries
+// that are NOT linked to any other invoice, so the same entry cannot
+// appear on two invoices' worklogs at the same time.
 export async function getInvoiceTimeEntryDetails(
   invoiceId: string,
   orgId: string,
 ): Promise<Map<string, DetailItem[]>> {
+  const [invoice] = await db
+    .select({ id: invoices.id, clientId: invoices.clientId })
+    .from(invoices)
+    .where(and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)));
+  if (!invoice) return new Map();
+
   const lines = await db
     .select({ id: invoiceLines.id })
     .from(invoiceLines)
     .where(and(eq(invoiceLines.invoiceId, invoiceId), eq(invoiceLines.orgId, orgId)));
 
   const lineIds = lines.map(l => l.id);
-  if (lineIds.length === 0) return new Map();
+  const lineIdSet = new Set(lineIds);
+
+  // Build the entry filter:
+  //   (invoice_line_id IN this invoice's lines)
+  //   OR
+  //   (invoice_line_id IS NULL AND invoiced=false AND project.client_id = invoice.client_id)
+  const linkedClause = lineIds.length > 0
+    ? inArray(timeEntries.invoiceLineId, lineIds)
+    : sql`false`;
+  const unallocatedClause = and(
+    isNull(timeEntries.invoiceLineId),
+    eq(timeEntries.invoiced, false),
+    eq(projects.clientId, invoice.clientId),
+  );
 
   const rows = await db
     .select({
@@ -114,11 +148,14 @@ export async function getInvoiceTimeEntryDetails(
       endTime: timeEntries.endTime,
       invoiceLineId: timeEntries.invoiceLineId,
       projectName: projects.name,
+      projectClientId: projects.clientId,
       userName: users.name,
       serviceName: services.name,
     })
     .from(timeEntries)
     // leftJoin so deleted projects/users don't drop entries; fallback labels below.
+    // Note: projects join is org-scoped only (no clientId predicate) so the
+    // unallocatedClause can filter on projects.clientId without dropping rows.
     .leftJoin(
       projects,
       and(eq(timeEntries.projectId, projects.id), eq(projects.orgId, orgId)),
@@ -133,27 +170,40 @@ export async function getInvoiceTimeEntryDetails(
     )
     .where(and(
       eq(timeEntries.orgId, orgId),
-      eq(timeEntries.invoiced, true),
-      inArray(timeEntries.invoiceLineId, lineIds),
+      or(linkedClause, unallocatedClause),
     ))
     .orderBy(asc(timeEntries.date), asc(timeEntries.startTime));
 
-  const lineIdSet = new Set(lineIds);
-  const byLine = new Map<string, JoinedEntry[]>();
+  const byBucket = new Map<string, JoinedEntry[]>();
   for (const r of rows) {
-    if (!r.invoiceLineId || !lineIdSet.has(r.invoiceLineId)) continue;
-    const list = byLine.get(r.invoiceLineId) || [];
+    let bucket: string;
+    if (r.invoiceLineId && lineIdSet.has(r.invoiceLineId)) {
+      bucket = r.invoiceLineId;
+    } else if (r.invoiceLineId == null && r.projectClientId === invoice.clientId) {
+      bucket = UNALLOCATED_KEY;
+    } else {
+      continue;
+    }
+    const list = byBucket.get(bucket) || [];
     list.push({
-      ...r,
+      id: r.id,
+      date: r.date,
+      minutes: r.minutes,
+      billable: r.billable,
+      notes: r.notes,
+      startTime: r.startTime,
+      endTime: r.endTime,
+      invoiceLineId: r.invoiceLineId,
       projectName: r.projectName ?? "(deleted project)",
       userName: r.userName ?? "(deleted user)",
-    } as JoinedEntry);
-    byLine.set(r.invoiceLineId, list);
+      serviceName: r.serviceName,
+    });
+    byBucket.set(bucket, list);
   }
 
   const out = new Map<string, DetailItem[]>();
-  for (const [lineId, entries] of byLine.entries()) {
-    out.set(lineId, buildDetailItems(entries));
+  for (const [bucket, entries] of byBucket.entries()) {
+    out.set(bucket, buildDetailItems(entries));
   }
   return out;
 }

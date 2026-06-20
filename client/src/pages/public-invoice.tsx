@@ -272,6 +272,36 @@ export default function PublicInvoicePage({ token }: { token: string }) {
                       </Fragment>
                     );
                   })}
+                  {(() => {
+                    const unallocated = data.showTimeEntryDetails
+                      ? data.lineDetails?.["__unallocated__"]
+                      : undefined;
+                    if (!unallocated || unallocated.length === 0) return null;
+                    return (
+                      <Fragment key="unallocated">
+                        <tr
+                          style={{
+                            borderTop: "1px solid var(--lux-border, #e2e8f0)",
+                            background: "var(--lux-bg, #f8fafc)",
+                          }}
+                          data-testid="row-public-unallocated-worklog-header"
+                        >
+                          <td
+                            colSpan={4}
+                            className="px-4 py-2 text-sm font-bold uppercase tracking-wider"
+                            style={{ color: "var(--lux-text)" }}
+                          >
+                            Additional worklog (unbilled time for this client)
+                          </td>
+                        </tr>
+                        <InvoiceDetailRows
+                          items={unallocated}
+                          colSpan={4}
+                          testIdPrefix="public-detail-unallocated"
+                        />
+                      </Fragment>
+                    );
+                  })()}
                 </tbody>
                 <tfoot>
                   <tr style={{ borderTop: "1px solid var(--lux-border, #e2e8f0)" }}>
