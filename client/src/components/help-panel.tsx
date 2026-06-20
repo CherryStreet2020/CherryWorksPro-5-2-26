@@ -623,6 +623,12 @@ export function HelpPanel() {
     }
   }, [open]);
 
+  // Auto-close on route change so the panel doesn't persist (overlapping
+  // page content) across navigations — audit §6.1 finding #2.
+  useEffect(() => {
+    setOpen(false);
+  }, [location]);
+
   const contextual = useMemo(() => {
     return HELP_ARTICLES.filter(a =>
       a.pages.some(p => {

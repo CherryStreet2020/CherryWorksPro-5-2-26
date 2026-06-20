@@ -229,7 +229,6 @@ export async function registerRoutes(
     "/api/newsletter/",
     "/api/csp-report",
     "/api/saml/",
-    "/api/public/",
     "/api/portal/",
     "/api/webhooks/email/",
     "/api/openapi.json",
