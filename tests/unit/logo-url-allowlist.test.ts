@@ -64,6 +64,23 @@ describe("Task #478 — getAllowedLogoHosts()", () => {
     expect(hosts.has("127.0.0.1:5000")).toBe(true);
   });
 
+  it("excludes loopback fallback hosts in production", () => {
+    snapshotEnv();
+    const savedNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    process.env.APP_BASE_URL = "https://app.example.com";
+    delete process.env.BASE_URL;
+    delete process.env.REPLIT_DOMAINS;
+    try {
+      const hosts = getAllowedLogoHosts();
+      expect(hosts.has("localhost:5000")).toBe(false);
+      expect(hosts.has("127.0.0.1:5000")).toBe(false);
+      expect(hosts.has("app.example.com")).toBe(true);
+    } finally {
+      process.env.NODE_ENV = savedNodeEnv;
+    }
+  });
+
   it("parses APP_BASE_URL via URL parsing (host only, not substring)", () => {
     snapshotEnv();
     process.env.APP_BASE_URL = "https://app.example.com/some/path?x=1";
