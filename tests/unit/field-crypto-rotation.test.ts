@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { createCipheriv, randomBytes, scryptSync } from "crypto";
 
 // Seed the field-crypto keys BEFORE importing the modules that capture them at
@@ -177,5 +177,24 @@ describe("SMTP secret crypto — key rotation fallback", () => {
 
   it("passes plaintext without a delimiter through unchanged", () => {
     expect(decryptSmtpPassword("plaintextpw")).toBe("plaintextpw");
+  });
+
+  it("requires the current key — never decrypts using only the old key", async () => {
+    // Reload email.ts with the CURRENT key absent but an OLD key present. The old
+    // key must NOT satisfy encrypted reads on its own, because encryptSmtpPassword
+    // would be storing new secrets as plaintext in that same misconfiguration.
+    const saved = process.env.SMTP_ENCRYPTION_KEY;
+    try {
+      vi.resetModules();
+      delete process.env.SMTP_ENCRYPTION_KEY;
+      process.env.SMTP_ENCRYPTION_KEY_OLD = OTHER_KEY;
+      const mod = await import("../../server/email");
+      const oldCt = smtpEncryptV2(OTHER_KEY, "secret");
+      expect(() => mod.decryptSmtpPassword(oldCt)).toThrow(/SMTP_ENCRYPTION_KEY is required/);
+    } finally {
+      process.env.SMTP_ENCRYPTION_KEY = saved;
+      delete process.env.SMTP_ENCRYPTION_KEY_OLD;
+      vi.resetModules();
+    }
   });
 });

@@ -48,8 +48,13 @@ export function encryptSmtpPassword(plaintext: string): string {
  * added/removed via env. AES-GCM throws on the wrong key, so trying each is safe.
  */
 function smtpDecryptKeys(): string[] {
-  const keys: string[] = [];
-  if (SMTP_ENCRYPTION_KEY) keys.push(SMTP_ENCRYPTION_KEY);
+  // The current key is required. If it is absent, decryptSmtpPassword must fail
+  // loudly (as before this change) rather than silently reading via the old key:
+  // in that same misconfiguration encryptSmtpPassword has no current key and
+  // stores NEW secrets as plaintext, so an old-key-only decrypt would mask a
+  // broken, insecure setup. The old key is only ever a *fallback* to the current.
+  if (!SMTP_ENCRYPTION_KEY) return [];
+  const keys = [SMTP_ENCRYPTION_KEY];
   const old = process.env.SMTP_ENCRYPTION_KEY_OLD;
   if (old && old !== SMTP_ENCRYPTION_KEY) keys.push(old);
   return keys;
