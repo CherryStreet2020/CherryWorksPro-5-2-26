@@ -654,7 +654,7 @@ export default function PayoutsPage() {
               Record Payment{selectedTeamMember ? ` — ${selectedTeamMember.teamMemberName}` : ""}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-5 pt-2">
+          <div className="space-y-3 pt-2">
             <FormSection title="Team Member">
               {selectedTeamMember ? (
                 <div className="flex items-center gap-2 p-2 rounded-lg" style={{ background: "var(--lux-bg)" }}>
@@ -726,7 +726,7 @@ export default function PayoutsPage() {
 
             {unpaidEntries && unpaidEntries.length > 0 && (
               <FormSection title={`Link Time Entries (${unpaidEntries.length} unpaid)`}>
-                <div className="max-h-56 overflow-y-auto space-y-1 rounded-lg p-2" style={{ background: "var(--lux-bg)", border: "1px solid var(--lux-border)" }}>
+                <div className="max-h-40 overflow-y-auto space-y-1 rounded-lg p-2" style={{ background: "var(--lux-bg)", border: "1px solid var(--lux-border)" }}>
                   <div className="flex items-center gap-2 pb-1 mb-1" style={{ borderBottom: "1px solid var(--lux-border)" }}>
                     <Checkbox
                       checked={selectedEntryIds.size === unpaidEntries.length}
