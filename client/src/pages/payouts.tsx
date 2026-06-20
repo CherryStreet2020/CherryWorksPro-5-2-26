@@ -459,7 +459,7 @@ export default function PayoutsPage() {
           {(!summary || summary.length === 0) ? (
             <p className="text-sm py-8 text-center" style={{ color: "var(--lux-text-muted)" }}>No active team members found</p>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
               {summary.filter(c => c.unpaidTimeValue > 0).sort((a, b) => b.unpaidTimeValue - a.unpaidTimeValue).map(c => (
                 <div
                   key={c.teamMemberId}
@@ -576,7 +576,7 @@ export default function PayoutsPage() {
           ) : filteredPayouts.length === 0 ? (
             <p className="text-sm py-8 text-center" style={{ color: "var(--lux-text-muted)" }}>No payments recorded yet</p>
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-1 max-h-[480px] overflow-y-auto pr-1">
               {filteredPayouts.map(p => (
                 <div key={p.id}>
                   <div
@@ -726,7 +726,7 @@ export default function PayoutsPage() {
 
             {unpaidEntries && unpaidEntries.length > 0 && (
               <FormSection title={`Link Time Entries (${unpaidEntries.length} unpaid)`}>
-                <div className="max-h-40 overflow-y-auto space-y-1 rounded-lg p-2" style={{ background: "var(--lux-bg)", border: "1px solid var(--lux-border)" }}>
+                <div className="max-h-56 overflow-y-auto space-y-1 rounded-lg p-2" style={{ background: "var(--lux-bg)", border: "1px solid var(--lux-border)" }}>
                   <div className="flex items-center gap-2 pb-1 mb-1" style={{ borderBottom: "1px solid var(--lux-border)" }}>
                     <Checkbox
                       checked={selectedEntryIds.size === unpaidEntries.length}
