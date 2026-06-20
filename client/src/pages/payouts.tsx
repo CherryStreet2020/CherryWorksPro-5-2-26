@@ -657,11 +657,11 @@ export default function PayoutsPage() {
           <div className="space-y-3 pt-2 min-w-0">
             <FormSection title="Team Member">
               {selectedTeamMember ? (
-                <div className="flex items-center gap-2 p-2 rounded-lg" style={{ background: "var(--lux-bg)" }}>
-                  <AvatarInitials name={selectedTeamMember.teamMemberName} size="sm" />
-                  <div>
-                    <p className="text-sm font-semibold" style={{ color: "var(--lux-text)" }}>{selectedTeamMember.teamMemberName}</p>
-                    <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>{selectedTeamMember.teamMemberEmail}</p>
+                <div className="flex items-center gap-2 p-2 rounded-lg min-w-0" style={{ background: "var(--lux-bg)" }}>
+                  <div className="shrink-0"><AvatarInitials name={selectedTeamMember.teamMemberName} size="sm" /></div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold truncate" style={{ color: "var(--lux-text)" }}>{selectedTeamMember.teamMemberName}</p>
+                    <p className="text-xs truncate" style={{ color: "var(--lux-text-muted)" }}>{selectedTeamMember.teamMemberEmail}</p>
                   </div>
                 </div>
               ) : summary && summary.length === 0 ? (
@@ -742,7 +742,7 @@ export default function PayoutsPage() {
                       <Checkbox checked={selectedEntryIds.has(e.id)} onCheckedChange={() => toggleEntrySelection(e.id)} />
                       <span className="text-xs tabular-nums shrink-0" style={{ color: "var(--lux-text-muted)" }}>{formatDate(e.date)}</span>
                       <span className="text-xs font-medium shrink-0" style={{ color: "var(--lux-text)" }}>{Math.round(e.minutes / 60 * 100) / 100}h</span>
-                      <span className="text-xs truncate flex-1 min-w-0" style={{ color: "var(--lux-text-muted)" }}>{e.notes || "—"}</span>
+                      <span className="text-xs truncate flex-1 min-w-0" style={{ color: "var(--lux-text-muted)" }} title={e.notes || undefined}>{e.notes || "—"}</span>
                       {e.invoiced && <StatusBadge status="BILLED" size="xs" />}
                     </div>
                   ))}
