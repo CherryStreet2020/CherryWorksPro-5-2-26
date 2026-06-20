@@ -826,41 +826,9 @@ export async function generateInvoicePdf(
         y = LX.mt;
       }
 
-      // Unallocated worklog (manual invoices with unbilled client time entries)
-      const unallocatedLux = lineDetails?.get("__unallocated__");
-      if (unallocatedLux && unallocatedLux.length > 0) {
-        if (y + 60 > 700) {
-          drawLuxuryFooter(doc, 700, orgName, pageNum);
-          pageNum++;
-          doc.addPage({ size: "LETTER", margin: LX.ml });
-          y = LX.mt;
-        }
-        doc.fontSize(9).font("Helvetica-Bold").fillColor(theme.text)
-          .text("ADDITIONAL WORKLOG (UNBILLED TIME FOR THIS CLIENT)", contentLeft, y, { width: contentRight - contentLeft });
-        y += 14;
-        y = drawDetailBlock(doc, y, unallocatedLux, {
-          leftX: contentLeft,
-          rightX: contentRight,
-          bottomLimit: 700,
-          accentColor: theme.accent || "#0f172a",
-          mutedColor: "#64748b",
-          textColor: theme.text,
-          onPageBreak: () => {
-            drawLuxuryFooter(doc, 700, orgName, pageNum);
-            pageNum++;
-            doc.addPage({ size: "LETTER", margin: LX.ml });
-            return LX.mt;
-          },
-        });
-        doc.font("Helvetica").fontSize(10).fillColor(theme.text);
-        y += 14;
-        if (y + 120 > 720) {
-          drawLuxuryFooter(doc, 700, orgName, pageNum);
-          pageNum++;
-          doc.addPage({ size: "LETTER", margin: LX.ml });
-          y = LX.mt;
-        }
-      }
+      // The customer-facing "additional unbilled worklog" section was removed:
+      // getInvoiceTimeEntryDetails now returns only this invoice's own line
+      // entries, so there is no unallocated bucket to render here.
 
       const subtotal = Number(invoice.subtotal || 0);
       const discountAmt = Number(invoice.discountAmount || 0);
@@ -1183,29 +1151,9 @@ export async function generateInvoicePdf(
       y += 16;
       if (y + 120 > 720) { doc.addPage(); y = 50; }
 
-      // Unallocated worklog (manual invoices with unbilled client time entries)
-      const unallocatedStd = lineDetails?.get("__unallocated__");
-      if (unallocatedStd && unallocatedStd.length > 0) {
-        if (y + 60 > 700) { doc.addPage(); y = 50; }
-        doc.fontSize(9).font("Helvetica-Bold").fillColor(theme.text)
-          .text("ADDITIONAL WORKLOG (UNBILLED TIME FOR THIS CLIENT)", 50, y, { width: 512 });
-        y += 14;
-        y = drawDetailBlock(doc, y, unallocatedStd, {
-          leftX: 50,
-          rightX: 562,
-          bottomLimit: 700,
-          accentColor: theme.accent,
-          mutedColor: theme.textMuted,
-          textColor: theme.text,
-          onPageBreak: () => {
-            doc.addPage();
-            return 50;
-          },
-        });
-        doc.font("Helvetica").fontSize(11).fillColor(theme.text);
-        y += 16;
-        if (y + 120 > 720) { doc.addPage(); y = 50; }
-      }
+      // The customer-facing "additional unbilled worklog" section was removed:
+      // getInvoiceTimeEntryDetails now returns only this invoice's own line
+      // entries, so there is no unallocated bucket to render here.
 
       const subtotal = Number(invoice.subtotal || 0);
       const discountAmt = Number(invoice.discountAmount || 0);
