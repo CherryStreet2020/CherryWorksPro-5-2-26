@@ -204,7 +204,7 @@ test("flipping the per-invoice override works on a locked (sent) invoice and lea
 
   const ctxA = await browser.newContext();
   const pubA = await ctxA.newPage();
-  let baselineTotal: string | null = null;
+  let baselineTotal!: string | null;
   try {
     await pubA.goto(`/i/${publicToken}`);
     await pubA.waitForSelector('[data-testid="text-public-total"]', { timeout: 15000 });
@@ -228,7 +228,7 @@ test("flipping the per-invoice override works on a locked (sent) invoice and lea
   // Public page now renders detail rows (org default is false; override is true).
   const ctxB = await browser.newContext();
   const pubB = await ctxB.newPage();
-  let totalAfterOn: string | null = null;
+  let totalAfterOn!: string | null;
   try {
     await pubB.goto(`/i/${publicToken}`);
     await pubB.waitForSelector('[data-testid="card-public-invoice"]', { timeout: 15000 });
@@ -254,7 +254,7 @@ test("flipping the per-invoice override works on a locked (sent) invoice and lea
   // Public page no longer renders detail rows; total still unchanged.
   const ctxC = await browser.newContext();
   const pubC = await ctxC.newPage();
-  let totalAfterClear: string | null = null;
+  let totalAfterClear!: string | null;
   try {
     await pubC.goto(`/i/${publicToken}`);
     await pubC.waitForSelector('[data-testid="card-public-invoice"]', { timeout: 15000 });
