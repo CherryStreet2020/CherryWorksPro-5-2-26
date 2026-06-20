@@ -1,17 +1,18 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { createCipheriv, randomBytes, scryptSync } from "crypto";
 
-// Seed the field-crypto keys BEFORE importing the modules that capture them at
-// load time: storage.ts throws without BANKING_ENCRYPTION_KEY and email.ts
-// silently stores plaintext (no "v2:" prefix) without SMTP_ENCRYPTION_KEY, so a
-// clean shell without the cwp harness env would otherwise break this suite.
-// Mirrors the tests/email/* convention. `||` keeps the real harness keys when set.
-process.env.BANKING_ENCRYPTION_KEY =
-  process.env.BANKING_ENCRYPTION_KEY ||
-  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-process.env.SMTP_ENCRYPTION_KEY =
-  process.env.SMTP_ENCRYPTION_KEY ||
-  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+// Seed the field-crypto keys BEFORE the static imports below capture them at
+// module load. ESM hoists imports above ordinary top-level statements, so a
+// plain `process.env.X = ...` here would run too late; vi.hoisted is lifted
+// above the imports by Vitest. storage.ts throws without BANKING_ENCRYPTION_KEY
+// and email.ts captures SMTP_ENCRYPTION_KEY at load, so without this a clean
+// runner (no cwp harness env) would break the suite. `||=` keeps real keys.
+vi.hoisted(() => {
+  process.env.BANKING_ENCRYPTION_KEY ||=
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  process.env.SMTP_ENCRYPTION_KEY ||=
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+});
 
 import { encryptField, decryptField } from "../../server/storage";
 import { encryptSmtpPassword, decryptSmtpPassword } from "../../server/email";
