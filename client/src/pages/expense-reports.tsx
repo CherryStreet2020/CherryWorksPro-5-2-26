@@ -428,7 +428,7 @@ export default function ExpenseReportsPage() {
 
       {/* Edit Report Dialog */}
       <Dialog open={!!editReport} onOpenChange={(open) => { if (!open) { setEditReport(null); resetForm(); } }}>
-        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto" style={{ background: "var(--lux-surface)" }}>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto overflow-x-hidden" style={{ background: "var(--lux-surface)" }}>
           <DialogHeader>
             <DialogTitle style={{ color: "var(--lux-text)" }}>Edit Expense Report</DialogTitle>
           </DialogHeader>
@@ -456,15 +456,15 @@ export default function ExpenseReportsPage() {
 
       {/* Report Detail Dialog */}
       <Dialog open={!!viewReport} onOpenChange={(open) => !open && setViewReport(null)}>
-        <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto" style={{ background: "var(--lux-surface)" }}>
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto overflow-x-hidden" style={{ background: "var(--lux-surface)" }}>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-3" style={{ color: "var(--lux-text)" }}>
-              <span className="truncate">{viewReport?.title || "Expense Report"}</span>
+            <DialogTitle className="flex items-center gap-3 min-w-0" style={{ color: "var(--lux-text)" }}>
+              <span className="truncate min-w-0">{viewReport?.title || "Expense Report"}</span>
               {reportDetail && <StatusBadge status={reportDetail.status} />}
             </DialogTitle>
           </DialogHeader>
           {reportDetail && (
-            <div className="space-y-4 pt-2">
+            <div className="space-y-4 pt-2 min-w-0">
               {/* Summary Card */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <SummaryItem label="Total" value={formatMoney(reportDetail.totalAmount, baseCurrency)} accent />
@@ -609,7 +609,7 @@ export default function ExpenseReportsPage() {
 
       {/* Add Expenses to Report Dialog */}
       <Dialog open={showAddExpenses} onOpenChange={(open) => { if (!open) setShowAddExpenses(false); }}>
-        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto" style={{ background: "var(--lux-surface)" }}>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto overflow-x-hidden" style={{ background: "var(--lux-surface)" }}>
           <DialogHeader>
             <DialogTitle style={{ color: "var(--lux-text)" }}>Add Expenses to Report</DialogTitle>
           </DialogHeader>
@@ -628,7 +628,7 @@ export default function ExpenseReportsPage() {
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium truncate" style={{ color: "var(--lux-text)" }}>{exp.vendor || exp.description || "Expense"}</span>
+                      <span className="text-sm font-medium truncate min-w-0" style={{ color: "var(--lux-text)" }}>{exp.vendor || exp.description || "Expense"}</span>
                       <span className="text-sm tabular-nums font-medium ml-2" style={{ color: "var(--lux-text)" }}>{formatMoney(exp.amount, baseCurrency)}</span>
                     </div>
                     <div className="flex items-center gap-2 text-xs" style={{ color: "var(--lux-text-muted)" }}>

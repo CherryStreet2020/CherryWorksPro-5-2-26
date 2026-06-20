@@ -1731,11 +1731,11 @@ export default function ExpensesPage() {
       </Dialog>
 
       <Dialog open={bundleDialogOpen} onOpenChange={(open) => { if (!open) { setBundleDialogOpen(false); setBundleTitle(""); setBundlePurpose(""); } }}>
-        <DialogContent className="sm:max-w-lg" style={{ background: "var(--lux-surface)" }}>
+        <DialogContent className="sm:max-w-lg overflow-x-hidden" style={{ background: "var(--lux-surface)" }}>
           <DialogHeader>
             <DialogTitle style={{ color: "var(--lux-text)" }}>Bundle into Expense Report</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 pt-2">
+          <div className="space-y-4 pt-2 min-w-0">
             <div>
               <Label className="text-xs font-semibold mb-1.5 block" style={{ color: "var(--lux-text-muted)" }}>Report Title *</Label>
               <Input value={bundleTitle} onChange={e => setBundleTitle(e.target.value)} placeholder="e.g. Q1 Travel Expenses" data-testid="input-bundle-title" />
@@ -1748,8 +1748,8 @@ export default function ExpensesPage() {
               <p className="text-xs font-semibold" style={{ color: "var(--lux-text-muted)" }}>Summary</p>
               <div className="max-h-40 overflow-y-auto space-y-1">
                 {(expenseList || []).filter(e => gridSelectedIds.has(e.id)).map((e: any) => (
-                  <div key={e.id} className="flex items-center justify-between text-xs py-0.5" style={{ color: "var(--lux-text)" }}>
-                    <span className="truncate mr-2">{e.vendor || e.description || "Expense"} — {formatDate(e.date)}</span>
+                  <div key={e.id} className="flex items-center justify-between text-xs py-0.5 min-w-0" style={{ color: "var(--lux-text)" }}>
+                    <span className="truncate mr-2 min-w-0">{e.vendor || e.description || "Expense"} — {formatDate(e.date)}</span>
                     <span className="font-mono tabular-nums flex-shrink-0">{formatMoney(Number(e.amount), baseCurrency)}</span>
                   </div>
                 ))}
