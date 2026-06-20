@@ -1520,7 +1520,7 @@ export default function ClientDetailPage() {
       </Dialog>
 
       <Dialog open={createInvoiceOpen} onOpenChange={setCreateInvoiceOpen}>
-        <DialogContent className="sm:max-w-xl" style={{ background: "var(--lux-surface)", borderColor: "var(--lux-border)" }}>
+        <DialogContent className="sm:max-w-xl overflow-x-hidden" style={{ background: "var(--lux-surface)", borderColor: "var(--lux-border)" }}>
           <DialogHeader>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "var(--gradient-brand)" }}>
@@ -1532,7 +1532,7 @@ export default function ClientDetailPage() {
               </div>
             </div>
           </DialogHeader>
-          <form onSubmit={(e) => { e.preventDefault(); if (newInvLineItems.length === 0) { toast({ title: "Add at least one line item", variant: "destructive" }); return; } createInvoiceMutation.mutate(); }} className="space-y-4" data-testid="form-create-invoice">
+          <form onSubmit={(e) => { e.preventDefault(); if (newInvLineItems.length === 0) { toast({ title: "Add at least one line item", variant: "destructive" }); return; } createInvoiceMutation.mutate(); }} className="space-y-4 min-w-0" data-testid="form-create-invoice">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-xs font-medium" style={{ color: "var(--lux-text-secondary)" }}>Issue Date</label>
@@ -1564,8 +1564,8 @@ export default function ClientDetailPage() {
             <div className="space-y-2">
               <label className="text-xs font-medium" style={{ color: "var(--lux-text-secondary)" }}>Line Items</label>
               {newInvLineItems.map((li, i) => (
-                <div key={i} className="flex items-center gap-2 text-xs px-3 py-2 rounded-md" style={{ background: "var(--lux-bg)" }}>
-                  <span className="flex-1 truncate" style={{ color: "var(--lux-text)" }}>{li.description}</span>
+                <div key={i} className="flex items-center gap-2 text-xs px-3 py-2 rounded-md min-w-0" style={{ background: "var(--lux-bg)" }}>
+                  <span className="flex-1 truncate min-w-0" style={{ color: "var(--lux-text)" }}>{li.description}</span>
                   <span style={{ color: "var(--lux-text-secondary)" }}>{li.quantity} x {formatMoney(li.rate, baseCurrency)}</span>
                   <span className="font-medium" style={{ color: "var(--lux-text)" }}>{formatMoney(li.quantity * li.rate, baseCurrency)}</span>
                   <Button type="button" variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setNewInvLineItems(prev => prev.filter((_, j) => j !== i))}>

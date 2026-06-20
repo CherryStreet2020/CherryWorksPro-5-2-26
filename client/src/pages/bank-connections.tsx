@@ -319,7 +319,7 @@ function ReconciliationWalkthrough({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg" style={{ background: "var(--lux-surface)", borderColor: "var(--lux-border)" }}>
+      <DialogContent className="max-w-lg overflow-x-hidden" style={{ background: "var(--lux-surface)", borderColor: "var(--lux-border)" }}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2" style={{ color: "var(--lux-text)" }}>
             <ClipboardCheck className="w-4 h-4" style={{ color: "var(--lux-accent)" }} />
@@ -331,8 +331,8 @@ function ReconciliationWalkthrough({
         </DialogHeader>
 
         <div className="rounded-lg p-4" style={{ background: "var(--lux-bg)", border: "1px solid var(--lux-border)" }}>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium truncate" style={{ color: "var(--lux-text)" }}>
+          <div className="flex items-center justify-between mb-2 min-w-0">
+            <span className="text-sm font-medium truncate min-w-0" style={{ color: "var(--lux-text)" }}>
               {currentTx.description || "No description"}
             </span>
           </div>
