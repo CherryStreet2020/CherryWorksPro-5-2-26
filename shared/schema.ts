@@ -3595,7 +3595,7 @@ export const emailSendAttempts = pgTable(
       name: "email_send_attempts_enrollment_id_marketing_sequence_enrollment",
     }).onDelete("cascade"),
     // Prod has only the retry index; the legacy campaign/sequence indexes
-    // were removed by migration 0012-email-send-attempts.sql.
+    // were removed by migration 0012b-email-send-attempts.sql.
     emailSendAttemptsRetryIdx: index("email_send_attempts_retry_idx")
       .on(table.status, table.nextRetryAt),
   }),
