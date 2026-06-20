@@ -19,8 +19,13 @@ import {
   seedTimeEntry,
   generateInvoice,
   patchJson,
+  postJson,
   sendInvoice,
 } from "./_helpers";
+import { createRequire } from "node:module";
+const { PDFParse } = createRequire(import.meta.url)("pdf-parse") as {
+  PDFParse: new (opts: { data: Buffer }) => { getText(): Promise<{ text: string }> };
+};
 
 async function buildSentInvoiceWithTwoBillableEntries(iso: any) {
   const client = await seedClient(iso);
@@ -196,6 +201,188 @@ test("PDF pagination: many detail rows produce a multi-page PDF without throwing
   }
 });
 
+test("manual invoice shows 'Additional worklog' section with unbilled client time entries when org default ON", async ({
+  isolatedOrg,
+  browser,
+}) => {
+  // Org default ON so manual invoices auto-show worklog detail.
+  const orgPatch = await patchJson(isolatedOrg, "/api/org/settings", {
+    showTimeEntryDetails: true,
+  });
+  expect(orgPatch.ok(), `org settings PATCH failed: ${orgPatch.status()} ${await orgPatch.text()}`).toBe(true);
+
+  const client = await seedClient(isolatedOrg);
+  const project = await seedProject(isolatedOrg, client.id, { name: "Manual Co" });
+  await addProjectMember(isolatedOrg, project.id, isolatedOrg.userId, 150);
+
+  const today = new Date();
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  // Two unbilled entries — never linked to an invoice line via the generate flow.
+  await seedTimeEntry(isolatedOrg, project.id, {
+    date: fmt(today),
+    minutes: 75,
+    billable: true,
+    notes: "MAN-201 manual prep work",
+  });
+  await seedTimeEntry(isolatedOrg, project.id, {
+    date: fmt(today),
+    minutes: 45,
+    billable: true,
+    notes: "MAN-202 client review",
+  });
+
+  // Manually create a draft invoice (no /api/invoices/generate).
+  const issuedDate = fmt(today);
+  const dueDate = fmt(new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000));
+  const createRes = await postJson(isolatedOrg, "/api/invoices", {
+    clientId: client.id,
+    issuedDate,
+    dueDate,
+    currency: "USD",
+    status: "DRAFT",
+  });
+  expect(createRes.ok(), `manual invoice create failed: ${createRes.status()} ${await createRes.text()}`).toBe(true);
+  const draft = await createRes.json();
+
+  // Add a manual line item (no time-entry link).
+  const lineRes = await postJson(isolatedOrg, `/api/invoices/${draft.id}/lines`, {
+    description: "Flat consulting fee",
+    quantity: 1,
+    unitRate: 500,
+  });
+  expect(lineRes.ok(), `add line failed: ${lineRes.status()} ${await lineRes.text()}`).toBe(true);
+
+  const sent = await sendInvoice(isolatedOrg, draft.id);
+
+  const ctx = await browser.newContext();
+  const pub = await ctx.newPage();
+  try {
+    await pub.goto(`/i/${sent.publicToken}`);
+    await pub.waitForSelector('[data-testid="card-public-invoice"]', { timeout: 15000 });
+
+    // The unallocated section header appears.
+    const header = pub.locator('[data-testid="row-public-unallocated-worklog-header"]');
+    await expect(header).toBeVisible();
+
+    // At least one entry row from the unallocated bucket renders.
+    const entryRows = pub.locator('[data-testid^="public-detail-unallocated-"][data-testid*="-entry-"]');
+    expect(await entryRows.count()).toBeGreaterThanOrEqual(1);
+
+    // The MAN-201/MAN-202 ticket prefixes appear somewhere in the unallocated rows.
+    const unallocText = (await pub.locator('[data-testid="card-public-invoice"]').textContent()) ?? "";
+    expect(unallocText).toMatch(/MAN-20[12]/);
+
+    // The PDF still renders cleanly.
+    const pdfRes = await pub.request.get(`/api/public/invoices/${sent.publicToken}/pdf`);
+    expect(pdfRes.status()).toBe(200);
+    const pdfBuf = await pdfRes.body();
+    expect(pdfBuf.subarray(0, 5).toString("utf-8")).toBe("%PDF-");
+    expect(pdfBuf.length).toBeGreaterThan(1000);
+  } finally {
+    await ctx.close();
+  }
+});
+
+// Task #467: durable org-logo storage + luxury-header collision repair.
+// Uploads a tiny PNG via the org logo endpoint and asserts:
+//   1. The route persists the logo in Replit Object Storage (URL contains
+//      `/api/public-objects/org-logos/`, NOT the legacy
+//      `/api/uploads/logos/` local-disk prefix).
+//   2. GET on that public URL returns the bytes (no auth required).
+//   3. The luxury-themed invoice PDF renders without throwing now that
+//      the loader resolves logos through https → object storage.
+//   4. DELETE on the org logo route clears the URL.
+test("org logo upload persists to object storage, serves publicly, and luxury PDF renders cleanly", async ({
+  isolatedOrg,
+  browser,
+}) => {
+  // Smallest valid 1×1 transparent PNG: enough bytes for PDFKit to embed
+  // without tripping the 4s loader timeout in dev.
+  const pngBytes = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+    "base64",
+  );
+
+  const uploadRes = await isolatedOrg.request.post("/api/org/logo", {
+    headers: { "X-CSRF-Token": isolatedOrg.csrf },
+    multipart: {
+      logo: {
+        name: "test-logo.png",
+        mimeType: "image/png",
+        buffer: pngBytes,
+      },
+    },
+  });
+  expect(
+    uploadRes.ok(),
+    `org logo upload failed: ${uploadRes.status()} ${await uploadRes.text()}`,
+  ).toBe(true);
+  const uploadJson = await uploadRes.json();
+  expect(typeof uploadJson.logoUrl).toBe("string");
+  expect(uploadJson.logoUrl).toContain("/api/public-objects/org-logos/");
+  // Critical regression guard: must not be the legacy ephemeral path.
+  expect(uploadJson.logoUrl).not.toContain("/api/uploads/logos/");
+
+  // Org settings now reflects the new URL.
+  const settingsRes = await isolatedOrg.request.get("/api/org/settings");
+  expect(settingsRes.ok()).toBe(true);
+  const settings = await settingsRes.json();
+  expect(settings.logoUrl).toBe(uploadJson.logoUrl);
+
+  // The hosted logo is publicly readable. Use a fresh unauth context.
+  const anonCtx = await browser.newContext();
+  try {
+    const anonPage = await anonCtx.newPage();
+    const fetchRes = await anonPage.request.get(uploadJson.logoUrl);
+    expect(fetchRes.status()).toBe(200);
+    const fetchedBuf = await fetchRes.body();
+    expect(fetchedBuf.length).toBe(pngBytes.length);
+    expect(fetchedBuf.equals(pngBytes)).toBe(true);
+  } finally {
+    await anonCtx.close();
+  }
+
+  // Build a sent invoice and render its luxury PDF; the loader must
+  // pull the logo via the absolute https URL without crashing the route.
+  const client = await seedClient(isolatedOrg);
+  const project = await seedProject(isolatedOrg, client.id, { name: "Logo Co" });
+  await addProjectMember(isolatedOrg, project.id, isolatedOrg.userId, 150);
+  const today = new Date();
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  await seedTimeEntry(isolatedOrg, project.id, {
+    date: fmt(today),
+    minutes: 60,
+    billable: true,
+    notes: "LOGO-001 logo render smoke test",
+  });
+  const draft = await generateInvoice(isolatedOrg, client.id);
+  const sent = await sendInvoice(isolatedOrg, draft.id);
+
+  const pdfCtx = await browser.newContext();
+  try {
+    const pdfPage = await pdfCtx.newPage();
+    const pdfRes = await pdfPage.request.get(`/api/public/invoices/${sent.publicToken}/pdf`);
+    expect(
+      pdfRes.status(),
+      `expected 200 from PDF route with object-storage logo; got ${pdfRes.status()}`,
+    ).toBe(200);
+    const pdfBuf = await pdfRes.body();
+    expect(pdfBuf.subarray(0, 5).toString("utf-8")).toBe("%PDF-");
+    // Real content (not an error stub).
+    expect(pdfBuf.length).toBeGreaterThan(1000);
+  } finally {
+    await pdfCtx.close();
+  }
+
+  // Cleanup: DELETE clears the URL.
+  const delRes = await isolatedOrg.request.delete("/api/org/logo", {
+    headers: { "X-CSRF-Token": isolatedOrg.csrf },
+  });
+  expect(delRes.ok(), `org logo DELETE failed: ${delRes.status()} ${await delRes.text()}`).toBe(true);
+  const settingsAfter = await (await isolatedOrg.request.get("/api/org/settings")).json();
+  expect(settingsAfter.logoUrl ?? null).toBeNull();
+});
+
 test("flipping the per-invoice override works on a locked (sent) invoice and leaves money totals unchanged", async ({
   isolatedOrg,
   browser,
@@ -268,3 +455,124 @@ test("flipping the per-invoice override works on a locked (sent) invoice and lea
   }
   expect(totalAfterClear).toBe(baselineTotal);
 });
+
+// Task #475: regression for PDF header collisions on multi-line org
+// addresses across all non-luxury themes. Each theme renders a
+// different subset of the org info column; we only check the fields
+// that theme actually renders.
+type HdrField = "address1" | "address2" | "address3" | "phone" | "email" | "website";
+const THEMES: Array<{ name: "classic" | "modern" | "bold" | "minimal"; fields: HdrField[] }> = [
+  { name: "classic", fields: ["address1", "address2", "address3", "phone", "email", "website"] },
+  { name: "modern",  fields: ["phone", "email"] },
+  { name: "bold",    fields: ["address1", "address2", "address3", "phone", "email"] },
+  { name: "minimal", fields: ["address1", "address2", "address3", "phone"] },
+];
+
+const FIELD_NEEDLES: Record<HdrField, string> = {
+  address1: "225 Cherry Street, Suite 74K",
+  address2: "New York, NY, 10002",
+  address3: "United States",
+  phone:    "(929) 724-2979",
+  email:    "hi@cherrystconsulting.com",
+  website:  "https://cherrystconsulting.com",
+};
+
+async function fetchPublicPdfWithRetry(
+  request: import("@playwright/test").APIRequestContext,
+  token: string,
+): Promise<Buffer> {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const res = await request.get(`/api/public/invoices/${token}/pdf`);
+    if (res.status() === 200) return await res.body();
+    if (res.status() !== 429) {
+      throw new Error(`PDF fetch failed: ${res.status()} ${await res.text()}`);
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  throw new Error("PDF fetch still 429 after retries");
+}
+
+for (const { name: theme, fields: expectedFields } of THEMES) {
+test(`${theme} theme: multi-line org address renders without header collisions`, async ({
+  isolatedOrg,
+  browser,
+}) => {
+  const orgPatch = await patchJson(isolatedOrg, "/api/org/settings", {
+    invoiceTheme: theme,
+    address: "225 Cherry Street, Suite 74K\nNew York, NY, 10002\nUnited States",
+    phone: "(929) 724-2979",
+    email: "hi@cherrystconsulting.com",
+    website: "https://cherrystconsulting.com",
+  });
+  expect(orgPatch.ok(), `PATCH /api/org/settings: ${orgPatch.status()}`).toBe(true);
+
+  const orgGet = await isolatedOrg.request.get("/api/org/settings");
+  expect(orgGet.ok()).toBe(true);
+  const orgName: string = (await orgGet.json()).name;
+  expect(orgName.length).toBeGreaterThan(0);
+
+  const client = await seedClient(isolatedOrg);
+  const project = await seedProject(isolatedOrg, client.id, { name: "Header Co" });
+  await addProjectMember(isolatedOrg, project.id, isolatedOrg.userId, 175);
+  await seedTimeEntry(isolatedOrg, project.id, {
+    date: new Date().toISOString().slice(0, 10),
+    minutes: 60,
+    billable: true,
+    notes: "HDR-001 header layout seed",
+  });
+  const draft = await generateInvoice(isolatedOrg, client.id);
+  const sent = await sendInvoice(isolatedOrg, draft.id);
+  const invoiceNumber: string = sent.number ?? draft.number;
+  expect(invoiceNumber.length).toBeGreaterThan(0);
+  expect(typeof sent.publicToken).toBe("string");
+
+  const ctx = await browser.newContext();
+  let pdfBuf: Buffer;
+  try {
+    pdfBuf = await fetchPublicPdfWithRetry(ctx.request, sent.publicToken);
+  } finally {
+    await ctx.close();
+  }
+  expect(pdfBuf.subarray(0, 5).toString("utf-8")).toBe("%PDF-");
+  expect(pdfBuf.length).toBeGreaterThan(1000);
+
+  const parsed = await new PDFParse({ data: pdfBuf }).getText();
+  const text = parsed.text;
+  const lines = text.split("\n");
+
+  const findLine = (needle: string): number =>
+    lines.findIndex((ln) => ln.includes(needle));
+
+  const idxInvoiceNum = findLine(invoiceNumber);
+  expect(idxInvoiceNum, `invoice number not found in PDF text`).toBeGreaterThanOrEqual(0);
+
+  const fieldIdx: Partial<Record<HdrField, number>> = {};
+  for (const f of expectedFields) {
+    const i = findLine(FIELD_NEEDLES[f]);
+    expect(i, `${theme}: missing field ${f} (needle "${FIELD_NEEDLES[f]}")`).toBeGreaterThanOrEqual(0);
+    fieldIdx[f] = i;
+  }
+
+  // Each expected header field must sit on its own row, in the
+  // documented order. Strict less-than catches the original bug where
+  // a multi-line address overlapped the next field.
+  for (let i = 0; i < expectedFields.length - 1; i++) {
+    const a = expectedFields[i];
+    const b = expectedFields[i + 1];
+    expect(
+      fieldIdx[a]!,
+      `${theme}: ${a} (row ${fieldIdx[a]}) must sit above ${b} (row ${fieldIdx[b]})`,
+    ).toBeLessThan(fieldIdx[b]!);
+  }
+
+  // BILL TO sits below the entire stacked header. Letter-spacing
+  // makes most themes render it as "B I L L".
+  const idxBillTo = lines.findIndex((ln) => /B\s*I\s*L\s*L/.test(ln));
+  expect(idxBillTo, `BILL TO row not found`).toBeGreaterThanOrEqual(0);
+  if (expectedFields.length > 0) {
+    const last = expectedFields[expectedFields.length - 1];
+    expect(idxBillTo).toBeGreaterThan(fieldIdx[last]!);
+  }
+  expect(idxBillTo).toBeGreaterThan(idxInvoiceNum);
+});
+}

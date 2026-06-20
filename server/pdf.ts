@@ -4,6 +4,11 @@ import * as fs from "fs";
 import * as path from "path";
 import type { DetailItem } from "./invoice-details";
 import { formatHM } from "./invoice-details";
+// Re-export so existing imports (`server/pdf.ts` is the historical home
+// of this guard, and `tests/unit/pdf-logo-loader-ssrf.test.ts` imports
+// it from here) keep working after the Task #474 extraction.
+import { isAllowedLogoUrl } from "./lib/logo-url-allowlist";
+export { isAllowedLogoUrl };
 
 interface InvoiceWithDetails {
   id: string;
@@ -101,23 +106,34 @@ function drawDetailBlock(
       doc.moveTo(blockLeft, y - 2).lineTo(blockRight, y - 2)
         .strokeColor("#e5e7eb").lineWidth(0.4).stroke();
     } else if (it.kind === "entry") {
-      ensureSpace(1);
       const timeText = it.startTime && it.endTime
         ? `${it.startTime}–${it.endTime}`
         : "—";
+      doc.fontSize(8);
+      const descText = it.description || "";
+      const projectText = it.project || "";
+      doc.font("Helvetica");
+      const descH = descText
+        ? doc.heightOfString(descText, { width: cDescW, lineGap: 1 })
+        : 11;
+      const projectH = projectText
+        ? doc.heightOfString(projectText, { width: cProjectW })
+        : 11;
+      const rowH = Math.max(12, descH, projectH) + 2;
+      ensureSpace(1, rowH);
       doc.fontSize(8).font("Helvetica").fillColor(mutedColor)
         .text(timeText, cTime, y, { width: cTimeW });
       doc.font("Helvetica").fillColor(textColor)
-        .text(it.project, cProject, y, { width: cProjectW, ellipsis: true, height: 11 });
+        .text(projectText, cProject, y, { width: cProjectW });
       doc.font("Helvetica-Bold").fillColor(textColor)
         .text(it.ticket || "", cTicket, y, { width: cTicketW });
       doc.font("Helvetica").fillColor(mutedColor)
-        .text(it.description || "", cDesc, y, { width: cDescW, lineGap: 1, ellipsis: true, height: 11 });
+        .text(descText, cDesc, y, { width: cDescW, lineGap: 1 });
       doc.font("Helvetica").fillColor(textColor)
         .text(formatHM(it.hours), cHrs, y, { width: cHrsW, align: "right" });
       doc.fontSize(7).fillColor(it.billable ? accentColor : "#94a3b8")
         .text(it.billable ? "BILLABLE" : "UNBILLED", cTag, y, { width: cTagW, align: "right", characterSpacing: 0.5 });
-      y += 12;
+      y += rowH;
     } else if (it.kind === "week") {
       ensureSpace(1, 14);
       y += 2;
@@ -210,31 +226,141 @@ function getTheme(name: string): ThemeColors {
 
 const logoBaseDir = path.join(process.cwd(), "uploads", "logos");
 
-function resolveLogoPath(logoUrl: string | null | undefined): string | null {
-  if (!logoUrl) return null;
-  try {
-    const filename = path.basename(logoUrl);
-    const fp = path.join(logoBaseDir, filename);
-    if (fs.existsSync(fp)) return fp;
-  } catch {}
+// Bounded in-memory cache of resolved logo bytes keyed by logoUrl. Each
+// entry expires after LOGO_CACHE_TTL_MS so a logo replaced via the
+// settings UI shows up on the next PDF generation without a server
+// restart. Negative results (null bytes) are cached too so a stale URL
+// doesn't trigger a network round-trip on every generation.
+const LOGO_CACHE_TTL_MS = 5 * 60 * 1000;
+const LOGO_CACHE_MAX = 64;
+const logoBytesCache = new Map<string, { bytes: Buffer | null; expiresAt: number }>();
+
+function getCachedLogo(key: string): Buffer | null | undefined {
+  const hit = logoBytesCache.get(key);
+  if (!hit) return undefined;
+  if (hit.expiresAt < Date.now()) {
+    logoBytesCache.delete(key);
+    return undefined;
+  }
+  return hit.bytes;
+}
+
+function setCachedLogo(key: string, bytes: Buffer | null): void {
+  if (logoBytesCache.size >= LOGO_CACHE_MAX) {
+    const firstKey = logoBytesCache.keys().next().value;
+    if (firstKey) logoBytesCache.delete(firstKey);
+  }
+  logoBytesCache.set(key, { bytes, expiresAt: Date.now() + LOGO_CACHE_TTL_MS });
+}
+
+function deriveBaseUrl(): string | null {
+  const fromEnv = process.env.APP_BASE_URL || process.env.BASE_URL;
+  if (fromEnv) return fromEnv.replace(/\/$/, "");
+  const replitDomain = process.env.REPLIT_DOMAINS?.split(",")[0]?.trim();
+  if (replitDomain) return `https://${replitDomain}`;
   return null;
+}
+
+// SSRF guard for logo URLs lives in `server/lib/logo-url-allowlist.ts`
+// (Task #474). `isAllowedLogoUrl` is imported and re-exported at the
+// top of this file so legacy callers and the regression suite keep
+// working unchanged.
+
+// Loads logo image bytes for embedding into a PDF. Accepts:
+//   - https:// URLs whose host is in our allowlist (APP_BASE_URL /
+//     REPLIT_DOMAINS) AND whose path starts with one of our public
+//     object-storage / legacy uploads prefixes — used by hosted logos.
+//   - /api/public-objects/... or /api/uploads/logos/... relative paths
+//     (resolved against APP_BASE_URL / REPLIT_DOMAINS, with a local-disk
+//     fallback for legacy `/api/uploads/logos/` URLs that may still exist
+//     pre-migration)
+//   - null/undefined → null
+// Any error (404, network failure, decode failure) returns null silently
+// so the PDF still renders without a logo. Anything outside the
+// allowlist (e.g. attacker-supplied http://169.254.169.254/) is rejected
+// silently — no fetch is issued.
+//
+// The SSRF guard is pinned by `tests/unit/pdf-logo-loader-ssrf.test.ts`
+// (Task #470). That suite also covers the parallel guard in PATCH
+// /api/org/settings, so changes here should keep both call sites in sync.
+export async function loadLogoBytes(
+  logoUrl: string | null | undefined,
+): Promise<Buffer | null> {
+  if (!logoUrl) return null;
+  const cacheKey = logoUrl;
+  const cached = getCachedLogo(cacheKey);
+  if (cached !== undefined) return cached;
+
+  // Local-disk fast path for legacy /api/uploads/logos/<file> URLs that
+  // were uploaded before the move to object storage. The migration nulls
+  // these in the DB on production, but in dev the file may still exist.
+  if (logoUrl.startsWith("/api/uploads/logos/")) {
+    try {
+      const filename = path.basename(logoUrl);
+      const fp = path.join(logoBaseDir, filename);
+      if (fs.existsSync(fp)) {
+        const bytes = fs.readFileSync(fp);
+        setCachedLogo(cacheKey, bytes);
+        return bytes;
+      }
+    } catch {
+      // fall through to URL fetch
+    }
+  }
+
+  let absoluteUrl: string | null = null;
+  if (/^https?:\/\//i.test(logoUrl)) {
+    absoluteUrl = logoUrl;
+  } else if (logoUrl.startsWith("/")) {
+    const base = deriveBaseUrl();
+    if (base) absoluteUrl = base + logoUrl;
+  }
+
+  if (!absoluteUrl || !isAllowedLogoUrl(absoluteUrl)) {
+    setCachedLogo(cacheKey, null);
+    return null;
+  }
+
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    const res = await fetch(absoluteUrl, { signal: ctrl.signal, redirect: "manual" });
+    clearTimeout(timer);
+    // Reject redirects so a 302 from an allowed host can't be used to
+    // bounce the fetch to an internal target.
+    if (res.status >= 300 && res.status < 400) {
+      setCachedLogo(cacheKey, null);
+      return null;
+    }
+    if (!res.ok) {
+      setCachedLogo(cacheKey, null);
+      return null;
+    }
+    const arr = await res.arrayBuffer();
+    const bytes = Buffer.from(arr);
+    setCachedLogo(cacheKey, bytes);
+    return bytes;
+  } catch {
+    setCachedLogo(cacheKey, null);
+    return null;
+  }
 }
 
 function embedLogo(
   doc: InstanceType<typeof PDFDocument>,
-  logoPath: string | null,
+  logoBytes: Buffer | null,
   x: number,
   y: number,
   maxW: number,
   maxH: number,
 ): number {
-  if (!logoPath) return 0;
+  if (!logoBytes || logoBytes.length === 0) return 0;
   try {
-    const img = (doc as any).openImage(logoPath);
+    const img = (doc as any).openImage(logoBytes);
     const ratio = Math.min(maxW / img.width, maxH / img.height, 1);
     const w = img.width * ratio;
     const h = img.height * ratio;
-    doc.image(logoPath, x, y, { width: w, height: h });
+    doc.image(logoBytes, x, y, { width: w, height: h });
     return w + 12;
   } catch {
     return 0;
@@ -273,6 +399,10 @@ function isLuxury(themeName: string): boolean {
   return themeName !== "modern" && themeName !== "minimal" && themeName !== "bold" && themeName !== "classic";
 }
 
+// X coordinate where the right-side meta block (INVOICE NO / STATUS /
+// ISSUED / DUE) begins. Kept in sync with drawLuxuryMetaBlock's labelX.
+const LX_META_LABEL_X = 380;
+
 function drawLuxuryHeader(
   doc: InstanceType<typeof PDFDocument>,
   orgName: string,
@@ -280,29 +410,53 @@ function drawLuxuryHeader(
   orgPhone: string,
   orgEmail: string,
   orgWebsite: string,
-  docTypeLabel: string,
-  logoFile: string | null,
+  _docTypeLabel: string,
+  logoBytes: Buffer | null,
 ): number {
   const theme = getTheme("luxury");
   const y = LX.mt;
-  const logoW = embedLogo(doc, logoFile, LX.ml, y, 48, 48);
+  const logoW = embedLogo(doc, logoBytes, LX.ml, y, 48, 48);
   const nameX = LX.ml + logoW;
+  // Reserve a 16pt gutter before the meta block so descenders / accent
+  // rule never touch the right column. Clamped to ≥160 so very wide
+  // logos still leave usable name width (PDFKit will ellipsize the rest).
+  const nameMaxW = Math.max(160, LX_META_LABEL_X - 16 - nameX);
   doc.fontSize(28).fillColor(theme.headerText).font("Helvetica-Bold")
-    .text(orgName, nameX, y, { characterSpacing: 1.5 });
-  const nameH = doc.heightOfString(orgName, { width: 300, characterSpacing: 1.5 });
+    .text(orgName, nameX, y, {
+      characterSpacing: 1.5,
+      width: nameMaxW,
+      ellipsis: true,
+      lineBreak: false,
+    });
+  const nameH = doc.heightOfString(orgName, {
+    width: nameMaxW,
+    characterSpacing: 1.5,
+    lineBreak: false,
+  });
   const accentY = y + nameH + 4;
   doc.moveTo(nameX, accentY).lineTo(nameX + 60, accentY)
     .strokeColor(theme.accent).lineWidth(2).stroke();
 
+  // Per-field measured height — multi-line addresses (e.g. street + city
+  // separated by a literal newline) stack correctly without overrunning
+  // the next field. Same nameMaxW guarantees no spill into the meta column.
+  const infoMaxW = nameMaxW;
   let infoY = y + nameH + 14;
   doc.fontSize(9).fillColor(theme.textMuted).font("Helvetica");
-  if (orgAddress) { doc.text(orgAddress, nameX, infoY); infoY += 13; }
-  if (orgPhone) { doc.text(orgPhone, nameX, infoY); infoY += 13; }
-  if (orgEmail) { doc.text(orgEmail, nameX, infoY); infoY += 13; }
-  if (orgWebsite) { doc.text(orgWebsite, nameX, infoY); infoY += 13; }
+  const drawInfoLine = (text: string) => {
+    if (!text) return;
+    doc.text(text, nameX, infoY, { width: infoMaxW });
+    infoY += doc.heightOfString(text, { width: infoMaxW }) + 2;
+  };
+  drawInfoLine(orgAddress);
+  drawInfoLine(orgPhone);
+  drawInfoLine(orgEmail);
+  drawInfoLine(orgWebsite);
 
-  doc.fontSize(9).fillColor("#94a3b8").font("Helvetica")
-    .text(docTypeLabel, LX.ml, y, { align: "right", width: LX_CONTENT_W, characterSpacing: 3 });
+  // The right-aligned "INVOICE" / "ESTIMATE" wordmark used to live at
+  // `LX_RIGHT` and competed with the meta block (which already starts
+  // with "INVOICE NO"). Dropping it removes the collision; the doc type
+  // is conveyed by the meta block label.
 
   const ruleY = Math.max(infoY + 6, y + 68);
   doc.moveTo(LX.ml, ruleY).lineTo(LX_RIGHT, ruleY)
@@ -418,6 +572,101 @@ function drawLuxuryFooter(
   doc.text(`${orgName}  |  Page ${pageNum}`, LX.ml, y, { align: "center", width: LX_CONTENT_W });
 }
 
+const HEADER_LEFT_X = 50;
+const HEADER_RIGHT_META_X = 350;
+const HEADER_LEFT_GUTTER = 16;
+const HEADER_RIGHT_META_W = 212;
+
+function measureLogoWidth(
+  doc: InstanceType<typeof PDFDocument>,
+  logoBytes: Buffer | null,
+  maxW: number,
+  maxH: number,
+): number {
+  if (!logoBytes || logoBytes.length === 0) return 0;
+  try {
+    const img = (doc as any).openImage(logoBytes);
+    const ratio = Math.min(maxW / img.width, maxH / img.height, 1);
+    return img.width * ratio + 12;
+  } catch {
+    return 0;
+  }
+}
+
+function measureHeaderInfoHeight(
+  doc: InstanceType<typeof PDFDocument>,
+  fontSize: number,
+  maxW: number,
+  lines: string[],
+  gap: number = 2,
+): number {
+  doc.font("Helvetica").fontSize(fontSize);
+  let total = 0;
+  let count = 0;
+  for (const line of lines) {
+    if (!line) continue;
+    total += doc.heightOfString(line, { width: maxW });
+    count++;
+  }
+  if (count > 0) total += (count - 1) * gap;
+  return total;
+}
+
+function drawHeaderInfoLines(
+  doc: InstanceType<typeof PDFDocument>,
+  textX: number,
+  startY: number,
+  maxW: number,
+  fontSize: number,
+  color: string,
+  lines: string[],
+  gap: number = 2,
+): number {
+  doc.font("Helvetica").fontSize(fontSize).fillColor(color);
+  let y = startY;
+  let drewAny = false;
+  for (const line of lines) {
+    if (!line) continue;
+    if (drewAny) y += gap;
+    doc.text(line, textX, y, { width: maxW });
+    y += doc.heightOfString(line, { width: maxW });
+    drewAny = true;
+  }
+  return y;
+}
+
+interface HeaderMetaRow {
+  text: string;
+  font?: string;
+  size?: number;
+  color?: string;
+  gap?: number;
+}
+
+function drawHeaderMetaRows(
+  doc: InstanceType<typeof PDFDocument>,
+  x: number,
+  startY: number,
+  width: number,
+  rows: HeaderMetaRow[],
+): number {
+  let y = startY;
+  let drewAny = false;
+  for (const r of rows) {
+    if (!r.text) continue;
+    const font = r.font ?? "Helvetica";
+    const size = r.size ?? 10;
+    const color = r.color ?? "#64748b";
+    const gap = r.gap ?? 2;
+    if (drewAny) y += gap;
+    doc.font(font).fontSize(size).fillColor(color);
+    doc.text(r.text, x, y, { width, align: "right" });
+    y += doc.heightOfString(r.text, { width });
+    drewAny = true;
+  }
+  return y;
+}
+
 export async function generateInvoicePdf(
   invoice: InvoiceWithDetails,
   org?: OrgBranding,
@@ -447,6 +696,11 @@ export async function generateInvoicePdf(
     throw new Error(`Cannot generate PDF: ${errors.join("; ")}`);
   }
 
+  // Resolve the logo bytes BEFORE entering the Promise executor below
+  // (PDFKit's draw loop must stay synchronous; the executor cannot be
+  // async without breaking the resolve/reject contract).
+  const logoBytes = await loadLogoBytes(org?.logoUrl);
+
   return new Promise((resolve, reject) => {
     const themeName = org?.invoiceTheme || "luxury";
     const theme = getTheme(themeName);
@@ -470,7 +724,6 @@ export async function generateInvoicePdf(
     const dateFmt = org?.dateFormat || null;
     const issuedFormatted = fmtDate(invoice.issuedDate, dateFmt);
     const dueFormatted = fmtDate(invoice.dueDate, dateFmt);
-    const logoFile = resolveLogoPath(org?.logoUrl);
 
     let y: number;
     let pageNum = 1;
@@ -479,7 +732,7 @@ export async function generateInvoicePdf(
     const contentW = contentRight - contentLeft;
 
     if (luxury) {
-      y = drawLuxuryHeader(doc, orgName, orgAddress, orgPhone, orgEmail, orgWebsite, "INVOICE", logoFile);
+      y = drawLuxuryHeader(doc, orgName, orgAddress, orgPhone, orgEmail, orgWebsite, "INVOICE", logoBytes);
 
       const metaRows: [string, string][] = [
         ["INVOICE NO", invoice.number],
@@ -573,6 +826,42 @@ export async function generateInvoicePdf(
         y = LX.mt;
       }
 
+      // Unallocated worklog (manual invoices with unbilled client time entries)
+      const unallocatedLux = lineDetails?.get("__unallocated__");
+      if (unallocatedLux && unallocatedLux.length > 0) {
+        if (y + 60 > 700) {
+          drawLuxuryFooter(doc, 700, orgName, pageNum);
+          pageNum++;
+          doc.addPage({ size: "LETTER", margin: LX.ml });
+          y = LX.mt;
+        }
+        doc.fontSize(9).font("Helvetica-Bold").fillColor(theme.text)
+          .text("ADDITIONAL WORKLOG (UNBILLED TIME FOR THIS CLIENT)", contentLeft, y, { width: contentRight - contentLeft });
+        y += 14;
+        y = drawDetailBlock(doc, y, unallocatedLux, {
+          leftX: contentLeft,
+          rightX: contentRight,
+          bottomLimit: 700,
+          accentColor: theme.accent || "#0f172a",
+          mutedColor: "#64748b",
+          textColor: theme.text,
+          onPageBreak: () => {
+            drawLuxuryFooter(doc, 700, orgName, pageNum);
+            pageNum++;
+            doc.addPage({ size: "LETTER", margin: LX.ml });
+            return LX.mt;
+          },
+        });
+        doc.font("Helvetica").fontSize(10).fillColor(theme.text);
+        y += 14;
+        if (y + 120 > 720) {
+          drawLuxuryFooter(doc, 700, orgName, pageNum);
+          pageNum++;
+          doc.addPage({ size: "LETTER", margin: LX.ml });
+          y = LX.mt;
+        }
+      }
+
       const subtotal = Number(invoice.subtotal || 0);
       const discountAmt = Number(invoice.discountAmount || 0);
       const taxAmt = Number(invoice.taxAmount || 0);
@@ -643,67 +932,158 @@ export async function generateInvoicePdf(
       drawLuxuryFooter(doc, y, orgName, pageNum, payOnlineText);
 
     } else {
+      let headerBottomY: number;
+
       if (themeName === "modern") {
-        doc.rect(0, 0, 612, 100).fill(theme.headerBg);
-        const logoW = embedLogo(doc, logoFile, 50, 22, 50, 50);
-        doc.fontSize(22).fillColor(theme.headerText).font("Helvetica-Bold").text(orgName, 50 + logoW, 30);
-        doc.fontSize(10).fillColor("#94a3b8").font("Helvetica");
-        if (orgPhone) doc.text(orgPhone, 50 + logoW, 56);
-        if (orgEmail) doc.text(orgEmail, 50 + logoW, 70);
-        doc.rect(0, 100, 612, 3).fill(theme.accent);
-        doc.fontSize(11).fillColor("#94a3b8").font("Helvetica").text("INVOICE", 400, 30, { align: "right", width: 162 });
-        doc.fontSize(22).fillColor(theme.headerText).font("Helvetica-Bold").text(invoice.number, 400, 46, { align: "right", width: 162 });
-        doc.fontSize(10).fillColor("#94a3b8").font("Helvetica").text(`${invoice.status}`, 400, 74, { align: "right", width: 162 });
-        y = 120;
+        const logoW = measureLogoWidth(doc, logoBytes, 50, 50);
+        const textX = 50 + logoW;
+        const leftMaxW = Math.max(120, HEADER_RIGHT_META_X - HEADER_LEFT_GUTTER - textX);
+        const rightW = 162;
+        const rightX = 400;
+
+        const nameH = doc.font("Helvetica-Bold").fontSize(22)
+          .heightOfString(orgName, { width: leftMaxW, lineBreak: false });
+        const infoStartY = 30 + nameH + 6;
+        const infoH = measureHeaderInfoHeight(doc, 10, leftMaxW, [orgPhone, orgEmail], 2);
+        const numH = doc.font("Helvetica-Bold").fontSize(22)
+          .heightOfString(invoice.number, { width: rightW });
+        const labelH = doc.font("Helvetica").fontSize(11)
+          .heightOfString("INVOICE", { width: rightW });
+        const statusH = doc.font("Helvetica").fontSize(10)
+          .heightOfString(invoice.status, { width: rightW });
+        const rightBottom = 30 + labelH + 4 + numH + 8 + statusH;
+        const leftBottom = infoStartY + infoH;
+        const barH = Math.max(100, leftBottom + 16, rightBottom + 16);
+
+        doc.rect(0, 0, 612, barH).fill(theme.headerBg);
+        embedLogo(doc, logoBytes, 50, 22, 50, 50);
+        doc.font("Helvetica-Bold").fontSize(22).fillColor(theme.headerText)
+          .text(orgName, textX, 30, { width: leftMaxW, ellipsis: true, lineBreak: false });
+        drawHeaderInfoLines(doc, textX, infoStartY, leftMaxW, 10, "#94a3b8",
+          [orgPhone, orgEmail], 2);
+        doc.rect(0, barH, 612, 3).fill(theme.accent);
+        doc.font("Helvetica").fontSize(11).fillColor("#94a3b8")
+          .text("INVOICE", rightX, 30, { align: "right", width: rightW });
+        doc.font("Helvetica-Bold").fontSize(22).fillColor(theme.headerText)
+          .text(invoice.number, rightX, 30 + labelH + 4, { align: "right", width: rightW });
+        doc.font("Helvetica").fontSize(10).fillColor("#94a3b8")
+          .text(invoice.status, rightX, 30 + labelH + 4 + numH + 8, { align: "right", width: rightW });
+        headerBottomY = barH + 6;
       } else if (themeName === "bold") {
-        doc.rect(0, 0, 612, 120).fill(theme.headerBg);
-        const logoW = embedLogo(doc, logoFile, 50, 20, 50, 50);
-        doc.fontSize(26).fillColor(theme.headerText).font("Helvetica-Bold").text(orgName, 50 + logoW, 28);
-        doc.fontSize(10).fillColor("rgba(255,255,255,0.7)").font("Helvetica");
-        let hy = 58;
-        if (orgAddress) { doc.text(orgAddress, 50 + logoW, hy); hy += 14; }
-        if (orgPhone) { doc.text(orgPhone, 50 + logoW, hy); hy += 14; }
-        if (orgEmail) { doc.text(orgEmail, 50 + logoW, hy); }
-        doc.fontSize(32).fillColor(theme.headerText).font("Helvetica-Bold").text(invoice.number, 350, 30, { align: "right", width: 212 });
-        doc.fontSize(12).fillColor("rgba(255,255,255,0.8)").font("Helvetica").text(invoice.status, 350, 70, { align: "right", width: 212 });
-        doc.fontSize(10).text(`Issued: ${issuedFormatted}`, 350, 88, { align: "right", width: 212 });
-        doc.text(`Due: ${dueFormatted}`, 350, 102, { align: "right", width: 212 });
-        y = 140;
+        const logoW = measureLogoWidth(doc, logoBytes, 50, 50);
+        const textX = 50 + logoW;
+        const leftMaxW = Math.max(120, HEADER_RIGHT_META_X - HEADER_LEFT_GUTTER - textX);
+        const rightW = HEADER_RIGHT_META_W;
+        const rightX = HEADER_RIGHT_META_X;
+        const infoColor = "rgba(255,255,255,0.7)";
+        const metaColor = "rgba(255,255,255,0.8)";
+
+        const nameH = doc.font("Helvetica-Bold").fontSize(26)
+          .heightOfString(orgName, { width: leftMaxW, lineBreak: false });
+        const infoStartY = 28 + nameH + 6;
+        const infoH = measureHeaderInfoHeight(doc, 10, leftMaxW,
+          [orgAddress, orgPhone, orgEmail], 2);
+        const leftBottom = infoStartY + infoH;
+
+        const numH = doc.font("Helvetica-Bold").fontSize(32)
+          .heightOfString(invoice.number, { width: rightW });
+        const statusH = doc.font("Helvetica").fontSize(12)
+          .heightOfString(invoice.status, { width: rightW });
+        const issuedH = doc.font("Helvetica").fontSize(10)
+          .heightOfString(`Issued: ${issuedFormatted}`, { width: rightW });
+        const dueH = doc.font("Helvetica").fontSize(10)
+          .heightOfString(`Due: ${dueFormatted}`, { width: rightW });
+        const rightBottom = 30 + numH + 10 + statusH + 4 + issuedH + 2 + dueH;
+        const barH = Math.max(120, leftBottom + 16, rightBottom + 16);
+
+        doc.rect(0, 0, 612, barH).fill(theme.headerBg);
+        embedLogo(doc, logoBytes, 50, 20, 50, 50);
+        doc.font("Helvetica-Bold").fontSize(26).fillColor(theme.headerText)
+          .text(orgName, textX, 28, { width: leftMaxW, ellipsis: true, lineBreak: false });
+        drawHeaderInfoLines(doc, textX, infoStartY, leftMaxW, 10, infoColor,
+          [orgAddress, orgPhone, orgEmail], 2);
+        doc.font("Helvetica-Bold").fontSize(32).fillColor(theme.headerText)
+          .text(invoice.number, rightX, 30, { align: "right", width: rightW });
+        const statusY = 30 + numH + 10;
+        doc.font("Helvetica").fontSize(12).fillColor(metaColor)
+          .text(invoice.status, rightX, statusY, { align: "right", width: rightW });
+        const issuedY = statusY + statusH + 4;
+        doc.font("Helvetica").fontSize(10).fillColor(metaColor)
+          .text(`Issued: ${issuedFormatted}`, rightX, issuedY, { align: "right", width: rightW });
+        doc.font("Helvetica").fontSize(10).fillColor(metaColor)
+          .text(`Due: ${dueFormatted}`, rightX, issuedY + issuedH + 2, { align: "right", width: rightW });
+        headerBottomY = barH + 6;
       } else if (themeName === "minimal") {
-        const logoW = embedLogo(doc, logoFile, 50, 44, 40, 40);
-        doc.fontSize(11).fillColor(theme.textMuted).font("Helvetica").text(orgName.toUpperCase(), 50 + logoW, 50, { characterSpacing: 3 });
-        y = 68;
-        doc.fontSize(9).fillColor("#cbd5e1").font("Helvetica");
-        if (orgAddress) { doc.text(orgAddress, 50 + logoW, y); y += 12; }
-        if (orgPhone) { doc.text(orgPhone, 50 + logoW, y); y += 12; }
-        doc.moveTo(50, y + 4).lineTo(562, y + 4).strokeColor("#e2e8f0").lineWidth(0.3).stroke();
-        y += 14;
-        doc.fontSize(9).fillColor(theme.textMuted).font("Helvetica").text("INVOICE", 450, 50, { align: "right", width: 112 });
-        doc.fontSize(16).fillColor(theme.text).font("Helvetica-Bold").text(invoice.number, 400, 64, { align: "right", width: 162 });
-        doc.fontSize(9).fillColor(theme.textMuted).font("Helvetica").text(`${issuedFormatted}  ·  Due ${dueFormatted}`, 350, 84, { align: "right", width: 212 });
+        const logoW = embedLogo(doc, logoBytes, 50, 44, 40, 40);
+        const textX = 50 + logoW;
+        const leftMaxW = Math.max(120, HEADER_RIGHT_META_X - HEADER_LEFT_GUTTER - textX);
+        const rightW = HEADER_RIGHT_META_W;
+        const rightX = HEADER_RIGHT_META_X;
+
+        doc.font("Helvetica").fontSize(11).fillColor(theme.textMuted)
+          .text(orgName.toUpperCase(), textX, 50, {
+            width: leftMaxW, characterSpacing: 3, ellipsis: true, lineBreak: false,
+          });
+        const leftEndY = drawHeaderInfoLines(
+          doc, textX, 68, leftMaxW, 9, "#cbd5e1",
+          [orgAddress, orgPhone], 2,
+        );
+
+        doc.font("Helvetica").fontSize(9).fillColor(theme.textMuted)
+          .text("INVOICE", rightX + 100, 50, { align: "right", width: rightW - 100 });
+        const numH = doc.font("Helvetica-Bold").fontSize(16)
+          .heightOfString(invoice.number, { width: rightW });
+        doc.font("Helvetica-Bold").fontSize(16).fillColor(theme.text)
+          .text(invoice.number, rightX, 64, { align: "right", width: rightW });
+        const datesY = 64 + numH + 4;
+        doc.font("Helvetica").fontSize(9).fillColor(theme.textMuted)
+          .text(`${issuedFormatted}  ·  Due ${dueFormatted}`, rightX, datesY, {
+            align: "right", width: rightW,
+          });
+        const datesH = doc.heightOfString(`${issuedFormatted}  ·  Due ${dueFormatted}`, { width: rightW });
+        const rightEndY = datesY + datesH;
+
+        const dividerY = Math.max(leftEndY, rightEndY) + 6;
+        doc.moveTo(50, dividerY).lineTo(562, dividerY)
+          .strokeColor("#e2e8f0").lineWidth(0.3).stroke();
+        headerBottomY = dividerY + 10;
       } else {
-        const logoW = embedLogo(doc, logoFile, 50, 44, 50, 50);
-        doc.fontSize(22).fillColor(theme.headerText).font("Helvetica-Bold").text(orgName, 50 + logoW, 50);
-        doc.fontSize(10).fillColor(theme.textMuted).font("Helvetica");
-        y = 78;
-        if (orgAddress) { doc.text(orgAddress, 50 + logoW, y); y += 14; }
-        if (orgPhone) { doc.text(orgPhone, 50 + logoW, y); y += 14; }
-        if (orgEmail) { doc.text(orgEmail, 50 + logoW, y); y += 14; }
-        if (orgWebsite) { doc.text(orgWebsite, 50 + logoW, y); y += 14; }
-        doc.fontSize(24).fillColor(theme.text).font("Helvetica-Bold").text(invoice.number, 350, 50, { align: "right" });
-        doc.fontSize(11).fillColor(theme.textMuted).font("Helvetica");
-        doc.text(`Status: ${invoice.status}`, 350, 80, { align: "right" });
-        doc.text(`Issued: ${issuedFormatted}`, 350, 96, { align: "right" });
-        doc.text(`Due: ${dueFormatted}`, 350, 112, { align: "right" });
+        const logoW = embedLogo(doc, logoBytes, 50, 44, 50, 50);
+        const textX = 50 + logoW;
+        const leftMaxW = Math.max(120, HEADER_RIGHT_META_X - HEADER_LEFT_GUTTER - textX);
+        const rightW = HEADER_RIGHT_META_W;
+        const rightX = HEADER_RIGHT_META_X;
+
+        doc.font("Helvetica-Bold").fontSize(22).fillColor(theme.headerText)
+          .text(orgName, textX, 50, {
+            width: leftMaxW, ellipsis: true, lineBreak: false,
+          });
+        const nameH = doc.heightOfString(orgName, { width: leftMaxW, lineBreak: false });
+        const leftEndY = drawHeaderInfoLines(
+          doc, textX, 50 + nameH + 6, leftMaxW, 10, theme.textMuted,
+          [orgAddress, orgPhone, orgEmail, orgWebsite], 2,
+        );
+
+        doc.font("Helvetica-Bold").fontSize(24).fillColor(theme.text)
+          .text(invoice.number, rightX, 50, { align: "right", width: rightW });
+        const numH = doc.heightOfString(invoice.number, { width: rightW });
+        const rightEndY = drawHeaderMetaRows(
+          doc, rightX, 50 + numH + 6, rightW,
+          [
+            { text: `Status: ${invoice.status}`, size: 11, color: theme.textMuted },
+            { text: `Issued: ${issuedFormatted}`, size: 11, color: theme.textMuted },
+            { text: `Due: ${dueFormatted}`, size: 11, color: theme.textMuted },
+          ],
+        );
+        headerBottomY = Math.max(leftEndY, rightEndY);
       }
 
-      if (themeName !== "bold") {
-        if (themeName === "modern") {
-          doc.fontSize(10).fillColor(theme.textMuted).font("Helvetica");
-          doc.text(`Issued: ${issuedFormatted}`, 50, y);
-          doc.text(`Due: ${dueFormatted}`, 200, y);
-          y += 20;
-        }
+      y = headerBottomY;
+      if (themeName === "modern") {
+        doc.font("Helvetica").fontSize(10).fillColor(theme.textMuted);
+        doc.text(`Issued: ${issuedFormatted}`, 50, y + 14);
+        doc.text(`Due: ${dueFormatted}`, 200, y + 14);
+        y += 14 + doc.heightOfString(`Issued: ${issuedFormatted}`) + 2;
       }
 
       y = Math.max(y, themeName === "minimal" ? 110 : 140) + 16;
@@ -802,6 +1182,30 @@ export async function generateInvoicePdf(
 
       y += 16;
       if (y + 120 > 720) { doc.addPage(); y = 50; }
+
+      // Unallocated worklog (manual invoices with unbilled client time entries)
+      const unallocatedStd = lineDetails?.get("__unallocated__");
+      if (unallocatedStd && unallocatedStd.length > 0) {
+        if (y + 60 > 700) { doc.addPage(); y = 50; }
+        doc.fontSize(9).font("Helvetica-Bold").fillColor(theme.text)
+          .text("ADDITIONAL WORKLOG (UNBILLED TIME FOR THIS CLIENT)", 50, y, { width: 512 });
+        y += 14;
+        y = drawDetailBlock(doc, y, unallocatedStd, {
+          leftX: 50,
+          rightX: 562,
+          bottomLimit: 700,
+          accentColor: theme.accent,
+          mutedColor: theme.textMuted,
+          textColor: theme.text,
+          onPageBreak: () => {
+            doc.addPage();
+            return 50;
+          },
+        });
+        doc.font("Helvetica").fontSize(11).fillColor(theme.text);
+        y += 16;
+        if (y + 120 > 720) { doc.addPage(); y = 50; }
+      }
 
       const subtotal = Number(invoice.subtotal || 0);
       const discountAmt = Number(invoice.discountAmount || 0);
@@ -943,6 +1347,8 @@ export async function generateEstimatePdf(
   if (estimate.lines && estimate.lines.length > MAX_PDF_LINE_ITEMS) {
     throw new Error(`Estimate has ${estimate.lines.length} line items, exceeding the maximum of ${MAX_PDF_LINE_ITEMS}. Please split this estimate into smaller estimates.`);
   }
+  // Resolve the logo bytes BEFORE the synchronous PDFKit draw loop.
+  const logoBytes = await loadLogoBytes(org?.logoUrl);
   return new Promise((resolve, reject) => {
     const themeName = org?.invoiceTheme || "luxury";
     const theme = getTheme(themeName);
@@ -966,7 +1372,6 @@ export async function generateEstimatePdf(
     const dateFmt = org?.dateFormat || null;
     const issuedFormatted = fmtDate(estimate.issuedDate, dateFmt);
     const expiryFormatted = estimate.expiryDate ? fmtDate(estimate.expiryDate, dateFmt) : null;
-    const logoFile = resolveLogoPath(org?.logoUrl);
 
     let y: number;
     let pageNum = 1;
@@ -974,7 +1379,7 @@ export async function generateEstimatePdf(
     const contentRight = luxury ? LX_RIGHT : 562;
 
     if (luxury) {
-      y = drawLuxuryHeader(doc, orgName, orgAddress, orgPhone, orgEmail, orgWebsite, "ESTIMATE", logoFile);
+      y = drawLuxuryHeader(doc, orgName, orgAddress, orgPhone, orgEmail, orgWebsite, "ESTIMATE", logoBytes);
 
       const metaRows: [string, string][] = [
         ["ESTIMATE NO", estimate.number],
@@ -1084,22 +1489,39 @@ export async function generateEstimatePdf(
       drawLuxuryFooter(doc, y, orgName, pageNum);
 
     } else {
-      const logoW = embedLogo(doc, logoFile, 50, 44, 50, 50);
-      doc.fontSize(22).fillColor(theme.headerText).font("Helvetica-Bold").text(orgName, 50 + logoW, 50);
-      doc.fontSize(10).fillColor(theme.textMuted).font("Helvetica");
-      y = 78;
-      if (orgAddress) { doc.text(orgAddress, 50 + logoW, y); y += 14; }
-      if (orgPhone) { doc.text(orgPhone, 50 + logoW, y); y += 14; }
-      if (orgEmail) { doc.text(orgEmail, 50 + logoW, y); y += 14; }
+      // Task #475: same width-bounded, measured-height stacking the
+      // invoice generator now uses for non-luxury themes. Multi-line
+      // org address no longer overlaps phone / email / right meta.
+      const logoW = embedLogo(doc, logoBytes, 50, 44, 50, 50);
+      const textX = 50 + logoW;
+      const leftMaxW = Math.max(120, HEADER_RIGHT_META_X - HEADER_LEFT_GUTTER - textX);
+      const rightW = HEADER_RIGHT_META_W;
+      const rightX = HEADER_RIGHT_META_X;
 
-      doc.fontSize(24).fillColor(theme.text).font("Helvetica-Bold").text(estimate.number, 350, 50, { align: "right" });
-      doc.fontSize(11).fillColor(theme.textMuted).font("Helvetica");
-      doc.text(`ESTIMATE`, 350, 80, { align: "right" });
-      doc.text(`Status: ${estimate.status}`, 350, 96, { align: "right" });
-      doc.text(`Issued: ${issuedFormatted}`, 350, 112, { align: "right" });
-      if (expiryFormatted) doc.text(`Expires: ${expiryFormatted}`, 350, 128, { align: "right" });
+      doc.font("Helvetica-Bold").fontSize(22).fillColor(theme.headerText)
+        .text(orgName, textX, 50, {
+          width: leftMaxW, ellipsis: true, lineBreak: false,
+        });
+      const nameH = doc.heightOfString(orgName, { width: leftMaxW, lineBreak: false });
+      const leftEndY = drawHeaderInfoLines(
+        doc, textX, 50 + nameH + 6, leftMaxW, 10, theme.textMuted,
+        [orgAddress, orgPhone, orgEmail, orgWebsite], 2,
+      );
 
-      y = Math.max(y, 140) + 16;
+      doc.font("Helvetica-Bold").fontSize(24).fillColor(theme.text)
+        .text(estimate.number, rightX, 50, { align: "right", width: rightW });
+      const numH = doc.heightOfString(estimate.number, { width: rightW });
+      const metaRows: HeaderMetaRow[] = [
+        { text: "ESTIMATE", size: 11, color: theme.textMuted },
+        { text: `Status: ${estimate.status}`, size: 11, color: theme.textMuted },
+        { text: `Issued: ${issuedFormatted}`, size: 11, color: theme.textMuted },
+      ];
+      if (expiryFormatted) {
+        metaRows.push({ text: `Expires: ${expiryFormatted}`, size: 11, color: theme.textMuted });
+      }
+      const rightEndY = drawHeaderMetaRows(doc, rightX, 50 + numH + 6, rightW, metaRows);
+
+      y = Math.max(leftEndY, rightEndY, 140) + 16;
       doc.fontSize(9).fillColor(theme.textMuted).font("Helvetica-Bold").text("PREPARED FOR", 50, y, { characterSpacing: 1 });
       y += 16;
       doc.fontSize(13).fillColor(theme.text).font("Helvetica-Bold").text(estimate.clientName, 50, y);
@@ -1229,6 +1651,8 @@ export async function generateExpenseReceiptPdf(
   expense: ExpenseReceiptData,
   org?: OrgBranding,
 ): Promise<Buffer> {
+  // Resolve the logo bytes BEFORE the synchronous PDFKit draw loop.
+  const logoBytes = await loadLogoBytes(org?.logoUrl);
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "LETTER", margin: 50 });
     const chunks: Buffer[] = [];
@@ -1244,25 +1668,40 @@ export async function generateExpenseReceiptPdf(
     const orgAddress = org?.address || "";
     const orgPhone = org?.phone || "";
     const orgEmail = org?.email || "";
-    const logoFile = resolveLogoPath(org?.logoUrl);
 
-    const logoW = embedLogo(doc, logoFile, 50, 44, 50, 50);
-    doc.fontSize(22).fillColor("#0f172a").font("Helvetica-Bold").text(orgName, 50 + logoW, 50);
-    doc.fontSize(10).fillColor("#94a3b8").font("Helvetica");
-    let y = 78;
-    if (orgAddress) { doc.text(orgAddress, 50 + logoW, y); y += 14; }
-    if (orgPhone) { doc.text(orgPhone, 50 + logoW, y); y += 14; }
-    if (orgEmail) { doc.text(orgEmail, 50 + logoW, y); y += 14; }
+    // Task #475: width-bounded, measured-height stacking so multi-line
+    // org address can't collide with the right-side EXPENSE RECEIPT
+    // / status / date / ID column.
+    const logoW = embedLogo(doc, logoBytes, 50, 44, 50, 50);
+    const textX = 50 + logoW;
+    const leftMaxW = Math.max(120, HEADER_RIGHT_META_X - HEADER_LEFT_GUTTER - textX);
+    const rightW = HEADER_RIGHT_META_W;
+    const rightX = HEADER_RIGHT_META_X;
 
-    doc.fontSize(20).fillColor("#0f172a").font("Helvetica-Bold").text("EXPENSE RECEIPT", 350, 50, { align: "right" });
+    doc.font("Helvetica-Bold").fontSize(22).fillColor("#0f172a")
+      .text(orgName, textX, 50, { width: leftMaxW, ellipsis: true, lineBreak: false });
+    const nameH = doc.heightOfString(orgName, { width: leftMaxW, lineBreak: false });
+    const leftEndY = drawHeaderInfoLines(
+      doc, textX, 50 + nameH + 6, leftMaxW, 10, "#94a3b8",
+      [orgAddress, orgPhone, orgEmail], 2,
+    );
+
+    doc.font("Helvetica-Bold").fontSize(20).fillColor("#0f172a")
+      .text("EXPENSE RECEIPT", rightX, 50, { align: "right", width: rightW });
+    const labelH = doc.heightOfString("EXPENSE RECEIPT", { width: rightW });
     const statusColors: Record<string, string> = {
       DRAFT: "#6b7280", SUBMITTED: "#3b82f6", APPROVED: "#22c55e", REJECTED: "#b91c1c", REIMBURSED: "#a855f7",
     };
-    doc.fontSize(12).fillColor(statusColors[expense.status] || "#6b7280").font("Helvetica-Bold")
-      .text(expense.status, 350, 76, { align: "right" });
-    doc.fontSize(10).fillColor("#64748b").font("Helvetica")
-      .text(`Date: ${expense.date}`, 350, 96, { align: "right" });
-    doc.text(`ID: ${expense.id.slice(0, 8)}...`, 350, 112, { align: "right" });
+    const rightEndY = drawHeaderMetaRows(
+      doc, rightX, 50 + labelH + 6, rightW,
+      [
+        { text: expense.status, font: "Helvetica-Bold", size: 12, color: statusColors[expense.status] || "#6b7280" },
+        { text: `Date: ${expense.date}`, size: 10, color: "#64748b", gap: 4 },
+        { text: `ID: ${expense.id.slice(0, 8)}...`, size: 10, color: "#64748b" },
+      ],
+    );
+
+    let y = Math.max(leftEndY, rightEndY);
 
     if (expense.status === "APPROVED" || expense.status === "REIMBURSED") {
       doc.save();
