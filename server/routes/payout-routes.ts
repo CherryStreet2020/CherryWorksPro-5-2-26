@@ -66,18 +66,14 @@ app.post("/api/payouts", requireAdmin, async (req, res) => {
     const payout = await db.transaction(async (tx) => {
       const lockKey = Buffer.from(req.session.orgId! + parsed.teamMemberId + parsed.payoutDate).reduce((a, b) => ((a * 31 + b) & 0x7fffffff), 0);
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
-      const created = await storage.createTeamMemberPayout({
-        orgId: req.session.orgId!,
-        teamMemberId: parsed.teamMemberId,
-        amount: String(parsed.amount),
-        payoutDate: parsed.payoutDate,
-        paymentMethod: parsed.paymentMethod,
-        referenceNumber: parsed.referenceNumber || null,
-        periodStart: parsed.periodStart || null,
-        periodEnd: parsed.periodEnd || null,
-        notes: parsed.notes || null,
-        status: parsed.status || "COMPLETED",
-      });
+      // When paying specific time entries, the payout total IS the exact sum
+      // of the per-entry line amounts (snapshot-preferring rate, each rounded
+      // to the cent). Derive it server-side so the payout, its line detail, the
+      // GL journal entry, and the Stripe transfer all foot to the cent — never
+      // trust the client amount for an itemized payout. Ad-hoc payouts (no time
+      // entries) still use the amount the admin entered.
+      let entries: { timeEntryId: string; amount: string }[] = [];
+      let resolvedAmount = round2(Number(parsed.amount));
       if (parsed.timeEntryIds && parsed.timeEntryIds.length > 0) {
         const memberships = await db.select().from(projectMembers).where(eq(projectMembers.userId, parsed.teamMemberId));
         const costRateByProject: Record<string, number> = {};
@@ -91,11 +87,27 @@ app.post("/api/payouts", requireAdmin, async (req, res) => {
             eq(timeEntries.userId, parsed.teamMemberId),
           )
         );
-        const entries = allTe.map(te => {
-          const rate = te.costRateSnapshot != null ? Number(te.costRateSnapshot) : (costRateByProject[te.projectId] || 0);
-          const amt = round2((te.minutes / 60) * rate);
-          return { timeEntryId: te.id, amount: String(amt) };
+        entries = allTe.map(te => {
+          const snapshotMissing = te.costRateSnapshot == null || String(te.costRateSnapshot) === "";
+          const rate = !snapshotMissing ? Number(te.costRateSnapshot) : (costRateByProject[te.projectId] || 0);
+          return { timeEntryId: te.id, amount: String(round2((te.minutes / 60) * rate)) };
         });
+        resolvedAmount = round2(entries.reduce((s, e) => s + Number(e.amount), 0));
+      }
+
+      const created = await storage.createTeamMemberPayout({
+        orgId: req.session.orgId!,
+        teamMemberId: parsed.teamMemberId,
+        amount: String(resolvedAmount),
+        payoutDate: parsed.payoutDate,
+        paymentMethod: parsed.paymentMethod,
+        referenceNumber: parsed.referenceNumber || null,
+        periodStart: parsed.periodStart || null,
+        periodEnd: parsed.periodEnd || null,
+        notes: parsed.notes || null,
+        status: parsed.status || "COMPLETED",
+      });
+      if (entries.length > 0) {
         await storage.linkTimeEntriesToPayout(created.id, entries, req.session.orgId!);
       }
       return created;
@@ -106,12 +118,14 @@ app.post("/api/payouts", requireAdmin, async (req, res) => {
       action: "PAYOUT_RECORDED",
       entityType: "payout",
       entityId: payout.id,
-      details: { teamMemberName: teamMember.name, amount: parsed.amount, method: parsed.paymentMethod },
+      details: { teamMemberName: teamMember.name, amount: payout.amount, method: parsed.paymentMethod },
     });
 
     const payoutOrg = await storage.getOrg(req.session.orgId!);
     if (payoutOrg?.autoPostJournalEntries) {
-      const payoutAmt = Number(parsed.amount).toFixed(2);
+      // Use the persisted (reconciled) payout amount so the GL journal entry
+      // foots to the payout and its line items, not the client-supplied value.
+      const payoutAmt = Number(payout.amount).toFixed(2);
       await createAutoJournalEntry(req.session.orgId!, parsed.payoutDate, `Payout to ${teamMember.name}`, "PAYOUT", payout.id, [
         { accountNumber: "5100", debit: payoutAmt, credit: "0.00", memo: "Team payout costs" },
         { accountNumber: "1000", debit: "0.00", credit: payoutAmt, memo: "Cash disbursed" },
