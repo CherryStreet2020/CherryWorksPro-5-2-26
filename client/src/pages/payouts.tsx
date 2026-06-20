@@ -648,13 +648,13 @@ export default function PayoutsPage() {
       </Card>
 
       <Dialog open={payoutDialogOpen} onOpenChange={v => { if (!v) { setPayoutDialogOpen(false); resetForm(); } else setPayoutDialogOpen(true); }}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" style={{ background: "var(--lux-surface)", borderColor: "var(--lux-border)" }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden" style={{ background: "var(--lux-surface)", borderColor: "var(--lux-border)" }}>
           <DialogHeader>
             <DialogTitle style={{ color: "var(--lux-text)" }}>
               Record Payment{selectedTeamMember ? ` — ${selectedTeamMember.teamMemberName}` : ""}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 pt-2">
+          <div className="space-y-3 pt-2 min-w-0">
             <FormSection title="Team Member">
               {selectedTeamMember ? (
                 <div className="flex items-center gap-2 p-2 rounded-lg" style={{ background: "var(--lux-bg)" }}>
@@ -726,7 +726,7 @@ export default function PayoutsPage() {
 
             {unpaidEntries && unpaidEntries.length > 0 && (
               <FormSection title={`Link Time Entries (${unpaidEntries.length} unpaid)`}>
-                <div className="max-h-40 overflow-y-auto space-y-1 rounded-lg p-2" style={{ background: "var(--lux-bg)", border: "1px solid var(--lux-border)" }}>
+                <div className="max-h-40 overflow-y-auto overflow-x-hidden space-y-1 rounded-lg p-2" style={{ background: "var(--lux-bg)", border: "1px solid var(--lux-border)" }}>
                   <div className="flex items-center gap-2 pb-1 mb-1" style={{ borderBottom: "1px solid var(--lux-border)" }}>
                     <Checkbox
                       checked={selectedEntryIds.size === unpaidEntries.length}
@@ -738,11 +738,11 @@ export default function PayoutsPage() {
                     <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Select All</span>
                   </div>
                   {unpaidEntries.map(e => (
-                    <div key={e.id} className="flex items-center gap-2 py-0.5">
+                    <div key={e.id} className="flex items-center gap-2 py-0.5 min-w-0">
                       <Checkbox checked={selectedEntryIds.has(e.id)} onCheckedChange={() => toggleEntrySelection(e.id)} />
-                      <span className="text-xs tabular-nums" style={{ color: "var(--lux-text-muted)" }}>{formatDate(e.date)}</span>
-                      <span className="text-xs font-medium" style={{ color: "var(--lux-text)" }}>{Math.round(e.minutes / 60 * 100) / 100}h</span>
-                      <span className="text-xs truncate flex-1" style={{ color: "var(--lux-text-muted)" }}>{e.notes || "—"}</span>
+                      <span className="text-xs tabular-nums shrink-0" style={{ color: "var(--lux-text-muted)" }}>{formatDate(e.date)}</span>
+                      <span className="text-xs font-medium shrink-0" style={{ color: "var(--lux-text)" }}>{Math.round(e.minutes / 60 * 100) / 100}h</span>
+                      <span className="text-xs truncate flex-1 min-w-0" style={{ color: "var(--lux-text-muted)" }}>{e.notes || "—"}</span>
                       {e.invoiced && <StatusBadge status="BILLED" size="xs" />}
                     </div>
                   ))}
