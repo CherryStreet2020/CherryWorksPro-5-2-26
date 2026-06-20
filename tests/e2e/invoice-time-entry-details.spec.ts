@@ -201,11 +201,14 @@ test("PDF pagination: many detail rows produce a multi-page PDF without throwing
   }
 });
 
-test("manual invoice shows 'Additional worklog' section with unbilled client time entries when org default ON", async ({
+test("manual invoice does NOT leak unbilled client time entries to the customer-facing public view", async ({
   isolatedOrg,
   browser,
 }) => {
-  // Org default ON so manual invoices auto-show worklog detail.
+  // Org default ON: worklog detail is enabled. Even so, a manually-created
+  // invoice must NOT surface the client's OTHER unbilled time — that section
+  // leaked unrelated and non-billable (internal) entries onto the customer-facing
+  // invoice and drifted as new time was logged after send.
   const orgPatch = await patchJson(isolatedOrg, "/api/org/settings", {
     showTimeEntryDetails: true,
   });
@@ -260,19 +263,19 @@ test("manual invoice shows 'Additional worklog' section with unbilled client tim
     await pub.goto(`/i/${sent.publicToken}`);
     await pub.waitForSelector('[data-testid="card-public-invoice"]', { timeout: 15000 });
 
-    // The unallocated section header appears.
+    // The unbilled-worklog section must NOT appear on the customer-facing view.
     const header = pub.locator('[data-testid="row-public-unallocated-worklog-header"]');
-    await expect(header).toBeVisible();
+    expect(await header.count()).toBe(0);
 
-    // At least one entry row from the unallocated bucket renders.
+    // No unallocated entry rows render.
     const entryRows = pub.locator('[data-testid^="public-detail-unallocated-"][data-testid*="-entry-"]');
-    expect(await entryRows.count()).toBeGreaterThanOrEqual(1);
+    expect(await entryRows.count()).toBe(0);
 
-    // The MAN-201/MAN-202 ticket prefixes appear somewhere in the unallocated rows.
+    // The unbilled entries' ticket prefixes must NOT leak into the public page.
     const unallocText = (await pub.locator('[data-testid="card-public-invoice"]').textContent()) ?? "";
-    expect(unallocText).toMatch(/MAN-20[12]/);
+    expect(unallocText).not.toMatch(/MAN-20[12]/);
 
-    // The PDF still renders cleanly.
+    // The PDF still renders cleanly (no crash now that the section is gone).
     const pdfRes = await pub.request.get(`/api/public/invoices/${sent.publicToken}/pdf`);
     expect(pdfRes.status()).toBe(200);
     const pdfBuf = await pdfRes.body();

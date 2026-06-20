@@ -1,12 +1,6 @@
 import { db } from "./db";
 import { timeEntries, invoiceLines, invoices, projects, users, services } from "@shared/schema";
-import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
-
-// Synthetic key used in the lineDetails Map for time entries that match the
-// invoice's client but were NOT rolled into a specific invoice line at
-// generation time (e.g. manually-created invoices). Frontend / PDF render
-// these as an "Additional worklog" section beneath the line items.
-export const UNALLOCATED_KEY = "__unallocated__";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 // Display-only: groups a sent invoice's time entries into day/entry/week
 // rows per line. Money totals come from invoice_lines. Queries are org-scoped.
@@ -96,16 +90,14 @@ export interface JoinedEntry {
   serviceName: string | null;
 }
 
-// Returns Map<lineId, DetailItem[]> for invoice lines with time entries.
+// Returns Map<lineId, DetailItem[]> for this invoice's own lines.
 //
-// In addition to entries linked to a line via time_entries.invoice_line_id
-// (the "rolled up at generation" case), this also surfaces entries that
-// belong to the invoice's client but have not been billed yet
-// (invoiced=false AND invoice_line_id IS NULL). Those entries are grouped
-// under the synthetic key UNALLOCATED_KEY so manually-created invoices can
-// still show a worklog section. They are deliberately limited to entries
-// that are NOT linked to any other invoice, so the same entry cannot
-// appear on two invoices' worklogs at the same time.
+// Only entries linked to one of THIS invoice's lines via
+// time_entries.invoice_line_id are returned — the worklog detail is the
+// breakdown behind each billed line. It does NOT include the client's other
+// unbilled time (that previously leaked unrelated/non-billable entries onto the
+// customer-facing invoice and drifted after send). A manually-created invoice
+// with no time-linked lines returns an empty map.
 export async function getInvoiceTimeEntryDetails(
   invoiceId: string,
   orgId: string,
@@ -124,18 +116,16 @@ export async function getInvoiceTimeEntryDetails(
   const lineIds = lines.map(l => l.id);
   const lineIdSet = new Set(lineIds);
 
-  // Build the entry filter:
-  //   (invoice_line_id IN this invoice's lines)
-  //   OR
-  //   (invoice_line_id IS NULL AND invoiced=false AND project.client_id = invoice.client_id)
+  // Build the entry filter: ONLY entries linked to THIS invoice's own lines
+  // (time_entries.invoice_line_id IN this invoice's lines). The worklog detail
+  // is the breakdown behind each billed line. It deliberately does NOT surface
+  // the client's other unbilled time: doing so leaked unrelated and non-billable
+  // (internal) entries onto the customer-facing invoice, drifted as new time was
+  // logged after send, and was unbounded. A manually-created invoice with no
+  // time-linked lines therefore shows no time breakdown, which is correct.
   const linkedClause = lineIds.length > 0
     ? inArray(timeEntries.invoiceLineId, lineIds)
     : sql`false`;
-  const unallocatedClause = and(
-    isNull(timeEntries.invoiceLineId),
-    eq(timeEntries.invoiced, false),
-    eq(projects.clientId, invoice.clientId),
-  );
 
   const rows = await db
     .select({
@@ -170,7 +160,7 @@ export async function getInvoiceTimeEntryDetails(
     )
     .where(and(
       eq(timeEntries.orgId, orgId),
-      or(linkedClause, unallocatedClause),
+      linkedClause,
     ))
     .orderBy(asc(timeEntries.date), asc(timeEntries.startTime));
 
@@ -179,8 +169,6 @@ export async function getInvoiceTimeEntryDetails(
     let bucket: string;
     if (r.invoiceLineId && lineIdSet.has(r.invoiceLineId)) {
       bucket = r.invoiceLineId;
-    } else if (r.invoiceLineId == null && r.projectClientId === invoice.clientId) {
-      bucket = UNALLOCATED_KEY;
     } else {
       continue;
     }
