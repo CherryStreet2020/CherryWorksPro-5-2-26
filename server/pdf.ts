@@ -119,16 +119,19 @@ function drawDetailBlock(
       const projectH = projectText
         ? doc.heightOfString(projectText, { width: cProjectW })
         : 11;
-      const rowH = Math.max(12, descH, projectH) + 2;
+      // Clamp the row height so a pathologically long description/project
+      // can't blow the row past the page bottom; the cells below ellipsize.
+      const MAX_DETAIL_ROW_H = 33; // ~3 lines at 8pt
+      const rowH = Math.min(MAX_DETAIL_ROW_H, Math.max(12, descH, projectH) + 2);
       ensureSpace(1, rowH);
       doc.fontSize(8).font("Helvetica").fillColor(mutedColor)
         .text(timeText, cTime, y, { width: cTimeW });
       doc.font("Helvetica").fillColor(textColor)
-        .text(projectText, cProject, y, { width: cProjectW });
+        .text(projectText, cProject, y, { width: cProjectW, height: rowH - 2, ellipsis: true });
       doc.font("Helvetica-Bold").fillColor(textColor)
         .text(it.ticket || "", cTicket, y, { width: cTicketW });
       doc.font("Helvetica").fillColor(mutedColor)
-        .text(descText, cDesc, y, { width: cDescW, lineGap: 1 });
+        .text(descText, cDesc, y, { width: cDescW, lineGap: 1, height: rowH - 2, ellipsis: true });
       doc.font("Helvetica").fillColor(textColor)
         .text(formatHM(it.hours), cHrs, y, { width: cHrsW, align: "right" });
       doc.fontSize(7).fillColor(it.billable ? accentColor : "#94a3b8")
@@ -283,6 +286,25 @@ function deriveBaseUrl(): string | null {
 // The SSRF guard is pinned by `tests/unit/pdf-logo-loader-ssrf.test.ts`
 // (Task #470). That suite also covers the parallel guard in PATCH
 // /api/org/settings, so changes here should keep both call sites in sync.
+// Hard ceiling on a fetched logo body. The host allowlist already bounds
+// fetches to our own ~5MB-capped logo objects; this guarantees a chunked or
+// oversized response can never buffer unbounded into the heap.
+const MAX_LOGO_BYTES = 5 * 1024 * 1024;
+
+// Cheap magic-byte sniff so a non-image 200 from an allowed path is never
+// cached or handed to PDFKit. Covers PNG, JPEG, GIF, and WEBP.
+function looksLikeImage(buf: Buffer): boolean {
+  if (buf.length >= 4 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return true; // PNG
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return true; // JPEG
+  if (buf.length >= 3 && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return true; // GIF
+  if (
+    buf.length >= 12 &&
+    buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+    buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50
+  ) return true; // WEBP (RIFF....WEBP)
+  return false;
+}
+
 export async function loadLogoBytes(
   logoUrl: string | null | undefined,
 ): Promise<Buffer | null> {
@@ -336,8 +358,41 @@ export async function loadLogoBytes(
       setCachedLogo(cacheKey, null);
       return null;
     }
-    const arr = await res.arrayBuffer();
-    const bytes = Buffer.from(arr);
+    // Reject by declared size first, then enforce a streaming byte cap so a
+    // chunked / no-Content-Length response is also bounded.
+    const declaredLen = Number(res.headers.get("content-length"));
+    if (Number.isFinite(declaredLen) && declaredLen > MAX_LOGO_BYTES) {
+      setCachedLogo(cacheKey, null);
+      return null;
+    }
+    let bytes: Buffer;
+    if (res.body) {
+      const reader = res.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          total += value.length;
+          if (total > MAX_LOGO_BYTES) {
+            await reader.cancel().catch(() => {});
+            setCachedLogo(cacheKey, null);
+            return null;
+          }
+          chunks.push(value);
+        }
+      }
+      bytes = Buffer.concat(chunks);
+    } else {
+      bytes = Buffer.from(await res.arrayBuffer());
+    }
+    // Only cache/embed bytes that are actually an image (magic-byte check),
+    // independent of the Content-Type header.
+    if (!looksLikeImage(bytes)) {
+      setCachedLogo(cacheKey, null);
+      return null;
+    }
     setCachedLogo(cacheKey, bytes);
     return bytes;
   } catch {

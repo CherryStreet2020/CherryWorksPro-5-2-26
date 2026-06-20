@@ -1160,8 +1160,10 @@ app.delete("/api/org/logo", requireAdmin, async (req, res) => {
             const prevPath = `${publicRoot.replace(/\/$/, "")}/${ORG_LOGOS_PREFIX}/${prevName}`;
             const { bucketName: pBucket, objectName: pObject } = splitBucketAndObject(prevPath);
             await objectStorageClient.bucket(pBucket).file(pObject).delete({ ignoreNotFound: true });
-          } catch {
-            // swallow — DB still gets nulled out below
+          } catch (err: any) {
+            // Don't fail the request — the DB row is still nulled below — but
+            // log it so an orphaned object in storage is visible to operators.
+            console.warn(`[org-logo-delete] object-storage eviction failed for org ${orgId} (${prevName}): ${err?.message ?? err}`);
           }
         }
       }
@@ -1170,7 +1172,9 @@ app.delete("/api/org/logo", requireAdmin, async (req, res) => {
         try {
           const fp = path.join(logoDir, path.basename(prev));
           if (fs.existsSync(fp)) fs.unlinkSync(fp);
-        } catch {}
+        } catch (err: any) {
+          console.warn(`[org-logo-delete] local-disk eviction failed for org ${orgId}: ${err?.message ?? err}`);
+        }
       }
     }
 

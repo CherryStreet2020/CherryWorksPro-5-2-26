@@ -57,9 +57,14 @@ export function getAllowedLogoHosts(): Set<string> {
     if (!t) continue;
     add(t.startsWith("http") ? t : `https://${t}`);
   }
-  // Dev fallbacks — these are the only HTTP origins ever allowed.
-  hosts.add("localhost:5000");
-  hosts.add("127.0.0.1:5000");
+  // Dev fallbacks — loopback origins are the only HTTP origins ever allowed,
+  // and ONLY outside production. In production, logos resolve to the public
+  // Replit domain (REPLIT_DOMAINS / APP_BASE_URL), so gating these keeps the
+  // "no loopback in production" invariant the SSRF guard documents.
+  if (process.env.NODE_ENV !== "production") {
+    hosts.add("localhost:5000");
+    hosts.add("127.0.0.1:5000");
+  }
   return hosts;
 }
 
