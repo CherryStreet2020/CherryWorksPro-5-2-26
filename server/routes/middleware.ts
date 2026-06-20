@@ -229,8 +229,13 @@ const tenantBuckets = new Map<string, { tokens: number; lastRefill: number }>();
 const ipBuckets = new Map<string, { tokens: number; lastRefill: number }>();
 const userBuckets = new Map<string, { tokens: number; lastRefill: number }>();
 
-const IP_RPM = 300;
-const USER_RPM = 200;
+// Test bypass mirrors the express-rate-limit limiters above (all `isTestEnv ? 1000 : X`):
+// the parallel vitest/playwright suites hammer every /api/* route from a single
+// localhost IP and one shared seed admin, which would otherwise drain these
+// per-IP / per-user token buckets and produce spurious 429s. Production and dev
+// (NODE_ENV !== "test") keep the real 300 / 200 caps.
+const IP_RPM = isTestEnv ? 1_000_000 : 300;
+const USER_RPM = isTestEnv ? 1_000_000 : 200;
 
 function getClientIp(req: Request): string {
   return (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "unknown";
@@ -297,7 +302,7 @@ export async function tenantRateLimiter(req: Request, res: Response, next: NextF
   const orgId = req.session?.orgId;
   if (!orgId) return next();
 
-  let maxRpm = 600;
+  let maxRpm = isTestEnv ? 1_000_000 : 600;
   try {
     const org = await storage.getOrg(orgId);
     if (org?.rateLimitRpm && org.rateLimitRpm > 0) maxRpm = org.rateLimitRpm;
