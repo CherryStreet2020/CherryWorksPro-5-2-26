@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { requireAdmin } from "./middleware";
+import { requirePlatformOperator } from "./middleware";
 import { pool } from "../db";
 import { randomUUID } from "crypto";
 
@@ -43,7 +43,7 @@ function getSecretStatus(envVar: string): { configured: boolean; lastRotated: st
 
 export function registerSecretsRoutes(app: Express) {
 
-  app.get("/api/admin/secrets", requireAdmin, (req: Request, res: Response) => {
+  app.get("/api/admin/secrets", requirePlatformOperator, (req: Request, res: Response) => {
     const secrets = SECRET_DEFINITIONS.map(def => {
       const status = getSecretStatus(def.envVar);
       return {
@@ -62,7 +62,7 @@ export function registerSecretsRoutes(app: Express) {
     return res.json({ secrets, alertCount, alertThresholdDays: 90 });
   });
 
-  app.post("/api/admin/secrets/rotate", requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/admin/secrets/rotate", requirePlatformOperator, async (req: Request, res: Response) => {
     const { envVar, newValue } = req.body;
     if (!envVar) return res.status(400).json({ message: "envVar is required" });
 
@@ -99,7 +99,7 @@ export function registerSecretsRoutes(app: Express) {
     });
   });
 
-  app.get("/api/admin/secrets/alerts", requireAdmin, (_req: Request, res: Response) => {
+  app.get("/api/admin/secrets/alerts", requirePlatformOperator, (_req: Request, res: Response) => {
     const alerts = SECRET_DEFINITIONS
       .map(def => {
         const status = getSecretStatus(def.envVar);
@@ -117,7 +117,7 @@ export function registerSecretsRoutes(app: Express) {
     });
   });
 
-  app.post("/api/admin/secrets/mark-rotated", requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/admin/secrets/mark-rotated", requirePlatformOperator, async (req: Request, res: Response) => {
     const { envVar } = req.body;
     if (!envVar) return res.status(400).json({ message: "envVar required" });
     const def = SECRET_DEFINITIONS.find(d => d.envVar === envVar);

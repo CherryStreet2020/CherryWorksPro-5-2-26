@@ -3530,6 +3530,7 @@ export class DatabaseStorage {
     query: string,
     limit: number,
     offset: number,
+    allowCrossTenantOrgs: boolean = false,
   ): Promise<{ rows: any[]; total: number }> {
     const tbl = this.getEntityTable(entity);
     if (!tbl) return { rows: [], total: 0 };
@@ -3537,6 +3538,11 @@ export class DatabaseStorage {
     const conditions: any[] = [];
     const hasOrg = "orgId" in tbl;
     if (hasOrg) conditions.push(eq((tbl as any).orgId, orgId));
+    // The `orgs` table has no orgId column (its PK *is* the org id), so the
+    // generic scoping above skips it — which would expose every tenant's org
+    // row (stripe ids, smtp config, apiKey, ...). Scope it to the caller's own
+    // org unless they're a platform operator (audit #5).
+    else if (entity === "orgs" && !allowCrossTenantOrgs) conditions.push(eq((tbl as any).id, orgId));
 
     if (entity === "project_members") {
       const members = await db
@@ -3609,6 +3615,7 @@ export class DatabaseStorage {
     entity: string,
     id: string,
     orgId: string,
+    allowCrossTenantOrgs: boolean = false,
   ): Promise<any | undefined> {
     const tbl = this.getEntityTable(entity);
     if (!tbl) return undefined;
@@ -3634,6 +3641,9 @@ export class DatabaseStorage {
     const hasOrg = "orgId" in tbl;
     const conditions = [eq((tbl as any).id, id)];
     if (hasOrg) conditions.push(eq((tbl as any).orgId, orgId));
+    // `orgs` has no orgId column; require the requested id to be the caller's
+    // own org unless they're a platform operator (audit #5).
+    else if (entity === "orgs" && !allowCrossTenantOrgs) conditions.push(eq((tbl as any).id, orgId));
 
     const [row] = await db.select().from(tbl).where(and(...conditions));
     return row;

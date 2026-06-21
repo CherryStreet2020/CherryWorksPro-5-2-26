@@ -5,7 +5,7 @@ import { eq, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import { randomBytes } from "crypto";
 import { invoices, payments, services, orgs, users, expenses, clients, projects } from "@shared/schema";
-import { sanitizeErrorMessage, requireAuth, requireAdmin, apiLimiter, settingsUpdateLimiter, escapeHtml, wrapEmailLayout, emailDetailCard, emailKeyValue, maskSensitiveFields } from "./middleware";
+import { sanitizeErrorMessage, requireAuth, requireAdmin, apiLimiter, settingsUpdateLimiter, escapeHtml, wrapEmailLayout, emailDetailCard, emailKeyValue, maskSensitiveFields, isPlatformOperatorUserId } from "./middleware";
 import { hashPassword, comparePasswords } from "../auth";
 import { sendInvoiceEmail, encryptSmtpPassword, getSmtpConfigFromOrg, clearTransporterCache } from "../email";
 import { maskEmail } from "../utils/mask-email";
@@ -890,7 +890,10 @@ app.get("/api/admin/data/:entity", requireAdmin, async (req: Request, res: Respo
   const limit = Math.min(parseInt(String(req.query.limit || "50"), 10) || 50, 200);
   const offset = parseInt(String(req.query.offset || "0"), 10) || 0;
 
-  const result = await storage.adminListEntity(entity, orgId, query, limit, offset);
+  // The `orgs` entity is cross-tenant-readable only for platform operators
+  // (audit #5); a regular tenant admin is scoped to their own org.
+  const allowCrossTenantOrgs = entity === "orgs" ? await isPlatformOperatorUserId(req.session.userId) : false;
+  const result = await storage.adminListEntity(entity, orgId, query, limit, offset, allowCrossTenantOrgs);
   res.json(result);
 });
 app.get("/api/admin/data/:entity/:id", requireAdmin, async (req: Request, res: Response) => {
@@ -900,7 +903,8 @@ app.get("/api/admin/data/:entity/:id", requireAdmin, async (req: Request, res: R
     return res.status(400).json({ message: `Unsupported entity: ${entity}` });
   }
   const orgId = req.session.orgId!;
-  const row = await storage.adminGetEntity(entity, id, orgId);
+  const allowCrossTenantOrgs = entity === "orgs" ? await isPlatformOperatorUserId(req.session.userId) : false;
+  const row = await storage.adminGetEntity(entity, id, orgId, allowCrossTenantOrgs);
   if (!row) return res.status(404).json({ message: "Not found" });
   res.json(row);
 });
