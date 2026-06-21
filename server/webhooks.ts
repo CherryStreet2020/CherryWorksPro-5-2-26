@@ -340,7 +340,13 @@ let retryInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startWebhookRetryProcessor(): void {
   if (retryInterval) return;
-  retryInterval = setInterval(processRetries, 30_000);
+  // Guard the callback: processRetries acquires its advisory lock OUTSIDE its
+  // try, so a transient DB error there rejects the promise. A bare async
+  // setInterval callback would surface that as an unhandledRejection ->
+  // process.exit(1), crashing the whole multi-tenant server (audit #12).
+  retryInterval = setInterval(() => {
+    processRetries().catch((err) => console.error("[webhooks] retry tick failed:", err));
+  }, 30_000);
   console.log("[webhooks] Retry processor started (30s interval)");
 }
 
