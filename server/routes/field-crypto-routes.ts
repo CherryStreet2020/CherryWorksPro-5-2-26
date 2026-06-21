@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../db";
 import { users, orgs, webhookEndpoints } from "@shared/schema";
 import { requirePlatformOperator } from "./middleware";
@@ -108,7 +108,8 @@ async function collectStatus(): Promise<ColumnStat[]> {
 interface ReencryptResult {
   scanned: number;
   reencrypted: number;
-  skipped: number;
+  skipped: number; // already on the current key
+  staleSkipped: number; // changed concurrently between read and guarded write
   byColumn: Record<string, number>;
   errors: { column: string; id: string; error: string }[];
 }
@@ -129,8 +130,15 @@ function reencryptSmtpVerified(v: string): string {
   return next;
 }
 
+// Optimistic-concurrency guarded write: only replace the value if the column
+// STILL holds the exact ciphertext we re-encrypted (`AND col = original`), so a
+// concurrent user/admin update made between the read and the write is skipped
+// (counted as staleSkipped) rather than clobbered with a stale snapshot. The
+// row stays readable either way thanks to the dual-key fallback, and a skipped
+// row is re-keyed automatically by its own concurrent write (encrypt* uses the
+// current key) or by a later reencrypt pass.
 async function reencryptAll(): Promise<ReencryptResult> {
-  const res: ReencryptResult = { scanned: 0, reencrypted: 0, skipped: 0, byColumn: {}, errors: [] };
+  const res: ReencryptResult = { scanned: 0, reencrypted: 0, skipped: 0, staleSkipped: 0, byColumn: {}, errors: [] };
   const bump = (col: string) => { res.byColumn[col] = (res.byColumn[col] || 0) + 1; };
 
   // users banking fields
@@ -138,21 +146,20 @@ async function reencryptAll(): Promise<ReencryptResult> {
     .select({ id: users.id, bankRoutingNumber: users.bankRoutingNumber, bankAccountNumber: users.bankAccountNumber })
     .from(users);
   for (const u of userRows) {
-    const update: Partial<Record<(typeof BANKING_USER_COLS)[number], string>> = {};
     for (const col of BANKING_USER_COLS) {
       const v = u[col];
       if (typeof v !== "string" || !v.startsWith("enc:")) continue;
       res.scanned++;
       if (isBankingCiphertextOnCurrentKey(v)) { res.skipped++; continue; }
       try {
-        update[col] = reencryptBankingVerified(v);
+        const set: Partial<Record<(typeof BANKING_USER_COLS)[number], string>> = { [col]: reencryptBankingVerified(v) };
+        const updated = await db.update(users).set(set)
+          .where(and(eq(users.id, u.id), eq(users[col], v)))
+          .returning({ id: users.id });
+        if (updated.length) { res.reencrypted++; bump(`users.${col}`); } else { res.staleSkipped++; }
       } catch (e) {
         res.errors.push({ column: `users.${col}`, id: u.id, error: (e as Error).message });
       }
-    }
-    if (Object.keys(update).length) {
-      await db.update(users).set(update).where(eq(users.id, u.id));
-      for (const col of Object.keys(update)) { res.reencrypted++; bump(`users.${col}`); }
     }
   }
 
@@ -161,21 +168,21 @@ async function reencryptAll(): Promise<ReencryptResult> {
     .select({ id: webhookEndpoints.id, secret: webhookEndpoints.secret, oldSecret: webhookEndpoints.oldSecret })
     .from(webhookEndpoints);
   for (const w of whRows) {
-    const update: Partial<Record<(typeof WEBHOOK_COLS)[number], string>> = {};
     for (const col of WEBHOOK_COLS) {
       const v = w[col];
       if (typeof v !== "string" || !v.startsWith("enc:")) continue;
       res.scanned++;
       if (isBankingCiphertextOnCurrentKey(v)) { res.skipped++; continue; }
+      const label = `webhook_endpoints.${WEBHOOK_COL_NAMES[col]}`;
       try {
-        update[col] = reencryptBankingVerified(v);
+        const set: Partial<Record<(typeof WEBHOOK_COLS)[number], string>> = { [col]: reencryptBankingVerified(v) };
+        const updated = await db.update(webhookEndpoints).set(set)
+          .where(and(eq(webhookEndpoints.id, w.id), eq(webhookEndpoints[col], v)))
+          .returning({ id: webhookEndpoints.id });
+        if (updated.length) { res.reencrypted++; bump(label); } else { res.staleSkipped++; }
       } catch (e) {
-        res.errors.push({ column: `webhook_endpoints.${WEBHOOK_COL_NAMES[col]}`, id: w.id, error: (e as Error).message });
+        res.errors.push({ column: label, id: w.id, error: (e as Error).message });
       }
-    }
-    if (Object.keys(update).length) {
-      await db.update(webhookEndpoints).set(update).where(eq(webhookEndpoints.id, w.id));
-      for (const col of Object.keys(update) as (typeof WEBHOOK_COLS)[number][]) { res.reencrypted++; bump(`webhook_endpoints.${WEBHOOK_COL_NAMES[col]}`); }
     }
   }
 
@@ -184,21 +191,20 @@ async function reencryptAll(): Promise<ReencryptResult> {
     .select({ id: orgs.id, smtpPass: orgs.smtpPass, emailOauthRefreshToken: orgs.emailOauthRefreshToken })
     .from(orgs);
   for (const o of orgRows) {
-    const update: Partial<Record<(typeof SMTP_ORG_COLS)[number], string>> = {};
     for (const col of SMTP_ORG_COLS) {
       const v = o[col];
       if (typeof v !== "string" || !isSmtpEncrypted(v)) continue;
       res.scanned++;
       if (isSmtpCiphertextOnCurrentKey(v)) { res.skipped++; continue; }
       try {
-        update[col] = reencryptSmtpVerified(v);
+        const set: Partial<Record<(typeof SMTP_ORG_COLS)[number], string>> = { [col]: reencryptSmtpVerified(v) };
+        const updated = await db.update(orgs).set(set)
+          .where(and(eq(orgs.id, o.id), eq(orgs[col], v)))
+          .returning({ id: orgs.id });
+        if (updated.length) { res.reencrypted++; bump(`orgs.${col}`); } else { res.staleSkipped++; }
       } catch (e) {
         res.errors.push({ column: `orgs.${col}`, id: o.id, error: (e as Error).message });
       }
-    }
-    if (Object.keys(update).length) {
-      await db.update(orgs).set(update).where(eq(orgs.id, o.id));
-      for (const col of Object.keys(update)) { res.reencrypted++; bump(`orgs.${col}`); }
     }
   }
 
@@ -238,6 +244,7 @@ export function registerFieldCryptoRoutes(app: Express): void {
             scanned: result.scanned,
             reencrypted: result.reencrypted,
             skipped: result.skipped,
+            staleSkipped: result.staleSkipped,
             byColumn: result.byColumn,
             errorCount: result.errors.length,
           },
@@ -247,7 +254,7 @@ export function registerFieldCryptoRoutes(app: Express): void {
         console.error("[field-crypto] reencrypt audit log failed:", (logErr as Error).message);
       }
       console.log(
-        `[field-crypto] reencrypt done — scanned=${result.scanned} reencrypted=${result.reencrypted} skipped=${result.skipped} errors=${result.errors.length} auditWritten=${auditWritten}`,
+        `[field-crypto] reencrypt done — scanned=${result.scanned} reencrypted=${result.reencrypted} skipped=${result.skipped} staleSkipped=${result.staleSkipped} errors=${result.errors.length} auditWritten=${auditWritten}`,
       );
       // Surface a missing audit trail for this sensitive bank-data mutation
       // rather than silently swallowing it (ok=false flags it to the operator).
