@@ -1257,6 +1257,13 @@ async function handleInvoiceCheckoutCompleted(
     }
   } catch { /* fallback to STRIPE */ }
 
+  // Coverage note (audit #20): the under-lock OVERPAYMENT branch below is reachable
+  // only under a genuine concurrent commit (the recheck reads the same paid_amount
+  // the pre-tx guard read, so they diverge only when another payment commits in the
+  // gap) — it is proven at the storage layer by the concurrent test in
+  // tests/integration/stripe-payment-overpayment-recheck.test.ts. The deterministic
+  // sequential overpayment is caught by the pre-tx guard above. A webhook-level
+  // integration test is blocked on the pool-starvation fixme in e2e/stripe-webhook.spec.ts.
   try {
     const stripePayment = await db.transaction(async (tx) => {
       await tx.insert(stripeEvents).values({

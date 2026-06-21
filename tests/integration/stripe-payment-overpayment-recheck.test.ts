@@ -13,8 +13,9 @@
  * committed balance and is rejected (status OVERPAYMENT) instead of inserting.
  *
  * These tests run real concurrent createStripePayment calls against Postgres and
- * assert the invoice can never be overpaid. On the pre-fix code both calls return
- * a payment and paidAmount lands at 200 — these assertions fail.
+ * pin the new under-lock recheck contract: one OK + one OVERPAYMENT, with paidAmount
+ * capped at the invoice total. The pre-fix code returned an uncapped double-insert
+ * that drove paidAmount to 200 (verified by neutering the recheck → both insert).
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { randomUUID } from "node:crypto";
@@ -50,6 +51,13 @@ async function seedInvoice(id: string, total: string): Promise<void> {
 }
 
 beforeAll(async () => {
+  // Hermeticity: the partial unique index is created by drizzle-kit push at boot
+  // (the repo's authoritative index mechanism) and by migrate-production.ts, but the
+  // unique-index assertion below must not silently depend on how this DB was
+  // provisioned. Ensure it exists regardless. (IF NOT EXISTS → no-op when present.)
+  await pool.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS payments_org_provider_ref_unique ON payments(org_id, provider, provider_ref) WHERE provider_ref IS NOT NULL`,
+  );
   await db.insert(orgs).values({ id: ORG_ID, name: "Overpay Test Org", slug: `overpay-${ORG_ID.slice(0, 8)}` });
   await pool.query(`INSERT INTO clients (id, org_id, name) VALUES ($1, $2, 'Overpay Client')`, [CLIENT_ID, ORG_ID]);
   await seedInvoice(INV_RACE, "100");

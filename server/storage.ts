@@ -3291,6 +3291,9 @@ export class DatabaseStorage {
       // pre-tx guard semantics exactly (round2(paid + amount) > total) so an exact
       // full payment (newPaid === total) still passes. Negative amounts (refunds
       // never flow through this method) skip the check.
+      // Correctness depends on paid_amount == round2(sum(payment rows)): any new
+      // payment-insert path must hold this invoice FOR UPDATE and keep paid_amount
+      // authoritative (every current writer does — see recomputeInvoicePaidStatus).
       const amount = Number(data.amount);
       if (amount > 0) {
         const lockedPaid = Number(lockedInvoice.paid_amount ?? 0);
