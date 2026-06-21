@@ -394,6 +394,25 @@ function tryDecryptBankingOnUser<T extends Record<string, unknown>>(user: T): T 
  */
 type DbExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+/**
+ * An open drizzle transaction (the `tx` handed to `db.transaction(async (tx) => …)`).
+ * A caller can thread its own transaction into a storage helper so the helper's
+ * locks/writes run on the SAME connection — see `createStripePayment` (audit #20).
+ */
+type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Result of `createStripePayment`. The Stripe path must be able to REJECT a
+ * payment that would overpay the invoice (re-checked under the row lock, audit
+ * #20) without throwing, so the webhook can record a terminal FAILED event and
+ * return 200 to Stripe (a thrown error would trigger up-to-3-day redelivery of a
+ * deterministically-failing event).
+ */
+export type CreateStripePaymentResult =
+  | { status: "OK"; payment: Payment }
+  | { status: "OVERPAYMENT"; currentPaid: number; invoiceTotal: number; attempted: number }
+  | { status: "INVOICE_NOT_FOUND" };
+
 export class DatabaseStorage {
   async isDateInClosedPeriod(orgId: string, date: string): Promise<boolean> {
     const [row] = await db
@@ -3225,22 +3244,79 @@ export class DatabaseStorage {
     return row;
   }
 
-  async createStripePayment(data: InsertPayment): Promise<Payment> {
-    return await db.transaction(async (tx) => {
-      if (data.invoiceId) {
-        await tx.execute(
-          sql`SELECT id FROM ${invoices} WHERE id = ${data.invoiceId} AND org_id = ${data.orgId} FOR UPDATE`
-        );
+  /**
+   * Record a Stripe-originated payment, re-validating the overpayment condition
+   * UNDER the invoice row lock (audit #20).
+   *
+   * The webhook's pre-transaction overpayment guard reads an UNLOCKED
+   * `invoice.paidAmount`; two genuinely distinct concurrent checkout sessions
+   * (distinct payment_intents → distinct event ids, so the stripe_events unique
+   * index does not block them) can both read paidAmount=0, both pass that guard,
+   * and both insert — overpaying the invoice. The `SELECT … FOR UPDATE` below
+   * serializes the two, so we re-read the locked, committed balance and reject
+   * the loser instead of silently writing paidAmount > total.
+   *
+   * Pass `executor` (the caller's open transaction) to run the lock + insert +
+   * recompute on the SAME connection as the caller's other writes — both for true
+   * atomicity (the Stripe webhook inserts the `stripe_events` row in the same tx)
+   * and to avoid a separate pooled connection blocking on the lock (audit #8/#14).
+   * When omitted, this opens its own transaction.
+   */
+  async createStripePayment(
+    data: InsertPayment,
+    executor?: DbTransaction,
+  ): Promise<CreateStripePaymentResult> {
+    if (executor) {
+      return this.createStripePaymentInTx(executor, data);
+    }
+    return await db.transaction((tx) => this.createStripePaymentInTx(tx, data));
+  }
+
+  private async createStripePaymentInTx(
+    tx: DbTransaction,
+    data: InsertPayment,
+  ): Promise<CreateStripePaymentResult> {
+    if (data.invoiceId) {
+      // Lock the invoice row AND read the balance columns we validate against, so
+      // the re-check below sees the committed state at lock-acquisition time.
+      const lockedRows = await tx.execute(
+        sql`SELECT paid_amount, total FROM ${invoices} WHERE id = ${data.invoiceId} AND org_id = ${data.orgId} FOR UPDATE`,
+      );
+      const lockedInvoice = lockedRows.rows?.[0] as { paid_amount?: unknown; total?: unknown } | undefined;
+      if (!lockedInvoice) {
+        return { status: "INVOICE_NOT_FOUND" };
       }
-      const [payment] = await tx.insert(payments).values(data).returning();
-      if (data.invoiceId && data.orgId) {
-        // Pass tx so the recompute's UPDATE runs on the SAME connection that
-        // holds the invoice FOR UPDATE lock above, instead of a separate pooled
-        // connection that would block on that lock forever (audit #8/#14).
-        await this.recomputeInvoicePaidStatus(data.invoiceId, data.orgId, tx);
+
+      // Overpayment re-check under the lock (audit #20). Mirror the webhook's
+      // pre-tx guard semantics exactly (round2(paid + amount) > total) so an exact
+      // full payment (newPaid === total) still passes. Negative amounts (refunds
+      // never flow through this method) skip the check.
+      // Correctness depends on paid_amount == round2(sum(payment rows)): any new
+      // payment-insert path must hold this invoice FOR UPDATE and keep paid_amount
+      // authoritative (every current writer does — see recomputeInvoicePaidStatus).
+      const amount = Number(data.amount);
+      if (amount > 0) {
+        const lockedPaid = Number(lockedInvoice.paid_amount ?? 0);
+        const invoiceTotal = Number(lockedInvoice.total ?? 0);
+        if (round2(lockedPaid + amount) > invoiceTotal) {
+          return {
+            status: "OVERPAYMENT",
+            currentPaid: lockedPaid,
+            invoiceTotal,
+            attempted: amount,
+          };
+        }
       }
-      return payment;
-    });
+    }
+
+    const [payment] = await tx.insert(payments).values(data).returning();
+    if (data.invoiceId && data.orgId) {
+      // Recompute on `tx` so the UPDATE runs on the SAME connection that holds the
+      // invoice FOR UPDATE lock above, not a separate pooled connection that would
+      // block on that lock forever (audit #8/#14).
+      await this.recomputeInvoicePaidStatus(data.invoiceId, data.orgId, tx);
+    }
+    return { status: "OK", payment };
   }
 
   async getTotalRefundedForInvoice(invoiceId: string, orgId: string): Promise<number> {

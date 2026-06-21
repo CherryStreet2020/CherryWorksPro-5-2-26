@@ -60,7 +60,7 @@ afterAll(async () => {
 
 describe("createStripePayment recomputes in-tx without self-deadlock (audit #8/#14)", () => {
   it("a full Stripe payment completes (no deadlock) and marks the invoice PAID", async () => {
-    const payment = await storage.createStripePayment({
+    const result = await storage.createStripePayment({
       orgId: ORG_ID,
       invoiceId: INV_FULL,
       amount: "100",
@@ -71,14 +71,15 @@ describe("createStripePayment recomputes in-tx without self-deadlock (audit #8/#
       notes: "full payment",
     } as any);
 
-    expect(payment.id).toBeTruthy();
+    expect(result.status).toBe("OK");
+    expect(result.status === "OK" && result.payment.id).toBeTruthy();
     const [inv] = await db.select().from(invoices).where(eq(invoices.id, INV_FULL));
     expect(inv.status).toBe("PAID");
     expect(Number(inv.paidAmount)).toBeCloseTo(100, 2);
   }, 15_000); // pre-fix code self-deadlocks and blows this timeout
 
   it("a partial Stripe payment completes and marks the invoice PARTIAL", async () => {
-    const payment = await storage.createStripePayment({
+    const result = await storage.createStripePayment({
       orgId: ORG_ID,
       invoiceId: INV_PARTIAL,
       amount: "40",
@@ -89,7 +90,8 @@ describe("createStripePayment recomputes in-tx without self-deadlock (audit #8/#
       notes: "partial payment",
     } as any);
 
-    expect(payment.id).toBeTruthy();
+    expect(result.status).toBe("OK");
+    expect(result.status === "OK" && result.payment.id).toBeTruthy();
     const [inv] = await db.select().from(invoices).where(eq(invoices.id, INV_PARTIAL));
     expect(inv.status).toBe("PARTIAL");
     expect(Number(inv.paidAmount)).toBeCloseTo(40, 2);

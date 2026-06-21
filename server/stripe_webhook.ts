@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { storage } from "./storage";
+import type { CreateStripePaymentResult } from "./storage";
 import { db } from "./db";
 import { orgs, orgEntitlements } from "@shared/schema";
 import { users, teamMemberPayoutsV2 } from "@shared/schema";
@@ -156,6 +157,20 @@ export function computeMarketingOsGrandfatherTarget(
 
 function isUniqueViolation(err: any): boolean {
   return err?.code === "23505" || /unique.*constraint|duplicate key/i.test(err?.message || "");
+}
+
+/**
+ * Thrown inside the checkout transaction to roll it back when the under-lock
+ * overpayment re-check (audit #20) rejects the payment. We must roll back the tx
+ * — which has already inserted the PROCESSED `stripe_events` row — and then record
+ * a terminal FAILED event in a fresh statement, since the FAILED row can't be
+ * written inside the transaction we're rolling back.
+ */
+class CheckoutTxRollback extends Error {
+  constructor(public readonly outcome: CreateStripePaymentResult) {
+    super("checkout-tx-rollback");
+    this.name = "CheckoutTxRollback";
+  }
 }
 
 const RELEVANT_EVENTS = new Set([
@@ -1242,6 +1257,13 @@ async function handleInvoiceCheckoutCompleted(
     }
   } catch { /* fallback to STRIPE */ }
 
+  // Coverage note (audit #20): the under-lock OVERPAYMENT branch below is reachable
+  // only under a genuine concurrent commit (the recheck reads the same paid_amount
+  // the pre-tx guard read, so they diverge only when another payment commits in the
+  // gap) — it is proven at the storage layer by the concurrent test in
+  // tests/integration/stripe-payment-overpayment-recheck.test.ts. The deterministic
+  // sequential overpayment is caught by the pre-tx guard above. A webhook-level
+  // integration test is blocked on the pool-starvation fixme in e2e/stripe-webhook.spec.ts.
   try {
     const stripePayment = await db.transaction(async (tx) => {
       await tx.insert(stripeEvents).values({
@@ -1255,7 +1277,13 @@ async function handleInvoiceCheckoutCompleted(
         failureDetail: null,
       });
 
-      const payment = await storage.createStripePayment({
+      // Run createStripePayment on THIS transaction (audit #8/#14, #20): the
+      // invoice FOR UPDATE lock, the overpayment re-check, the payment insert and
+      // the paid-status recompute all execute on the same connection as the
+      // stripe_events insert above — one atomic unit. The under-lock re-check is
+      // the authoritative backstop for the overpayment race that the pre-tx guard
+      // (read of an UNLOCKED paidAmount, above) cannot close.
+      const result = await storage.createStripePayment({
         orgId: invoice.orgId,
         invoiceId: invoice.id,
         amount: round2(amount).toFixed(2),
@@ -1264,13 +1292,16 @@ async function handleInvoiceCheckoutCompleted(
         provider: "STRIPE",
         providerRef,
         notes: `Stripe checkout ${session.id}${paymentMethodLabel === "BANK_TRANSFER" ? " (ACH bank transfer)" : ""}`,
-      });
+      }, tx);
 
-      // createStripePayment recomputes the invoice paid status inside its own
-      // transaction (audit #8/#14); a second recompute here on the base pool was
-      // redundant — and inside this outer transaction it was a needless extra
-      // round-trip that re-read/re-wrote the same row.
-      return payment;
+      if (result.status !== "OK") {
+        // Roll the whole tx back (drops the PROCESSED stripe_events row) and carry
+        // the outcome out so we can record a terminal FAILED event below — outside
+        // this doomed transaction.
+        throw new CheckoutTxRollback(result);
+      }
+
+      return result.payment;
     });
 
     const periodClosed = await storage.isDateInClosedPeriod(invoice.orgId, todayStr);
@@ -1302,6 +1333,47 @@ async function handleInvoiceCheckoutCompleted(
       details: { amount, providerRef },
     });
   } catch (txErr: any) {
+    if (txErr instanceof CheckoutTxRollback) {
+      // The transaction rolled back, so no payment and no PROCESSED event row
+      // persisted. Record a terminal FAILED event + audit and return 200 — a 500
+      // would make Stripe redeliver this deterministically-failing event for up to
+      // 3 days.
+      const outcome = txErr.outcome;
+      if (outcome.status === "OVERPAYMENT") {
+        await storage.createStripeEvent({
+          orgId: invoice.orgId,
+          stripeEventId,
+          type: eventType,
+          livemode,
+          created,
+          status: "FAILED",
+          failureCode: "OVERPAYMENT",
+          failureDetail: `Payment of ${outcome.attempted} would exceed total ${outcome.invoiceTotal} (paid under lock: ${outcome.currentPaid})`,
+        });
+        await storage.createAuditLog({
+          orgId: invoice.orgId,
+          userId: null,
+          action: "STRIPE_EVENT_FAILED",
+          entityType: "stripe_event",
+          entityId: stripeEventId,
+          details: { failureCode: "OVERPAYMENT", amount: outcome.attempted, invoiceTotal: outcome.invoiceTotal, currentPaid: outcome.currentPaid, race: true },
+        });
+      } else {
+        // INVOICE_NOT_FOUND: the invoice was deleted between the unlocked read and
+        // the locked re-read. Nothing actionable; record and ack.
+        await storage.createStripeEvent({
+          orgId: invoice.orgId,
+          stripeEventId,
+          type: eventType,
+          livemode,
+          created,
+          status: "FAILED",
+          failureCode: "INVOICE_NOT_FOUND",
+          failureDetail: "Invoice not found under lock (deleted mid-flight)",
+        });
+      }
+      return res.json({ received: true });
+    }
     if (isUniqueViolation(txErr)) {
       return res.json({ received: true, duplicate: true });
     }
