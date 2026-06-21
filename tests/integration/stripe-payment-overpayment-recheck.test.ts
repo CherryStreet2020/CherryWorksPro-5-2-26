@@ -50,14 +50,13 @@ async function seedInvoice(id: string, total: string): Promise<void> {
   );
 }
 
+// The unique-index test below intentionally depends on the index being installed
+// by the REAL mechanism — `drizzle-kit push --force` (the repo's authoritative index
+// source, run by `db:migrate:prod`, which `cwp vitest` runs before this suite). We do
+// NOT create it here on purpose: a self-create would let the test pass even if the app
+// never installed the index. If the index is absent, the duplicate insert succeeds and
+// the test fails loudly — exactly the signal we want.
 beforeAll(async () => {
-  // Hermeticity: the partial unique index is created by drizzle-kit push at boot
-  // (the repo's authoritative index mechanism) and by migrate-production.ts, but the
-  // unique-index assertion below must not silently depend on how this DB was
-  // provisioned. Ensure it exists regardless. (IF NOT EXISTS → no-op when present.)
-  await pool.query(
-    `CREATE UNIQUE INDEX IF NOT EXISTS payments_org_provider_ref_unique ON payments(org_id, provider, provider_ref) WHERE provider_ref IS NOT NULL`,
-  );
   await db.insert(orgs).values({ id: ORG_ID, name: "Overpay Test Org", slug: `overpay-${ORG_ID.slice(0, 8)}` });
   await pool.query(`INSERT INTO clients (id, org_id, name) VALUES ($1, $2, 'Overpay Client')`, [CLIENT_ID, ORG_ID]);
   await seedInvoice(INV_RACE, "100");
