@@ -386,6 +386,14 @@ function tryDecryptBankingOnUser<T extends Record<string, unknown>>(user: T): T 
   return copy as T;
 }
 
+/**
+ * Either the base db or an open transaction. Lets a caller run a helper on the
+ * SAME connection that already holds a row lock — e.g. recompute the invoice
+ * paid status inside the transaction that holds the invoice FOR UPDATE, instead
+ * of on a separate pooled connection that would self-deadlock (audit #8/#14).
+ */
+type DbExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 export class DatabaseStorage {
   async isDateInClosedPeriod(orgId: string, date: string): Promise<boolean> {
     const [row] = await db
@@ -3226,7 +3234,10 @@ export class DatabaseStorage {
       }
       const [payment] = await tx.insert(payments).values(data).returning();
       if (data.invoiceId && data.orgId) {
-        await this.recomputeInvoicePaidStatus(data.invoiceId, data.orgId);
+        // Pass tx so the recompute's UPDATE runs on the SAME connection that
+        // holds the invoice FOR UPDATE lock above, instead of a separate pooled
+        // connection that would block on that lock forever (audit #8/#14).
+        await this.recomputeInvoicePaidStatus(data.invoiceId, data.orgId, tx);
       }
       return payment;
     });
@@ -3276,8 +3287,12 @@ export class DatabaseStorage {
     });
   }
 
-  async recomputeInvoicePaidStatus(invoiceId: string, orgId: string): Promise<void> {
-    const invoicePayments = await db
+  async recomputeInvoicePaidStatus(invoiceId: string, orgId: string, executor: DbExecutor = db): Promise<void> {
+    // Runs on `executor` so a caller holding the invoice FOR UPDATE can pass its
+    // own transaction — otherwise the UPDATE below contends on a separate pooled
+    // connection for the very row that caller locked, self-deadlocking with no
+    // statement timeout to break it (audit #8/#14).
+    const invoicePayments = await executor
       .select()
       .from(payments)
       .where(and(eq(payments.invoiceId, invoiceId), eq(payments.orgId, orgId)));
@@ -3286,7 +3301,7 @@ export class DatabaseStorage {
       invoicePayments.reduce((sum, p) => sum + Number(p.amount), 0),
     );
 
-    const [invoice] = await db
+    const [invoice] = await executor
       .select()
       .from(invoices)
       .where(and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)));
@@ -3303,7 +3318,7 @@ export class DatabaseStorage {
       newStatus = "PARTIAL";
     }
 
-    await db
+    await executor
       .update(invoices)
       .set({
         paidAmount: totalPaid.toFixed(2),

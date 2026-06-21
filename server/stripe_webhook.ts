@@ -1266,8 +1266,10 @@ async function handleInvoiceCheckoutCompleted(
         notes: `Stripe checkout ${session.id}${paymentMethodLabel === "BANK_TRANSFER" ? " (ACH bank transfer)" : ""}`,
       });
 
-      await storage.recomputeInvoicePaidStatus(invoice.id, invoice.orgId);
-
+      // createStripePayment recomputes the invoice paid status inside its own
+      // transaction (audit #8/#14); a second recompute here on the base pool was
+      // redundant — and inside this outer transaction it was a needless extra
+      // round-trip that re-read/re-wrote the same row.
       return payment;
     });
 
