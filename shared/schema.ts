@@ -672,6 +672,15 @@ export const payments = pgTable("payments", {
   invoiceOrgIdx: index("payments_invoice_org_idx").on(table.invoiceId, table.orgId),
   invoiceIdIdx: index("idx_payments_invoice_id").on(table.invoiceId),
   orgIdIdx: index("idx_payments_org_id").on(table.orgId),
+  // Defense-in-depth (audit #20): a provider payment reference (e.g. a Stripe
+  // payment_intent) must yield at most one payment row per org. The Stripe webhook
+  // pre-checks getPaymentByProviderRef UNLOCKED, so a concurrent redelivery could
+  // race past it; this makes the second insert fail (caught as a duplicate → 200).
+  // Partial (provider_ref IS NOT NULL) so manual payments — which carry no
+  // provider_ref — are unaffected.
+  orgProviderRefUnique: uniqueIndex("payments_org_provider_ref_unique")
+    .on(table.orgId, table.provider, table.providerRef)
+    .where(sql`provider_ref IS NOT NULL`),
 }));
 
 export const outboxEmails = pgTable("outbox_emails", {
