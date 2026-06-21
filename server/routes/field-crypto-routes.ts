@@ -37,6 +37,10 @@ import {
  */
 
 const BANKING_USER_COLS = ["bankRoutingNumber", "bankAccountNumber"] as const;
+// webhook_endpoints.secret AND .old_secret (the previous secret kept during the
+// post-rotation grace period) are both banking-key encrypted and must be re-keyed.
+const WEBHOOK_COLS = ["secret", "oldSecret"] as const;
+const WEBHOOK_COL_NAMES: Record<(typeof WEBHOOK_COLS)[number], string> = { secret: "secret", oldSecret: "old_secret" };
 const SMTP_ORG_COLS = ["smtpPass", "emailOauthRefreshToken"] as const;
 
 interface ColumnStat {
@@ -66,17 +70,20 @@ async function collectStatus(): Promise<ColumnStat[]> {
     stats.push({ column: `users.${col}`, key: "banking", encrypted, onCurrentKey: onCurrent, pending: encrypted - onCurrent });
   }
 
-  const whRows = await db.select({ id: webhookEndpoints.id, secret: webhookEndpoints.secret }).from(webhookEndpoints);
-  {
+  const whRows = await db
+    .select({ id: webhookEndpoints.id, secret: webhookEndpoints.secret, oldSecret: webhookEndpoints.oldSecret })
+    .from(webhookEndpoints);
+  for (const col of WEBHOOK_COLS) {
     let encrypted = 0;
     let onCurrent = 0;
     for (const w of whRows) {
-      if (typeof w.secret === "string" && w.secret.startsWith("enc:")) {
+      const v = w[col];
+      if (typeof v === "string" && v.startsWith("enc:")) {
         encrypted++;
-        if (isBankingCiphertextOnCurrentKey(w.secret)) onCurrent++;
+        if (isBankingCiphertextOnCurrentKey(v)) onCurrent++;
       }
     }
-    stats.push({ column: "webhook_endpoints.secret", key: "banking", encrypted, onCurrentKey: onCurrent, pending: encrypted - onCurrent });
+    stats.push({ column: `webhook_endpoints.${WEBHOOK_COL_NAMES[col]}`, key: "banking", encrypted, onCurrentKey: onCurrent, pending: encrypted - onCurrent });
   }
 
   const orgRows = await db
@@ -149,19 +156,26 @@ async function reencryptAll(): Promise<ReencryptResult> {
     }
   }
 
-  // webhook_endpoints.secret
-  const whRows = await db.select({ id: webhookEndpoints.id, secret: webhookEndpoints.secret }).from(webhookEndpoints);
+  // webhook_endpoints.secret + .old_secret (both banking-key encrypted)
+  const whRows = await db
+    .select({ id: webhookEndpoints.id, secret: webhookEndpoints.secret, oldSecret: webhookEndpoints.oldSecret })
+    .from(webhookEndpoints);
   for (const w of whRows) {
-    const v = w.secret;
-    if (typeof v !== "string" || !v.startsWith("enc:")) continue;
-    res.scanned++;
-    if (isBankingCiphertextOnCurrentKey(v)) { res.skipped++; continue; }
-    try {
-      const next = reencryptBankingVerified(v);
-      await db.update(webhookEndpoints).set({ secret: next }).where(eq(webhookEndpoints.id, w.id));
-      res.reencrypted++; bump("webhook_endpoints.secret");
-    } catch (e) {
-      res.errors.push({ column: "webhook_endpoints.secret", id: w.id, error: (e as Error).message });
+    const update: Partial<Record<(typeof WEBHOOK_COLS)[number], string>> = {};
+    for (const col of WEBHOOK_COLS) {
+      const v = w[col];
+      if (typeof v !== "string" || !v.startsWith("enc:")) continue;
+      res.scanned++;
+      if (isBankingCiphertextOnCurrentKey(v)) { res.skipped++; continue; }
+      try {
+        update[col] = reencryptBankingVerified(v);
+      } catch (e) {
+        res.errors.push({ column: `webhook_endpoints.${WEBHOOK_COL_NAMES[col]}`, id: w.id, error: (e as Error).message });
+      }
+    }
+    if (Object.keys(update).length) {
+      await db.update(webhookEndpoints).set(update).where(eq(webhookEndpoints.id, w.id));
+      for (const col of Object.keys(update) as (typeof WEBHOOK_COLS)[number][]) { res.reencrypted++; bump(`webhook_endpoints.${WEBHOOK_COL_NAMES[col]}`); }
     }
   }
 
@@ -210,9 +224,12 @@ export function registerFieldCryptoRoutes(app: Express): void {
   app.post("/api/admin/field-crypto/reencrypt", requirePlatformOperator, async (req: Request, res: Response) => {
     try {
       const result = await reencryptAll();
+      let auditWritten = false;
       try {
+        // audit_logs.org_id is NOT NULL with an FK; attribute this operator
+        // maintenance action to the operator's own org (a cross-tenant op).
         await storage.createAuditLog({
-          orgId: null as unknown as string,
+          orgId: req.session.orgId as string,
           userId: req.session.userId ?? null,
           action: "FIELD_CRYPTO_REENCRYPT",
           entityType: "system",
@@ -225,13 +242,16 @@ export function registerFieldCryptoRoutes(app: Express): void {
             errorCount: result.errors.length,
           },
         });
+        auditWritten = true;
       } catch (logErr) {
         console.error("[field-crypto] reencrypt audit log failed:", (logErr as Error).message);
       }
       console.log(
-        `[field-crypto] reencrypt done — scanned=${result.scanned} reencrypted=${result.reencrypted} skipped=${result.skipped} errors=${result.errors.length}`,
+        `[field-crypto] reencrypt done — scanned=${result.scanned} reencrypted=${result.reencrypted} skipped=${result.skipped} errors=${result.errors.length} auditWritten=${auditWritten}`,
       );
-      res.json({ ok: result.errors.length === 0, ...result });
+      // Surface a missing audit trail for this sensitive bank-data mutation
+      // rather than silently swallowing it (ok=false flags it to the operator).
+      res.json({ ok: result.errors.length === 0 && auditWritten, auditWritten, ...result });
     } catch (e) {
       console.error("[field-crypto] reencrypt failed:", (e as Error).message);
       res.status(500).json({ message: "field-crypto reencrypt failed" });

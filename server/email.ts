@@ -109,21 +109,28 @@ export function decryptSmtpPassword(ciphertext: string): string {
  * operator field-crypto status/reencrypt endpoint.
  */
 export function isSmtpCiphertextOnCurrentKey(ciphertext: string | null | undefined): boolean {
-  if (!ciphertext) return true;
-  if (!ciphertext.startsWith("v2:") && !ciphertext.includes(":")) return true; // plaintext
+  if (!isSmtpEncrypted(ciphertext)) return true; // plaintext/empty → nothing to re-key
   if (!SMTP_ENCRYPTION_KEY) return false;
   try {
-    decryptSmtpPasswordWithSecret(ciphertext, SMTP_ENCRYPTION_KEY);
+    decryptSmtpPasswordWithSecret(ciphertext as string, SMTP_ENCRYPTION_KEY);
     return true;
   } catch {
     return false;
   }
 }
 
-/** True if the value looks like an encrypted SMTP secret (v2 or legacy format). */
+// Legacy SMTP ciphertext is exactly three hex segments (iv:tag:ciphertext).
+const LEGACY_SMTP_CIPHERTEXT_RE = /^[0-9a-f]+:[0-9a-f]+:[0-9a-f]+$/i;
+
+/**
+ * True if the value is an encrypted SMTP secret (v2 or legacy format). Uses a
+ * STRUCTURAL test, not a bare "contains a colon" check — a plaintext password
+ * that happens to contain ":" must NOT be misclassified as ciphertext, or the
+ * rotation reencrypt pass would error on it forever and never reach 0 pending.
+ */
 export function isSmtpEncrypted(ciphertext: string | null | undefined): boolean {
   if (!ciphertext) return false;
-  return ciphertext.startsWith("v2:") || ciphertext.includes(":");
+  return ciphertext.startsWith("v2:") || LEGACY_SMTP_CIPHERTEXT_RE.test(ciphertext);
 }
 
 /**
