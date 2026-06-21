@@ -1,6 +1,5 @@
 import { pool, db } from "./db";
 import { sql } from "drizzle-orm";
-import bcrypt from "bcryptjs";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
@@ -109,19 +108,14 @@ export async function runProductionMigrations(): Promise<void> {
   try {
     console.log("[migration] Running production data migrations...");
 
-    const deanAcct = await client.query(
-      `SELECT u.id, u.password, o.id as org_id, o.plan_tier FROM users u JOIN orgs o ON u.org_id = o.id WHERE u.email = 'dd2011@me.com' AND u.name = 'Dean Dunagan' LIMIT 1`
-    );
-    if (deanAcct.rows.length > 0) {
-      const row = deanAcct.rows[0];
-      const alreadySet = await bcrypt.compare("Jetsin2026!", row.password || "");
-      if (!alreadySet || row.plan_tier !== "ENTERPRISE") {
-        const newHash = await bcrypt.hash("Jetsin2026!", 10);
-        await client.query(`UPDATE users SET password = $1, role = 'ADMIN' WHERE email = 'dd2011@me.com'`, [newHash]);
-        await client.query(`UPDATE orgs SET plan_tier = 'ENTERPRISE' WHERE id = $1 AND plan_tier != 'ENTERPRISE'`, [row.org_id]);
-        console.log("[migration] dd2011@me.com password reset + enterprise tier applied");
-      }
-    }
+    // (audit #11) Removed a boot-time block that hard-coded a plaintext password
+    // for dd2011@me.com and, on every startup, force-reset that account's
+    // password + role and the org's plan tier whenever they had drifted. That
+    // embedded a working credential in git history and silently reverted any
+    // password rotation / role change on the next deploy. A boot migration must
+    // never embed a known credential or auto-revert a user's chosen
+    // credentials/role. (Guarded by
+    // tests/integration/boot-migration-no-credential-reset.test.ts.)
 
     let totalFixed = 0;
 
