@@ -395,7 +395,10 @@ app.post("/api/gl/journal-entries", requireManagerOrAbove, async (req, res) => {
     }
 
     const orgAccounts = await storage.getGLAccountsByOrg(req.session.orgId!);
-    const controlNumbers = new Set(["1000", "1200", "2300", "4000"]);
+    // 4100 (Sales Discounts) is auto-managed by invoice discount posting, like
+    // 4000 — manual JEs must not touch it or its balance diverges from invoice
+    // discount totals (audit #6/7/15/16, Codex review).
+    const controlNumbers = new Set(["1000", "1200", "2300", "4000", "4100"]);
     const controlIdSet = new Set(orgAccounts.filter(a => controlNumbers.has(a.accountNumber)).map(a => a.id));
     for (const line of lines) {
       if (controlIdSet.has(line.accountId)) {
