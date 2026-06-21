@@ -5467,6 +5467,20 @@ export class DatabaseStorage {
     });
   }
 
+  /** Direct, unpaginated existence check for a journal entry by source. */
+  async hasGLEntryForSource(orgId: string, sourceType: string, sourceRef: string): Promise<boolean> {
+    const [row] = await db
+      .select({ id: glJournalEntries.id })
+      .from(glJournalEntries)
+      .where(and(
+        eq(glJournalEntries.orgId, orgId),
+        eq(glJournalEntries.sourceType, sourceType),
+        eq(glJournalEntries.sourceRef, sourceRef),
+      ))
+      .limit(1);
+    return !!row;
+  }
+
   async getGLJournalEntriesByOrg(
     orgId: string,
     filters?: { startDate?: string; endDate?: string; sourceType?: string; accountId?: number },
@@ -5548,6 +5562,12 @@ export class DatabaseStorage {
       { orgId, accountNumber: "2300", name: "Sales Tax Payable", accountType: "LIABILITY", normalBalance: "CREDIT", isSystem: true },
       { orgId, accountNumber: "3000", name: "Owners Equity", accountType: "EQUITY", normalBalance: "CREDIT", isSystem: true },
       { orgId, accountNumber: "4000", name: "Service Revenue", accountType: "REVENUE", normalBalance: "CREDIT", isSystem: true },
+      // Contra-revenue: a REVENUE account with a DEBIT normal balance, so it nets
+      // against 4000 in the trial balance. Used to keep discounted invoices'
+      // journal entries balanced (audit #6/7/15/16). Existing orgs receive this
+      // via migrations/0029-gl-sales-discounts-account.sql (seedDefaultGLAccounts
+      // only seeds orgs with no chart yet).
+      { orgId, accountNumber: "4100", name: "Sales Discounts", accountType: "REVENUE", normalBalance: "DEBIT", isSystem: true },
       { orgId, accountNumber: "5100", name: "Team Payout Costs", accountType: "COST_OF_SERVICES", normalBalance: "DEBIT", isSystem: true },
       { orgId, accountNumber: "6001", name: "Travel", accountType: "EXPENSE", normalBalance: "DEBIT", isSystem: true },
       { orgId, accountNumber: "6002", name: "Software & Subscriptions", accountType: "EXPENSE", normalBalance: "DEBIT", isSystem: true },

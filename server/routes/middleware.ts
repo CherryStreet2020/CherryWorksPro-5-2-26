@@ -667,8 +667,10 @@ export async function createAutoJournalEntry(
 }
 
 export async function isGlPosted(orgId: string, sourceType: string, sourceRef: string): Promise<boolean> {
-  const entries = await storage.getGLJournalEntriesByOrg(orgId, { sourceType });
-  return entries.some(je => je.sourceRef === sourceRef);
+  // Direct lookup (not the paginated getGLJournalEntriesByOrg, which caps at 500
+  // entries — an org with >500 INVOICE entries would false-negative for older
+  // ones, breaking the repost-gl pre-check and the audit #16 post-check).
+  return storage.hasGLEntryForSource(orgId, sourceType, sourceRef);
 }
 
 export async function reverseGLBySourceRef(
