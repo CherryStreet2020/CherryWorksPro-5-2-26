@@ -155,6 +155,13 @@ app.post("/api/gl/migrate", requireManagerOrAbove, async (req, res) => {
         if (invTax > 0) {
           glLines.push({ accountNumber: "2300", debit: "0.00", credit: round2(invTax).toFixed(2), memo: "Sales Tax Payable" });
         }
+        if ((Number(inv.discountAmount) || 0) > 0) {
+          // Contra-revenue plug so the entry balances (audit #6/7/15/16).
+          const invDiscount = round2(invSubtotal + invTax - invTotal);
+          if (invDiscount > 0) {
+            glLines.push({ accountNumber: "4100", debit: invDiscount.toFixed(2), credit: "0.00", memo: "Sales Discounts" });
+          }
+        }
         await createAutoJournalEntry(orgId, entryDate, `Invoice ${inv.number} sent${currSuffix}`, "INVOICE", inv.id, glLines, userId);
         created++;
       } catch (e: any) {
@@ -306,6 +313,14 @@ app.post("/api/gl/backfill-invoices", requireManagerOrAbove, async (req, res) =>
         ];
         if (invTax > 0) {
           glLines.push({ accountNumber: "2300", debit: "0.00", credit: round2(invTax).toFixed(2), memo: "Sales Tax Payable" });
+        }
+        if ((Number(inv.discountAmount) || 0) > 0) {
+          // Contra-revenue plug so the entry balances (audit #6/7/15/16). This
+          // path uses raw (non-xr) amounts, and the plug is derived from them.
+          const invDiscount = round2(invSubtotal + invTax - invTotal);
+          if (invDiscount > 0) {
+            glLines.push({ accountNumber: "4100", debit: invDiscount.toFixed(2), credit: "0.00", memo: "Sales Discounts" });
+          }
         }
         await createAutoJournalEntry(orgId, entryDate, `Invoice ${inv.number} sent`, "INVOICE", inv.id, glLines, userId);
         created++;

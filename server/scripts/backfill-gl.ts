@@ -70,6 +70,19 @@ async function backfillGL() {
       if (invTax > 0 && acctMap.has("2300")) {
         journalLines.push({ accountId: acctMap.get("2300")!.id, debit: "0.00", credit: invTax.toFixed(2), memo: "Sales Tax Payable" });
       }
+      if ((Number(inv.discountAmount) || 0) > 0) {
+        // Contra-revenue plug so the entry balances (audit #6/7/15/16). This
+        // script inserts rows directly with NO balance check, so skip the invoice
+        // entirely if 4100 is absent rather than write an unbalanced entry.
+        const invDiscount = Number((invSubtotal + invTax - invTotal).toFixed(2));
+        if (invDiscount > 0) {
+          if (!acctMap.has("4100")) {
+            console.log(`  Skipping discounted invoice ${inv.number} — missing 4100 Sales Discounts account (run migration 0029)`);
+            continue;
+          }
+          journalLines.push({ accountId: acctMap.get("4100")!.id, debit: invDiscount.toFixed(2), credit: "0.00", memo: "Sales Discounts" });
+        }
+      }
 
       const entryDate = inv.issuedDate || new Date().toISOString().split("T")[0];
       await db.transaction(async (tx) => {

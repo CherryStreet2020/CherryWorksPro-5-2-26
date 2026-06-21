@@ -51,7 +51,9 @@ export function pickNonControlExpense(accts: SeededAccount[]): SeededAccount {
 }
 
 export async function seedExtraRevenue(iso: IsolatedOrgFixture): Promise<SeededAccount> {
-  const accountNumber = `4${Math.floor(100 + Math.random() * 899)}`;
+  // 4200–4998: avoids the seeded system accounts 4000 (Service Revenue) and
+  // 4100 (Sales Discounts), which would collide on the unique (org, number) index.
+  const accountNumber = `4${Math.floor(200 + Math.random() * 799)}`;
   const r = await iso.request.post("/api/gl/accounts", {
     headers: { "x-csrf-token": iso.csrf },
     data: {

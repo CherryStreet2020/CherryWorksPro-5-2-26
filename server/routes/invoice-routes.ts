@@ -847,6 +847,16 @@ app.post(
         if (invTax > 0) {
           glLines.push({ accountNumber: "2300", debit: "0.00", credit: invTax.toFixed(2), memo: "Sales Tax Payable" });
         }
+        if ((Number(invoice.discountAmount) || 0) > 0) {
+          // Contra-revenue plug so the entry balances: DR AR(total) + DR Discount
+          // == CR Revenue(subtotal) + CR Tax, since total = subtotal + tax -
+          // discount. Derived from the already-scaled line amounts so it is exact
+          // under any exchange rate (audit #6/7/15/16).
+          const invDiscount = round2(invSubtotal + invTax - invTotal);
+          if (invDiscount > 0) {
+            glLines.push({ accountNumber: "4100", debit: invDiscount.toFixed(2), credit: "0.00", memo: "Sales Discounts" });
+          }
+        }
         await createAutoJournalEntry(orgId, today, `Invoice ${invoice.number} sent${currSuffix}`, "INVOICE", invoice.id, glLines, req.session.userId);
       }
 
@@ -1592,9 +1602,24 @@ app.post("/api/invoices/:id/repost-gl", requireManagerOrAbove, async (req, res) 
     if (invTax > 0) {
       glLines.push({ accountNumber: "2300", debit: "0.00", credit: invTax.toFixed(2), memo: "Sales Tax Payable" });
     }
+    let invDiscount = 0;
+    if ((Number(invoice.discountAmount) || 0) > 0) {
+      // Contra-revenue plug so the entry balances (audit #6/7/15/16).
+      invDiscount = round2(invSubtotal + invTax - invTotal);
+      if (invDiscount > 0) {
+        glLines.push({ accountNumber: "4100", debit: invDiscount.toFixed(2), credit: "0.00", memo: "Sales Discounts" });
+      }
+    }
     await createAutoJournalEntry(orgId, entryDate, `Invoice ${invoice.number} sent${currSuffix}`, "INVOICE", invoice.id, glLines, req.session.userId);
 
-    return res.json({ ok: true, message: `Invoice ${invoice.number} posted to GL (DR AR $${invTotal.toFixed(2)}, CR Revenue $${invSubtotal.toFixed(2)}${invTax > 0 ? `, CR Tax $${invTax.toFixed(2)}` : ""})` });
+    // createAutoJournalEntry swallows balance/posting failures into an audit log,
+    // so confirm the entry actually landed rather than reporting a false success
+    // (audit #16 — previously this returned ok:true even when nothing posted).
+    if (!(await isGlPosted(orgId, "INVOICE", invoice.id))) {
+      return res.status(500).json({ message: `Failed to post invoice ${invoice.number} to GL — the journal entry was rejected (see GL_AUTO_JOURNAL_FAILED in the audit log).` });
+    }
+
+    return res.json({ ok: true, message: `Invoice ${invoice.number} posted to GL (DR AR $${invTotal.toFixed(2)}, CR Revenue $${invSubtotal.toFixed(2)}${invTax > 0 ? `, CR Tax $${invTax.toFixed(2)}` : ""}${invDiscount > 0 ? `, DR Sales Discounts $${invDiscount.toFixed(2)}` : ""})` });
   } catch (err: any) {
     return res.status(500).json({ message: sanitizeErrorMessage(err) });
   }
