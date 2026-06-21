@@ -290,13 +290,22 @@ async function processDataRetention(): Promise<void> {
   }
 }
 
+/**
+ * One scheduler tick. Each processor acquires its advisory lock OUTSIDE its own
+ * try, so a transient DB error there rejects the promise. Running them
+ * sequentially and guarding each means one failure neither skips the others nor
+ * escapes as an unhandledRejection -> process.exit(1) (audit #22). This function
+ * never rejects, so the unawaited setInterval callback is crash-safe.
+ */
+export async function runReminderTick(): Promise<void> {
+  try { await processAllReminders(); } catch (err) { console.error("[reminders] processAllReminders tick failed:", err); }
+  try { await processRecurringInvoices(); } catch (err) { console.error("[recurring] processRecurringInvoices tick failed:", err); }
+  try { await processDataRetention(); } catch (err) { console.error("[retention] processDataRetention tick failed:", err); }
+}
+
 export function startReminderProcessor(): void {
   if (reminderInterval) return;
-  reminderInterval = setInterval(async () => {
-    await processAllReminders();
-    await processRecurringInvoices();
-    await processDataRetention();
-  }, 60 * 60 * 1000);
+  reminderInterval = setInterval(() => { void runReminderTick(); }, 60 * 60 * 1000);
   console.log("[reminders] Reminder/recurring/retention processor started (60min interval)");
 }
 
