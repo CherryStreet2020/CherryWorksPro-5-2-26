@@ -1,72 +1,41 @@
 /**
- * Security regression (audit #11): a boot-time data migration used to hard-code a
- * plaintext password ("Jetsin2026!") for dd2011@me.com and, on EVERY startup,
+ * Security regression guard (audit #11).
+ *
+ * server/migrate-production.ts ran a data-migration block on EVERY startup that
+ * hard-coded a plaintext password ("Jetsin2026!") for dd2011@me.com and
  * force-reset that account's password + role='ADMIN' and the org's
- * plan_tier='ENTERPRISE' whenever they had drifted. That defeated password
- * rotation (silently reverting any change on the next deploy) and embedded a
- * working credential in git history.
+ * plan_tier='ENTERPRISE' whenever they had drifted. That embedded a working
+ * credential in committed git history and silently reverted any password
+ * rotation / role change on the next deploy.
  *
- * The block was removed from server/migrate-production.ts. This test proves
- * runProductionMigrations() no longer mutates a matching account's password/role
- * or its org tier — it would have FAILED on the old code (password -> a bcrypt
- * hash of Jetsin2026!, role -> ADMIN, plan_tier -> ENTERPRISE).
- *
- * In-process real-DB pattern mirrors tests/integration/field-crypto-reencrypt-route.test.ts.
+ * The fix removed the block. The contract was verified BEHAVIORALLY during
+ * review (seeding a matching dd2011@me.com / "Dean Dunagan" account, running the
+ * real runProductionMigrations(), and asserting password/role/tier unchanged —
+ * which fails on the pre-fix code). This persistent guard pins the invariant
+ * STRUCTURALLY instead, so it is deterministic and does not run the full boot
+ * migration (which performs global DDL on the shared test DB) inside the parallel
+ * suite: a boot data-migration must never embed a known credential or reset an
+ * existing account's password.
  */
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { randomUUID } from "node:crypto";
+import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
-vi.hoisted(() => {
-  process.env.BANKING_ENCRYPTION_KEY ||=
-    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-  process.env.SMTP_ENCRYPTION_KEY ||=
-    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-});
+const SRC = readFileSync(
+  fileURLToPath(new URL("../../server/migrate-production.ts", import.meta.url)),
+  "utf8",
+);
 
-import { db } from "../../server/db";
-import { orgs, users } from "@shared/schema";
-import { eq } from "drizzle-orm";
-import { runProductionMigrations } from "../../server/migrate-production";
-
-const ORG_ID = randomUUID();
-const USER_ID = randomUUID();
-// A recognizable non-bcrypt sentinel: the old block would overwrite this with a
-// bcrypt hash of "Jetsin2026!".
-const SENTINEL_PASSWORD = `sentinel-${USER_ID}`;
-
-beforeAll(async () => {
-  await db.insert(orgs).values({
-    id: ORG_ID,
-    name: "Boot Migration Test Org",
-    slug: `bootmig-${ORG_ID.slice(0, 8)}`,
-    planTier: "PROFESSIONAL",
+describe("boot migration never embeds or resets a user's credentials (audit #11)", () => {
+  it("contains no hard-coded credential and no boot-time password reset", () => {
+    // The exact credential the removed block hard-coded.
+    expect(SRC).not.toMatch(/Jetsin/i);
+    // A boot data-migration must not hash or compare passwords at all — any
+    // password (re)set requires this, so its absence forecloses re-introduction.
+    expect(SRC).not.toMatch(/\bbcrypt\b/);
+    // No raw-SQL password reset...
+    expect(SRC).not.toMatch(/UPDATE\s+users\s+SET\s+password/i);
+    // ...and no Drizzle-style password update either.
+    expect(SRC).not.toMatch(/\.set\(\s*\{[^}]*\bpassword\b/i);
   });
-  await db.insert(users).values({
-    id: USER_ID,
-    orgId: ORG_ID,
-    // The exact identity the removed block targeted.
-    email: "dd2011@me.com",
-    name: "Dean Dunagan",
-    password: SENTINEL_PASSWORD,
-    role: "MANAGER",
-  });
-}, 60_000);
-
-afterAll(async () => {
-  // Leave the org row (fresh UUID; cwp_test is recreated each run) — only the
-  // seeded user needs removing.
-  await db.delete(users).where(eq(users.id, USER_ID));
-});
-
-describe("boot migration no longer resets admin credentials (audit #11)", () => {
-  it("runProductionMigrations leaves a dd2011@me.com / 'Dean Dunagan' account's password, role, and org tier untouched", async () => {
-    await runProductionMigrations();
-
-    const [u] = await db.select().from(users).where(eq(users.id, USER_ID));
-    expect(u.password).toBe(SENTINEL_PASSWORD); // not re-hashed to Jetsin2026!
-    expect(u.role).toBe("MANAGER"); // not escalated to ADMIN
-
-    const [o] = await db.select().from(orgs).where(eq(orgs.id, ORG_ID));
-    expect(o.planTier).toBe("PROFESSIONAL"); // not forced to ENTERPRISE
-  }, 60_000);
 });

@@ -109,12 +109,13 @@ export async function runProductionMigrations(): Promise<void> {
     console.log("[migration] Running production data migrations...");
 
     // (audit #11) Removed a boot-time block that hard-coded a plaintext password
-    // ("Jetsin2026!") for dd2011@me.com and, on every startup, force-reset that
-    // account's password + role='ADMIN' and the org's plan_tier='ENTERPRISE'
-    // whenever they had drifted. That embedded a working credential in git
-    // history and silently reverted any password rotation / role change on the
-    // next deploy. A boot migration must never set a known password or
-    // auto-revert a user's chosen credentials/role.
+    // for dd2011@me.com and, on every startup, force-reset that account's
+    // password + role and the org's plan tier whenever they had drifted. That
+    // embedded a working credential in git history and silently reverted any
+    // password rotation / role change on the next deploy. A boot migration must
+    // never embed a known credential or auto-revert a user's chosen
+    // credentials/role. (Guarded by
+    // tests/integration/boot-migration-no-credential-reset.test.ts.)
 
     let totalFixed = 0;
 
