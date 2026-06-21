@@ -20,6 +20,19 @@ export function convertCurrencySafe(amountCents: number, rateStr: string): numbe
   return Number(result) / 1e8;
 }
 
+/**
+ * Returns the exchange rate as BASE units per 1 TARGET unit (audit #9).
+ *
+ * Invoice/expense amounts are denominated in the invoice's own (target/foreign)
+ * currency; every base-currency roll-up MULTIPLIES that foreign amount by this
+ * rate to get base currency (e.g. AR = total * exchangeRate). So the stored rate
+ * must be base-per-target — multiply a TARGET-denominated amount by it to get BASE.
+ *
+ * Frankfurter's `latest?from=X&to=Y` returns `rates[Y]` = Y units per 1 X unit, so
+ * to get base-per-target we fetch from=TARGET&to=BASE and read rates[BASE]. (The
+ * previous code fetched from=BASE&to=TARGET and stored target-per-base — the
+ * reciprocal — which mis-stated every multi-currency roll-up.)
+ */
 export async function getExchangeRate(baseCurrency: string, targetCurrency: string, orgId: string): Promise<ExchangeRateResult> {
   if (baseCurrency === targetCurrency) return { rate: 1, rateStr: "1", stale: false, lastUpdated: new Date() };
 
@@ -55,14 +68,15 @@ export async function getExchangeRate(baseCurrency: string, targetCurrency: stri
     const timeout = setTimeout(() => controller.abort(), 5000);
     let resp: Response;
     try {
-      resp = await fetch(`https://api.frankfurter.app/latest?from=${baseCurrency}&to=${targetCurrency}`, { signal: controller.signal });
+      // Fetch base-per-target: from=TARGET&to=BASE → rates[BASE] = BASE per 1 TARGET (audit #9).
+      resp = await fetch(`https://api.frankfurter.app/latest?from=${targetCurrency}&to=${baseCurrency}`, { signal: controller.signal });
     } finally {
       clearTimeout(timeout);
     }
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
-    const rate = data.rates?.[targetCurrency];
-    if (!rate) throw new Error(`No rate for ${targetCurrency}`);
+    const rate = data.rates?.[baseCurrency];
+    if (!rate) throw new Error(`No ${baseCurrency} rate for ${targetCurrency}`);
 
     const now = new Date();
     if (cached.length > 0) {
