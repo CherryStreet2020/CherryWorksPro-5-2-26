@@ -5467,6 +5467,20 @@ export class DatabaseStorage {
     });
   }
 
+  /** Direct, unpaginated existence check for a journal entry by source. */
+  async hasGLEntryForSource(orgId: string, sourceType: string, sourceRef: string): Promise<boolean> {
+    const [row] = await db
+      .select({ id: glJournalEntries.id })
+      .from(glJournalEntries)
+      .where(and(
+        eq(glJournalEntries.orgId, orgId),
+        eq(glJournalEntries.sourceType, sourceType),
+        eq(glJournalEntries.sourceRef, sourceRef),
+      ))
+      .limit(1);
+    return !!row;
+  }
+
   async getGLJournalEntriesByOrg(
     orgId: string,
     filters?: { startDate?: string; endDate?: string; sourceType?: string; accountId?: number },
