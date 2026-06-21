@@ -5,7 +5,7 @@ import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import { pool } from "./db";
 import { randomBytes, randomUUID } from "crypto";
-import { isProduction, apiLimiter, tenantRateLimiter, invoiceSendLimiter, paymentLimiter, importLimiter, getRateLimitInfo } from "./routes/middleware";
+import { isProduction, apiLimiter, tenantRateLimiter, invoiceSendLimiter, paymentLimiter, importLimiter, getRateLimitInfo, requirePlatformOperator } from "./routes/middleware";
 import { seedDatabase } from "./seed";
 import { registerStripeWebhook } from "./stripe_webhook";
 
@@ -580,12 +580,10 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/secrets/dry-run", async (req: Request, res: Response) => {
-    if (!req.session?.userId) return res.status(401).json({ message: "Unauthorized" });
-    const { storage } = await import("./storage");
-    const admin = await storage.getUserById(req.session.userId);
-    if (!admin || admin.role !== "ADMIN") return res.status(403).json({ message: "Admin required" });
-
+  // Operator-only: this enumerates which process-global secrets are configured
+  // and returns the rotation runbook — part of the secrets surface, which must
+  // be platform-operator-only, not tenant-admin (audit #4).
+  app.post("/api/admin/secrets/dry-run", requirePlatformOperator, async (req: Request, res: Response) => {
     const secretEnvVars = [
       "STRIPE_SECRET_KEY", "STRIPE_PUBLISHABLE_KEY", "STRIPE_WEBHOOK_SECRET",
       "DATABASE_URL", "SESSION_SECRET", "WEBHOOK_SIGNING_KEY",
