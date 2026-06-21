@@ -308,6 +308,31 @@ export function decryptField(ciphertext: string): string {
     : new Error("Failed to decrypt banking field with any configured key");
 }
 
+/**
+ * Rotation tooling: true if a banking ciphertext decrypts under the CURRENT key
+ * alone (i.e. already re-keyed). Non-encrypted/empty values count as "current"
+ * (nothing to do). Used by the operator field-crypto status/reencrypt endpoint.
+ */
+export function isBankingCiphertextOnCurrentKey(ciphertext: string | null | undefined): boolean {
+  if (!ciphertext || !ciphertext.startsWith("enc:")) return true;
+  try {
+    decryptFieldWithSecret(ciphertext, BANKING_ENCRYPTION_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Rotation tooling: re-encrypt a banking value under the CURRENT key — decrypt
+ * with the dual-key fallback, then encrypt with the current key. No-op for
+ * non-encrypted values.
+ */
+export function reencryptBankingField(ciphertext: string): string {
+  if (!ciphertext || !ciphertext.startsWith("enc:")) return ciphertext;
+  return encryptField(decryptField(ciphertext));
+}
+
 function encryptBankingFields(data: Record<string, unknown>): Record<string, unknown> {
   const copy = { ...data };
   if (typeof copy.bankRoutingNumber === "string" && copy.bankRoutingNumber && BANKING_ENCRYPTION_KEY) {

@@ -103,6 +103,46 @@ export function decryptSmtpPassword(ciphertext: string): string {
     : new Error("Failed to decrypt SMTP secret with any configured key");
 }
 
+/**
+ * Rotation tooling: true if an SMTP secret decrypts under the CURRENT key alone
+ * (already re-keyed). Plaintext/empty values count as "current". Used by the
+ * operator field-crypto status/reencrypt endpoint.
+ */
+export function isSmtpCiphertextOnCurrentKey(ciphertext: string | null | undefined): boolean {
+  if (!isSmtpEncrypted(ciphertext)) return true; // plaintext/empty → nothing to re-key
+  if (!SMTP_ENCRYPTION_KEY) return false;
+  try {
+    decryptSmtpPasswordWithSecret(ciphertext as string, SMTP_ENCRYPTION_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Legacy SMTP ciphertext is exactly three hex segments (iv:tag:ciphertext).
+const LEGACY_SMTP_CIPHERTEXT_RE = /^[0-9a-f]+:[0-9a-f]+:[0-9a-f]+$/i;
+
+/**
+ * True if the value is an encrypted SMTP secret (v2 or legacy format). Uses a
+ * STRUCTURAL test, not a bare "contains a colon" check — a plaintext password
+ * that happens to contain ":" must NOT be misclassified as ciphertext, or the
+ * rotation reencrypt pass would error on it forever and never reach 0 pending.
+ */
+export function isSmtpEncrypted(ciphertext: string | null | undefined): boolean {
+  if (!ciphertext) return false;
+  return ciphertext.startsWith("v2:") || LEGACY_SMTP_CIPHERTEXT_RE.test(ciphertext);
+}
+
+/**
+ * Rotation tooling: re-encrypt an SMTP secret under the CURRENT key — decrypt
+ * with the dual-key fallback, then encrypt with the current key. No-op for
+ * plaintext/empty values.
+ */
+export function reencryptSmtpSecret(ciphertext: string): string {
+  if (!isSmtpEncrypted(ciphertext)) return ciphertext;
+  return encryptSmtpPassword(decryptSmtpPassword(ciphertext));
+}
+
 export interface SmtpConfig {
   host: string;
   port: number;

@@ -14,8 +14,19 @@ vi.hoisted(() => {
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 });
 
-import { encryptField, decryptField } from "../../server/storage";
-import { encryptSmtpPassword, decryptSmtpPassword } from "../../server/email";
+import {
+  encryptField,
+  decryptField,
+  isBankingCiphertextOnCurrentKey,
+  reencryptBankingField,
+} from "../../server/storage";
+import {
+  encryptSmtpPassword,
+  decryptSmtpPassword,
+  isSmtpEncrypted,
+  isSmtpCiphertextOnCurrentKey,
+  reencryptSmtpSecret,
+} from "../../server/email";
 
 // Distinct 64-hex keys standing in for the previous ("old") key and a third,
 // unrelated key during a rotation. All differ from the harness BANKING/SMTP keys.
@@ -197,5 +208,61 @@ describe("SMTP secret crypto — key rotation fallback", () => {
       delete process.env.SMTP_ENCRYPTION_KEY_OLD;
       vi.resetModules();
     }
+  });
+});
+
+describe("field-crypto rotation tooling (status/reencrypt helpers)", () => {
+  afterEach(() => {
+    delete process.env.BANKING_ENCRYPTION_KEY_OLD;
+    delete process.env.SMTP_ENCRYPTION_KEY_OLD;
+  });
+
+  it("banking: re-encrypts an old-key value onto the current key, preserving plaintext", () => {
+    const oldCt = bankingEncryptV2(OTHER_KEY, "021000021");
+    expect(isBankingCiphertextOnCurrentKey(oldCt)).toBe(false); // on the OLD key
+    process.env.BANKING_ENCRYPTION_KEY_OLD = OTHER_KEY;
+    const next = reencryptBankingField(oldCt);
+    expect(isBankingCiphertextOnCurrentKey(next)).toBe(true); // now on the current key
+    expect(decryptField(next)).toBe("021000021"); // plaintext preserved
+  });
+
+  it("banking: legacy-format old-key value re-encrypts to current key", () => {
+    const oldLegacy = bankingEncryptLegacy(OTHER_KEY, "legacy-acct");
+    expect(isBankingCiphertextOnCurrentKey(oldLegacy)).toBe(false);
+    process.env.BANKING_ENCRYPTION_KEY_OLD = OTHER_KEY;
+    const next = reencryptBankingField(oldLegacy);
+    expect(next.startsWith("enc:v2:")).toBe(true); // re-encrypted in the current (v2) format
+    expect(isBankingCiphertextOnCurrentKey(next)).toBe(true);
+    expect(decryptField(next)).toBe("legacy-acct");
+  });
+
+  it("banking: current-key values stay current and round-trip after re-encrypt", () => {
+    const ct = encryptField("current");
+    expect(isBankingCiphertextOnCurrentKey(ct)).toBe(true);
+    const next = reencryptBankingField(ct);
+    expect(isBankingCiphertextOnCurrentKey(next)).toBe(true);
+    expect(decryptField(next)).toBe("current");
+  });
+
+  it("banking: non-encrypted values are treated as current and left unchanged", () => {
+    expect(isBankingCiphertextOnCurrentKey("plain")).toBe(true);
+    expect(isBankingCiphertextOnCurrentKey(null)).toBe(true);
+    expect(reencryptBankingField("plain")).toBe("plain");
+  });
+
+  it("smtp: re-encrypts an old-key value onto the current key, preserving plaintext", () => {
+    const oldCt = smtpEncryptV2(OTHER_KEY, "smtp-secret");
+    expect(isSmtpEncrypted(oldCt)).toBe(true);
+    expect(isSmtpCiphertextOnCurrentKey(oldCt)).toBe(false);
+    process.env.SMTP_ENCRYPTION_KEY_OLD = OTHER_KEY;
+    const next = reencryptSmtpSecret(oldCt);
+    expect(isSmtpCiphertextOnCurrentKey(next)).toBe(true);
+    expect(decryptSmtpPassword(next)).toBe("smtp-secret");
+  });
+
+  it("smtp: plaintext is not encrypted, treated as current, left unchanged", () => {
+    expect(isSmtpEncrypted("plainpw")).toBe(false);
+    expect(isSmtpCiphertextOnCurrentKey("plainpw")).toBe(true);
+    expect(reencryptSmtpSecret("plainpw")).toBe("plainpw");
   });
 });

@@ -51,6 +51,7 @@ import { registerPayoutRoutes } from "./routes/payout-routes";
 import { registerGlRoutes } from "./routes/gl-routes";
 import { registerBankRoutes } from "./routes/bank-routes";
 import { registerIntegrationRoutes } from "./routes/integration-routes";
+import { registerFieldCryptoRoutes } from "./routes/field-crypto-routes";
 import { registerImportRoutes } from "./routes/import-routes";
 import { registerSettingsRoutes } from "./routes/settings-routes";
 import { registerOauthMailboxRoutes } from "./routes/oauth-mailbox-routes";
@@ -650,6 +651,7 @@ export async function registerRoutes(
   registerGlRoutes(app);
   registerBankRoutes(app);
   registerIntegrationRoutes(app);
+  registerFieldCryptoRoutes(app);
   registerBackupRoutes(app);
   registerDataManagementRoutes(app);
   registerSearchRoutes(app);
