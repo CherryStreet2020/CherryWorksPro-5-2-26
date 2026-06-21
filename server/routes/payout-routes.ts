@@ -65,10 +65,10 @@ app.post("/api/payouts", requireAdmin, async (req, res) => {
 
     const payout = await db.transaction(async (tx) => {
       // The (org, member) advisory lock + unpaid re-check now live in
-      // storage.linkTimeEntriesToPayout — the single insert point — so this route
-      // AND the invoice-send auto-payout are both guarded against double-paying a
-      // time entry (audit #13). Header + link run on the same tx, so a conflict
-      // rolls the whole payout back.
+      // storage.linkTimeEntriesToPayout — the single insert point for the two payout
+      // creation flows — so this route AND the invoice-send auto-payout are both
+      // guarded against double-paying a time entry (audit #13). Header + link run on
+      // the same tx, so a conflict rolls the whole payout back.
       // When paying specific time entries, the payout total IS the exact sum
       // of the per-entry line amounts (snapshot-preferring rate, each rounded
       // to the cent). Derive it server-side so the payout, its line detail, the
@@ -163,7 +163,14 @@ app.patch("/api/payouts/:id", requireAdmin, async (req, res) => {
       updates.paymentMethod = paymentMethod;
     }
     const previousPayout = status ? await storage.getTeamMemberPayoutById(req.params.id as string, req.session.orgId!) : null;
-    const updated = await storage.updateTeamMemberPayout(req.params.id as string, req.session.orgId!, updates);
+    // Reactivating a VOID payout (VOID → PENDING/COMPLETED) must re-check that its
+    // linked entries weren't re-paid elsewhere while it was void — otherwise the same
+    // entry ends up in two non-VOID payouts (audit #13). reactivateVoidedPayout does the
+    // re-check + update atomically under the (org, member) lock and throws on conflict.
+    const isUnvoid = status !== undefined && status !== "VOID" && previousPayout?.status === "VOID";
+    const updated = isUnvoid && previousPayout
+      ? await storage.reactivateVoidedPayout(req.params.id as string, req.session.orgId!, previousPayout.teamMemberId, updates)
+      : await storage.updateTeamMemberPayout(req.params.id as string, req.session.orgId!, updates);
     if (!updated) return res.status(404).json({ message: "Payout not found" });
     if (status === "COMPLETED") {
       await storage.createAuditLog({
@@ -186,6 +193,12 @@ app.patch("/api/payouts/:id", requireAdmin, async (req, res) => {
     }
     return res.json(updated);
   } catch (err: any) {
+    if (err instanceof PayoutEntriesAlreadyPaidError) {
+      return res.status(409).json({
+        message: "Cannot reactivate this payout — one or more of its time entries are already paid in another payout",
+        conflictingTimeEntryIds: err.conflictingTimeEntryIds,
+      });
+    }
     return res.status(400).json({ message: err.message });
   }
 });

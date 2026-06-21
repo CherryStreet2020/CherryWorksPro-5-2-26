@@ -947,7 +947,16 @@ app.post(
                   // Some/all of these entries are already paid in another non-VOID
                   // payout — skip this member's auto-payout (audit #13). The entries
                   // stay unpaid for a later manual/auto payout; the invoice still sends.
+                  // Record it so the skip is auditable, not silent.
                   console.warn(`[auto-payout] skipped ${teamMemberId} on invoice ${invoice.number}: ${linkErr.conflictingTimeEntryIds.length} entr(ies) already paid`);
+                  await storage.createAuditLog({
+                    orgId,
+                    userId: req.session.userId!,
+                    action: "PAYOUT_AUTO_SKIPPED_ALREADY_PAID",
+                    entityType: "invoice",
+                    entityId: invoice.id,
+                    details: { teamMemberId, invoiceNumber: invoice.number, conflictingTimeEntryIds: linkErr.conflictingTimeEntryIds },
+                  }).catch(() => {});
                   continue;
                 }
                 throw linkErr;

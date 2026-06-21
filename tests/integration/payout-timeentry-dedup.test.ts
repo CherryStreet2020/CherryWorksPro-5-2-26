@@ -25,7 +25,7 @@ vi.hoisted(() => {
 });
 
 import { db, pool } from "../../server/db";
-import { orgs, payoutTimeEntries } from "@shared/schema";
+import { orgs, payoutTimeEntries, teamMemberPayoutsV2 } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { storage, PayoutEntriesAlreadyPaidError } from "../../server/storage";
 
@@ -124,6 +124,36 @@ describe("linkTimeEntriesToPayout rejects double-paying a time entry (audit #13)
     expect(rejected).toHaveLength(1);
     expect(rejected[0].reason).toBeInstanceOf(PayoutEntriesAlreadyPaidError);
     expect(await linkRowCount(T.T3)).toBe(1);
+  }, 20_000);
+
+  it("un-VOIDing a payout is rejected if its entry was re-paid elsewhere (audit #13)", async () => {
+    // Pay T6 in p5, VOID p5 (T6 unpaid), re-pay T6 in p6. Now reactivating p5
+    // (VOID → COMPLETED) must be rejected — else T6 is in two non-VOID payouts.
+    const T6 = randomUUID();
+    await seedTimeEntry(T6, M1);
+    const p5 = await newPayout(M1);
+    await storage.linkTimeEntriesToPayout(p5, M1, entry(T6), ORG_ID);
+    await storage.updateTeamMemberPayout(p5, ORG_ID, { status: "VOID" });
+    const p6 = await newPayout(M1);
+    await storage.linkTimeEntriesToPayout(p6, M1, entry(T6), ORG_ID); // allowed — p5 is VOID
+
+    await expect(storage.reactivateVoidedPayout(p5, ORG_ID, M1, { status: "COMPLETED" }))
+      .rejects.toBeInstanceOf(PayoutEntriesAlreadyPaidError);
+
+    // p5 stays VOID; T6 is paid in exactly one non-VOID payout (p6).
+    const [p5row] = await db.select().from(teamMemberPayoutsV2).where(eq(teamMemberPayoutsV2.id, p5));
+    expect(p5row.status).toBe("VOID");
+  }, 20_000);
+
+  it("un-VOIDing is allowed when the entry is NOT paid elsewhere", async () => {
+    const T7 = randomUUID();
+    await seedTimeEntry(T7, M1);
+    const p7 = await newPayout(M1);
+    await storage.linkTimeEntriesToPayout(p7, M1, entry(T7), ORG_ID);
+    await storage.updateTeamMemberPayout(p7, ORG_ID, { status: "VOID" });
+    // No re-pay of T7 anywhere → reactivation succeeds.
+    const updated = await storage.reactivateVoidedPayout(p7, ORG_ID, M1, { status: "COMPLETED" });
+    expect(updated?.status).toBe("COMPLETED");
   }, 20_000);
 
   it("concurrent links for DIFFERENT members do not block each other", async () => {

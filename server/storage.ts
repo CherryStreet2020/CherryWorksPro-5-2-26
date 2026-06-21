@@ -4168,6 +4168,52 @@ export class DatabaseStorage {
     return updated;
   }
 
+  /**
+   * Reactivate a VOID payout (VOID → PENDING/COMPLETED) and apply `updates`, re-checking
+   * under the (org, member) lock that none of its linked time entries have meanwhile been
+   * paid in ANOTHER non-VOID payout (audit #13). Voiding makes an entry re-payable, so
+   * without this check un-voiding could put the same entry in two non-VOID payouts. Throws
+   * PayoutEntriesAlreadyPaidError on conflict (caller → 409). The lock + re-check + update
+   * run on one connection, mirroring linkTimeEntriesToPayout's guarantee.
+   */
+  async reactivateVoidedPayout(
+    id: string,
+    orgId: string,
+    teamMemberId: string,
+    updates: Record<string, any>,
+  ): Promise<TeamMemberPayoutV2 | undefined> {
+    return await db.transaction(async (tx) => {
+      const lockKey = payoutMemberLockKey(orgId, teamMemberId);
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
+      const myEntries = await tx
+        .select({ timeEntryId: payoutTimeEntries.timeEntryId })
+        .from(payoutTimeEntries)
+        .where(and(eq(payoutTimeEntries.payoutId, id), eq(payoutTimeEntries.orgId, orgId)));
+      const ids = myEntries.map(e => e.timeEntryId);
+      if (ids.length > 0) {
+        const conflicts = await tx
+          .select({ timeEntryId: payoutTimeEntries.timeEntryId })
+          .from(payoutTimeEntries)
+          .innerJoin(teamMemberPayoutsV2, eq(payoutTimeEntries.payoutId, teamMemberPayoutsV2.id))
+          .where(and(
+            eq(payoutTimeEntries.orgId, orgId),
+            ne(teamMemberPayoutsV2.status, "VOID"),
+            ne(payoutTimeEntries.payoutId, id),
+            inArray(payoutTimeEntries.timeEntryId, ids),
+          ));
+        if (conflicts.length > 0) {
+          throw new PayoutEntriesAlreadyPaidError(Array.from(new Set(conflicts.map(c => c.timeEntryId))));
+        }
+      }
+      const [updated] = await tx
+        .update(teamMemberPayoutsV2)
+        .set(updates as any)
+        .where(and(eq(teamMemberPayoutsV2.id, id), eq(teamMemberPayoutsV2.orgId, orgId)))
+        .returning();
+      return updated;
+    });
+  }
+
   async deleteTeamMemberPayout(id: string, orgId: string): Promise<boolean> {
     const payout = await this.getTeamMemberPayoutById(id, orgId);
     if (!payout) return false;
@@ -4182,9 +4228,10 @@ export class DatabaseStorage {
 
   /**
    * Link time entries to a payout, enforcing that a time entry is paid in at most
-   * one non-VOID payout (audit #13). This is the SINGLE insert point into
-   * payout_time_entries (both POST /api/payouts and the invoice-send auto-payout go
-   * through here), so the guard lives here to cover every caller.
+   * one non-VOID payout (audit #13). This is the single insert point for the two
+   * payout-creation flows (POST /api/payouts and the invoice-send auto-payout), so
+   * the guard lives here to cover both. (The generic admin data console can raw-insert
+   * into payout_time_entries; that deliberate admin escape hatch is out of scope here.)
    *
    * It serializes all link operations for the (org, member) via an advisory lock and,
    * under that lock, re-queries whether any of the requested entries are already in a
