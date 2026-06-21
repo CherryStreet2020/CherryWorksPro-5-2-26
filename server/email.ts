@@ -103,6 +103,39 @@ export function decryptSmtpPassword(ciphertext: string): string {
     : new Error("Failed to decrypt SMTP secret with any configured key");
 }
 
+/**
+ * Rotation tooling: true if an SMTP secret decrypts under the CURRENT key alone
+ * (already re-keyed). Plaintext/empty values count as "current". Used by the
+ * operator field-crypto status/reencrypt endpoint.
+ */
+export function isSmtpCiphertextOnCurrentKey(ciphertext: string | null | undefined): boolean {
+  if (!ciphertext) return true;
+  if (!ciphertext.startsWith("v2:") && !ciphertext.includes(":")) return true; // plaintext
+  if (!SMTP_ENCRYPTION_KEY) return false;
+  try {
+    decryptSmtpPasswordWithSecret(ciphertext, SMTP_ENCRYPTION_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** True if the value looks like an encrypted SMTP secret (v2 or legacy format). */
+export function isSmtpEncrypted(ciphertext: string | null | undefined): boolean {
+  if (!ciphertext) return false;
+  return ciphertext.startsWith("v2:") || ciphertext.includes(":");
+}
+
+/**
+ * Rotation tooling: re-encrypt an SMTP secret under the CURRENT key — decrypt
+ * with the dual-key fallback, then encrypt with the current key. No-op for
+ * plaintext/empty values.
+ */
+export function reencryptSmtpSecret(ciphertext: string): string {
+  if (!isSmtpEncrypted(ciphertext)) return ciphertext;
+  return encryptSmtpPassword(decryptSmtpPassword(ciphertext));
+}
+
 export interface SmtpConfig {
   host: string;
   port: number;
