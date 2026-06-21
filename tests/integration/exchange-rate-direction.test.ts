@@ -26,7 +26,7 @@ vi.hoisted(() => {
 });
 
 import { pool } from "../../server/db";
-import { getExchangeRate } from "../../server/exchange-rates";
+import { getExchangeRate, getMultipleRates } from "../../server/exchange-rates";
 
 // 1 EUR = 1.0875 USD; 1 USD = 0.9195 EUR (reciprocal). The mock answers in
 // Frankfurter's shape: latest?from=X&to=Y → { base: X, rates: { [Y]: <Y per 1 X> } }.
@@ -36,6 +36,14 @@ const RATES: Record<string, Record<string, number>> = {
 };
 
 let fetchCalls: string[] = [];
+// Track the random orgIds this suite caches under so teardown only deletes its
+// own rows (not other orgs' / concurrent fixtures' USD↔EUR cache).
+const insertedOrgIds: string[] = [];
+function freshOrg(): string {
+  const id = randomUUID();
+  insertedOrgIds.push(id);
+  return id;
+}
 
 beforeEach(() => {
   fetchCalls = [];
@@ -58,21 +66,25 @@ afterEach(() => {
 });
 
 afterAll(async () => {
-  // Clean the cache rows this suite inserted (keyed by the random orgIds it used).
-  await pool.query(`DELETE FROM exchange_rates WHERE base_currency = 'USD' AND target_currency = 'EUR'`).catch(() => undefined);
+  // Only delete rows this suite created — scoped by its own orgIds.
+  if (insertedOrgIds.length) {
+    await pool.query(`DELETE FROM exchange_rates WHERE org_id = ANY($1::text[])`, [insertedOrgIds]).catch(() => undefined);
+  }
 });
 
 describe("getExchangeRate stores base-per-target (audit #9)", () => {
   it("USD base / EUR invoice returns base-per-foreign (~1.0875), not the reciprocal (~0.9195)", async () => {
-    const orgId = randomUUID(); // fresh org → cache miss → forces a fetch
+    const orgId = freshOrg(); // fresh org → cache miss → forces a fetch
     const result = await getExchangeRate("USD", "EUR", orgId);
 
     expect(result.rate).toBeCloseTo(1.0875, 4);
     expect(result.rate).not.toBeCloseTo(0.9195, 4);
+    // Stored-string contract (what gets snapshotted onto invoices.exchangeRate).
+    expect(result.rateStr).toBe("1.0875");
   });
 
   it("fetches Frankfurter as from=TARGET&to=BASE and reads rates[BASE]", async () => {
-    const orgId = randomUUID();
+    const orgId = freshOrg();
     await getExchangeRate("USD", "EUR", orgId);
 
     expect(fetchCalls).toHaveLength(1);
@@ -82,7 +94,7 @@ describe("getExchangeRate stores base-per-target (audit #9)", () => {
   });
 
   it("a EUR 100 amount rolls up to ~108.75 base via multiply (not 92)", async () => {
-    const orgId = randomUUID();
+    const orgId = freshOrg();
     const { rate } = await getExchangeRate("USD", "EUR", orgId);
 
     // Consumers do foreignAmount * exchangeRate (e.g. AR = total * exchangeRate).
@@ -92,8 +104,16 @@ describe("getExchangeRate stores base-per-target (audit #9)", () => {
   });
 
   it("same-currency short-circuits to 1 without fetching", async () => {
-    const result = await getExchangeRate("USD", "USD", randomUUID());
+    const result = await getExchangeRate("USD", "USD", freshOrg());
     expect(result.rate).toBe(1);
     expect(fetchCalls).toHaveLength(0);
+  });
+
+  it("getMultipleRates keeps the lookup/display direction (target-per-base) unchanged by the flip", async () => {
+    // The /api/exchange-rates endpoint quotes "1 base = N target". For base USD,
+    // target EUR that is EUR-per-USD (~0.9195), NOT base-per-target (~1.0875).
+    const results = await getMultipleRates("USD", ["EUR"], freshOrg());
+    expect(results.EUR.rate).toBeCloseTo(0.9195, 4);
+    expect(results.EUR.rate).not.toBeCloseTo(1.0875, 4);
   });
 });

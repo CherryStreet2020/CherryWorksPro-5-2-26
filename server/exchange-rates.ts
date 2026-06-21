@@ -119,10 +119,17 @@ export async function getExchangeRate(baseCurrency: string, targetCurrency: stri
   }
 }
 
+/**
+ * Lookup/display rates for the /api/exchange-rates endpoint: each target quoted as
+ * TARGET units per 1 BASE unit (i.e. "1 base = N target"). This is the direction
+ * that endpoint has always returned, so the audit #9 flip of getExchangeRate (now
+ * base-per-target, for invoice snapshots) must NOT change it — we call
+ * getExchangeRate(target, base) so the displayed value is unchanged.
+ */
 export async function getMultipleRates(baseCurrency: string, targets: string[], orgId: string): Promise<Record<string, ExchangeRateResult>> {
   const result: Record<string, ExchangeRateResult> = {};
   for (const t of targets) {
-    result[t] = await getExchangeRate(baseCurrency, t, orgId);
+    result[t] = await getExchangeRate(t, baseCurrency, orgId);
   }
   return result;
 }

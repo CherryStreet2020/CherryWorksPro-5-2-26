@@ -93,7 +93,10 @@ app.get("/api/exchange-rate", requireAuth, async (req, res) => {
   try {
     const { from, to } = req.query;
     if (!from || !to) return res.status(400).json({ message: "from and to required" });
-    const result = await getExchangeRate(String(from), String(to), req.session.orgId!);
+    // This converter advertises "from → to": rate = units of `to` per 1 `from`
+    // (1 from = rate to). getExchangeRate is base-per-target, so we pass (to, from)
+    // to get to-per-from — preserving this endpoint's pre-audit-#9 output unchanged.
+    const result = await getExchangeRate(String(to), String(from), req.session.orgId!);
     if (result.error && result.rate === 0) {
       return res.status(503).json({ message: result.error, from, to });
     }
