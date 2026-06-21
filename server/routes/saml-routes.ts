@@ -1,10 +1,9 @@
 import type { Express, Request, Response } from "express";
 import { db, pool } from "../db";
-import { orgs, users } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
-import { randomUUID, createHash } from "crypto";
-import { requireAdmin, requireAuth, requirePlanTier } from "./middleware";
-import { hashPassword } from "../auth";
+import { orgs } from "@shared/schema";
+import { eq } from "drizzle-orm";
+import { randomUUID } from "crypto";
+import { requireAdmin, requirePlanTier } from "./middleware";
 
 interface SamlConfig {
   orgId: string;
@@ -18,27 +17,6 @@ interface SamlConfig {
 }
 
 const samlConfigs: Map<string, SamlConfig> = new Map();
-const usedAssertionIds: Set<string> = new Set();
-
-function validateSamlAssertion(assertionId: string, notOnOrAfter: string): { valid: boolean; error?: string } {
-  if (usedAssertionIds.has(assertionId)) {
-    return { valid: false, error: "Replay detected: assertion already consumed" };
-  }
-  const expiry = new Date(notOnOrAfter);
-  if (isNaN(expiry.getTime()) || expiry < new Date()) {
-    return { valid: false, error: "Assertion expired" };
-  }
-  usedAssertionIds.add(assertionId);
-  setTimeout(() => usedAssertionIds.delete(assertionId), 24 * 60 * 60 * 1000);
-  return { valid: true };
-}
-
-function mapRole(idpGroups: string[], roleMapping: Record<string, string>): string {
-  for (const group of idpGroups) {
-    if (roleMapping[group]) return roleMapping[group];
-  }
-  return "TEAM_MEMBER";
-}
 
 export function registerSamlRoutes(app: Express) {
 
@@ -106,91 +84,28 @@ export function registerSamlRoutes(app: Express) {
     res.type("application/xml").send(metadata);
   });
 
-  app.post("/api/saml/acs/:orgSlug", async (req: Request, res: Response) => {
-    const orgSlug = req.params.orgSlug as string;
-    const org = await db.select().from(orgs).where(eq(orgs.slug, orgSlug)).then(r => r[0]);
-    if (!org) return res.status(404).json({ message: "Organization not found" });
-
-    const config = samlConfigs.get(org.id);
-    if (!config || !config.enabled) return res.status(400).json({ message: "SAML not configured for this org" });
-
-    const { SAMLResponse, email, name, groups, assertionId, notOnOrAfter } = req.body;
-
-    if (!email) return res.status(400).json({ message: "Email is required in SAML assertion" });
-
-    const replayCheck = validateSamlAssertion(
-      assertionId || createHash("sha256").update(JSON.stringify(req.body)).digest("hex"),
-      notOnOrAfter || new Date(Date.now() + 5 * 60_000).toISOString()
-    );
-    if (!replayCheck.valid) {
-      try {
-        await pool.query(
-          `INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, details, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [randomUUID(), org.id, "SAML_REPLAY_BLOCKED", "auth", org.id, JSON.stringify({ email, error: replayCheck.error }), (req as any).ip || "unknown"]
-        );
-      } catch {}
-      return res.status(400).json({ message: replayCheck.error });
-    }
-
-    const idpGroups: string[] = Array.isArray(groups) ? groups : (groups ? [groups] : []);
-    const mappedRole = mapRole(idpGroups, config.roleMapping);
-
-    let user = await db.select().from(users).where(and(eq(users.orgId, org.id), eq(users.email, email.toLowerCase()))).then(r => r[0]);
-
-    if (!user && config.jitProvisioning) {
-      const newUserId = randomUUID();
-      const tempPassword = await hashPassword(randomUUID());
-      await db.insert(users).values({
-        id: newUserId,
-        orgId: org.id,
-        email: email.toLowerCase(),
-        name: name || email.split("@")[0],
-        password: tempPassword,
-        role: mappedRole as any,
-      });
-      user = await db.select().from(users).where(eq(users.id, newUserId)).then(r => r[0]);
-
-      try {
-        await pool.query(
-          `INSERT INTO audit_logs (id, org_id, user_id, action, entity_type, entity_id, details, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [randomUUID(), org.id, newUserId, "SAML_JIT_PROVISIONED", "user", newUserId, JSON.stringify({ email, role: mappedRole, groups: idpGroups }), (req as any).ip || "unknown"]
-        );
-      } catch {}
-    }
-
-    if (!user) return res.status(403).json({ message: "User not found and JIT provisioning is disabled" });
-
-    req.session.userId = user.id;
-    req.session.orgId = org.id;
-    req.session.role = user.role;
-    req.session.lastActivity = Date.now();
-
-    try {
-      await pool.query(
-        `INSERT INTO audit_logs (id, org_id, user_id, action, entity_type, entity_id, details, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [randomUUID(), org.id, user.id, "SAML_LOGIN", "user", user.id, JSON.stringify({ email, method: SAMLResponse ? "IdP-initiated" : "SP-initiated", groups: idpGroups, role: user.role }), (req as any).ip || "unknown"]
-      );
-    } catch {}
-
-    return res.json({ success: true, user: { id: user.id, email: user.email, name: user.name, role: user.role }, method: "saml" });
+  // ── SAML SSO sign-in is DISABLED (audit #1, CRITICAL) ──────────────────────
+  // The previous Assertion Consumer Service established an authenticated session
+  // from identity fields (email / name / groups) taken straight from the request
+  // body, WITHOUT verifying the signed SAML assertion against the configured IdP
+  // certificate. Any unauthenticated caller could therefore log in as an existing
+  // user (or JIT-provision a fresh ADMIN) for a SAML-enabled org — a full SSO
+  // auth bypass and privilege escalation.
+  //
+  // A correct implementation must base64-decode and XML-DSig-verify the
+  // SAMLResponse against the stored cert, and validate Issuer / Audience /
+  // Recipient (== this SP's ACS URL) / Conditions(NotOnOrAfter) and bind
+  // InResponseTo to a server-issued AuthnRequest ID — deriving identity ONLY
+  // from the verified, signed assertion. Until that verified flow exists, the
+  // sign-in endpoints must never establish a session. They return 503 so no
+  // identity can be asserted. (Org config + metadata stubs below are retained
+  // for the eventual real build; they establish no session.)
+  app.post("/api/saml/acs/:orgSlug", (_req: Request, res: Response) => {
+    return res.status(503).json({ message: "SAML SSO is not available." });
   });
 
-  app.get("/api/saml/login/:orgSlug", async (req: Request, res: Response) => {
-    const orgSlug = req.params.orgSlug as string;
-    const org = await db.select().from(orgs).where(eq(orgs.slug, orgSlug)).then(r => r[0]);
-    if (!org) return res.status(404).json({ message: "Organization not found" });
-
-    const config = samlConfigs.get(org.id);
-    if (!config || !config.enabled) return res.status(400).json({ message: "SAML not configured" });
-
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
-    const samlRequest = Buffer.from(`<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" ID="_${randomUUID()}" Version="2.0" IssueInstant="${new Date().toISOString()}" AssertionConsumerServiceURL="${baseUrl}/api/saml/acs/${orgSlug}"><saml:Issuer xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">${baseUrl}/api/saml/metadata/${orgSlug}</saml:Issuer></samlp:AuthnRequest>`).toString("base64");
-
-    return res.json({
-      ssoUrl: config.ssoUrl,
-      samlRequest,
-      method: "SP-initiated",
-    });
+  app.get("/api/saml/login/:orgSlug", (_req: Request, res: Response) => {
+    return res.status(503).json({ message: "SAML SSO is not available." });
   });
 
   app.delete("/api/admin/saml/config", requireAdmin, async (req: Request, res: Response) => {
