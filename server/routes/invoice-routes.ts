@@ -1,5 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
-import { storage } from "../storage";
+import { storage, PayoutEntriesAlreadyPaidError } from "../storage";
 import { db, pool } from "../db";
 import { eq, desc, and, gte } from "drizzle-orm";
 import { z } from "zod";
@@ -922,20 +922,36 @@ app.post(
             if (totalOwed > 0) {
               // Get team member info for payment method
               const teamMember = await storage.getUserById(teamMemberId);
-              const payout = await storage.createTeamMemberPayout({
-                orgId,
-                teamMemberId,
-                amount: String(round2(totalOwed)),
-                payoutDate: invoice.dueDate || new Date().toISOString().split("T")[0],
-                paymentMethod: teamMember?.paymentMethod || "TBD",
-                referenceNumber: null,
-                periodStart: minDate,
-                periodEnd: maxDate,
-                notes: `Auto-created from Invoice ${invoice.number} (${invoice.clientName || "client"})`,
-                status: "PENDING",
-              });
-
-              await storage.linkTimeEntriesToPayout(payout.id, entryAmounts, orgId);
+              let payout;
+              try {
+                // Header + link on one tx so the unpaid re-check in
+                // linkTimeEntriesToPayout (audit #13) rolls the header back on conflict.
+                payout = await db.transaction(async (tx) => {
+                  const p = await storage.createTeamMemberPayout({
+                    orgId,
+                    teamMemberId,
+                    amount: String(round2(totalOwed)),
+                    payoutDate: invoice.dueDate || new Date().toISOString().split("T")[0],
+                    paymentMethod: teamMember?.paymentMethod || "TBD",
+                    referenceNumber: null,
+                    periodStart: minDate,
+                    periodEnd: maxDate,
+                    notes: `Auto-created from Invoice ${invoice.number} (${invoice.clientName || "client"})`,
+                    status: "PENDING",
+                  }, tx);
+                  await storage.linkTimeEntriesToPayout(p.id, teamMemberId, entryAmounts, orgId, tx);
+                  return p;
+                });
+              } catch (linkErr: any) {
+                if (linkErr instanceof PayoutEntriesAlreadyPaidError) {
+                  // Some/all of these entries are already paid in another non-VOID
+                  // payout — skip this member's auto-payout (audit #13). The entries
+                  // stay unpaid for a later manual/auto payout; the invoice still sends.
+                  console.warn(`[auto-payout] skipped ${teamMemberId} on invoice ${invoice.number}: ${linkErr.conflictingTimeEntryIds.length} entr(ies) already paid`);
+                  continue;
+                }
+                throw linkErr;
+              }
 
               await storage.createAuditLog({
                 orgId,
