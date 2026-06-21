@@ -73,7 +73,6 @@ import { registerAuditSearchRoutes } from "./routes/audit-search-routes";
 import { registerMobileResponsiveRoutes } from "./routes/mobile-responsive-routes";
 import { registerGlobalSearchRoutes } from "./routes/global-search-routes";
 import { registerAvScanRoutes } from "./routes/av-scan-routes";
-import { registerCustomerPortalRoutes } from "./routes/customer-portal-routes";
 import { registerInboundWebhookSecurityRoutes } from "./routes/inbound-webhook-security-routes";
 import { registerOpenAPIRoutes } from "./routes/openapi-routes";
 import { registerScheduledReportsRoutes } from "./routes/scheduled-reports-routes";
@@ -230,7 +229,6 @@ export async function registerRoutes(
     "/api/newsletter/",
     "/api/csp-report",
     "/api/saml/",
-    "/api/portal/",
     "/api/webhooks/email/",
     "/api/openapi.json",
     "/api/docs",
@@ -668,7 +666,6 @@ export async function registerRoutes(
   registerMobileResponsiveRoutes(app);
   registerGlobalSearchRoutes(app);
   registerAvScanRoutes(app);
-  registerCustomerPortalRoutes(app);
   registerEmailDeliverabilityRoutes(app);
   registerMarketingRetryPoliciesRoutes(app);
   registerMfaRoutes(app);
