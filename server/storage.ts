@@ -4158,6 +4158,29 @@ export class DatabaseStorage {
     return payout;
   }
 
+  // Idempotency guard for the invoice-send auto-payout: is there already a
+  // non-VOID payout for this (invoice, member)? Matches the new explicit
+  // sourceInvoiceId link, and — for payouts created before that column existed —
+  // falls back to the exact legacy auto-payout note prefix. The prefix is
+  // terminated by " (" right after the number so "Invoice 1 (" never matches
+  // "Invoice 10 (" (the substring bug in the old PENDING-only check). VOID
+  // payouts are excluded so an admin can re-send to recreate a voided one.
+  async hasActiveInvoicePayout(orgId: string, invoiceId: string, invoiceNumber: string, teamMemberId: string): Promise<boolean> {
+    const rows = await db
+      .select({ sourceInvoiceId: teamMemberPayoutsV2.sourceInvoiceId, notes: teamMemberPayoutsV2.notes })
+      .from(teamMemberPayoutsV2)
+      .where(and(
+        eq(teamMemberPayoutsV2.orgId, orgId),
+        eq(teamMemberPayoutsV2.teamMemberId, teamMemberId),
+        ne(teamMemberPayoutsV2.status, "VOID"),
+      ));
+    const legacyPrefix = `Auto-created from Invoice ${invoiceNumber} (`;
+    return rows.some(r =>
+      r.sourceInvoiceId === invoiceId ||
+      (r.sourceInvoiceId == null && (r.notes?.startsWith(legacyPrefix) ?? false))
+    );
+  }
+
   async createTeamMemberPayout(data: InsertTeamMemberPayoutV2, executor: DbExecutor = db): Promise<TeamMemberPayoutV2> {
     const [payout] = await executor.insert(teamMemberPayoutsV2).values(data).returning();
     return payout;

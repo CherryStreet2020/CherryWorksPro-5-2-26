@@ -867,10 +867,16 @@ export const teamMemberPayoutsV2 = pgTable("team_member_payouts_v2", {
   status: payoutStatusEnum("status").notNull().default("COMPLETED"),
   stripeTransferId: text("stripe_transfer_id"),
   stripeTransferStatus: text("stripe_transfer_status"),
+  // The invoice whose send auto-created this payout, if any. Lets the invoice-send
+  // auto-payout reliably detect "a payout for this (invoice, member) already
+  // exists" instead of substring-matching the notes, so re-sending an invoice
+  // can't spawn duplicate payouts (the root of the payout tangle).
+  sourceInvoiceId: varchar("source_invoice_id", { length: 36 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_team_member_payouts_v2_org_id").on(table.orgId),
+  index("idx_team_member_payouts_v2_source_invoice").on(table.sourceInvoiceId, table.teamMemberId),
 ]);
 
 export const payoutTimeEntries = pgTable("payout_time_entries", {

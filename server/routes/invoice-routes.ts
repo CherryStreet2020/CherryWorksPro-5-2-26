@@ -892,12 +892,14 @@ app.post(
             const teamMemberUser = await storage.getUserById(teamMemberId);
             if (teamMemberUser?.workerType === "W2_EMPLOYEE") continue;
 
-            // Check if a PENDING payout already exists for this team member+invoice
-            const existingPayouts = await storage.getTeamMemberPayouts(orgId, { teamMemberId, status: "PENDING" });
-            const alreadyHasPending = existingPayouts.some(p =>
-              p.notes && p.notes.includes(`Invoice ${invoice.number}`)
-            );
-            if (alreadyHasPending) continue;
+            // Skip if a payout for this (invoice, member) already exists in ANY
+            // non-VOID state. The old check only looked for PENDING payouts and
+            // substring-matched the notes, so once a payout was COMPLETED/VOID
+            // (or the invoice number was a prefix of another) a re-send spawned a
+            // duplicate — the root of the payout tangle (#17). Now keyed on the
+            // explicit sourceInvoiceId link (with a legacy-notes fallback).
+            const alreadyHasPayout = await storage.hasActiveInvoicePayout(orgId, invoice.id, invoice.number, teamMemberId);
+            if (alreadyHasPayout) continue;
 
             const memberships = await db.select().from(projectMembers).where(eq(projectMembers.userId, teamMemberId));
             const costRateByProject: Record<string, number> = {};
@@ -938,6 +940,7 @@ app.post(
                     periodEnd: maxDate,
                     notes: `Auto-created from Invoice ${invoice.number} (${invoice.clientName || "client"})`,
                     status: "PENDING",
+                    sourceInvoiceId: invoice.id,
                   }, tx);
                   await storage.linkTimeEntriesToPayout(p.id, teamMemberId, entryAmounts, orgId, tx);
                   return p;
