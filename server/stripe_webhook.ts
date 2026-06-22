@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { storage } from "./storage";
+import { storage, PayoutEntriesAlreadyPaidError } from "./storage";
 import type { CreateStripePaymentResult } from "./storage";
 import { db } from "./db";
 import { orgs, orgEntitlements } from "@shared/schema";
@@ -1644,10 +1644,39 @@ async function handleTransferEvent(
   const newTransferStatus = isFailed ? "failed" : "paid";
   const newPayoutStatus = isFailed ? "VOID" : "COMPLETED";
 
-  await storage.updateTeamMemberPayout(payout.id, payout.orgId, {
-    stripeTransferStatus: newTransferStatus,
-    status: newPayoutStatus,
-  });
+  try {
+    await storage.updateTeamMemberPayout(payout.id, payout.orgId, {
+      stripeTransferStatus: newTransferStatus,
+      status: newPayoutStatus,
+    });
+  } catch (err: any) {
+    if (err instanceof PayoutEntriesAlreadyPaidError) {
+      // A delayed/out-of-order transfer.created can't reactivate a VOIDed payout whose
+      // time entries were re-paid in a replacement payout (audit #13). Leave it VOID,
+      // record the conflict, and ACK (200) so Stripe doesn't redeliver indefinitely.
+      console.warn(`[stripe-webhook] handleTransferEvent: cannot reactivate VOID payout ${payout.id} for transfer ${transferId} — entries already paid elsewhere`);
+      await storage.createAuditLog({
+        orgId: payout.orgId,
+        userId: null,
+        action: "STRIPE_CONNECT_TRANSFER_CONFLICT",
+        entityType: "payout",
+        entityId: payout.id,
+        details: { transferId, conflictingTimeEntryIds: err.conflictingTimeEntryIds },
+      });
+      await storage.createStripeEvent({
+        orgId: payout.orgId,
+        stripeEventId,
+        type: eventType,
+        livemode,
+        created,
+        status: "FAILED",
+        failureCode: "PAYOUT_REACTIVATION_CONFLICT",
+        failureDetail: `Transfer ${transferId} would reactivate VOID payout ${payout.id} whose entries are already paid elsewhere`,
+      });
+      return res.json({ received: true });
+    }
+    throw err;
+  }
 
   await storage.createAuditLog({
     orgId: payout.orgId,

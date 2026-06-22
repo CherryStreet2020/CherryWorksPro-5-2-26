@@ -1,5 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
-import { storage } from "../storage";
+import { storage, PayoutEntriesAlreadyPaidError } from "../storage";
 import { db } from "../db";
 import { eq, desc, and, inArray, sql } from "drizzle-orm";
 import { projectMembers, timeEntries, teamMemberPayoutsV2, payoutTimeEntries, round2, createPayoutSchema } from "@shared/schema";
@@ -64,8 +64,11 @@ app.post("/api/payouts", requireAdmin, async (req, res) => {
     }
 
     const payout = await db.transaction(async (tx) => {
-      const lockKey = Buffer.from(req.session.orgId! + parsed.teamMemberId + parsed.payoutDate).reduce((a, b) => ((a * 31 + b) & 0x7fffffff), 0);
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
+      // The (org, member) advisory lock + unpaid re-check now live in
+      // storage.linkTimeEntriesToPayout — the single insert point for the two payout
+      // creation flows — so this route AND the invoice-send auto-payout are both
+      // guarded against double-paying a time entry (audit #13). Header + link run on
+      // the same tx, so a conflict rolls the whole payout back.
       // When paying specific time entries, the payout total IS the exact sum
       // of the per-entry line amounts (snapshot-preferring rate, each rounded
       // to the cent). Derive it server-side so the payout, its line detail, the
@@ -75,12 +78,12 @@ app.post("/api/payouts", requireAdmin, async (req, res) => {
       let entries: { timeEntryId: string; amount: string }[] = [];
       let resolvedAmount = round2(Number(parsed.amount));
       if (parsed.timeEntryIds && parsed.timeEntryIds.length > 0) {
-        const memberships = await db.select().from(projectMembers).where(eq(projectMembers.userId, parsed.teamMemberId));
+        const memberships = await tx.select().from(projectMembers).where(eq(projectMembers.userId, parsed.teamMemberId));
         const costRateByProject: Record<string, number> = {};
         for (const m of memberships) {
           costRateByProject[m.projectId] = Number(m.costRateHourly) || 0;
         }
-        const allTe = await db.select().from(timeEntries).where(
+        const allTe = await tx.select().from(timeEntries).where(
           and(
             inArray(timeEntries.id, parsed.timeEntryIds),
             eq(timeEntries.orgId, req.session.orgId!),
@@ -106,9 +109,9 @@ app.post("/api/payouts", requireAdmin, async (req, res) => {
         periodEnd: parsed.periodEnd || null,
         notes: parsed.notes || null,
         status: parsed.status || "COMPLETED",
-      });
+      }, tx);
       if (entries.length > 0) {
-        await storage.linkTimeEntriesToPayout(created.id, entries, req.session.orgId!);
+        await storage.linkTimeEntriesToPayout(created.id, parsed.teamMemberId, entries, req.session.orgId!, tx);
       }
       return created;
     });
@@ -134,8 +137,11 @@ app.post("/api/payouts", requireAdmin, async (req, res) => {
 
     return res.json(payout);
   } catch (err: any) {
-    if (err.code === "23505" && err.constraint?.includes("uq_payout_dedup")) {
-      return res.status(409).json({ message: "A payout with the same team member, amount, date, and method already exists" });
+    if (err instanceof PayoutEntriesAlreadyPaidError) {
+      return res.status(409).json({
+        message: "One or more of these time entries are already paid in another payout",
+        conflictingTimeEntryIds: err.conflictingTimeEntryIds,
+      });
     }
     return res.status(400).json({ message: err.message });
   }
@@ -157,6 +163,9 @@ app.patch("/api/payouts/:id", requireAdmin, async (req, res) => {
       updates.paymentMethod = paymentMethod;
     }
     const previousPayout = status ? await storage.getTeamMemberPayoutById(req.params.id as string, req.session.orgId!) : null;
+    // updateTeamMemberPayout self-guards a VOID → non-VOID reactivation (re-checks the
+    // entry-uniqueness invariant under the lock and throws on conflict → 409 below),
+    // so this route, the Stripe webhook, and any future caller are all covered (audit #13).
     const updated = await storage.updateTeamMemberPayout(req.params.id as string, req.session.orgId!, updates);
     if (!updated) return res.status(404).json({ message: "Payout not found" });
     if (status === "COMPLETED") {
@@ -180,6 +189,12 @@ app.patch("/api/payouts/:id", requireAdmin, async (req, res) => {
     }
     return res.json(updated);
   } catch (err: any) {
+    if (err instanceof PayoutEntriesAlreadyPaidError) {
+      return res.status(409).json({
+        message: "Cannot reactivate this payout — one or more of its time entries are already paid in another payout",
+        conflictingTimeEntryIds: err.conflictingTimeEntryIds,
+      });
+    }
     return res.status(400).json({ message: err.message });
   }
 });
