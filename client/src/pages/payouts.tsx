@@ -138,14 +138,17 @@ export default function PayoutsPage() {
     mutationFn: async () => {
       await apiRequest("POST", "/api/payouts", {
         teamMemberId: payTeamMemberId,
-        amount: payAmount,
+        amount: effectiveAmount,
         payoutDate: payDate,
         paymentMethod: payMethod,
         referenceNumber: payReference || null,
-        periodStart: payPeriodStart || null,
-        periodEnd: payPeriodEnd || null,
+        periodStart: effectivePeriodStart || null,
+        periodEnd: effectivePeriodEnd || null,
         notes: payNotes || null,
-        timeEntryIds: Array.from(selectedEntryIds),
+        // Only link entries that belong to the current member's selection. If the
+        // selection collapsed (e.g. after switching members) selectedPayout is
+        // null and this is an ad-hoc payout, not a phantom itemized one.
+        timeEntryIds: selectedPayout ? Array.from(selectedEntryIds) : [],
       });
     },
     onSuccess: () => {
@@ -243,7 +246,9 @@ export default function PayoutsPage() {
   // server derives the recorded amount from exactly those entries (and ignores
   // the typed amount), so the dialog must show the same thing. Sum the selected
   // entries' per-line values (each already rounded to the cent server-side) and
-  // span their dates so the Amount and Period reflect what's actually paid.
+  // span their dates. Filtering against the CURRENT member's unpaidEntries means
+  // a selection left over from another member collapses to null (and is dropped
+  // from the submit below) rather than booking a phantom payout.
   const selectedPayout = useMemo(() => {
     if (!unpaidEntries) return null;
     const selected = unpaidEntries.filter(e => selectedEntryIds.has(e.id));
@@ -253,16 +258,14 @@ export default function PayoutsPage() {
     return { amount, count: selected.length, start: dates[0], end: dates[dates.length - 1] };
   }, [unpaidEntries, selectedEntryIds]);
 
-  // Push the itemized amount + period into the form whenever the selection
-  // changes. Only drives the fields while entries are selected; clearing the
-  // selection leaves the ad-hoc amount the admin can still type by hand.
-  useEffect(() => {
-    if (selectedPayout) {
-      setPayAmount(selectedPayout.amount.toFixed(2));
-      setPayPeriodStart(selectedPayout.start);
-      setPayPeriodEnd(selectedPayout.end);
-    }
-  }, [selectedPayout]);
+  // The amount + period that will actually be recorded. When entries are
+  // selected these are derived (and the inputs below are disabled); otherwise
+  // they are the ad-hoc values the admin typed. Computed for display + submit
+  // only — never written back into the ad-hoc form state, so clearing the
+  // selection instantly restores whatever the admin had entered by hand.
+  const effectiveAmount = selectedPayout ? selectedPayout.amount.toFixed(2) : payAmount;
+  const effectivePeriodStart = selectedPayout ? selectedPayout.start : payPeriodStart;
+  const effectivePeriodEnd = selectedPayout ? selectedPayout.end : payPeriodEnd;
 
   const totalUnpaidTimeValue = summary?.reduce((s, c) => s + c.unpaidTimeValue, 0) || 0;
   const totalPendingPayoutAmount = summary?.reduce((s, c) => s + c.pendingPayoutAmount, 0) || 0;
@@ -700,7 +703,7 @@ export default function PayoutsPage() {
                   No team members found. Add team members to record payments.
                 </p>
               ) : (
-                <Select value={payTeamMemberId} onValueChange={setPayTeamMemberId}>
+                <Select value={payTeamMemberId} onValueChange={v => { setPayTeamMemberId(v); setSelectedEntryIds(new Set()); }}>
                   <SelectTrigger data-testid="select-payout-team-member"><SelectValue placeholder="Select team member" /></SelectTrigger>
                   <SelectContent>
                     {summary?.map(c => (
@@ -715,7 +718,7 @@ export default function PayoutsPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Amount *</Label>
-                  <Input type="number" min="0" step="0.01" value={payAmount} onChange={e => setPayAmount(e.target.value)} placeholder="0.00" disabled={!!selectedPayout} data-testid="input-payout-amount" />
+                  <Input type="number" min="0" step="0.01" value={effectiveAmount} onChange={e => setPayAmount(e.target.value)} placeholder="0.00" disabled={!!selectedPayout} data-testid="input-payout-amount" />
                   {selectedPayout && (
                     <p className="text-[11px] leading-tight" style={{ color: "var(--lux-text-muted)" }}>
                       Total of {selectedPayout.count} selected time {selectedPayout.count === 1 ? "entry" : "entries"}
@@ -751,11 +754,11 @@ export default function PayoutsPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">From</Label>
-                  <Input type="date" value={payPeriodStart} onChange={e => setPayPeriodStart(e.target.value)} disabled={!!selectedPayout} />
+                  <Input type="date" value={effectivePeriodStart} onChange={e => setPayPeriodStart(e.target.value)} disabled={!!selectedPayout} />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">To</Label>
-                  <Input type="date" value={payPeriodEnd} onChange={e => setPayPeriodEnd(e.target.value)} disabled={!!selectedPayout} />
+                  <Input type="date" value={effectivePeriodEnd} onChange={e => setPayPeriodEnd(e.target.value)} disabled={!!selectedPayout} />
                 </div>
               </div>
               {selectedPayout && (
@@ -802,7 +805,7 @@ export default function PayoutsPage() {
                 className="text-white"
                 style={{ background: "var(--gradient-brand)" }}
                 onClick={() => createPayoutMutation.mutate()}
-                disabled={!payTeamMemberId || !payAmount || !payDate || !payMethod || createPayoutMutation.isPending}
+                disabled={!payTeamMemberId || !(Number(effectiveAmount) > 0) || !payDate || !payMethod || createPayoutMutation.isPending}
                 data-testid="button-submit-payout"
               >
                 {createPayoutMutation.isPending ? "Recording..." : "Record Payment"}

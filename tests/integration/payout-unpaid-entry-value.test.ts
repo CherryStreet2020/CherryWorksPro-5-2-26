@@ -71,6 +71,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // payout_time_entries FK time_entries, so clear the payout graph first.
+  await pool.query(`DELETE FROM payout_time_entries WHERE org_id = $1`, [ORG_ID]);
+  await pool.query(`DELETE FROM team_member_payouts_v2 WHERE org_id = $1`, [ORG_ID]);
   await pool.query(`DELETE FROM time_entries WHERE org_id = $1`, [ORG_ID]);
   await pool.query(`DELETE FROM project_members WHERE org_id = $1`, [ORG_ID]);
   await pool.query(`DELETE FROM users WHERE org_id = $1`, [ORG_ID]);
@@ -78,11 +81,6 @@ afterAll(async () => {
   await pool.query(`DELETE FROM clients WHERE org_id = $1`, [ORG_ID]);
   await pool.query(`DELETE FROM orgs WHERE id = $1`, [ORG_ID]);
 });
-
-// Mirror the payout create handler's per-subset total: round each line, then sum.
-function recordedAmountFor(values: number[]): number {
-  return round2(values.reduce((s, v) => s + v, 0));
-}
 
 describe("getUnpaidTimeEntriesForTeamMember per-entry value", () => {
   it("computes per-entry value with snapshot-preferring rate and per-line round2", async () => {
@@ -103,14 +101,45 @@ describe("getUnpaidTimeEntriesForTeamMember per-entry value", () => {
     expect(total).toBe(member.unpaidTimeValue);
   });
 
-  it("subset sum equals the amount the itemized payout records for that subset", async () => {
+  it("subset sum is the itemized total the create handler records for that subset", async () => {
     const entries = await storage.getUnpaidTimeEntriesForTeamMember(ORG_ID, MEMBER_ID);
     const byId = new Map(entries.map((e: any) => [e.id, e]));
-    // Paying only E1 + E3 (what the admin checked) → dialog amount.
+    // Paying only E1 + E3 (what the admin checked). The dialog sums the same
+    // per-entry values the create handler rounds-then-sums (server/routes/
+    // payout-routes.ts derives the itemized total from exactly these inputs),
+    // so the displayed amount equals what gets recorded — pinned to 250.
     const dialogAmount = round2(byId.get(E1)!.value + byId.get(E3)!.value);
-    // The create handler rounds each selected line, then sums — same inputs.
-    const recorded = recordedAmountFor([byId.get(E1)!.value, byId.get(E3)!.value]);
     expect(dialogAmount).toBe(250);
-    expect(dialogAmount).toBe(recorded);
+  });
+});
+
+// Invariant #3: the endpoint's "unpaid" set is exactly the set the Outstanding
+// Balance treats as unpaid — entries already in a NON-VOID payout are excluded
+// from BOTH, so Select All keeps footing to unpaidTimeValue. Runs last so it
+// doesn't perturb the all-unpaid (310) cases above.
+describe("getUnpaidTimeEntriesForTeamMember excludes already-paid entries", () => {
+  it("drops an entry linked to a non-VOID payout and stays footed to the balance", async () => {
+    const payout = await storage.createTeamMemberPayout({
+      orgId: ORG_ID,
+      teamMemberId: MEMBER_ID,
+      amount: "60",
+      payoutDate: "2026-02-20",
+      paymentMethod: "Zelle",
+      status: "COMPLETED",
+    } as any);
+    await storage.linkTimeEntriesToPayout(payout.id, MEMBER_ID, [{ timeEntryId: E2, amount: "60" }], ORG_ID);
+
+    const entries = await storage.getUnpaidTimeEntriesForTeamMember(ORG_ID, MEMBER_ID);
+    const ids = entries.map((e: any) => e.id);
+    expect(ids).not.toContain(E2);            // E2 is now paid
+    expect(ids).toContain(E1);
+    expect(ids).toContain(E3);
+
+    const total = round2(entries.reduce((s: number, e: any) => s + e.value, 0));
+    const summary = await storage.getPayoutSummaryByTeamMember(ORG_ID);
+    const member = summary.find((m: any) => m.teamMemberId === MEMBER_ID)!;
+    expect(total).toBe(250);                  // 310 − E2's 60
+    expect(member.unpaidTimeValue).toBe(250); // balance fell by the same 60
+    expect(total).toBe(member.unpaidTimeValue);
   });
 });
