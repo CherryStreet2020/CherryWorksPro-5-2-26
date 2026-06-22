@@ -4164,6 +4164,20 @@ export class DatabaseStorage {
   }
 
   async updateTeamMemberPayout(id: string, orgId: string, data: Partial<{ status: string; notes: string; referenceNumber: string; paymentMethod: string; amount: string; payoutDate: string; stripeTransferId: string; stripeTransferStatus: string }>): Promise<TeamMemberPayoutV2 | undefined> {
+    // Reactivating a payout OUT of VOID (→ PENDING/COMPLETED) must re-check the
+    // entry-uniqueness invariant under the lock (audit #13). Centralized here so EVERY
+    // caller is covered — the PATCH route, the Stripe transfer.created webhook, and any
+    // future path — not just one route. Only the VOID→non-VOID transition pays the
+    // extra read; all other updates take the fast path below.
+    if (data.status !== undefined && data.status !== "VOID") {
+      const [current] = await db
+        .select({ status: teamMemberPayoutsV2.status, teamMemberId: teamMemberPayoutsV2.teamMemberId })
+        .from(teamMemberPayoutsV2)
+        .where(and(eq(teamMemberPayoutsV2.id, id), eq(teamMemberPayoutsV2.orgId, orgId)));
+      if (current?.status === "VOID") {
+        return this.reactivateVoidedPayout(id, orgId, current.teamMemberId, data);
+      }
+    }
     const [updated] = await db.update(teamMemberPayoutsV2).set(data as any).where(and(eq(teamMemberPayoutsV2.id, id), eq(teamMemberPayoutsV2.orgId, orgId))).returning();
     return updated;
   }

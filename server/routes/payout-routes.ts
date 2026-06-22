@@ -163,14 +163,10 @@ app.patch("/api/payouts/:id", requireAdmin, async (req, res) => {
       updates.paymentMethod = paymentMethod;
     }
     const previousPayout = status ? await storage.getTeamMemberPayoutById(req.params.id as string, req.session.orgId!) : null;
-    // Reactivating a VOID payout (VOID → PENDING/COMPLETED) must re-check that its
-    // linked entries weren't re-paid elsewhere while it was void — otherwise the same
-    // entry ends up in two non-VOID payouts (audit #13). reactivateVoidedPayout does the
-    // re-check + update atomically under the (org, member) lock and throws on conflict.
-    const isUnvoid = status !== undefined && status !== "VOID" && previousPayout?.status === "VOID";
-    const updated = isUnvoid && previousPayout
-      ? await storage.reactivateVoidedPayout(req.params.id as string, req.session.orgId!, previousPayout.teamMemberId, updates)
-      : await storage.updateTeamMemberPayout(req.params.id as string, req.session.orgId!, updates);
+    // updateTeamMemberPayout self-guards a VOID → non-VOID reactivation (re-checks the
+    // entry-uniqueness invariant under the lock and throws on conflict → 409 below),
+    // so this route, the Stripe webhook, and any future caller are all covered (audit #13).
+    const updated = await storage.updateTeamMemberPayout(req.params.id as string, req.session.orgId!, updates);
     if (!updated) return res.status(404).json({ message: "Payout not found" });
     if (status === "COMPLETED") {
       await storage.createAuditLog({

@@ -137,7 +137,8 @@ describe("linkTimeEntriesToPayout rejects double-paying a time entry (audit #13)
     const p6 = await newPayout(M1);
     await storage.linkTimeEntriesToPayout(p6, M1, entry(T6), ORG_ID); // allowed — p5 is VOID
 
-    await expect(storage.reactivateVoidedPayout(p5, ORG_ID, M1, { status: "COMPLETED" }))
+    // Go through the centralized path the PATCH route + Stripe webhook use.
+    await expect(storage.updateTeamMemberPayout(p5, ORG_ID, { status: "COMPLETED" }))
       .rejects.toBeInstanceOf(PayoutEntriesAlreadyPaidError);
 
     // p5 stays VOID; T6 is paid in exactly one non-VOID payout (p6).
@@ -151,8 +152,8 @@ describe("linkTimeEntriesToPayout rejects double-paying a time entry (audit #13)
     const p7 = await newPayout(M1);
     await storage.linkTimeEntriesToPayout(p7, M1, entry(T7), ORG_ID);
     await storage.updateTeamMemberPayout(p7, ORG_ID, { status: "VOID" });
-    // No re-pay of T7 anywhere → reactivation succeeds.
-    const updated = await storage.reactivateVoidedPayout(p7, ORG_ID, M1, { status: "COMPLETED" });
+    // No re-pay of T7 anywhere → reactivation via the centralized path succeeds.
+    const updated = await storage.updateTeamMemberPayout(p7, ORG_ID, { status: "COMPLETED" });
     expect(updated?.status).toBe("COMPLETED");
   }, 20_000);
 
