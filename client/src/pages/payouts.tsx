@@ -145,10 +145,12 @@ export default function PayoutsPage() {
         periodStart: effectivePeriodStart || null,
         periodEnd: effectivePeriodEnd || null,
         notes: payNotes || null,
-        // Only link entries that belong to the current member's selection. If the
+        // Link exactly the entries that make up the displayed total. If the
         // selection collapsed (e.g. after switching members) selectedPayout is
-        // null and this is an ad-hoc payout, not a phantom itemized one.
-        timeEntryIds: selectedPayout ? Array.from(selectedEntryIds) : [],
+        // null and this is an ad-hoc payout, not a phantom itemized one. Using
+        // selectedPayout.ids (not the raw selectedEntryIds) drops any id that a
+        // refetch removed from the unpaid set, so submitted ids == shown amount.
+        timeEntryIds: selectedPayout ? selectedPayout.ids : [],
       });
     },
     onSuccess: () => {
@@ -255,7 +257,10 @@ export default function PayoutsPage() {
     if (selected.length === 0) return null;
     const amount = round2(selected.reduce((s, e) => s + (e.value || 0), 0));
     const dates = selected.map(e => e.date).sort();
-    return { amount, count: selected.length, start: dates[0], end: dates[dates.length - 1] };
+    // ids of exactly the entries summed above — submit these, NOT the raw
+    // selectedEntryIds, so a stale id (e.g. one paid elsewhere and dropped from a
+    // refetch) can't be posted against a total that no longer includes it.
+    return { amount, count: selected.length, start: dates[0], end: dates[dates.length - 1], ids: selected.map(e => e.id) };
   }, [unpaidEntries, selectedEntryIds]);
 
   // The amount + period that will actually be recorded. When entries are
