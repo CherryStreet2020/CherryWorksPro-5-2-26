@@ -78,7 +78,7 @@ app.post("/api/payouts", requireAdmin, async (req, res) => {
       let entries: { timeEntryId: string; amount: string }[] = [];
       let resolvedAmount = round2(Number(parsed.amount));
       if (parsed.timeEntryIds && parsed.timeEntryIds.length > 0) {
-        const memberships = await tx.select().from(projectMembers).where(eq(projectMembers.userId, parsed.teamMemberId));
+        const memberships = await tx.select().from(projectMembers).where(and(eq(projectMembers.orgId, req.session.orgId!), eq(projectMembers.userId, parsed.teamMemberId)));
         const costRateByProject: Record<string, number> = {};
         for (const m of memberships) {
           costRateByProject[m.projectId] = Number(m.costRateHourly) || 0;

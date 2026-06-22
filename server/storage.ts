@@ -4312,6 +4312,7 @@ export class DatabaseStorage {
         notes: timeEntries.notes,
         projectId: timeEntries.projectId,
         invoiced: timeEntries.invoiced,
+        costRateSnapshot: timeEntries.costRateSnapshot,
       })
       .from(timeEntries)
       .where(and(
@@ -4320,10 +4321,31 @@ export class DatabaseStorage {
       ))
       .orderBy(desc(timeEntries.date));
 
+    // Per-entry payout value, so the Record Payment dialog can show — and total —
+    // exactly what selecting a subset of entries will be paid. This MUST match
+    // the per-entry math in the payout create handler (POST /api/payouts) and the
+    // Outstanding Balance in getPayoutSummaryByTeamMember: prefer the rate
+    // snapshot captured when the hours were logged, fall back to the current
+    // project cost rate, and round EACH line to the cent. The client sums these
+    // already-rounded line values, so the dialog amount foots to the cent with
+    // the amount the server actually records for the same selection.
+    const memberships = await db
+      .select()
+      .from(projectMembers)
+      .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.userId, teamMemberId)));
+    const costRateByProject: Record<string, number> = {};
+    for (const m of memberships) {
+      costRateByProject[m.projectId] = Number(m.costRateHourly) || 0;
+    }
+
     let unpaid = allEntries.filter(e => !paidIds.has(e.id));
     if (dateFrom) unpaid = unpaid.filter(e => e.date >= dateFrom);
     if (dateTo) unpaid = unpaid.filter(e => e.date <= dateTo);
-    return unpaid;
+    return unpaid.map(({ costRateSnapshot, ...e }) => {
+      const snapshotMissing = costRateSnapshot == null || String(costRateSnapshot) === "";
+      const rate = !snapshotMissing ? Number(costRateSnapshot) : (costRateByProject[e.projectId] || 0);
+      return { ...e, value: round2((e.minutes / 60) * rate) };
+    });
   }
 
   async getPayoutSummaryByTeamMember(orgId: string) {
