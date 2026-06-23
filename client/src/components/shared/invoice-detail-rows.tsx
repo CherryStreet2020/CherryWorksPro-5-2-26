@@ -124,7 +124,7 @@ export function InvoiceDetailRows({
                   {it.ticket || ""}
                 </span>
                 <span
-                  className="flex-1 truncate"
+                  className="flex-1 min-w-0 break-words"
                   style={{ color: "var(--lux-text-muted)" }}
                   title={it.description || ""}
                   data-testid={`${testIdPrefix}-desc-${it.id}`}
