@@ -36,28 +36,6 @@ function pushToUser(userId: string, payload: WsEvent) {
   }
 }
 
-function seedNotificationsForUser(orgId: string, userId: string) {
-  const existing = Array.from(notifications.values()).filter((n) => n.orgId === orgId && n.userId === userId);
-  if (existing.length > 0) return;
-
-  const seeds = [
-    { type: "invoice.paid", title: "Invoice #1042 Paid", message: "Client Acme Corp paid invoice #1042 ($2,450.00)", link: "/invoices/1042" },
-    { type: "timesheet.submitted", title: "Timesheet Submitted", message: "John Doe submitted timesheet for week of Apr 1", link: "/timesheets" },
-    { type: "mention", title: "You were mentioned", message: "Jane in project Alpha: @you please review the budget estimate", link: "/projects" },
-    { type: "system", title: "System Update", message: "CherryWorks Pro v2.8 is now available with new features", link: "/settings" },
-    { type: "payment.failed", title: "Payment Failed", message: "Auto-charge for Globex Corp invoice #1038 failed (card declined)", link: "/invoices/1038" },
-    { type: "budget.alert", title: "Budget Alert", message: "Project Phoenix is at 85% of hour budget (170/200 hrs)", link: "/projects" },
-  ];
-
-  for (const s of seeds) {
-    const id = randomUUID();
-    notifications.set(id, {
-      id, orgId, userId, type: s.type, title: s.title, message: s.message,
-      read: false, link: s.link, createdAt: new Date(Date.now() - Math.random() * 86400000).toISOString(), readAt: null,
-    });
-  }
-}
-
 function setupNotificationsWebSocket(httpServer: HttpServer, sessionMiddleware: RequestHandler) {
   const wss = new WebSocketServer({ noServer: true });
 
@@ -118,7 +96,6 @@ export function registerNotificationCenterRoutes(
   app.get("/api/notifications", requireAuth, (req: Request, res: Response) => {
     const orgId = req.session.orgId!;
     const userId = req.session.userId!;
-    seedNotificationsForUser(orgId, userId);
 
     const typeFilter = req.query.type as string | undefined;
     let userNotifs = Array.from(notifications.values()).filter((n) => n.orgId === orgId && n.userId === userId);
@@ -131,7 +108,6 @@ export function registerNotificationCenterRoutes(
   app.get("/api/notifications/unread-count", requireAuth, (req: Request, res: Response) => {
     const orgId = req.session.orgId!;
     const userId = req.session.userId!;
-    seedNotificationsForUser(orgId, userId);
     const unread = Array.from(notifications.values()).filter((n) => n.orgId === orgId && n.userId === userId && !n.read).length;
     res.json({ success: true, unreadCount: unread, hasBadge: unread > 0 });
   });
