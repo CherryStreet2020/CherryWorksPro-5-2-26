@@ -271,6 +271,28 @@ function htmlToPlainText(html: string): string {
     .trim();
 }
 
+/**
+ * Normalize a Cc list against the primary To recipient: drop blanks,
+ * remove anything that equals the To address (case-insensitively), and
+ * dedupe the remainder. This guarantees a recipient never lands in both
+ * To and Cc — which can otherwise happen when the chosen To is itself a
+ * billing contact and the caller also CCs every billing contact.
+ */
+export function normalizeCc(cc: string[] | undefined, to: string): string[] {
+  if (!cc || cc.length === 0) return [];
+  const seen = new Set<string>([(to || "").trim().toLowerCase()]);
+  const out: string[] = [];
+  for (const raw of cc) {
+    const email = (raw || "").trim();
+    if (!email) continue;
+    const key = email.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(email);
+  }
+  return out;
+}
+
 export async function sendInvoiceEmail(
   to: string,
   subject: string,
@@ -286,12 +308,14 @@ export async function sendInvoiceEmail(
     ? [{ filename: "invoice.pdf", content: pdfBuffer, contentType: "application/pdf" }]
     : [];
 
+  const cleanedCc = normalizeCc(cc, to);
+
   const message: SendableMessage = {
     to,
     subject,
     html: htmlBody,
     text: htmlToPlainText(htmlBody),
-    cc,
+    cc: cleanedCc.length > 0 ? cleanedCc : undefined,
     replyTo: smtpConfig?.replyTo ?? null,
     fromName: smtpConfig?.fromName ?? null,
     fromEmail: smtpConfig?.fromEmail ?? null,
