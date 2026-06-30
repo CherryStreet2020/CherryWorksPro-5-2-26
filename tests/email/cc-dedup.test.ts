@@ -41,4 +41,16 @@ describe("normalizeCc", () => {
       "ar@acme.com",
     ]);
   });
+
+  it("drops Cc entries that aren't valid email addresses (don't fail the whole send)", () => {
+    expect(normalizeCc(["good@acme.com", "not-an-email", "also bad", "a@b"], "x@acme.com")).toEqual([
+      "good@acme.com",
+    ]);
+  });
+
+  it("ignores non-string Cc entries without throwing", () => {
+    expect(
+      normalizeCc(["good@acme.com", 123 as any, { a: 1 } as any, null as any], "x@acme.com"),
+    ).toEqual(["good@acme.com"]);
+  });
 });

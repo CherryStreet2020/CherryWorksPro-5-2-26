@@ -175,6 +175,21 @@ function getPaymentTerms(issued: string | null | undefined, due: string | null |
   return `Net ${diffDays}`;
 }
 
+/** apiRequest throws errors shaped "NNN: <body>" where body is often JSON.
+ *  Surface the human-readable message instead of the raw status+JSON blob. */
+function friendlyError(err: any): string {
+  const m = typeof err?.message === "string" ? err.message : "Something went wrong. Please try again.";
+  const sep = m.indexOf(": ");
+  const rest = sep >= 0 ? m.slice(sep + 2) : m;
+  try {
+    const parsed = JSON.parse(rest);
+    if (parsed && typeof parsed.message === "string") return parsed.message;
+  } catch {
+    /* not JSON — fall through */
+  }
+  return m;
+}
+
 type SortField = "number" | "clientName" | "total" | "dueDate" | "status";
 type SortDir = "asc" | "desc";
 type DateFilter = "all" | "due-this-week" | "due-this-month" | "overdue-30";
@@ -232,6 +247,7 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
 
   const [linkCopied, setLinkCopied] = useState(false);
   const [sendEmailOpen, setSendEmailOpen] = useState(false);
+  const [isResendMode, setIsResendMode] = useState(false);
   // Task #467: per-org dismissal of the "upload your logo" banner that
   // appears on the invoice viewer when the org has no logo set. Read on
   // mount so a refresh doesn't re-show a previously-dismissed banner.
@@ -551,28 +567,44 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
-      if (data?.viewLink) {
-        toast({ title: "Invoice sent", description: "View link generated" });
+      queryClient.invalidateQueries({ queryKey: ["/api/ar/outstanding"] });
+      if (data?.emailSent) {
+        toast({ title: "Invoice sent", description: `Emailed to ${data.toEmail}${data.cc?.length ? ` (cc ${data.cc.length})` : ""}` });
+      } else if (data?.emailError) {
+        toast({ title: "Marked sent — but the email failed", description: data.emailError, variant: "destructive" });
       } else {
-        toast({ title: "Invoice marked as sent" });
+        toast({ title: "Invoice sent" });
       }
       setSendEmailOpen(false);
       setViewInvoice(null);
     },
     onError: (err: any) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: "Couldn't send invoice", description: friendlyError(err), variant: "destructive" });
     },
   });
 
   const resendMutation = useMutation({
-    mutationFn: async (invoiceId: string) => {
-      await apiRequest("POST", `/api/invoices/${invoiceId}/resend`);
+    mutationFn: async (params: { invoiceId: string; emailTo?: string; emailSubject?: string; emailBody?: string }) => {
+      const res = await apiRequest("POST", `/api/invoices/${params.invoiceId}/resend`, {
+        emailTo: params.emailTo,
+        emailSubject: params.emailSubject,
+        emailBody: params.emailBody,
+      });
+      return res.json();
     },
-    onSuccess: () => {
-      toast({ title: "Invoice email resent" });
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      if (data?.emailSent) {
+        toast({ title: "Invoice resent", description: `Emailed to ${data.toEmail}${data.cc?.length ? ` (cc ${data.cc.length})` : ""}` });
+      } else {
+        toast({ title: "Couldn't resend", description: data?.emailError || "The email was not delivered.", variant: "destructive" });
+      }
+      setSendEmailOpen(false);
+      setViewInvoice(null);
     },
     onError: (err: any) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: "Couldn't resend invoice", description: friendlyError(err), variant: "destructive" });
     },
   });
 
@@ -807,15 +839,28 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
       toast({ title: "No DRAFT invoices selected" });
       return;
     }
+    let sent = 0, emailFailed = 0, skipped = 0, failed = 0;
     for (const inv of drafts) {
       try {
-        await apiRequest("POST", `/api/invoices/${inv.id}/send`, {});
-      } catch {}
+        const res = await apiRequest("POST", `/api/invoices/${inv.id}/send`, {});
+        const data = await res.json().catch(() => ({} as any));
+        // 2xx → the invoice was marked Sent; emailSent says whether the email went.
+        if (data?.emailSent) sent++; else emailFailed++;
+      } catch (err: any) {
+        // 422 NO_RECIPIENT → skipped (no email on file); anything else → failed.
+        if (typeof err?.message === "string" && err.message.includes("NO_RECIPIENT")) skipped++;
+        else failed++;
+      }
     }
     queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
     queryClient.invalidateQueries({ queryKey: ["/api/ar/outstanding"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
     setSelectedIds(new Set());
-    toast({ title: `${drafts.length} invoice(s) sent` });
+    const parts = [`${sent} sent`];
+    if (emailFailed) parts.push(`${emailFailed} marked sent (email failed)`);
+    if (skipped) parts.push(`${skipped} skipped (no email on file)`);
+    if (failed) parts.push(`${failed} failed`);
+    toast({ title: parts.join(" · "), variant: (emailFailed || skipped || failed) ? "destructive" : undefined });
   }, [filteredInvoices, selectedIds, toast]);
 
   const handleBulkVoid = useCallback(async () => {
@@ -2098,7 +2143,7 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
                   </Button>
                 )}
                 {["SENT", "PARTIAL", "PAID"].includes(viewInvoice.status) && canManage && (
-                  <Button variant="outline" onClick={() => resendMutation.mutate(viewInvoice.id)} disabled={resendMutation.isPending} data-testid="button-resend-invoice" title="Resend Email">
+                  <Button variant="outline" onClick={() => { setIsResendMode(true); setSendEmailOpen(true); }} disabled={resendMutation.isPending} data-testid="button-resend-invoice" title="Resend Email">
                     <RefreshCw className="w-4 h-4 mr-2" /> {resendMutation.isPending ? "Sending..." : "Resend Email"}
                   </Button>
                 )}
@@ -2129,10 +2174,10 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
                     data-testid="button-send-invoice"
                     style={{ background: "var(--gradient-brand)" }}
                     className="text-white"
-                    onClick={() => setSendEmailOpen(true)}
+                    onClick={() => { setIsResendMode(false); setSendEmailOpen(true); }}
                     title="Send Invoice"
                   >
-                    <Send className="w-4 h-4 mr-2" /> Mark as Sent
+                    <Send className="w-4 h-4 mr-2" /> Send Invoice
                   </Button>
                 )}
               </div>
@@ -2432,16 +2477,19 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
       {viewInvoice && (
         <SendEmailModal
           open={sendEmailOpen}
-          onClose={() => setSendEmailOpen(false)}
+          onClose={() => { setSendEmailOpen(false); setIsResendMode(false); }}
           onSend={(emailData) => {
-            sendMutation.mutate({
+            const params = {
               invoiceId: viewInvoice.id,
               emailTo: emailData.to,
               emailSubject: emailData.subject,
               emailBody: emailData.body,
-            });
+            };
+            if (isResendMode) resendMutation.mutate(params);
+            else sendMutation.mutate(params);
           }}
-          isPending={sendMutation.isPending}
+          isPending={isResendMode ? resendMutation.isPending : sendMutation.isPending}
+          isResend={isResendMode}
           type="invoice"
           number={viewInvoice.number}
           clientName={viewInvoice.clientName}
