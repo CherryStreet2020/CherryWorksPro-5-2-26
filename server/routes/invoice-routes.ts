@@ -649,6 +649,31 @@ app.get("/api/invoices/:id/revisions", requireManagerOrAbove, async (req, res) =
     return res.status(500).json({ message: sanitizeErrorMessage(err) });
   }
 });
+// Per-invoice email delivery history — who each send went To/CC, when, and
+// whether it was actually delivered (SENT) or failed (FAILED). Metadata only
+// (the large HTML body is omitted).
+app.get("/api/invoices/:id/deliveries", requireManagerOrAbove, async (req, res) => {
+  try {
+    const orgId = req.session.orgId!;
+    const invoice = await storage.getInvoice(req.params.id as string, orgId);
+    if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+    const rows = await storage.getOutboxEmailsByInvoice(invoice.id, orgId);
+    return res.json(
+      rows.map((r) => ({
+        id: r.id,
+        toEmail: r.toEmail,
+        cc: r.cc,
+        subject: r.subject,
+        status: r.status,
+        sentAt: r.sentAt,
+        failReason: r.failReason,
+        createdAt: r.createdAt,
+      })),
+    );
+  } catch (err: any) {
+    return res.status(500).json({ message: sanitizeErrorMessage(err) });
+  }
+});
 app.post("/api/invoices/:id/revisions", requireManagerOrAbove, async (req, res) => {
   try {
     const orgId = req.session.orgId!;
@@ -809,6 +834,7 @@ app.post(
         orgId,
         invoiceId: invoice.id,
         toEmail,
+        cc: recipients.cc.length > 0 ? recipients.cc.join(", ") : null,
         subject,
         body,
         status: "PENDING",
@@ -834,8 +860,8 @@ app.post(
             : undefined;
           pdfBuffer = await generateInvoicePdf(fullInvoice, orgData, baseUrl, lineDetails);
         }
-        await sendInvoiceEmail(toEmail, subject, body, pdfBuffer, smtpConfig, recipients.cc.length > 0 ? recipients.cc : undefined, orgData);
-        await storage.updateOutboxEmailStatus(outboxEmail.id, "SENT");
+        const sendResult = await sendInvoiceEmail(toEmail, subject, body, pdfBuffer, smtpConfig, recipients.cc.length > 0 ? recipients.cc : undefined, orgData);
+        await storage.updateOutboxEmailStatus(outboxEmail.id, "SENT", undefined, sendResult.messageId);
         emailSent = true;
       } catch (smtpErr: any) {
         emailError = smtpErr.message;
@@ -1094,6 +1120,7 @@ app.post(
         orgId,
         invoiceId: invoice.id,
         toEmail,
+        cc: recipients.cc.length > 0 ? recipients.cc.join(", ") : null,
         subject,
         body,
         status: "PENDING",
@@ -1115,8 +1142,8 @@ app.post(
           ? await getInvoiceTimeEntryDetails(invoiceForPdf.id, orgId)
           : undefined;
         const pdfBuffer = await generateInvoicePdf(invoiceForPdf, orgData, baseUrl, lineDetails);
-        await sendInvoiceEmail(toEmail, subject, body, pdfBuffer, smtpConfig, recipients.cc.length > 0 ? recipients.cc : undefined, orgData);
-        await storage.updateOutboxEmailStatus(outboxEmail.id, "SENT");
+        const sendResult = await sendInvoiceEmail(toEmail, subject, body, pdfBuffer, smtpConfig, recipients.cc.length > 0 ? recipients.cc : undefined, orgData);
+        await storage.updateOutboxEmailStatus(outboxEmail.id, "SENT", undefined, sendResult.messageId);
         emailSent = true;
       } catch (smtpErr: any) {
         emailError = smtpErr.message;
