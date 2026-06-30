@@ -1678,6 +1678,7 @@ export default function EstimatesPage() {
           number={sendEstimate.number}
           clientName={sendEstimate.clientName || ""}
           clientEmail={sendEstimate.clientEmail || clients.find((c: any) => c.id === sendEstimate.clientId)?.email || ""}
+          clientId={sendEstimate.clientId}
           orgName={orgSettings?.name || "Cherry Street Consulting"}
           total={String(sendEstimate.total)}
           expiryDate={sendEstimate.expiryDate}

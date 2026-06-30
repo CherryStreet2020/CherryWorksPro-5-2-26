@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { cn } from "@/lib/utils";
 import { formatMoney } from "@/components/shared/format";
 import {
   Dialog,
@@ -26,6 +28,52 @@ interface SendEmailModalProps {
   dueDate?: string | null;
   expiryDate?: string | null;
   currency?: string;
+  /** When provided, the client's contacts are fetched and offered as
+   *  selectable recipient options for the To field. */
+  clientId?: string;
+}
+
+/** Minimal shape of a client_contacts row used for recipient selection. */
+export interface ContactLite {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+  role: string | null;
+  isPrimary: boolean;
+}
+
+export interface RecipientOption {
+  email: string;
+  label: string;
+}
+
+export const CLIENT_EMAIL_LABEL = "Client email";
+
+/** Build a deduped (case-insensitive by email) recipient list combining the
+ *  primary client email with every contact that has an email. The client email
+ *  is listed first (it remains the default To); a named contact label upgrades
+ *  the generic "Client email" label when the addresses coincide. */
+export function buildRecipientOptions(clientEmail: string, contacts: ContactLite[] | undefined): RecipientOption[] {
+  const byEmail = new Map<string, RecipientOption>();
+  const add = (rawEmail: string | null | undefined, label: string) => {
+    const email = (rawEmail || "").trim();
+    if (!email) return;
+    const key = email.toLowerCase();
+    const existing = byEmail.get(key);
+    if (!existing) {
+      byEmail.set(key, { email, label });
+    } else if (existing.label === CLIENT_EMAIL_LABEL && label !== CLIENT_EMAIL_LABEL) {
+      existing.label = label;
+    }
+  };
+  add(clientEmail, CLIENT_EMAIL_LABEL);
+  for (const c of contacts || []) {
+    const name = `${c.firstName || ""} ${c.lastName || ""}`.trim();
+    const role = c.role ? ` · ${c.role}` : "";
+    add(c.email, (name || (c.email || "").trim()) + role);
+  }
+  return Array.from(byEmail.values());
 }
 
 function formatDate(dateStr: string): string {
@@ -87,11 +135,22 @@ export function SendEmailModal({
   dueDate,
   expiryDate,
   currency = "USD",
+  clientId,
 }: SendEmailModalProps) {
   const [to, setTo] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [emailError, setEmailError] = useState("");
+
+  const { data: contacts } = useQuery<ContactLite[]>({
+    queryKey: ["/api/clients", clientId, "contacts"],
+    enabled: open && !!clientId,
+  });
+
+  const recipientOptions = useMemo(
+    () => buildRecipientOptions(clientEmail, contacts),
+    [clientEmail, contacts],
+  );
 
   useEffect(() => {
     if (open) {
@@ -131,6 +190,45 @@ export function SendEmailModal({
               data-testid="input-email-to"
             />
             {emailError && <p className="text-xs mt-1" style={{ color: "#ef4444" }} data-testid="text-email-error">{emailError}</p>}
+            {(() => {
+              const currentTo = to.trim().toLowerCase();
+              const showPicker =
+                recipientOptions.length > 1 ||
+                (recipientOptions.length === 1 && recipientOptions[0].email.toLowerCase() !== currentTo);
+              if (!showPicker) return null;
+              return (
+                <div className="pt-1.5 space-y-1" data-testid="contact-options">
+                  <p className="text-[11px]" style={{ color: "var(--lux-text-muted)" }}>
+                    Select a contact from {clientName || "this company"}:
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {recipientOptions.map((opt, idx) => {
+                      const active = currentTo === opt.email.toLowerCase();
+                      return (
+                        <button
+                          key={opt.email}
+                          type="button"
+                          onClick={() => { setTo(opt.email); if (emailError) setEmailError(""); }}
+                          title={opt.email}
+                          className={cn("text-left rounded-md px-2.5 py-1 text-xs border transition-colors")}
+                          style={
+                            active
+                              ? { background: "var(--gradient-brand)", color: "#fff", borderColor: "transparent" }
+                              : { background: "var(--lux-bg)", color: "var(--lux-text)", borderColor: "var(--lux-border)" }
+                          }
+                          data-testid={`button-contact-option-${idx}`}
+                        >
+                          <span className="font-medium">{opt.label}</span>
+                          {opt.label !== opt.email && (
+                            <span className="ml-1.5" style={{ color: active ? "rgba(255,255,255,0.85)" : "var(--lux-text-muted)" }}>{opt.email}</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Subject</Label>

@@ -2446,6 +2446,7 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
           number={viewInvoice.number}
           clientName={viewInvoice.clientName}
           clientEmail={viewInvoice.clientEmail}
+          clientId={viewInvoice.clientId}
           orgName={orgSettings?.name || "Cherry Street Consulting"}
           total={String(viewInvoice.total)}
           dueDate={viewInvoice.dueDate}
