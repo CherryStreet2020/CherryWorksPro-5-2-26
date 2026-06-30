@@ -6270,6 +6270,19 @@ export class DatabaseStorage {
     const emit = opts.emitCreated !== false;
     const row = await db.transaction(async (tx) => {
       const [inserted] = await tx.insert(clientContacts).values(data).returning();
+      // Single-primary invariant: a contact set as primary demotes the client's
+      // other primaries, so the recipient resolver's "primary contact" is unambiguous.
+      if (inserted.isPrimary && inserted.clientId) {
+        await tx
+          .update(clientContacts)
+          .set({ isPrimary: false, updatedAt: new Date() })
+          .where(and(
+            eq(clientContacts.clientId, inserted.clientId),
+            eq(clientContacts.orgId, inserted.orgId),
+            ne(clientContacts.id, inserted.id),
+            eq(clientContacts.isPrimary, true),
+          ));
+      }
       if (emit) {
         // Sprint 2o.0 Step 5b1e (HR4): retargeted from contact_activities
         // (legacy PSO contactId path being dropped in 5b2) to the new
@@ -6310,6 +6323,19 @@ export class DatabaseStorage {
       .where(and(eq(clientContacts.id, id), eq(clientContacts.orgId, orgId)))
       .returning();
     if (!row) return row;
+    // Single-primary invariant (see createContact): promoting one contact to
+    // primary demotes the client's other primaries.
+    if (data.isPrimary === true && row.clientId) {
+      await db
+        .update(clientContacts)
+        .set({ isPrimary: false, updatedAt: new Date() })
+        .where(and(
+          eq(clientContacts.clientId, row.clientId),
+          eq(clientContacts.orgId, orgId),
+          ne(clientContacts.id, row.id),
+          eq(clientContacts.isPrimary, true),
+        ));
+    }
     // Task #162: an update may move the contact to a different brand or
     // change deletedAt, both of which affect the per-brand count.
     invalidateBrandStatsCache(orgId);

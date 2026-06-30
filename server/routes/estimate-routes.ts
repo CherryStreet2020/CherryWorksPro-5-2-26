@@ -6,7 +6,7 @@ import { z } from "zod";
 import { randomBytes } from "crypto";
 import { invoices, estimates, round2 } from "@shared/schema";
 import { requireAdmin, requireManagerOrAbove, publicTokenLimiter, escapeHtml, wrapEmailLayout, emailButton, emailDivider } from "./middleware";
-import { sendInvoiceEmail, getSmtpConfigFromOrg } from "../email";
+import { sendInvoiceEmail, getSmtpConfigFromOrg, pickRecipients } from "../email";
 import { generateEstimatePdf } from "../pdf";
 import { fireWebhookEvent } from "../webhooks";
 
@@ -120,44 +120,79 @@ app.post("/api/estimates/:id/send", requireManagerOrAbove, async (req, res) => {
   if (!est) return res.status(404).json({ message: "Estimate not found" });
   if (est.status !== "DRAFT") return res.status(400).json({ message: "Only DRAFT estimates can be sent" });
 
+  // Resolve recipients BEFORE flipping status — parity with invoice send: never
+  // mark an estimate SENT (or write an outbox row) with nobody to email it to.
+  const reqBody = (req.body || {}) as Record<string, unknown>;
+  const asStr = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
+  const emailTo = asStr(reqBody.emailTo);
+  const emailSubject = asStr(reqBody.emailSubject);
+  const emailBody = asStr(reqBody.emailBody);
+  const customCc = Array.isArray(reqBody.cc) ? (reqBody.cc as unknown[]).filter((x): x is string => typeof x === "string") : undefined;
+  const client = est.clientId ? await storage.getClientById(est.clientId, orgId) : null;
+  const contacts = est.clientId ? await storage.getContactsByClient(est.clientId, orgId) : [];
+  const billingContacts = est.clientId ? await storage.getBillingContactsByClient(est.clientId, orgId) : [];
+  const recipients = pickRecipients({
+    clientEmail: client?.email,
+    contacts,
+    billingContacts,
+    override: { to: emailTo, cc: customCc },
+  });
+  if (!recipients.to) {
+    return res.status(422).json({
+      code: "NO_RECIPIENT",
+      message: "This estimate has no email recipient. Add a client email or a contact with an email address, then try again.",
+    });
+  }
+  const toEmail = recipients.to;
+
   const token = randomBytes(32).toString("hex");
   await storage.setEstimatePublicToken(est.id, orgId, token);
   await storage.updateEstimate(est.id, orgId, { status: "SENT" });
 
-  const { emailTo, emailSubject, emailBody } = req.body || {};
+  const orgForEmail = await storage.getOrg(orgId);
+  const orgName = orgForEmail?.name || "CherryWorks Pro";
+  const baseUrl = (process.env.BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+  const viewLink = `${baseUrl}/e/${token}`;
+  const subject = emailSubject || `Estimate ${est.number} from ${orgName}`;
+  const body = wrapEmailLayout(`
+        <p style="font-size:20px;font-weight:700;color:#1a1a2e;margin:0 0 4px;">Estimate ${est.number}</p>
+        <p style="font-size:14px;color:#8b8da3;margin:0 0 28px;">From ${orgName}</p>
 
-  let emailWarning = false;
-  if (emailTo) {
-    const orgForEmail = await storage.getOrg(orgId);
-    const orgName = orgForEmail?.name || "CherryWorks Pro";
-    const baseUrl = (process.env.BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
-    const viewLink = `${baseUrl}/e/${token}`;
-    const subject = emailSubject || `Estimate ${est.number} from ${orgName}`;
-    const body = wrapEmailLayout(`
-          <p style="font-size:20px;font-weight:700;color:#1a1a2e;margin:0 0 4px;">Estimate ${est.number}</p>
-          <p style="font-size:14px;color:#8b8da3;margin:0 0 28px;">From ${orgName}</p>
+        ${emailBody
+          ? `<div style="font-size:15px;color:#555770;line-height:1.7;margin:0 0 28px;white-space:pre-wrap;">${escapeHtml(emailBody).replace(/\n/g, "<br>")}</div>`
+          : `<p style="font-size:15px;color:#555770;line-height:1.7;margin:0 0 28px;">
+          Please review the estimate below. You can approve or decline it directly from the link.
+        </p>`}
 
-          ${emailBody
-            ? `<div style="font-size:15px;color:#555770;line-height:1.7;margin:0 0 28px;white-space:pre-wrap;">${escapeHtml(emailBody).replace(/\n/g, "<br>")}</div>`
-            : `<p style="font-size:15px;color:#555770;line-height:1.7;margin:0 0 28px;">
-            Please review the estimate below. You can approve or decline it directly from the link.
-          </p>`}
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <tr><td align="center">${emailButton("View Estimate", viewLink)}</td></tr>
+        </table>
 
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-            <tr><td align="center">${emailButton("View Estimate", viewLink)}</td></tr>
-          </table>
+        ${emailDivider()}
+        <p style="font-size:14px;color:#555770;margin:0;">Thank you for your consideration.</p>
+      `, { orgName, preheader: `Estimate ${est.number} from ${orgName}` });
 
-          ${emailDivider()}
-          <p style="font-size:14px;color:#555770;margin:0;">Thank you for your consideration.</p>
-        `, { orgName, preheader: `Estimate ${est.number} from ${orgName}` });
+  const outboxEmail = await storage.createOutboxEmail({
+    orgId,
+    estimateId: est.id,
+    toEmail,
+    cc: recipients.cc.length > 0 ? recipients.cc.join(", ") : null,
+    subject,
+    body,
+    status: "PENDING",
+  });
 
-    try {
-      const smtpConfig = getSmtpConfigFromOrg(orgForEmail);
-      await sendInvoiceEmail(emailTo, subject, body, undefined, smtpConfig, undefined, orgForEmail);
-    } catch (smtpErr: any) {
-      emailWarning = true;
-      console.error("[estimate-send] Email failed:", smtpErr.message);
-    }
+  let emailSent = false;
+  let emailError: string | null = null;
+  try {
+    const smtpConfig = getSmtpConfigFromOrg(orgForEmail);
+    const sendResult = await sendInvoiceEmail(toEmail, subject, body, undefined, smtpConfig, recipients.cc.length > 0 ? recipients.cc : undefined, orgForEmail);
+    await storage.updateOutboxEmailStatus(outboxEmail.id, "SENT", undefined, sendResult.messageId);
+    emailSent = true;
+  } catch (smtpErr: any) {
+    emailError = smtpErr.message;
+    await storage.updateOutboxEmailStatus(outboxEmail.id, "FAILED", smtpErr.message);
+    console.error("[estimate-send] Email failed:", smtpErr.message);
   }
 
   await storage.createAuditLog({
@@ -166,12 +201,12 @@ app.post("/api/estimates/:id/send", requireManagerOrAbove, async (req, res) => {
     action: "ESTIMATE_SENT",
     entityType: "estimates",
     entityId: est.id,
-    details: { publicToken: token, emailTo: emailTo || null, emailSent: !emailWarning },
+    details: { publicToken: token, emailTo: toEmail, emailSent, recipientSource: recipients.source },
   });
 
   fireWebhookEvent(orgId, "estimate.sent", { id: est.id, number: est.number, clientId: est.clientId, status: "SENT" });
 
-  res.json({ ok: true, publicToken: token, ...(emailWarning ? { emailWarning: "Estimate status changed to SENT but email delivery failed. Please verify SMTP settings." } : {}) });
+  res.json({ ok: true, publicToken: token, emailSent, toEmail, cc: recipients.cc, emailError });
 });
 app.post("/api/estimates/:id/accept", requireManagerOrAbove, async (req, res) => {
   const est = await storage.getEstimate(req.params.id as string, req.session.orgId!);
