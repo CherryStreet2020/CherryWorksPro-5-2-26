@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { formatMoney } from "@/components/shared/format";
@@ -31,6 +31,8 @@ interface SendEmailModalProps {
   /** When provided, the client's contacts are fetched and offered as
    *  selectable recipient options for the To field. */
   clientId?: string;
+  /** Resend mode (the document was already sent) — adjusts title/button copy. */
+  isResend?: boolean;
 }
 
 /** Minimal shape of a client_contacts row used for recipient selection. */
@@ -136,6 +138,7 @@ export function SendEmailModal({
   expiryDate,
   currency = "USD",
   clientId,
+  isResend = false,
 }: SendEmailModalProps) {
   const [to, setTo] = useState("");
   const [subject, setSubject] = useState("");
@@ -152,14 +155,27 @@ export function SendEmailModal({
     [clientEmail, contacts],
   );
 
+  const autofilledRef = useRef(false);
+
   useEffect(() => {
     if (open) {
       setTo(clientEmail || "");
       setSubject(buildDefaultSubject(type, number, orgName));
       setBody(buildDefaultBody({ type, clientName, number, total, currency, dueDate, expiryDate, orgName }));
       setEmailError("");
+      autofilledRef.current = false;
     }
   }, [open, type, number, clientName, clientEmail, orgName, total, dueDate, expiryDate, currency]);
+
+  // Smart default: once the client's contacts load, if there is no client email
+  // on file and the To is still blank, pre-address to the first resolved contact
+  // (so a company with contacts but no top-level email isn't sent to nobody).
+  useEffect(() => {
+    if (open && !autofilledRef.current && !(clientEmail || "").trim() && !to.trim() && recipientOptions.length > 0) {
+      setTo(recipientOptions[0].email);
+      autofilledRef.current = true;
+    }
+  }, [open, clientEmail, to, recipientOptions]);
 
   const handleSend = () => {
     if (!EMAIL_REGEX.test(to.trim())) {
@@ -176,7 +192,7 @@ export function SendEmailModal({
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="max-w-xl" style={{ background: "var(--lux-surface)", borderColor: "var(--lux-border)" }} data-testid="send-email-modal">
         <DialogHeader>
-          <DialogTitle style={{ color: "var(--lux-text)" }}>Send {typeLabel} #{number}</DialogTitle>
+          <DialogTitle style={{ color: "var(--lux-text)" }}>{isResend ? "Resend" : "Send"} {typeLabel} #{number}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-2">
           <div className="space-y-1.5">
@@ -262,7 +278,7 @@ export function SendEmailModal({
               className="text-white"
               data-testid="button-confirm-send"
             >
-              <Send className="w-4 h-4 mr-2" /> {isPending ? "Sending..." : `Send ${typeLabel}`}
+              <Send className="w-4 h-4 mr-2" /> {isPending ? "Sending..." : `${isResend ? "Resend" : "Send"} ${typeLabel}`}
             </Button>
           </div>
         </div>

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { createHash, randomBytes } from "crypto";
 import { invoiceLines, invoices, payments, projectMembers, timeEntries, glJournalEntries, generateInvoiceSchema, addInvoiceLineSchema, updateInvoiceLineSchema, updateInvoiceSchema, round2 } from "@shared/schema";
 import { sanitizeErrorMessage, requireAdmin, requireManagerOrAbove, publicTokenLimiter, EDITABLE_STATUSES, buildInvoiceSnapshot, saveRevisionIfNeeded, createAutoJournalEntry, isGlPosted, buildInvoiceEmailHtml } from "./middleware";
-import { sendInvoiceEmail, getSmtpConfigFromOrg } from "../email";
+import { sendInvoiceEmail, getSmtpConfigFromOrg, pickRecipients } from "../email";
 import { generateInvoicePdf } from "../pdf";
 import { fireWebhookEvent } from "../webhooks";
 import { getExchangeRate } from "../exchange-rates";
@@ -736,6 +736,24 @@ app.post(
           .json({ message: "Cannot send an invoice with no line items. Please add at least one line item before sending." });
       }
 
+      // Resolve recipients BEFORE flipping status — never mark an invoice SENT
+      // (or write an outbox row) when there is nobody to email it to.
+      const { emailTo: customTo, emailSubject: customSubject, emailBody: customBody, cc: customCc } = req.body || {};
+      const contacts = await storage.getContactsByClient(invoice.clientId, orgId);
+      const billingContacts = await storage.getBillingContactsByClient(invoice.clientId, orgId);
+      const recipients = pickRecipients({
+        clientEmail: invoice.clientEmail,
+        contacts,
+        billingContacts,
+        override: { to: customTo, cc: customCc },
+      });
+      if (!recipients.to) {
+        return res.status(422).json({
+          code: "NO_RECIPIENT",
+          message: "This invoice has no email recipient. Add a client email or a contact with an email address, then try again.",
+        });
+      }
+
       let token = invoice.publicToken;
       if (!token) {
         token = randomBytes(32).toString("hex");
@@ -763,8 +781,7 @@ app.post(
       const viewLink = `${baseUrl}/i/${token}`;
       const pdfLink = `${baseUrl}/api/public/invoices/${token}/pdf`;
 
-      const { emailTo: customTo, emailSubject: customSubject, emailBody: customBody } = req.body || {};
-      const toEmail = customTo || invoice.clientEmail || "";
+      const toEmail = recipients.to;
       const clientData = await storage.getClientById(invoice.clientId, orgId);
       const portalLink = clientData?.portalToken ? `${baseUrl}/portal/${clientData.portalToken}` : null;
       const orgForEmail = await storage.getOrg(orgId);
@@ -786,40 +803,42 @@ app.post(
       const outboxEmail = await storage.createOutboxEmail({
         orgId,
         invoiceId: invoice.id,
-        toEmail: toEmail || "no-recipient",
+        toEmail,
         subject,
         body,
         status: "PENDING",
       });
 
-      if (toEmail) {
-        try {
-          const fullInvoice = await storage.getInvoice(invoice.id, orgId);
-          const orgData = await storage.getOrg(orgId);
-          const smtpConfig = getSmtpConfigFromOrg(orgData);
-          let pdfBuffer: Buffer | undefined;
-          if (fullInvoice) {
-            const { getInvoiceTimeEntryDetails, resolveShowTimeEntryDetails } = await import("../invoice-details");
-            const showDetails = resolveShowTimeEntryDetails(
-              fullInvoice.showTimeEntryDetails,
-              orgData?.showTimeEntryDetails,
-            );
-            const lineDetails = showDetails
-              ? await getInvoiceTimeEntryDetails(fullInvoice.id, orgId)
-              : undefined;
-            pdfBuffer = await generateInvoicePdf(fullInvoice, orgData, baseUrl, lineDetails);
-          }
-          const billingContacts = await storage.getBillingContactsByClient(invoice.clientId, orgId);
-          const ccEmails = billingContacts.map(c => c.email).filter(Boolean) as string[];
-          await sendInvoiceEmail(toEmail, subject, body, pdfBuffer, smtpConfig, ccEmails.length > 0 ? ccEmails : undefined, orgData);
-          await storage.updateOutboxEmailStatus(outboxEmail.id, "SENT");
-        } catch (smtpErr: any) {
-          await storage.updateOutboxEmailStatus(
-            outboxEmail.id,
-            "FAILED",
-            smtpErr.message,
+      // toEmail is guaranteed (we 422'd above when no recipient resolved), so we
+      // always attempt the send and record whether it actually went out.
+      let emailSent = false;
+      let emailError: string | null = null;
+      try {
+        const fullInvoice = await storage.getInvoice(invoice.id, orgId);
+        const orgData = await storage.getOrg(orgId);
+        const smtpConfig = getSmtpConfigFromOrg(orgData);
+        let pdfBuffer: Buffer | undefined;
+        if (fullInvoice) {
+          const { getInvoiceTimeEntryDetails, resolveShowTimeEntryDetails } = await import("../invoice-details");
+          const showDetails = resolveShowTimeEntryDetails(
+            fullInvoice.showTimeEntryDetails,
+            orgData?.showTimeEntryDetails,
           );
+          const lineDetails = showDetails
+            ? await getInvoiceTimeEntryDetails(fullInvoice.id, orgId)
+            : undefined;
+          pdfBuffer = await generateInvoicePdf(fullInvoice, orgData, baseUrl, lineDetails);
         }
+        await sendInvoiceEmail(toEmail, subject, body, pdfBuffer, smtpConfig, recipients.cc.length > 0 ? recipients.cc : undefined, orgData);
+        await storage.updateOutboxEmailStatus(outboxEmail.id, "SENT");
+        emailSent = true;
+      } catch (smtpErr: any) {
+        emailError = smtpErr.message;
+        await storage.updateOutboxEmailStatus(
+          outboxEmail.id,
+          "FAILED",
+          smtpErr.message,
+        );
       }
 
       fireWebhookEvent(orgId, "invoice.sent", { id: invoice.id, number: invoice.number, clientId: invoice.clientId, status: "SENT" });
@@ -830,7 +849,7 @@ app.post(
         action: "INVOICE_SENT",
         entityType: "invoice",
         entityId: invoice.id,
-        details: { number: invoice.number, publicToken: token },
+        details: { number: invoice.number, publicToken: token, emailSent, toEmail, recipientSource: recipients.source },
       });
 
       {
@@ -996,7 +1015,7 @@ app.post(
         } catch (_) {}
       }
 
-      return res.json({ ok: true, publicToken: token, viewLink, ...(payoutError ? { payoutWarning: "Invoice sent but automatic team member payouts failed. Check audit log." } : {}) });
+      return res.json({ ok: true, publicToken: token, viewLink, emailSent, toEmail, cc: recipients.cc, emailError, ...(payoutError ? { payoutWarning: "Invoice sent but automatic team member payouts failed. Check audit log." } : {}) });
     } catch (err: any) {
       return res.status(400).json({ message: err.message });
     }
@@ -1021,16 +1040,33 @@ app.post(
           .json({ message: "Can only resend invoices in SENT, PARTIAL, or PAID status" });
       }
 
+      // Honor an explicitly chosen recipient/CC (the unified Send dialog now
+      // drives resend too); otherwise fall back through the same chain as send.
+      const { emailTo: customTo, emailSubject: customSubject, emailBody: customBody, cc: customCc } = req.body || {};
+      const contacts = await storage.getContactsByClient(invoice.clientId, orgId);
+      const billingContacts = await storage.getBillingContactsByClient(invoice.clientId, orgId);
+      const recipients = pickRecipients({
+        clientEmail: invoice.clientEmail,
+        contacts,
+        billingContacts,
+        override: { to: customTo, cc: customCc },
+      });
+      if (!recipients.to) {
+        return res.status(422).json({
+          code: "NO_RECIPIENT",
+          message: "This invoice has no email recipient. Add a client email or a contact with an email address, then try again.",
+        });
+      }
+      const toEmail = recipients.to;
+
       const baseUrl = (process.env.BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
       const viewLink = `${baseUrl}/i/${invoice.publicToken}`;
       const pdfLink = `${baseUrl}/api/public/invoices/${invoice.publicToken}/pdf`;
-
-      const toEmail = invoice.clientEmail || "";
-      const subject = `Invoice ${invoice.number} from CherryWorks Pro (Resent)`;
       const clientData = await storage.getClientById(invoice.clientId, orgId);
       const portalLink = clientData?.portalToken ? `${baseUrl}/portal/${clientData.portalToken}` : null;
       const orgForEmail = await storage.getOrg(orgId);
       const orgName = orgForEmail?.name || "CherryWorks Pro";
+      const subject = customSubject || `Invoice ${invoice.number} from ${orgName} (Resent)`;
       const body = buildInvoiceEmailHtml({
         clientName: invoice.clientName,
         invoiceNumber: invoice.number,
@@ -1041,12 +1077,13 @@ app.post(
         portalLink,
         orgName,
         isResend: true,
+        customMessage: customBody || undefined,
       });
 
       const outboxEmail = await storage.createOutboxEmail({
         orgId,
         invoiceId: invoice.id,
-        toEmail: toEmail || "no-recipient",
+        toEmail,
         subject,
         body,
         status: "PENDING",
@@ -1054,35 +1091,30 @@ app.post(
 
       let emailSent = false;
       let emailError: string | null = null;
-
-      if (toEmail) {
-        try {
-          const fullInvoice = await storage.getInvoice(invoice.id, orgId);
-          const orgData = await storage.getOrg(orgId);
-          const smtpConfig = getSmtpConfigFromOrg(orgData);
-          const invoiceForPdf = fullInvoice || invoice;
-          const { getInvoiceTimeEntryDetails, resolveShowTimeEntryDetails } = await import("../invoice-details");
-          const showDetails = resolveShowTimeEntryDetails(
-            invoiceForPdf.showTimeEntryDetails,
-            orgData?.showTimeEntryDetails,
-          );
-          const lineDetails = showDetails
-            ? await getInvoiceTimeEntryDetails(invoiceForPdf.id, orgId)
-            : undefined;
-          const pdfBuffer = await generateInvoicePdf(invoiceForPdf, orgData, baseUrl, lineDetails);
-          const billingContacts = await storage.getBillingContactsByClient(invoice.clientId, orgId);
-          const ccEmails = billingContacts.map(c => c.email).filter(Boolean) as string[];
-          await sendInvoiceEmail(toEmail, subject, body, pdfBuffer, smtpConfig, ccEmails.length > 0 ? ccEmails : undefined, orgData);
-          await storage.updateOutboxEmailStatus(outboxEmail.id, "SENT");
-          emailSent = true;
-        } catch (smtpErr: any) {
-          emailError = smtpErr.message;
-          await storage.updateOutboxEmailStatus(
-            outboxEmail.id,
-            "FAILED",
-            smtpErr.message,
-          );
-        }
+      try {
+        const fullInvoice = await storage.getInvoice(invoice.id, orgId);
+        const orgData = await storage.getOrg(orgId);
+        const smtpConfig = getSmtpConfigFromOrg(orgData);
+        const invoiceForPdf = fullInvoice || invoice;
+        const { getInvoiceTimeEntryDetails, resolveShowTimeEntryDetails } = await import("../invoice-details");
+        const showDetails = resolveShowTimeEntryDetails(
+          invoiceForPdf.showTimeEntryDetails,
+          orgData?.showTimeEntryDetails,
+        );
+        const lineDetails = showDetails
+          ? await getInvoiceTimeEntryDetails(invoiceForPdf.id, orgId)
+          : undefined;
+        const pdfBuffer = await generateInvoicePdf(invoiceForPdf, orgData, baseUrl, lineDetails);
+        await sendInvoiceEmail(toEmail, subject, body, pdfBuffer, smtpConfig, recipients.cc.length > 0 ? recipients.cc : undefined, orgData);
+        await storage.updateOutboxEmailStatus(outboxEmail.id, "SENT");
+        emailSent = true;
+      } catch (smtpErr: any) {
+        emailError = smtpErr.message;
+        await storage.updateOutboxEmailStatus(
+          outboxEmail.id,
+          "FAILED",
+          smtpErr.message,
+        );
       }
 
       await storage.createAuditLog({
@@ -1091,10 +1123,10 @@ app.post(
         action: "INVOICE_RESENT",
         entityType: "invoice",
         entityId: invoice.id,
-        details: { number: invoice.number, emailSent, emailError },
+        details: { number: invoice.number, emailSent, emailError, toEmail, recipientSource: recipients.source },
       });
 
-      return res.json({ ok: true, emailSent, emailError });
+      return res.json({ ok: true, emailSent, emailError, toEmail, cc: recipients.cc });
     } catch (err: any) {
       return res.status(400).json({ message: err.message });
     }
