@@ -407,6 +407,14 @@ export async function sendInvoiceEmail(
   };
 
   const result = await transport.send(message);
+  // A transport that reports ok:false (e.g. no email provider configured → the
+  // noop "not-sent-no-smtp" path) did NOT deliver. Surface it as a failure so
+  // callers mark the send FAILED instead of falsely recording it as Sent.
+  if (result.ok === false) {
+    throw new Error(
+      "Email was not sent — no email provider is configured for this organization. Connect email in Settings, then resend.",
+    );
+  }
   return { messageId: result.messageId, previewUrl: result.previewUrl };
 }
 

@@ -440,20 +440,33 @@ export default function EstimatesPage() {
   });
 
   const sendMutation = useMutation({
-    mutationFn: (params: { id: string; emailTo?: string; emailSubject?: string; emailBody?: string }) =>
-      apiRequest("POST", `/api/estimates/${params.id}/send`, {
+    mutationFn: async (params: { id: string; emailTo?: string; emailSubject?: string; emailBody?: string }) => {
+      const res = await apiRequest("POST", `/api/estimates/${params.id}/send`, {
         emailTo: params.emailTo,
         emailSubject: params.emailSubject,
         emailBody: params.emailBody,
-      }),
-    onSuccess: () => {
+      });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
       setSendEmailOpen(false);
       setSendEstimate(null);
-      toast({ title: "Estimate sent" });
+      if (data?.emailSent) {
+        toast({ title: "Estimate sent", description: `Emailed to ${data.toEmail}${data.cc?.length ? ` (cc ${data.cc.length})` : ""}` });
+      } else if (data?.emailError) {
+        toast({ title: "Marked sent — but the email failed", description: data.emailError, variant: "destructive" });
+      } else {
+        toast({ title: "Estimate sent" });
+      }
     },
     onError: (err: any) => {
-      toast({ title: "Failed to send", description: err.message, variant: "destructive" });
+      // apiRequest throws "NNN: <body>"; surface the human message (e.g. NO_RECIPIENT).
+      let desc = typeof err?.message === "string" ? err.message : "Please try again.";
+      const sep = desc.indexOf(": ");
+      const rest = sep >= 0 ? desc.slice(sep + 2) : desc;
+      try { const p = JSON.parse(rest); if (p?.message) desc = p.message; } catch { /* not JSON */ }
+      toast({ title: "Couldn't send estimate", description: desc, variant: "destructive" });
     },
   });
 

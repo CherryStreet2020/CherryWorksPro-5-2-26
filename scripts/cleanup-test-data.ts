@@ -138,6 +138,10 @@ async function cleanup() {
       const estimateIds = testEstimates.map(e => e.id);
       const r8a = await client.query(`DELETE FROM estimate_lines WHERE estimate_id = ANY($1)`, [estimateIds]);
       console.log(`Deleted ${r8a.rowCount} estimate lines`);
+      // Estimate sends now record outbox_emails rows (FK estimate_id) — remove
+      // them before deleting the estimates or the FK blocks the estimate delete.
+      const r8oe = await client.query(`DELETE FROM outbox_emails WHERE estimate_id = ANY($1)`, [estimateIds]);
+      console.log(`Deleted ${r8oe.rowCount} estimate outbox emails`);
     }
     const r8 = await client.query(`DELETE FROM estimates WHERE client_id = ANY($1)`, [clientIds]);
     console.log(`Deleted ${r8.rowCount} estimates`);

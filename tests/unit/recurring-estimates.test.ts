@@ -223,7 +223,12 @@ describe("Estimates / Proposals", () => {
 
   test("POST /api/estimates/:id/send transitions DRAFT -> SENT", async () => {
     if (!newEstId) return;
-    const res = await authed(`/api/estimates/${newEstId}/send`, { method: "POST" });
+    // Send to an explicit recipient: the estimate's client (clients[0], newest on
+    // a shared DB) may have no email, and send now refuses recipient-less estimates.
+    const res = await authed(`/api/estimates/${newEstId}/send`, {
+      method: "POST",
+      body: JSON.stringify({ emailTo: "qa@example.com" }),
+    });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
