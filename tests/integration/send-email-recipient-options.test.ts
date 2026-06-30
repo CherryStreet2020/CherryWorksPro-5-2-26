@@ -72,6 +72,17 @@ describe("buildRecipientOptions", () => {
     expect(buildRecipientOptions("", [])).toEqual([]);
   });
 
+  it("orders contacts primary → billing → others (matches server recipient precedence)", () => {
+    // No client email, so options[0] is the smart-default To. The server's
+    // pickRecipients prefers primary then billing, so the modal must too.
+    const opts = buildRecipientOptions("", [
+      contact({ id: "1", firstName: "Adam", lastName: "Adams", email: "adam@acme.com", role: "ops" }),
+      contact({ id: "2", firstName: "Bea", lastName: "Brown", email: "bea@acme.com", role: "billing" }),
+      contact({ id: "3", firstName: "Cy", lastName: "Carter", email: "cy@acme.com", role: "owner", isPrimary: true }),
+    ]);
+    expect(opts.map((o) => o.email)).toEqual(["cy@acme.com", "bea@acme.com", "adam@acme.com"]);
+  });
+
   it("dedupes two contacts that share an email (keeps the first)", () => {
     const opts = buildRecipientOptions("", [
       contact({ id: "1", firstName: "First", lastName: "Seen", email: "dup@acme.com", role: "billing" }),
