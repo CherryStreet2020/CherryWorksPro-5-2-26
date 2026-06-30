@@ -30,8 +30,8 @@ export async function insertClient(
   name = `rev client ${Date.now()}`,
 ): Promise<string> {
   const r = await revPool().query<{ id: string }>(
-    `INSERT INTO clients (org_id, name) VALUES ($1,$2) RETURNING id`,
-    [orgId, name],
+    `INSERT INTO clients (org_id, name, email) VALUES ($1,$2,$3) RETURNING id`,
+    [orgId, name, `rev-${randomUUID().slice(0, 8)}@example.com`],
   );
   return r.rows[0].id;
 }

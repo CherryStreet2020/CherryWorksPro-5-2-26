@@ -92,7 +92,7 @@ orgTest.describe("Estimate token — real used UI surface", () => {
     expect(e.ok()).toBe(true);
     const est = await e.json();
     const sendRes = await isolatedOrg.request.post(`/api/estimates/${est.id}/send`, {
-      data: {},
+      data: { emailTo: "qa@example.com" },
       headers: { "X-CSRF-Token": isolatedOrg.csrf },
     });
     expect(sendRes.ok()).toBe(true);
@@ -137,7 +137,7 @@ orgTest.describe("Estimate token — real used UI surface", () => {
     const est = await e.json();
 
     const sendRes = await isolatedOrg.request.post(`/api/estimates/${est.id}/send`, {
-      data: {},
+      data: { emailTo: "qa@example.com" },
       headers: { "X-CSRF-Token": isolatedOrg.csrf },
     });
     expect(sendRes.ok(), `estimate send: ${sendRes.status()}`).toBe(true);
