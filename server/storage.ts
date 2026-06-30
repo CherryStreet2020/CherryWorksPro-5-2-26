@@ -2136,10 +2136,20 @@ export class DatabaseStorage {
     return email;
   }
 
+  /** Delivery history for an invoice — every send attempt, newest first. */
+  async getOutboxEmailsByInvoice(invoiceId: string, orgId: string) {
+    return db
+      .select()
+      .from(outboxEmails)
+      .where(and(eq(outboxEmails.invoiceId, invoiceId), eq(outboxEmails.orgId, orgId)))
+      .orderBy(desc(outboxEmails.createdAt));
+  }
+
   async updateOutboxEmailStatus(
     emailId: string,
     status: string,
     failReason?: string,
+    providerMessageId?: string,
   ) {
     const updates: any = { status };
     if (status === "SENT") {
@@ -2147,6 +2157,9 @@ export class DatabaseStorage {
     }
     if (failReason) {
       updates.failReason = failReason;
+    }
+    if (providerMessageId) {
+      updates.providerMessageId = providerMessageId;
     }
     await db
       .update(outboxEmails)

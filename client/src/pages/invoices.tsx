@@ -295,6 +295,19 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
     },
   });
 
+  const { data: deliveries } = useQuery<{
+    id: string; toEmail: string; cc: string | null; subject: string;
+    status: string; sentAt: string | null; failReason: string | null; createdAt: string;
+  }[]>({
+    queryKey: ["/api/invoices", viewInvoice?.id, "deliveries"],
+    enabled: !!viewInvoice,
+    queryFn: async () => {
+      const res = await fetch(`/api/invoices/${viewInvoice!.id}/deliveries`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch deliveries");
+      return res.json();
+    },
+  });
+
   const { data: invoiceDetails } = useQuery<{
     showTimeEntryDetails: boolean;
     override: boolean | null;
@@ -1611,6 +1624,43 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                   </Button>
+                </div>
+              </FormSection>
+            )}
+
+            {/* DELIVERY HISTORY — who each send went to + whether it was delivered */}
+            {deliveries && deliveries.length > 0 && (
+              <FormSection title="Delivery History">
+                <div className="space-y-2.5" data-testid="delivery-history">
+                  {deliveries.map((d) => {
+                    const pill =
+                      d.status === "SENT"
+                        ? { label: "Sent", bg: "rgba(34,197,94,0.12)", color: "#22c55e" }
+                        : d.status === "FAILED"
+                        ? { label: "Failed", bg: "rgba(239,68,68,0.12)", color: "#ef4444" }
+                        : { label: "Not sent", bg: "rgba(245,158,11,0.12)", color: "#f59e0b" };
+                    return (
+                      <div key={d.id} className="flex items-start justify-between gap-3" data-testid={`delivery-${d.id}`}>
+                        <div className="min-w-0 text-sm">
+                          <div className="break-words" style={{ color: "var(--lux-text)" }}>
+                            <span className="font-medium">{d.toEmail}</span>
+                            {d.cc && <span style={{ color: "var(--lux-text-muted)" }}> · cc {d.cc}</span>}
+                          </div>
+                          <div className="text-xs mt-0.5" style={{ color: "var(--lux-text-muted)" }}>
+                            <DateDisplay value={d.sentAt || d.createdAt} />
+                            {d.failReason && <span style={{ color: "#ef4444" }}> — {d.failReason}</span>}
+                          </div>
+                        </div>
+                        <span
+                          className="text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 mt-0.5"
+                          style={{ background: pill.bg, color: pill.color }}
+                          data-testid={`delivery-status-${d.id}`}
+                        >
+                          {pill.label}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </FormSection>
             )}

@@ -700,10 +700,16 @@ export const outboxEmails = pgTable("outbox_emails", {
   status: text("status").notNull().default("PENDING"),
   sentAt: timestamp("sent_at"),
   failReason: text("fail_reason"),
+  // Phase 2 (delivery history): the CC recipients (comma-joined) + the transport's
+  // returned message id. Additive/nullable so the per-invoice "sent to whom /
+  // delivered" view can read who actually received each send.
+  cc: text("cc"),
+  providerMessageId: text("provider_message_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_outbox_emails_org_id").on(table.orgId),
+  index("idx_outbox_emails_invoice_id").on(table.invoiceId),
 ]);
 
 export const timesheetStatusEnum = pgEnum("timesheet_status", [
