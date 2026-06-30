@@ -6270,8 +6270,11 @@ export class DatabaseStorage {
     const emit = opts.emitCreated !== false;
     const row = await db.transaction(async (tx) => {
       const [inserted] = await tx.insert(clientContacts).values(data).returning();
-      // Single-primary invariant: a contact set as primary demotes the client's
-      // other primaries, so the recipient resolver's "primary contact" is unambiguous.
+      // Best-effort single-primary: promoting a contact demotes the client's other
+      // primaries (collapses the common sequential case). Not a hard constraint — a
+      // rare concurrent double-promote under READ COMMITTED is tolerated because the
+      // recipient resolver (pickRecipients / buildRecipientOptions) picks
+      // deterministically by order regardless of how many rows are primary.
       if (inserted.isPrimary && inserted.clientId) {
         await tx
           .update(clientContacts)
@@ -6323,8 +6326,8 @@ export class DatabaseStorage {
       .where(and(eq(clientContacts.id, id), eq(clientContacts.orgId, orgId)))
       .returning();
     if (!row) return row;
-    // Single-primary invariant (see createContact): promoting one contact to
-    // primary demotes the client's other primaries.
+    // Best-effort single-primary (see createContact): promoting one contact
+    // demotes the client's other primaries.
     if (data.isPrimary === true && row.clientId) {
       await db
         .update(clientContacts)
