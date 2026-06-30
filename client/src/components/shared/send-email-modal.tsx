@@ -201,7 +201,7 @@ export function SendEmailModal({
                   <p className="text-[11px]" style={{ color: "var(--lux-text-muted)" }}>
                     Select a contact from {clientName || "this company"}:
                   </p>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap gap-1.5 min-w-0">
                     {recipientOptions.map((opt, idx) => {
                       const active = currentTo === opt.email.toLowerCase();
                       return (
@@ -210,7 +210,7 @@ export function SendEmailModal({
                           type="button"
                           onClick={() => { setTo(opt.email); if (emailError) setEmailError(""); }}
                           title={opt.email}
-                          className={cn("text-left rounded-md px-2.5 py-1 text-xs border transition-colors")}
+                          className={cn("text-left rounded-md px-2.5 py-1 text-xs border transition-colors min-w-0 max-w-full")}
                           style={
                             active
                               ? { background: "var(--gradient-brand)", color: "#fff", borderColor: "transparent" }
@@ -219,8 +219,8 @@ export function SendEmailModal({
                           data-testid={`button-contact-option-${idx}`}
                         >
                           <span className="font-medium">{opt.label}</span>
-                          {opt.label !== opt.email && (
-                            <span className="ml-1.5" style={{ color: active ? "rgba(255,255,255,0.85)" : "var(--lux-text-muted)" }}>{opt.email}</span>
+                          {opt.label.toLowerCase() !== opt.email.toLowerCase() && (
+                            <span className="ml-1.5 break-all" style={{ color: active ? "rgba(255,255,255,0.85)" : "var(--lux-text-muted)" }}>{opt.email}</span>
                           )}
                         </button>
                       );
