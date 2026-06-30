@@ -104,6 +104,17 @@ describe("pickRecipients", () => {
     expect(r.cc).toEqual(["karen@abs.com", "ap@abs.com"]); // shadi (To) removed
   });
 
+  it("never throws on non-string override fields (defensive coercion)", () => {
+    const r = pickRecipients({
+      clientEmail: "client@acme.com",
+      contacts: [],
+      billingContacts: [],
+      override: { to: { x: 1 } as any, cc: [123 as any, "extra@acme.com", "bad-cc"] },
+    });
+    expect(r.to).toBe("client@acme.com"); // invalid override.to ignored → client email
+    expect(r.cc).toEqual(["extra@acme.com"]); // non-string + invalid CC dropped, valid kept
+  });
+
   it("uses an explicit CC override (including an explicit empty array = no CC)", () => {
     const withCc = pickRecipients({
       clientEmail: "client@acme.com",

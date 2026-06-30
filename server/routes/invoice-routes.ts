@@ -738,7 +738,12 @@ app.post(
 
       // Resolve recipients BEFORE flipping status — never mark an invoice SENT
       // (or write an outbox row) when there is nobody to email it to.
-      const { emailTo: customTo, emailSubject: customSubject, emailBody: customBody, cc: customCc } = req.body || {};
+      const reqBody = (req.body || {}) as Record<string, unknown>;
+      const asStr = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
+      const customTo = asStr(reqBody.emailTo);
+      const customSubject = asStr(reqBody.emailSubject);
+      const customBody = asStr(reqBody.emailBody);
+      const customCc = Array.isArray(reqBody.cc) ? (reqBody.cc as unknown[]).filter((x): x is string => typeof x === "string") : undefined;
       const contacts = await storage.getContactsByClient(invoice.clientId, orgId);
       const billingContacts = await storage.getBillingContactsByClient(invoice.clientId, orgId);
       const recipients = pickRecipients({
@@ -1042,7 +1047,12 @@ app.post(
 
       // Honor an explicitly chosen recipient/CC (the unified Send dialog now
       // drives resend too); otherwise fall back through the same chain as send.
-      const { emailTo: customTo, emailSubject: customSubject, emailBody: customBody, cc: customCc } = req.body || {};
+      const reqBody = (req.body || {}) as Record<string, unknown>;
+      const asStr = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
+      const customTo = asStr(reqBody.emailTo);
+      const customSubject = asStr(reqBody.emailSubject);
+      const customBody = asStr(reqBody.emailBody);
+      const customCc = Array.isArray(reqBody.cc) ? (reqBody.cc as unknown[]).filter((x): x is string => typeof x === "string") : undefined;
       const contacts = await storage.getContactsByClient(invoice.clientId, orgId);
       const billingContacts = await storage.getBillingContactsByClient(invoice.clientId, orgId);
       const recipients = pickRecipients({

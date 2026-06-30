@@ -280,11 +280,14 @@ function htmlToPlainText(html: string): string {
  */
 export function normalizeCc(cc: string[] | undefined, to: string): string[] {
   if (!cc || cc.length === 0) return [];
-  const seen = new Set<string>([(to || "").trim().toLowerCase()]);
+  const seen = new Set<string>([(typeof to === "string" ? to : "").trim().toLowerCase()]);
   const out: string[] = [];
   for (const raw of cc) {
-    const email = (raw || "").trim();
-    if (!email) continue;
+    // Coerce non-strings (never throw) and drop anything that isn't a valid
+    // email — an invalid CC must not fail the whole send on the Graph/Gmail
+    // transports (which, unlike SMTP, don't filter CC themselves).
+    const email = (typeof raw === "string" ? raw : "").trim();
+    if (!email || !validateEmailAddress(email)) continue;
     const key = email.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
@@ -328,7 +331,7 @@ export function pickRecipients(input: {
   override?: { to?: string | null; cc?: string[] | null };
 }): ResolvedRecipients {
   const valid = (e?: string | null): string | null => {
-    const t = (e || "").trim();
+    const t = (typeof e === "string" ? e : "").trim();
     return t && validateEmailAddress(t) ? t : null;
   };
   const contacts = input.contacts || [];

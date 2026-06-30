@@ -175,6 +175,21 @@ function getPaymentTerms(issued: string | null | undefined, due: string | null |
   return `Net ${diffDays}`;
 }
 
+/** apiRequest throws errors shaped "NNN: <body>" where body is often JSON.
+ *  Surface the human-readable message instead of the raw status+JSON blob. */
+function friendlyError(err: any): string {
+  const m = typeof err?.message === "string" ? err.message : "Something went wrong. Please try again.";
+  const sep = m.indexOf(": ");
+  const rest = sep >= 0 ? m.slice(sep + 2) : m;
+  try {
+    const parsed = JSON.parse(rest);
+    if (parsed && typeof parsed.message === "string") return parsed.message;
+  } catch {
+    /* not JSON — fall through */
+  }
+  return m;
+}
+
 type SortField = "number" | "clientName" | "total" | "dueDate" | "status";
 type SortDir = "asc" | "desc";
 type DateFilter = "all" | "due-this-week" | "due-this-month" | "overdue-30";
@@ -564,7 +579,7 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
       setViewInvoice(null);
     },
     onError: (err: any) => {
-      toast({ title: "Couldn't send invoice", description: err.message, variant: "destructive" });
+      toast({ title: "Couldn't send invoice", description: friendlyError(err), variant: "destructive" });
     },
   });
 
@@ -589,7 +604,7 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
       setViewInvoice(null);
     },
     onError: (err: any) => {
-      toast({ title: "Couldn't resend invoice", description: err.message, variant: "destructive" });
+      toast({ title: "Couldn't resend invoice", description: friendlyError(err), variant: "destructive" });
     },
   });
 
@@ -824,12 +839,13 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
       toast({ title: "No DRAFT invoices selected" });
       return;
     }
-    let sent = 0, skipped = 0, failed = 0;
+    let sent = 0, emailFailed = 0, skipped = 0, failed = 0;
     for (const inv of drafts) {
       try {
         const res = await apiRequest("POST", `/api/invoices/${inv.id}/send`, {});
         const data = await res.json().catch(() => ({} as any));
-        if (data?.emailSent) sent++; else failed++;
+        // 2xx → the invoice was marked Sent; emailSent says whether the email went.
+        if (data?.emailSent) sent++; else emailFailed++;
       } catch (err: any) {
         // 422 NO_RECIPIENT → skipped (no email on file); anything else → failed.
         if (typeof err?.message === "string" && err.message.includes("NO_RECIPIENT")) skipped++;
@@ -841,9 +857,10 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
     queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
     setSelectedIds(new Set());
     const parts = [`${sent} sent`];
+    if (emailFailed) parts.push(`${emailFailed} marked sent (email failed)`);
     if (skipped) parts.push(`${skipped} skipped (no email on file)`);
     if (failed) parts.push(`${failed} failed`);
-    toast({ title: parts.join(" · "), variant: (skipped || failed) ? "destructive" : undefined });
+    toast({ title: parts.join(" · "), variant: (emailFailed || skipped || failed) ? "destructive" : undefined });
   }, [filteredInvoices, selectedIds, toast]);
 
   const handleBulkVoid = useCallback(async () => {
