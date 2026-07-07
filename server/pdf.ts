@@ -119,9 +119,13 @@ function drawDetailBlock(
       const projectH = projectText
         ? doc.heightOfString(projectText, { width: cProjectW })
         : 11;
-      // Clamp the row height so a pathologically long description/project
-      // can't blow the row past the page bottom; the cells below ellipsize.
-      const MAX_DETAIL_ROW_H = 33; // ~3 lines at 8pt
+      // Show the FULL worklog note for each entry (customer request). The row
+      // grows to fit the whole description; the ensureSpace() page-break below
+      // then flows an over-tall row onto a fresh page instead of splitting it.
+      // We still cap at the usable page height so a single note taller than an
+      // entire page can't overflow the page bottom — only that extreme case
+      // (~50+ lines in one entry) ellipsizes; realistic notes are never cut.
+      const MAX_DETAIL_ROW_H = Math.max(60, bottomLimit - 90);
       const rowH = Math.min(MAX_DETAIL_ROW_H, Math.max(12, descH, projectH) + 2);
       ensureSpace(1, rowH);
       doc.fontSize(8).font("Helvetica").fillColor(mutedColor)
