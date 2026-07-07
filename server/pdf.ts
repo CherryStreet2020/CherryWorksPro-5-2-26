@@ -85,8 +85,6 @@ function drawDetailBlock(
     return y;
   };
 
-  drawHeader(false);
-
   const ensureSpace = (rows: number, rowH: number = 12) => {
     if (y + rows * rowH > bottomLimit) {
       y = onPageBreak();
@@ -94,10 +92,40 @@ function drawDetailBlock(
     }
   };
 
+  // Height a rendered "entry" row occupies. Show the FULL worklog note (customer
+  // request): the row grows to fit the whole description, capped only at the
+  // usable page height so a single note taller than an entire page can't overflow
+  // the page bottom (only that ~50+-line extreme ellipsizes). Used both to draw a
+  // row and to look ahead from a day/week header so a tall entry can't strand the
+  // header at the bottom of the previous page.
+  const MAX_DETAIL_ROW_H = Math.max(60, bottomLimit - 90);
+  const entryRowH = (item: DetailItem | undefined): number => {
+    if (!item || item.kind !== "entry") return 14;
+    doc.fontSize(8).font("Helvetica");
+    const dH = item.description ? doc.heightOfString(item.description, { width: cDescW, lineGap: 1 }) : 11;
+    const pH = item.project ? doc.heightOfString(item.project, { width: cProjectW }) : 11;
+    return Math.min(MAX_DETAIL_ROW_H, Math.max(12, dH, pH) + 2);
+  };
+
+  // Print the initial column header only where the first content row will also
+  // fit; otherwise page-break first so the header isn't left orphaned at the
+  // bottom of the previous page (with a "TIME (cont.)" and no entry after it).
+  const firstContentH = items.length === 0
+    ? 14
+    : items[0].kind === "entry"
+      ? entryRowH(items[0])
+      : 14 + entryRowH(items[1]); // day/week header + its first entry
+  if (y + 11 + firstContentH > bottomLimit) {
+    y = onPageBreak();
+  }
+  drawHeader(false);
+
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
     if (it.kind === "day") {
-      ensureSpace(2, 14);
+      // Reserve the header + the next entry's height so the weekday label lands on
+      // the same page as its first entry (no orphaned header before a tall note).
+      ensureSpace(1, 14 + entryRowH(items[i + 1]));
       doc.fontSize(8.5).font("Helvetica-Bold").fillColor(textColor)
         .text(it.weekday, cTime, y, { width: blockW - 60, characterSpacing: 0.5 });
       doc.fontSize(8).font("Helvetica").fillColor(mutedColor)
@@ -109,20 +137,9 @@ function drawDetailBlock(
       const timeText = it.startTime && it.endTime
         ? `${it.startTime}–${it.endTime}`
         : "—";
-      doc.fontSize(8);
       const descText = it.description || "";
       const projectText = it.project || "";
-      doc.font("Helvetica");
-      const descH = descText
-        ? doc.heightOfString(descText, { width: cDescW, lineGap: 1 })
-        : 11;
-      const projectH = projectText
-        ? doc.heightOfString(projectText, { width: cProjectW })
-        : 11;
-      // Clamp the row height so a pathologically long description/project
-      // can't blow the row past the page bottom; the cells below ellipsize.
-      const MAX_DETAIL_ROW_H = 33; // ~3 lines at 8pt
-      const rowH = Math.min(MAX_DETAIL_ROW_H, Math.max(12, descH, projectH) + 2);
+      const rowH = entryRowH(it);
       ensureSpace(1, rowH);
       doc.fontSize(8).font("Helvetica").fillColor(mutedColor)
         .text(timeText, cTime, y, { width: cTimeW });
