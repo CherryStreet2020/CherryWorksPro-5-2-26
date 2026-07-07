@@ -94,10 +94,27 @@ function drawDetailBlock(
     }
   };
 
+  // Height a rendered "entry" row occupies. Show the FULL worklog note (customer
+  // request): the row grows to fit the whole description, capped only at the
+  // usable page height so a single note taller than an entire page can't overflow
+  // the page bottom (only that ~50+-line extreme ellipsizes). Used both to draw a
+  // row and to look ahead from a day/week header so a tall entry can't strand the
+  // header at the bottom of the previous page.
+  const MAX_DETAIL_ROW_H = Math.max(60, bottomLimit - 90);
+  const entryRowH = (item: DetailItem | undefined): number => {
+    if (!item || item.kind !== "entry") return 14;
+    doc.fontSize(8).font("Helvetica");
+    const dH = item.description ? doc.heightOfString(item.description, { width: cDescW, lineGap: 1 }) : 11;
+    const pH = item.project ? doc.heightOfString(item.project, { width: cProjectW }) : 11;
+    return Math.min(MAX_DETAIL_ROW_H, Math.max(12, dH, pH) + 2);
+  };
+
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
     if (it.kind === "day") {
-      ensureSpace(2, 14);
+      // Reserve the header + the next entry's height so the weekday label lands on
+      // the same page as its first entry (no orphaned header before a tall note).
+      ensureSpace(1, 14 + entryRowH(items[i + 1]));
       doc.fontSize(8.5).font("Helvetica-Bold").fillColor(textColor)
         .text(it.weekday, cTime, y, { width: blockW - 60, characterSpacing: 0.5 });
       doc.fontSize(8).font("Helvetica").fillColor(mutedColor)
@@ -109,24 +126,9 @@ function drawDetailBlock(
       const timeText = it.startTime && it.endTime
         ? `${it.startTime}–${it.endTime}`
         : "—";
-      doc.fontSize(8);
       const descText = it.description || "";
       const projectText = it.project || "";
-      doc.font("Helvetica");
-      const descH = descText
-        ? doc.heightOfString(descText, { width: cDescW, lineGap: 1 })
-        : 11;
-      const projectH = projectText
-        ? doc.heightOfString(projectText, { width: cProjectW })
-        : 11;
-      // Show the FULL worklog note for each entry (customer request). The row
-      // grows to fit the whole description; the ensureSpace() page-break below
-      // then flows an over-tall row onto a fresh page instead of splitting it.
-      // We still cap at the usable page height so a single note taller than an
-      // entire page can't overflow the page bottom — only that extreme case
-      // (~50+ lines in one entry) ellipsizes; realistic notes are never cut.
-      const MAX_DETAIL_ROW_H = Math.max(60, bottomLimit - 90);
-      const rowH = Math.min(MAX_DETAIL_ROW_H, Math.max(12, descH, projectH) + 2);
+      const rowH = entryRowH(it);
       ensureSpace(1, rowH);
       doc.fontSize(8).font("Helvetica").fillColor(mutedColor)
         .text(timeText, cTime, y, { width: cTimeW });
