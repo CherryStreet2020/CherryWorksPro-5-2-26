@@ -85,8 +85,6 @@ function drawDetailBlock(
     return y;
   };
 
-  drawHeader(false);
-
   const ensureSpace = (rows: number, rowH: number = 12) => {
     if (y + rows * rowH > bottomLimit) {
       y = onPageBreak();
@@ -108,6 +106,19 @@ function drawDetailBlock(
     const pH = item.project ? doc.heightOfString(item.project, { width: cProjectW }) : 11;
     return Math.min(MAX_DETAIL_ROW_H, Math.max(12, dH, pH) + 2);
   };
+
+  // Print the initial column header only where the first content row will also
+  // fit; otherwise page-break first so the header isn't left orphaned at the
+  // bottom of the previous page (with a "TIME (cont.)" and no entry after it).
+  const firstContentH = items.length === 0
+    ? 14
+    : items[0].kind === "entry"
+      ? entryRowH(items[0])
+      : 14 + entryRowH(items[1]); // day/week header + its first entry
+  if (y + 11 + firstContentH > bottomLimit) {
+    y = onPageBreak();
+  }
+  drawHeader(false);
 
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
