@@ -23,8 +23,23 @@ else
   # push would swallow a SIGTERM arriving mid-migration.
   node scripts/db-push-with-lock.mjs &
   push_pid=$!
+
+  # Backgrounding is only useful WITH a trap: bash does not run a trap until
+  # the current foreground command returns, so a foreground push would swallow
+  # a SIGTERM arriving mid-migration. Forward the signal to the push, let it
+  # unwind (it releases the advisory lock in a finally block), then exit 143.
+  # Without this trap the backgrounding bought nothing.
+  forward_signal() {
+    echo "[entrypoint] signal received — terminating schema push $push_pid" >&2
+    kill -TERM "$push_pid" 2>/dev/null || true
+    wait "$push_pid" 2>/dev/null || true
+    exit 143
+  }
+  trap forward_signal TERM INT
+
   push_rc=0
   wait "$push_pid" || push_rc=$?
+  trap - TERM INT
 
   if [ "$push_rc" -ne 0 ]; then
     echo "[entrypoint] schema push FAILED (exit $push_rc) — refusing to start." >&2

@@ -24,7 +24,22 @@ const SMTP_ENCRYPTION_KEY = process.env.SMTP_ENCRYPTION_KEY;
 //
 // Presence is checked, NOT format: the live key's shape is not knowable from
 // this repo and a format assertion it failed would refuse to start production.
-if (!SMTP_ENCRYPTION_KEY || SMTP_ENCRYPTION_KEY.trim() === "") {
+// Validated on the RAW value, because the RAW value is what deriveSmtpKey()
+// consumes. This key is DELIBERATELY NOT NORMALISED, and that asymmetry with
+// BACKUP_ENCRYPTION_KEY is the whole point:
+//
+//   BACKUP_ENCRYPTION_KEY has never been set, so no ciphertext exists under an
+//   untrimmed value and trimming it is free.
+//
+//   SMTP_ENCRYPTION_KEY is LIVE. Every org's stored SMTP password and every
+//   Graph/Gmail refresh token in the database was encrypted under whatever this
+//   variable literally contains today. Trimming it here would change the
+//   derived key and make all of that permanently unreadable — the exact
+//   catastrophe this migration is built to avoid. So the raw value is used
+//   verbatim, and the whitespace hazard is made VISIBLE rather than silently
+//   "corrected": a loud boot warning below, and the sha256 fingerprint on
+//   /api/readyz, which must match byte-for-byte between Replit and Azure.
+if (SMTP_ENCRYPTION_KEY === undefined || SMTP_ENCRYPTION_KEY === "") {
   const msg =
     "[email] SMTP_ENCRYPTION_KEY is not set. Stored SMTP passwords and OAuth " +
     "refresh tokens cannot be encrypted without it.";
@@ -32,6 +47,15 @@ if (!SMTP_ENCRYPTION_KEY || SMTP_ENCRYPTION_KEY.trim() === "") {
     throw new Error(msg + " Refusing to start in production.");
   }
   console.warn(msg + " (development only — values will be stored unencrypted.)");
+} else if (SMTP_ENCRYPTION_KEY !== SMTP_ENCRYPTION_KEY.trim()) {
+  console.warn(
+    "[email] WARNING: SMTP_ENCRYPTION_KEY has leading or trailing whitespace. " +
+      "It is used VERBATIM, so this whitespace is part of the key. Do not " +
+      "'clean it up' — re-pasting it without the whitespace would derive a " +
+      "different key and make every stored SMTP password and OAuth refresh " +
+      "token unreadable. Compare the SMTP_ENCRYPTION_KEY fingerprint on " +
+      "/api/readyz between hosts to confirm they match.",
+  );
 }
 
 const LEGACY_SMTP_SALT = "cherryworks-smtp-salt";

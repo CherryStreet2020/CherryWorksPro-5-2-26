@@ -13,8 +13,16 @@ const RETENTION_DAYS = Number(process.env.BACKUP_RETENTION_DAYS) || 30;
 // backup as encrypted. BACKUP_ENCRYPTION_KEY is currently UNSET on Replit,
 // which means every backup taken to date is effectively unencrypted.
 const ENCRYPTION_KEY = (() => {
-  const configured = process.env.BACKUP_ENCRYPTION_KEY;
-  if (configured && configured.trim() !== "") {
+  // Trim ONCE, then both validate and derive from the same trimmed value.
+  // Previously presence was checked on the trimmed string while the hash used
+  // the raw one, so a value pasted with a trailing newline derived a different
+  // key than the same value pasted cleanly later — silently making earlier
+  // backups undecryptable. Trimming is safe HERE specifically because
+  // BACKUP_ENCRYPTION_KEY has never been set, so no ciphertext exists that was
+  // written under an untrimmed value. (Contrast SMTP_ENCRYPTION_KEY, which is
+  // live and must NOT be normalised — see server/email.ts.)
+  const configured = (process.env.BACKUP_ENCRYPTION_KEY ?? "").trim();
+  if (configured !== "") {
     return createHash("sha256").update(configured).digest();
   }
   if ((process.env.NODE_ENV || "").toLowerCase().trim() === "production") {
