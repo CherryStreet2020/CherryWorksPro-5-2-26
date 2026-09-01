@@ -20,6 +20,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.81.0",
+    "@azure/identity": "^4.13.1",
+    "@azure/storage-blob": "^12.32.0",
     "@eslint/js": "^10.0.1",
     "@google-cloud/storage": "^7.19.0",
     "@hookform/resolvers": "^3.10.0",

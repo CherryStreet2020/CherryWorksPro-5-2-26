@@ -26,6 +26,20 @@ jobs:
       - name: Run lint
         run: npm run lint
 
+      # The Azure object-storage driver authenticates with a managed identity and
+      # plain data-plane access. That is only sufficient while nothing calls the
+      # presigned-URL helpers — those would additionally require a user-delegation
+      # SAS and the Storage Blob Delegator role. Fail loudly if a caller appears,
+      # rather than discovering it when an upload 403s in production.
+      - name: No live callers of the presigned-URL helpers
+        run: |
+          if grep -rn "signObjectURL\|getObjectEntityUploadURL" server/routes/ server/lib/; then
+            echo "::error::A live caller of signObjectURL/getObjectEntityUploadURL was reintroduced."
+            echo "The Azure driver would need a user-delegation SAS and the Storage Blob Delegator role."
+            exit 1
+          fi
+          echo "OK: no live callers."
+
   migrations:
     name: Replay migrations on a fresh database
     runs-on: ubuntu-latest

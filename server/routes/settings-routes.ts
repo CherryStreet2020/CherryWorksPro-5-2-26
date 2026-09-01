@@ -18,7 +18,7 @@ import { randomUUID } from "crypto";
 import {
   ObjectStorageService,
   objectStorageClient,
-} from "../replit_integrations/object_storage";
+} from "../lib/object-storage-driver";
 import {
   isAllowedLogoPath,
   isAllowedLogoUrl,

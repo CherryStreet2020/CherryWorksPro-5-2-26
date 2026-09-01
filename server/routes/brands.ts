@@ -29,7 +29,7 @@ import { insertBrandSchema } from "@shared/schema";
 import {
   ObjectStorageService,
   objectStorageClient,
-} from "../replit_integrations/object_storage";
+} from "../lib/object-storage-driver";
 import {
   isExemptLogoUrl,
   validateExternalLogoUrl,
