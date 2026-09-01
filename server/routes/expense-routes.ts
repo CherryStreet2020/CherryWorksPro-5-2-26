@@ -513,7 +513,15 @@ If a field cannot be determined, use null. If no line items are visible, use an 
     if (!extracted && imagePath) {
       console.log("[OCR] Falling back to Tesseract OCR");
       const { createWorker } = await import("tesseract.js");
-      const worker = await createWorker("eng");
+      // langPath is explicit so tesseract.js loads the eng.traineddata copied
+      // into the image. Without it the worker downloads a ~5 MB model into the
+      // working directory on first use — as an unprivileged user, into a
+      // root-owned layer — and receipt OCR fails in a way that looks like a
+      // parsing bug rather than a missing file.
+      const worker = await createWorker("eng", undefined, {
+        langPath: process.env.TESSERACT_LANG_PATH || process.cwd(),
+        gzip: false,
+      });
       let ocrText = "";
       try {
         const result = await worker.recognize(imagePath);

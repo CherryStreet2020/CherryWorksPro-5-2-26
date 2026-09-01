@@ -3,6 +3,7 @@ import { pool } from "../db";
 import { requireAdmin } from "./middleware";
 import { createEncryptedBackup, getRowCounts, verifyRestoration, purgeOldBackups, listBackups } from "../backup-drill";
 import fs from "fs";
+import { createHash, timingSafeEqual } from "crypto";
 
 interface Incident {
   id: string;
@@ -16,6 +17,111 @@ const incidents: Incident[] = [];
 const startTime = Date.now();
 
 export function registerHealthRoutes(app: Express) {
+
+  // =====================================================================
+  // Container probes (Azure Container Apps). Added for the Azure migration.
+  // =====================================================================
+
+  /**
+   * LIVENESS. Touches NOTHING — no database, no filesystem.
+   *
+   * A failed liveness probe RESTARTS the container. Every other health
+   * endpoint in this file queries Postgres, so wiring liveness to one of
+   * them would turn a recoverable database incident into a restart loop and
+   * a total outage. This endpoint answers whether the event loop is alive
+   * and nothing else, which is the only correct question for liveness.
+   */
+  app.get("/api/healthz", (_req: Request, res: Response) => {
+    return res.status(200).json({ status: "alive" });
+  });
+
+  /**
+   * READINESS / STARTUP, and the deploy gate's assertion surface.
+   *
+   * PUBLIC body is deliberately minimal — this is reachable unauthenticated
+   * and the repository is public.
+   *
+   * PRIVILEGED body (x-internal-maintenance-token, same pattern as
+   * /api/admin/email/m365-rescope) carries what a deploy gate must assert:
+   *  - commit + revision, so the gate cannot pass against the OLD revision
+   *    still draining behind the shared ingress FQDN;
+   *  - `database`, which is the only way to prove the app is talking to the
+   *    real database and not the rehearsal copy left over from Phase 7;
+   *  - a cheap data fingerprint;
+   *  - non-reversible sha256 prefixes of the four keys, which turn "the
+   *    secrets were pasted correctly" from a hope into an assertion. A wrong
+   *    BANKING_ or SMTP_ENCRYPTION_KEY makes stored data permanently
+   *    unreadable, and nothing else in the pipeline would catch it.
+   */
+  app.get("/api/readyz", async (req: Request, res: Response) => {
+    // The entrypoint writes this only after `drizzle-kit push --force`
+    // exits 0. Without it, a half-applied schema from a mid-push network
+    // blip would still answer Healthy and green every gate assertion.
+    const pushOk = fs.existsSync("/tmp/db-push-ok");
+
+    let dbOk = false;
+    try {
+      await pool.query("SELECT 1");
+      dbOk = true;
+    } catch (e: any) {
+      console.error("[readyz] database check failed:", e?.message ?? e);
+    }
+
+    const healthy = dbOk && pushOk;
+    const body: Record<string, unknown> = {
+      status: healthy ? "Healthy" : "Unhealthy",
+    };
+
+    const expected = process.env.INTERNAL_MAINTENANCE_TOKEN;
+    const provided = (req.headers["x-internal-maintenance-token"] as string | undefined) ?? "";
+    let privileged = false;
+    if (expected) {
+      const a = Buffer.from(provided);
+      const b = Buffer.from(expected);
+      privileged = a.length === b.length && timingSafeEqual(a, b);
+    }
+
+    if (privileged) {
+      const fingerprint = (name: string): string | null => {
+        const v = process.env[name];
+        if (!v || v.trim() === "") return null;
+        return createHash("sha256").update(v).digest("hex").slice(0, 12);
+      };
+
+      let database: string | null = null;
+      let glJournalLines: number | null = null;
+      try {
+        const r = await pool.query("SELECT current_database() AS db");
+        database = r.rows[0]?.db ?? null;
+      } catch {
+        /* reported via status */
+      }
+      try {
+        const r = await pool.query("SELECT COUNT(*)::int AS cnt FROM gl_journal_lines");
+        glJournalLines = r.rows[0]?.cnt ?? null;
+      } catch {
+        /* table may not exist on a fresh database — null is the answer */
+      }
+
+      body.checks = { database: dbOk, schemaPushMarker: pushOk };
+      body.commit = process.env.GIT_COMMIT_SHA ?? null;
+      body.revision = process.env.CONTAINER_APP_REVISION ?? null;
+      body.database = database;
+      body.dataFingerprint = { glJournalLines };
+      body.nodeEnv = process.env.NODE_ENV ?? null;
+      body.skipStartupMigrations = process.env.SKIP_STARTUP_MIGRATIONS ?? null;
+      body.schedulersEnabled = process.env.SCHEDULERS_ENABLED ?? null;
+      body.keyFingerprints = {
+        SESSION_SECRET: fingerprint("SESSION_SECRET"),
+        BANKING_ENCRYPTION_KEY: fingerprint("BANKING_ENCRYPTION_KEY"),
+        SMTP_ENCRYPTION_KEY: fingerprint("SMTP_ENCRYPTION_KEY"),
+        BACKUP_ENCRYPTION_KEY: fingerprint("BACKUP_ENCRYPTION_KEY"),
+      };
+      body.uptimeSeconds = Math.floor(process.uptime());
+    }
+
+    return res.status(healthy ? 200 : 503).json(body);
+  });
 
   app.get("/api/public/status", async (_req: Request, res: Response) => {
     const checks: Record<string, string> = {};
@@ -72,7 +178,9 @@ export function registerHealthRoutes(app: Express) {
       const r = await pool.query("SELECT COUNT(*)::int AS cnt FROM orgs");
       checks.database = { status: "ok", latencyMs: Date.now() - dbStart, detail: `${r.rows[0]?.cnt || 0} orgs` };
     } catch (e: any) {
-      checks.database = { status: "fail", latencyMs: Date.now() - dbStart, detail: e.message };
+      // Public endpoint — see the note on /api/health in server/routes.ts.
+      console.error(`[public/healthz] db check failed:`, e?.message ?? e);
+      checks.database = { status: "fail", latencyMs: Date.now() - dbStart, detail: "unavailable" };
       healthy = false;
     }
 

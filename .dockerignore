@@ -1,0 +1,38 @@
+# `az acr build` uploads this entire directory before it builds anything, so
+# everything excluded here is build time and bandwidth saved.
+#
+# NOTE THE SINGULAR/PLURAL: `script/` holds build.ts and IS the build — it must
+# NOT be ignored. `scripts/` is operational tooling and is ignored, except the
+# two files the container image actually needs.
+
+node_modules
+dist
+# NOTE: attached_assets is NOT ignored. It is 8.8 KB containing
+# cherry-icon-red.png, which client/src/components/shared/cherry-logo.tsx
+# imports as @assets/cherry-icon-red.png. Excluding it fails the vite build.
+.git
+.github
+.gitignore
+e2e
+tests
+screenshots
+proof
+uploads
+exports
+backups
+*.zip
+*.tar
+*.tar.gz
+*.log
+.DS_Store
+.env
+.env.*
+coverage
+playwright-report
+test-results
+.replit
+replit.md
+
+scripts/
+!scripts/start_container.sh
+!scripts/db-push-with-lock.mjs

@@ -15,8 +15,23 @@ export const createTransporter = createEnvTransporter;
 export const clearTransporterCache = clearSmtpTransporterCache;
 
 const SMTP_ENCRYPTION_KEY = process.env.SMTP_ENCRYPTION_KEY;
-if (!SMTP_ENCRYPTION_KEY) {
-  console.warn("[email] WARNING: SMTP_ENCRYPTION_KEY is not set — SMTP passwords will be stored unencrypted. Set this variable to enable encryption.");
+// FAIL CLOSED IN PRODUCTION. Previously a missing key only produced a warning
+// and `encryptSmtpPassword` returned its PLAINTEXT argument — so a dropped or
+// empty value wrote every org's SMTP password and every Graph/Gmail refresh
+// token to the database in the clear, while /api/readyz stayed Healthy and the
+// deploy gate passed (it asserts the secret BINDING, not the value). You would
+// only discover it on the day you rotated the key. Refuse to boot instead.
+//
+// Presence is checked, NOT format: the live key's shape is not knowable from
+// this repo and a format assertion it failed would refuse to start production.
+if (!SMTP_ENCRYPTION_KEY || SMTP_ENCRYPTION_KEY.trim() === "") {
+  const msg =
+    "[email] SMTP_ENCRYPTION_KEY is not set. Stored SMTP passwords and OAuth " +
+    "refresh tokens cannot be encrypted without it.";
+  if ((process.env.NODE_ENV || "").toLowerCase().trim() === "production") {
+    throw new Error(msg + " Refusing to start in production.");
+  }
+  console.warn(msg + " (development only — values will be stored unencrypted.)");
 }
 
 const LEGACY_SMTP_SALT = "cherryworks-smtp-salt";
