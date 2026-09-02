@@ -173,7 +173,6 @@ on every deploy.
 | `BASE_URL` | `https://cherryworkspro.com` |
 | `APP_BASE_URL` | `https://cherryworkspro.com` — **both are required** |
 | `MS_OAUTH_REDIRECT_URI` | re-registered in Entra |
-| `GOOGLE_OAUTH_REDIRECT_URI` | re-registered in Google Cloud |
 | `OBJECT_STORAGE_DRIVER` | `azure` |
 | `AZURE_STORAGE_BLOB_ENDPOINT` | `https://cwpstore26.blob.core.windows.net` |
 | `PUBLIC_OBJECT_SEARCH_PATHS` | `/public-objects/public` |
@@ -192,6 +191,24 @@ it while `server/routes/middleware.ts` compares it exactly — so `production `
 with a trailing space yields database TLS enforcement *together with* no CSP, no
 HSTS, insecure cookies and stack traces in 500 responses. The gate asserts the
 exact value for this reason.
+
+### Google / Gmail is deliberately NOT carried over
+
+Dean's decision, 2026-09-02: **Microsoft 365 only.** Google mailbox OAuth is not
+configured on Azure — no `GOOGLE_OAUTH_*` variables, no `google-oauth-client-secret`,
+and no redirect URI registered in Google Cloud.
+
+Verified safe before removing: **zero orgs use a Google provider.** In production
+today, one org (Cherry Street Consulting) is on `m365` and holds the single stored
+OAuth refresh token; every other org is plain `smtp`. Every Google code path is
+guarded by a null check inside a route handler — nothing runs at boot — so the
+"connect Gmail" button simply returns a clear "not configured" error rather than
+breaking anything.
+
+The code in `server/email/gmail-transport.ts` and the Google branches of
+`server/routes/oauth-mailbox-routes.ts` are left in place; only the configuration
+is withheld. Re-enabling later means setting the two variables and registering a
+redirect URI — no code change.
 
 ### New secret required
 

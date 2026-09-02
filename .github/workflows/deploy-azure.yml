@@ -295,7 +295,6 @@ jobs:
             "STRIPE_SECRET_KEY:stripe-secret-key" \
             "STRIPE_WEBHOOK_SECRET:stripe-webhook-secret" \
             "MS_OAUTH_CLIENT_SECRET:ms-oauth-client-secret" \
-            "GOOGLE_OAUTH_CLIENT_SECRET:google-oauth-client-secret" \
             "INTERNAL_MAINTENANCE_TOKEN:internal-maintenance-token"; do
             NAME="${pair%%:*}"; SECRET="${pair##*:}"
             echo "$T" | jq -e --arg n "$NAME" --arg s "$SECRET" \
