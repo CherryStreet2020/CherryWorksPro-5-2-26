@@ -17,7 +17,7 @@ import { brands } from "@shared/schema";
 import {
   ObjectStorageService,
   objectStorageClient,
-} from "../replit_integrations/object_storage";
+} from "./object-storage-driver";
 
 const BRAND_LOGOS_PREFIX = "brand-logos";
 const DRAFT_FILENAME_PREFIX = "draft-";

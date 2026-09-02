@@ -395,7 +395,12 @@ export async function registerRoutes(
       const utilization = pool.totalCount > 0 ? Math.round((active / pool.totalCount) * 100) : 0;
       res.json({ status: "ok", db: "connected", poolUtilization: `${utilization}%`, uptime: process.uptime() });
     } catch (err: any) {
-      res.status(503).json({ status: "error", db: "disconnected", error: err.message });
+      // Do NOT return err.message here. On Replit the database was not
+      // internet-reachable; on Azure it is reachable from any Azure IP, and
+      // this unauthenticated endpoint would name the host and, on an auth
+      // error, the username. Log it with the request id instead.
+      console.error(`[health] db check failed (requestId=${(_req as any).requestId ?? "unknown"}):`, err?.message ?? err);
+      res.status(503).json({ status: "error", db: "disconnected" });
     }
   });
 
@@ -408,7 +413,8 @@ export async function registerRoutes(
       }
       res.json({ status: "ready", orgCount, uptime: process.uptime() });
     } catch (err: any) {
-      res.status(503).json({ status: "not_ready", reason: "db_unavailable", error: err.message });
+      console.error(`[ready] db check failed (requestId=${(_req as any).requestId ?? "unknown"}):`, err?.message ?? err);
+      res.status(503).json({ status: "not_ready", reason: "db_unavailable" });
     }
   });
 

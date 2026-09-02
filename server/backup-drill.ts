@@ -6,7 +6,37 @@ import { pool } from "./db";
 
 const BACKUP_DIR = path.join(process.cwd(), "backups");
 const RETENTION_DAYS = Number(process.env.BACKUP_RETENTION_DAYS) || 30;
-const ENCRYPTION_KEY = process.env.BACKUP_ENCRYPTION_KEY || createHash("sha256").update("dev-backup-key-change-in-prod").digest();
+// FAIL CLOSED IN PRODUCTION. The previous fallback derived the key from the
+// literal string "dev-backup-key-change-in-prod", which is computable in one
+// line by anyone reading this repository — and the repository is PUBLIC. Worse,
+// BackupResult.encrypted is a static `true`, so the operator UI reported such a
+// backup as encrypted. BACKUP_ENCRYPTION_KEY is currently UNSET on Replit,
+// which means every backup taken to date is effectively unencrypted.
+const ENCRYPTION_KEY = (() => {
+  // Trim ONCE, then both validate and derive from the same trimmed value.
+  // Previously presence was checked on the trimmed string while the hash used
+  // the raw one, so a value pasted with a trailing newline derived a different
+  // key than the same value pasted cleanly later — silently making earlier
+  // backups undecryptable. Trimming is safe HERE specifically because
+  // BACKUP_ENCRYPTION_KEY has never been set, so no ciphertext exists that was
+  // written under an untrimmed value. (Contrast SMTP_ENCRYPTION_KEY, which is
+  // live and must NOT be normalised — see server/email.ts.)
+  const configured = (process.env.BACKUP_ENCRYPTION_KEY ?? "").trim();
+  if (configured !== "") {
+    return createHash("sha256").update(configured).digest();
+  }
+  if ((process.env.NODE_ENV || "").toLowerCase().trim() === "production") {
+    throw new Error(
+      "[backup] BACKUP_ENCRYPTION_KEY is not set. Refusing to start in " +
+        "production rather than writing backups under a key published in the " +
+        "public repository.",
+    );
+  }
+  console.warn(
+    "[backup] BACKUP_ENCRYPTION_KEY not set — using a development-only derived key.",
+  );
+  return createHash("sha256").update("dev-backup-key-change-in-prod").digest();
+})();
 
 interface BackupResult {
   filepath: string;
@@ -35,7 +65,12 @@ export async function createEncryptedBackup(): Promise<BackupResult> {
   const encFile = path.join(BACKUP_DIR, `cwp-backup-${timestamp}.sql.enc`);
 
   const dbUrl = process.env.DATABASE_URL!;
-  execSync(`pg_dump "${dbUrl}" --no-owner --no-privileges > "${dumpFile}"`, { timeout: 60_000 });
+  execSync(`pg_dump "${dbUrl}" --no-owner --no-privileges > "${dumpFile}"`, {
+    // Was 60s, which assumed a co-located database. On Azure this dump of all
+    // 83 tables crosses the network to a Burstable server; 60s would abort a
+    // perfectly healthy backup and report it as a failure.
+    timeout: Number(process.env.BACKUP_DUMP_TIMEOUT_MS) || 15 * 60_000,
+  });
 
   const iv = randomBytes(16);
   const key = typeof ENCRYPTION_KEY === "string" ? createHash("sha256").update(ENCRYPTION_KEY).digest() : ENCRYPTION_KEY;

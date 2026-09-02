@@ -267,6 +267,41 @@ app.use((req, res, next) => {
         }
       })();
 
+      // ---------------------------------------------------------------
+      // SCHEDULERS_ENABLED kill-switch (added for the Azure migration).
+      //
+      // Set SCHEDULERS_ENABLED=false to boot the app with NO background
+      // processor and no boot sweep. This is what makes the pre-cutover
+      // rehearsal safe: on Azure the app runs against a full copy of real
+      // production data while Replit is still live, and two of these
+      // schedulers act on the outside world immediately —
+      //   * server/marketing/scheduled-send.ts fires a tick ON BOOT, by
+      //     design, to dispatch anything queued during downtime; and
+      //   * server/reminders.ts runs processRecurringInvoices, which calls
+      //     storage.getNextInvoiceNumber and CREATES REAL INVOICE ROWS.
+      // Without this switch, rehearsing on real data would email real
+      // customers and mint real invoice numbers from a machine that is
+      // only practising.
+      //
+      // Parsed the same way as SKIP_STARTUP_MIGRATIONS above: the VALUE is
+      // read, not merely its presence, so SCHEDULERS_ENABLED=false and
+      // =0 both work. Default is enabled — production behaviour is
+      // unchanged when the variable is absent.
+      const schedulersEnabled = (() => {
+        const raw = process.env.SCHEDULERS_ENABLED;
+        if (raw === undefined) return true;
+        const v = raw.trim().toLowerCase();
+        if (v === "") return true;
+        return !(v === "0" || v === "false" || v === "no" || v === "off");
+      })();
+      if (!schedulersEnabled) {
+        log(
+          "SCHEDULERS_ENABLED is false — skipping ALL background processors and boot sweeps. The app serves requests normally; nothing is dispatched, swept, or auto-created.",
+          "startup",
+        );
+        return;
+      }
+
       startWebhookRetryProcessor();
       startReminderProcessor();
       startMailboxRecoveryProcessor();
