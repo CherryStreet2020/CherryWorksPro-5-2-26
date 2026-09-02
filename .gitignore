@@ -61,6 +61,11 @@ PROD_MIGRATION_RESULT.md
 tmp/
 test-results/
 attached_assets/
+# …EXCEPT the brand asset the client build imports. client/src/components/shared/
+# cherry-logo.tsx does `import cherryIconRed from "@assets/cherry-icon-red.png"`,
+# so with this file ignored the repo CANNOT BUILD FROM A CLEAN CHECKOUT — local
+# builds only worked because the file happened to be on the developer's disk.
+!attached_assets/cherry-icon-red.png
 .env
 .env.local
 .env.production
