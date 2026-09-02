@@ -30,11 +30,23 @@ RUN npm ci
 
 COPY . .
 
-# VITE_* values are inlined into the client bundle at BUILD time; setting them
-# on the Container App later does nothing. Production (.replit
-# [userenv.production]) sets neither VITE_MARKETING_OS_ENABLED nor
-# VITE_EMAIL_OAUTH_ENABLED, so they are deliberately left unset here. Turning
-# them on would smuggle a feature-flag change inside a host migration.
+# VITE_* values are inlined into the client bundle at BUILD time; setting them on
+# the Container App later does nothing at all.
+#
+# CORRECTION (2026-09-02): an earlier version of this file left them unset,
+# reasoning that `.replit [userenv.production]` lists neither. That reasoning was
+# WRONG — they are Replit SECRETS, and secrets reach the deployment build too.
+# Both are "true" in production, verified by reading them out of the Secrets pane.
+#
+# VITE_EMAIL_OAUTH_ENABLED is the load-bearing one: client/src/pages/settings.tsx
+# tests `import.meta.env.VITE_EMAIL_OAUTH_ENABLED === "true"`, which is FALSE when
+# unset — so an image built without it HIDES the "connect mailbox" UI while the
+# server routes work perfectly. The one org on Microsoft 365 could not reconnect
+# its mailbox and nothing would error.
+ARG VITE_EMAIL_OAUTH_ENABLED=true
+ARG VITE_MARKETING_OS_ENABLED=true
+ENV VITE_EMAIL_OAUTH_ENABLED=${VITE_EMAIL_OAUTH_ENABLED}
+ENV VITE_MARKETING_OS_ENABLED=${VITE_MARKETING_OS_ENABLED}
 RUN npm run build
 
 ##############################################################################

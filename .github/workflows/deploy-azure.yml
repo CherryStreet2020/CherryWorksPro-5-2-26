@@ -176,8 +176,14 @@ jobs:
             # authorizes it. --no-logs is REQUIRED: az acr build streams logs to
             # stdout by default, so -o json would capture log text instead of
             # the Run object.
+            # VITE_* are inlined into the client bundle at BUILD time. They must be
+            # passed HERE; setting them on the Container App does nothing. Omitting
+            # VITE_EMAIL_OAUTH_ENABLED silently hides the connect-mailbox UI.
             BUILD=$(az acr build -r "$ACR" -g "$RG" -t "$IMAGE_REPO:$SHA" \
-              --build-arg "GIT_COMMIT_SHA=$SHA" --no-logs -o json .)
+              --build-arg "GIT_COMMIT_SHA=$SHA" \
+              --build-arg "VITE_EMAIL_OAUTH_ENABLED=true" \
+              --build-arg "VITE_MARKETING_OS_ENABLED=true" \
+              --no-logs -o json .)
             DIGEST=$(echo "$BUILD" | jq -r '.outputImages[0].digest // empty')
             case "$DIGEST" in
               sha256:*) : ;;
