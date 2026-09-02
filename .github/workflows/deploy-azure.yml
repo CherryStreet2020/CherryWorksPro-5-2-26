@@ -394,10 +394,6 @@ jobs:
           # revisions and green a combination that never existed. `database` is
           # the only thing in this pipeline that can prove the app is talking to
           # the real database rather than the rehearsal copy.
-          # The single quotes are deliberate: $c and $r are jq variables bound
-          # by --arg below, NOT shell variables. Expanding them here would
-          # inline the values into the filter and break the comparison.
-          # shellcheck disable=SC2016
           # The expected database name defaults to production and must be opted OUT
           # of explicitly, per run. It is not a repo variable on purpose: a variable
           # left set to the rehearsal value would silently disarm the single check
@@ -408,6 +404,12 @@ jobs:
             echo "::warning::REHEARSAL MODE — accepting database '$WANT_DB'. This must NEVER be used once the app serves cherryworkspro.com."
           fi
           echo "expecting database: $WANT_DB"
+          # The single quotes are deliberate: $c, $r and $db are jq variables bound
+          # by --arg below, NOT shell variables. Expanding them here would inline the
+          # values into the filter and break the comparison. This directive must stay
+          # DIRECTLY above the if — shellcheck applies it to the next command, so any
+          # comment or statement inserted between the two silently un-suppresses it.
+          # shellcheck disable=SC2016
           if [ -n "$ROLLBACK" ]; then
             READY_FILTER='.status=="Healthy" and .revision==$r and .database==$db'
           else
