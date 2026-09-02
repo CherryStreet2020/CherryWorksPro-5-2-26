@@ -36,6 +36,10 @@ on:
         description: 'Blank = build and deploy HEAD. A sha256:… digest (from a prior run summary, or the last-known-good tag) = byte-exact rollback, no rebuild.'
         required: false
         default: ''
+      rehearsal:
+        description: 'PRE-CUTOVER ONLY. Set to REHEARSAL to accept the cwp_rehearsal database instead of cwp. Never use this once the app serves cherryworkspro.com.'
+        required: false
+        default: ''
 
 concurrency:
   # Constant group so two dispatches cannot race two updates and leave an older
@@ -126,6 +130,7 @@ jobs:
           EXPECTED_FINGERPRINTS: ${{ vars.EXPECTED_KEY_FINGERPRINTS }}
           SHA: ${{ github.sha }}
           ROLLBACK: ${{ github.event.inputs.image_tag }}
+          REHEARSAL: ${{ github.event.inputs.rehearsal }}
         run: |
           set -euo pipefail
 
@@ -393,10 +398,20 @@ jobs:
           # by --arg below, NOT shell variables. Expanding them here would
           # inline the values into the filter and break the comparison.
           # shellcheck disable=SC2016
+          # The expected database name defaults to production and must be opted OUT
+          # of explicitly, per run. It is not a repo variable on purpose: a variable
+          # left set to the rehearsal value would silently disarm the single check
+          # that proves the app is not talking to the practice copy.
+          WANT_DB="cwp"
+          if [ "${REHEARSAL:-}" = "REHEARSAL" ]; then
+            WANT_DB="cwp_rehearsal"
+            echo "::warning::REHEARSAL MODE — accepting database '$WANT_DB'. This must NEVER be used once the app serves cherryworkspro.com."
+          fi
+          echo "expecting database: $WANT_DB"
           if [ -n "$ROLLBACK" ]; then
-            READY_FILTER='.status=="Healthy" and .revision==$r and .database=="cwp"'
+            READY_FILTER='.status=="Healthy" and .revision==$r and .database==$db'
           else
-            READY_FILTER='.status=="Healthy" and .commit==$c and .revision==$r and .database=="cwp"'
+            READY_FILTER='.status=="Healthy" and .commit==$c and .revision==$r and .database==$db'
           fi
           READY_OK=false
           READY_BODY=""
@@ -404,13 +419,13 @@ jobs:
             READY_BODY=$(curl -fsS --max-time 20 -H "x-internal-maintenance-token: ${{ secrets.INTERNAL_MAINTENANCE_TOKEN }}" \
               "https://$FQDN/api/readyz" 2>/dev/null || true)
             if [ -n "$READY_BODY" ] \
-               && echo "$READY_BODY" | jq -e --arg c "$SHA" --arg r "$NEW" "$READY_FILTER" >/dev/null 2>&1; then
+               && echo "$READY_BODY" | jq -e --arg c "$SHA" --arg r "$NEW" --arg db "$WANT_DB" "$READY_FILTER" >/dev/null 2>&1; then
               READY_OK=true; break
             fi
             sleep 10
           done
           [ "$READY_OK" = true ] \
-            || rollback_and_fail "/api/readyz never reported Healthy with commit=$SHA revision=$NEW database=cwp in a single response (unreachable database, wrong database, or only the old revision answered)"
+            || rollback_and_fail "/api/readyz never reported Healthy with commit=$SHA revision=$NEW database=$WANT_DB in a single response (unreachable database, wrong database, or only the old revision answered)"
 
           # ASSERTION 13 — the four key fingerprints match the last known-good
           # deploy. A wrong BANKING_ or SMTP_ENCRYPTION_KEY makes stored data
