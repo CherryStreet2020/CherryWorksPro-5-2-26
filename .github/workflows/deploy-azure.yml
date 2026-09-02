@@ -182,6 +182,21 @@ jobs:
           fi
           echo "rolling to: $REF"
 
+          # A PREVIOUS ROLLBACK LEAVES SKIP_DB_PUSH=1 BEHIND. The rollback path sets
+          # it so an older image cannot run `push --force` and drop newer columns —
+          # but nothing ever cleared it, and the forward path only changes --image.
+          # Left in place it would make EVERY subsequent deploy silently skip its
+          # schema step: the release goes green, the migration never runs, and no
+          # assertion below can see it. Clear it on the way forward, and assert its
+          # absence after the roll.
+          if [ -z "$ROLLBACK" ]; then
+            if az containerapp show -n "$APP" -g "$RG" \
+                 --query "properties.template.containers[0].env[?name=='SKIP_DB_PUSH'] | length(@)" -o tsv 2>/dev/null | grep -q '^[1-9]'; then
+              echo "::warning::SKIP_DB_PUSH is set (left by an earlier rollback) — removing it so this deploy applies its schema"
+              az containerapp update -n "$APP" -g "$RG" --remove-env-vars SKIP_DB_PUSH >/dev/null
+            fi
+          fi
+
           # --image ONLY. Nothing else on this command.
           NEW=$(az containerapp update -n "$APP" -g "$RG" --image "$REF" \
             --query properties.latestRevisionName -o tsv)
@@ -200,6 +215,16 @@ jobs:
           # afterwards rather than trusting it.
           rollback_and_fail() {
             echo "::error::$1"
+            # Never restore the bootstrap image. deploy_cwp.sh creates the app on
+            # mcr.microsoft.com/k8se/quickstart while the identity and registry
+            # binding are sorted out; if a first deploy failed between create and
+            # the real roll, that placeholder IS the "previous good image", and
+            # restoring it would serve Microsoft's sample page as the product.
+            case "$PREV_IMG" in
+              *mcr.microsoft.com/k8se/quickstart*)
+                echo "::error::previous image is the BOOTSTRAP placeholder ($PREV_IMG) — refusing to roll back onto it. Fix forward, or dispatch a known-good image_tag."
+                PREV_IMG="" ;;
+            esac
             if [ -z "$ROLLBACK" ] && [ -n "$PREV_IMG" ] && [ "$PREV_IMG" != "$REF" ]; then
               echo "::warning::restoring prod to the previous good image $PREV_IMG (with SKIP_DB_PUSH=1 so the older schema cannot drop newer columns)"
               if az containerapp update -n "$APP" -g "$RG" --image "$PREV_IMG" --set-env-vars SKIP_DB_PUSH=1 >/dev/null; then
@@ -323,6 +348,14 @@ jobs:
           # NO HSTS, insecure cookies and stack traces in 500s.
           echo "$T" | jq -e '[.properties.template.containers[0].env[] | select(.name=="NODE_ENV") | .value] | index("production")' >/dev/null \
             || rollback_and_fail "NODE_ENV is not exactly 'production' (a trailing space yields TLS on but CSP/HSTS off, insecure cookies and stack traces in 500s)"
+
+          # ASSERTION 7b — SKIP_DB_PUSH must be ABSENT on a forward deploy. If it
+          # survives, the entrypoint bypasses `drizzle-kit push` entirely and the
+          # release ships with its schema change silently unapplied.
+          if [ -z "$ROLLBACK" ]; then
+            echo "$T" | jq -e '[.properties.template.containers[0].env[]? | select(.name=="SKIP_DB_PUSH")] | length == 0' >/dev/null \
+              || rollback_and_fail "SKIP_DB_PUSH is still set on a forward deploy — the schema step was BYPASSED and this release shipped without its migration"
+          fi
 
           # ASSERTION 8 — both volume mounts. The re-derivation that dropped
           # cherryeam's mounts and lost live upload data is demonstrated on this
