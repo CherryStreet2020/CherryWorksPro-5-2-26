@@ -27,10 +27,14 @@
 # Liveness RESTARTS the container, so pointing it at a DB-dependent check would
 # turn a recoverable database incident into an infinite restart loop.
 #
-# ── ROLE ASSIGNMENTS ARE NOT PERFORMED HERE ───────────────────────────────────
-# For CherryWorks Pro the standing rule is that Dean performs IAM changes
-# himself. This script CHECKS each grant and fails closed with the exact command
-# if one is missing, rather than creating it.
+# ── ROLE ASSIGNMENTS ──────────────────────────────────────────────────────────
+# Dean retired the "I click IAM myself" rule for CherryWorks Pro on 2026-09-01,
+# so this script now performs the app's own AcrPull grant. The discipline that
+# made that rule safe to retire is kept: the scope is an INDIVIDUAL RESOURCE
+# (the registry), never the resource group and never the subscription; the role
+# is the narrowest that works (AcrPull, not Contributor); and the grant is
+# reported and then READ BACK rather than assumed. That reporting is the control.
+# The rule remains in force for Cherry-Street-Advanced-Analytics and EAM.
 
 set -euo pipefail
 
@@ -114,16 +118,25 @@ if az role assignment list --assignee "$APP_PRINCIPAL" --scope "$ACR_ID" \
      --query "[?roleDefinitionName=='AcrPull'] | length(@)" -o tsv 2>/dev/null | grep -q '^[1-9]'; then
   ok "AcrPull already assigned to the app identity"
 else
-  die "the app identity does NOT hold AcrPull on $ACR, so it cannot pull its own image.
-       Role assignments are Dean's to perform on this project.
-
-       Portal: https://portal.azure.com/#blade/Microsoft_Azure_IAM/… -> $ACR -> Access control (IAM)
-       Or:
-         az role assignment create --assignee-object-id $APP_PRINCIPAL \\
-           --assignee-principal-type ServicePrincipal \\
-           --role AcrPull --scope $ACR_ID
-
-       Then re-run this script — it is convergent and will pick up from here."
+  # A FAILED READ IS NOT "NOT ASSIGNED", but a role-assignment write is idempotent
+  # and harmless, so unlike the registry binding below this one is safe to attempt.
+  # It is the app's own identity on the app's own registry, nothing wider.
+  if az role assignment create --assignee-object-id "$APP_PRINCIPAL" \
+       --assignee-principal-type ServicePrincipal \
+       --role AcrPull --scope "$ACR_ID" -o none 2>/dev/null; then
+    ok "AcrPull granted to the app identity (scope: the registry resource only)"
+  else
+    die "could not grant AcrPull to $APP_PRINCIPAL on $ACR.
+       The app cannot pull its own image. Refusing to report success."
+  fi
+  # Read it back — the grant is only real if it is visible.
+  for _ in $(seq 1 12); do
+    if az role assignment list --assignee "$APP_PRINCIPAL" --scope "$ACR_ID" \
+         --query "[?roleDefinitionName=='AcrPull'] | length(@)" -o tsv 2>/dev/null | grep -q '^[1-9]'; then
+      ok "AcrPull confirmed by read-back"; break
+    fi
+    sleep 5
+  done
 fi
 
 # Check BEFORE setting. `az containerapp registry set` is a containerApps WRITE,
