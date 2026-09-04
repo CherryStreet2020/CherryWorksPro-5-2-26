@@ -45,6 +45,17 @@ export function formatHours(value: number | string | null | undefined): string {
   return num.toFixed(2);
 }
 
+/**
+ * Today's date in the user's LOCAL timezone as YYYY-MM-DD — the value an
+ * <input type="date"> expects. `new Date().toISOString().split("T")[0]` is the
+ * UTC date, which for a US user after ~8pm ET is TOMORROW; a payout defaulted
+ * that way is recorded a day late (and in the next month on a month-end).
+ */
+export function todayInputDate(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
   const d = new Date(value + (value.includes("T") ? "" : "T12:00:00"));

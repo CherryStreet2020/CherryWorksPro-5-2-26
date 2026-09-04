@@ -21,10 +21,12 @@ import { FormSection } from "@/components/shared/form-section";
 import { AvatarInitials } from "@/components/shared/avatar-initials";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ActiveFilterBar, type FilterChipDescriptor } from "@/components/active-filter-chip";
-import { formatMoney, formatDate, formatRelativeDate, formatHours } from "@/components/shared/format";
+import { formatMoney, formatDate, formatRelativeDate, formatHours, todayInputDate } from "@/components/shared/format";
+import { extractErrorMessage } from "@/lib/error-utils";
+import { PAYOUT_OFFLINE_METHODS, PAYOUT_OFFLINE_METHOD_LABELS, isExpenseReimbursementPayout, type PayoutOfflineMethod } from "@shared/schema";
 import { useBaseCurrency } from "@/hooks/use-base-currency";
 import {
-  DollarSign, Clock, Users, Plus, Search, ChevronDown, ChevronRight, XCircle, Zap, Send, Download, AlertTriangle, X, ArrowLeft,
+  DollarSign, Clock, Users, Plus, Search, ChevronDown, ChevronRight, XCircle, Zap, Send, Download, AlertTriangle, X, ArrowLeft, CheckCircle2,
 } from "lucide-react";
 import { CostRateInlineEditor } from "@/components/shared/cost-rate-inline-editor";
 import { Link, useLocation } from "wouter";
@@ -104,11 +106,19 @@ export default function PayoutsPage() {
   const [payoutDialogOpen, setPayoutDialogOpen] = useState(false);
   const [selectedTeamMember, setSelectedTeamMember] = useState<TeamMemberSummary | null>(null);
   const [expandedPayoutId, setExpandedPayoutId] = useState<string | null>(null);
+  // "Mark paid" — settle a PENDING auto-payout that was paid OFFLINE (Zelle/ACH/check).
+  // The auto-payout is created on invoice send; for a team that does not use Stripe
+  // Connect its only exits used to be "Send via Stripe" (fails: not onboarded) or Void.
+  const [markPaidPayout, setMarkPaidPayout] = useState<Payout | null>(null);
+  const [markPaidMethod, setMarkPaidMethod] = useState<PayoutOfflineMethod | "">("");
+  const [markPaidReference, setMarkPaidReference] = useState("");
+  const [markPaidDate, setMarkPaidDate] = useState(() => todayInputDate());
+  const [markPaidNote, setMarkPaidNote] = useState("");
   const [costRateWarningDismissed, setCostRateWarningDismissed] = useState(false);
 
   const [payTeamMemberId, setPayTeamMemberId] = useState("");
   const [payAmount, setPayAmount] = useState("");
-  const [payDate, setPayDate] = useState(new Date().toISOString().split("T")[0]);
+  const [payDate, setPayDate] = useState(() => todayInputDate());
   const [payMethod, setPayMethod] = useState("");
   const [payReference, setPayReference] = useState("");
   const [payPeriodStart, setPayPeriodStart] = useState("");
@@ -165,6 +175,61 @@ export default function PayoutsPage() {
     },
   });
 
+  // Which rows get which action. ONE definition each, used by the row buttons —
+  // the eligibility rule had been written out twice, five lines apart.
+  //  * Mark Paid: a pending payout with no Stripe transfer, or one whose Stripe
+  //    transfer FAILED (no money moved, so it is released back to the offline path).
+  //    Expense reimbursements are excluded — they settle from the Expenses page,
+  //    which also clears the accrual booked at approval.
+  //  * Send via Stripe: a pending payout with no transfer yet.
+  const canMarkPaidOffline = (p: Payout) =>
+    !isExpenseReimbursementPayout(p.notes) &&
+    ((p.status === "PENDING" && !p.stripeTransferId) || (p.status === "VOID" && p.stripeTransferStatus === "failed"));
+  const canSendViaStripe = (p: Payout) => p.status === "PENDING" && !p.stripeTransferId;
+
+  const openMarkPaid = (p: Payout) => {
+    const m = (p.paymentMethod || "").toUpperCase();
+    // Pre-select only when the payout already names a real offline rail. An
+    // auto-payout for a member with no method on file says "TBD" — leave the
+    // select empty and make the admin choose, rather than quietly recording Zelle.
+    setMarkPaidMethod((PAYOUT_OFFLINE_METHODS as readonly string[]).includes(m) ? (m as PayoutOfflineMethod) : "");
+    setMarkPaidReference(p.referenceNumber || "");
+    setMarkPaidDate(todayInputDate());
+    setMarkPaidNote("");
+    setMarkPaidPayout(p);
+  };
+  type MarkPaidVars = { id: string; paymentMethod: PayoutOfflineMethod; referenceNumber: string | null; payoutDate: string; notes?: string };
+  const markPaidMutation = useMutation({
+    // The payload is captured at submit time and carried as `variables`, so the
+    // success toast and the dialog-close decision use what was actually sent —
+    // not whatever the form holds by the time the response arrives.
+    mutationFn: async (vars: MarkPaidVars) => {
+      const { id, ...body } = vars;
+      const res = await apiRequest("PATCH", `/api/payouts/${id}`, { status: "COMPLETED", ...body });
+      return res.json();
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/payouts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payouts/summary"] });
+      // Close the dialog only if it is still showing THIS payout.
+      setMarkPaidPayout(cur => (cur && cur.id === vars.id ? null : cur));
+      toast({ title: "Marked paid", description: `Recorded as paid via ${PAYOUT_OFFLINE_METHOD_LABELS[vars.paymentMethod]}.` });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Could not mark paid", description: extractErrorMessage(err), variant: "destructive" });
+    },
+  });
+  const submitMarkPaid = () => {
+    if (!markPaidPayout || !markPaidMethod || !markPaidDate) return;
+    markPaidMutation.mutate({
+      id: markPaidPayout.id,
+      paymentMethod: markPaidMethod,
+      referenceNumber: markPaidReference || null,
+      payoutDate: markPaidDate,
+      ...(markPaidNote ? { notes: [markPaidPayout.notes, markPaidNote].filter(Boolean).join(" — ") } : {}),
+    });
+  };
+
   const voidPayoutMutation = useMutation({
     mutationFn: async (id: string) => {
       await apiRequest("PATCH", `/api/payouts/${id}`, { status: "VOID" });
@@ -203,9 +268,21 @@ export default function PayoutsPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/payouts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/payouts/summary"] });
-      const succeeded = data.results?.filter((r: any) => r.success).length || 0;
-      const failed = data.results?.filter((r: any) => !r.success).length || 0;
-      toast({ title: "Bulk payment complete", description: `${succeeded} sent, ${failed} skipped or failed.` });
+      const results: any[] = data.results || [];
+      const sent = results.filter(r => r.success).length;
+      // The server skips (does not attempt) members who are not on Stripe Connect
+      // or are W-2. Nothing was paid for them — say so, and point at Mark Paid.
+      const offline = results.filter(r => !r.success && /not connected|W-2/i.test(r.error || "")).length;
+      const failed = results.length - sent - offline;
+      toast({
+        title: sent > 0 ? "Bulk payment complete" : "Nothing sent via Stripe",
+        description: [
+          `${sent} sent via Stripe Connect`,
+          offline > 0 ? `${offline} not on Stripe — nothing was sent; pay them offline, then use “Mark Paid”` : null,
+          failed > 0 ? `${failed} failed — open each payout for the error` : null,
+        ].filter(Boolean).join(" · "),
+        variant: failed > 0 && sent === 0 ? "destructive" : undefined,
+      });
     },
     onError: (err: Error) => {
       toast({ title: "Bulk payment failed", description: err.message, variant: "destructive" });
@@ -650,7 +727,17 @@ export default function PayoutsPage() {
                     <span className="text-xs min-w-[70px] text-right" style={{ color: "var(--lux-text-muted)" }}>
                       {formatDate(p.payoutDate)}
                     </span>
-                    {p.status === "PENDING" && !p.stripeTransferId && (
+                    {canMarkPaidOffline(p) && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={e => { e.stopPropagation(); openMarkPaid(p); }} data-testid={`button-mark-paid-${p.id}`} aria-label="Mark Paid">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Mark Paid (Zelle / ACH / check)</TooltipContent>
+                      </Tooltip>
+                    )}
+                    {canSendViaStripe(p) && (
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={e => { e.stopPropagation(); executePayoutMutation.mutate(p.id); }} disabled={executePayoutMutation.isPending} data-testid={`button-execute-payout-${p.id}`} aria-label="Execute payout">
@@ -685,6 +772,68 @@ export default function PayoutsPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={!!markPaidPayout} onOpenChange={v => { if (!v && !markPaidMutation.isPending) setMarkPaidPayout(null); }}>
+        <DialogContent className="max-w-md" style={{ background: "var(--lux-surface)", borderColor: "var(--lux-border)" }}>
+          <DialogHeader>
+            <DialogTitle style={{ color: "var(--lux-text)" }}>
+              Mark Paid{markPaidPayout ? ` — ${teamMemberName(markPaidPayout.teamMemberId)}` : ""}
+            </DialogTitle>
+          </DialogHeader>
+          {markPaidPayout && (
+            <div className="space-y-3 pt-1">
+              <div className="flex items-baseline justify-between p-2 rounded-lg" style={{ background: "var(--lux-bg)" }}>
+                <span className="text-xs" style={{ color: "var(--lux-text-muted)" }}>
+                  {markPaidPayout.periodStart && markPaidPayout.periodEnd ? `${formatDate(markPaidPayout.periodStart)} – ${formatDate(markPaidPayout.periodEnd)}` : "Pending payout"}
+                </span>
+                <span className="text-lg font-bold tabular-nums" style={{ color: "var(--lux-text)" }} data-testid="text-mark-paid-amount">
+                  {formatMoney(Number(markPaidPayout.amount), baseCurrency)}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Paid on *</Label>
+                  <Input type="date" value={markPaidDate} max={todayInputDate()} onChange={e => setMarkPaidDate(e.target.value)} data-testid="input-mark-paid-date" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Method *</Label>
+                  <Select value={markPaidMethod} onValueChange={v => setMarkPaidMethod(v as PayoutOfflineMethod)}>
+                    <SelectTrigger data-testid="select-mark-paid-method"><SelectValue placeholder="Select method" /></SelectTrigger>
+                    <SelectContent>
+                      {PAYOUT_OFFLINE_METHODS.map(m => (
+                        <SelectItem key={m} value={m}>{PAYOUT_OFFLINE_METHOD_LABELS[m]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Reference / confirmation #</Label>
+                <Input value={markPaidReference} onChange={e => setMarkPaidReference(e.target.value)} placeholder="Zelle confirmation, check #, trace ID" data-testid="input-mark-paid-reference" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Note</Label>
+                <Input value={markPaidNote} onChange={e => setMarkPaidNote(e.target.value)} placeholder="Optional" data-testid="input-mark-paid-notes" />
+              </div>
+              <p className="text-[11px]" style={{ color: "var(--lux-text-muted)" }}>
+                Records this payout as paid outside the app and books it to the ledger. The linked hours stay attached, so they will not show as unpaid again.
+              </p>
+              <div className="flex justify-end gap-2 pt-1">
+                <Button variant="ghost" onClick={() => setMarkPaidPayout(null)} disabled={markPaidMutation.isPending} data-testid="button-mark-paid-cancel">Cancel</Button>
+                <Button
+                  className="text-white"
+                  style={{ background: "var(--gradient-brand)" }}
+                  onClick={submitMarkPaid}
+                  disabled={markPaidMutation.isPending || !markPaidMethod || !markPaidDate || markPaidDate > todayInputDate()}
+                  data-testid="button-mark-paid-confirm"
+                >
+                  {markPaidMutation.isPending ? "Saving..." : "Mark Paid"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={payoutDialogOpen} onOpenChange={v => { if (!v) { setPayoutDialogOpen(false); resetForm(); } else setPayoutDialogOpen(true); }}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden" style={{ background: "var(--lux-surface)", borderColor: "var(--lux-border)" }}>

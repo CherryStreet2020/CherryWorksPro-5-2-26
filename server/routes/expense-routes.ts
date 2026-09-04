@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
 import { eq, and } from "drizzle-orm";
-import { expenses, expenseCategories, glAccounts, round2, createExpenseSchema, createExpenseReportSchema, unlockExpenseReportSchema } from "@shared/schema";
+import { expenses, expenseCategories, glAccounts, round2, createExpenseSchema, createExpenseReportSchema, unlockExpenseReportSchema, EXPENSE_REIMBURSEMENT_NOTE_PREFIX } from "@shared/schema";
 import { sanitizeErrorMessage, requireAuth, requireAdmin, createAutoJournalEntry, isGlPosted , requirePlanTier } from "./middleware";
 import { sendRejectionEmail, sendExpenseApprovedEmail, sendExpenseReportApprovedEmail, sendExpenseReportReopenedEmail, getSmtpConfigFromOrg } from "../email";
 import rateLimit from "express-rate-limit";
@@ -705,7 +705,7 @@ app.post("/api/expenses/:id/approve", requireAdmin, async (req, res) => {
             referenceNumber: null,
             periodStart: exp.date,
             periodEnd: exp.date,
-            notes: `Expense reimbursement: ${exp.vendor || exp.description || "Expense"} ($${exp.amount})`,
+            notes: `${EXPENSE_REIMBURSEMENT_NOTE_PREFIX}${exp.vendor || exp.description || "Expense"} ($${exp.amount})`,
             status: "PENDING",
           });
           await storage.createAuditLog({
