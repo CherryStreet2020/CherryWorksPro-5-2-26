@@ -1610,16 +1610,21 @@ export function round2(n: number): number {
 // through these two functions: the admin's Record Payment dialog
 // (storage.getUnpaidTimeEntriesForTeamMember), the payout create handler
 // (POST /api/payouts), the admin Payouts summary (storage.getPayoutSummaryByTeamMember)
-// and the member's own view (storage.getMemberEarningsSummary). Prefer the rate
-// snapshot captured when the hours were logged; fall back to the member's CURRENT
-// cost rate on that project; a member with neither is worth 0 and is flagged.
-// Round each line to the cent from UNROUNDED hours (never round the hours first),
-// then sum the rounded lines, so every screen foots to the amount actually paid.
+// the invoice-send auto-payout (invoice-routes) and the member's own view
+// (storage.getMemberEarningsSummary). Prefer the rate snapshot captured when the
+// hours were logged; fall back to the member's CURRENT cost rate on that project;
+// a member with neither is worth 0 and is flagged. A snapshot of 0 counts as
+// MISSING: the rate resolver stores "0.00" (ZERO_FLAGGED) when no rate existed at
+// logging time, so those hours must pick up the project rate once an admin sets
+// one instead of being worth $0 forever. Round each line to the cent from
+// UNROUNDED hours (never round the hours first), then sum the rounded lines, so
+// every screen foots to the amount actually paid.
 export function resolveCostRate(
   costRateSnapshot: string | number | null | undefined,
   projectCostRate: number | undefined,
 ): { rate: number; snapshotMissing: boolean } {
-  const snapshotMissing = costRateSnapshot == null || String(costRateSnapshot) === "";
+  const snapshotMissing =
+    costRateSnapshot == null || String(costRateSnapshot).trim() === "" || !(Number(costRateSnapshot) > 0);
   const rate = !snapshotMissing ? Number(costRateSnapshot) : (projectCostRate || 0);
   return { rate, snapshotMissing };
 }

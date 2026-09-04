@@ -23,6 +23,10 @@
  *   F 50m not invoiced, NO snapshot, project rate 135                     → UNBILLED  112.50 (round2(50/60×135), not 0.83×135)
  *   G 1h invoiced → linked to PENDING payout P4 (135)                     → PENDING_PAYOUT (not owed, not paid)
  *   M 30m not invoiced, NO snapshot, project WITHOUT a rate               → UNBILLED  0.00 + costRateMissing
+ *   Z 1h not invoiced, snapshot "0.00" (logged before any rate existed), project rate 135 → UNBILLED 135.00
+ *   Z2 1h not invoiced, snapshot "0.00", project WITHOUT a rate            → UNBILLED  0.00 + costRateMissing
+ *   P3 was paid at an OLDER rate: its line amount is 120 while today's valuation of N is 135 —
+ *   the member sees the 120 that was actually paid, never a re-valuation.
  *   P2 COMPLETED 500, no links ("old system")  P5 COMPLETED 89 expense reimbursement  P6 VOID 999 (ignored)
  *   P7 PENDING 40 expense reimbursement (approved, not yet paid) → pending, named as a reimbursement
  * Member 2: one 1h invoiced entry at 100, no payouts.
@@ -90,7 +94,7 @@ async function get(app: Express, path: string): Promise<{ status: number; body: 
 
 const PAID_INVOICE = randomUUID();
 const SENT_INVOICE = randomUUID();
-const E = { A: randomUUID(), B: randomUUID(), C: randomUUID(), D: randomUUID(), N: randomUUID(), F: randomUUID(), G: randomUUID(), M: randomUUID(), M2: randomUUID() };
+const E = { A: randomUUID(), B: randomUUID(), C: randomUUID(), D: randomUUID(), N: randomUUID(), F: randomUUID(), G: randomUUID(), M: randomUUID(), Z: randomUUID(), Z2: randomUUID(), M2: randomUUID() };
 const P = { P1: randomUUID(), P2: randomUUID(), P3: randomUUID(), P4: randomUUID(), P5: randomUUID(), P6: randomUUID(), P7: randomUUID() };
 
 type EntryRow = { id: string; user: string; project: string; minutes: number; billable: boolean; invoiced: boolean; snapshot: string | null };
@@ -103,13 +107,15 @@ const ENTRIES: EntryRow[] = [
   { id: E.F, user: MEMBER_ID, project: PROJECT_ID, minutes: 50, billable: true, invoiced: false, snapshot: null },
   { id: E.G, user: MEMBER_ID, project: PROJECT_ID, minutes: 60, billable: true, invoiced: true, snapshot: "135" },
   { id: E.M, user: MEMBER_ID, project: PROJECT_NO_RATE_ID, minutes: 30, billable: true, invoiced: false, snapshot: null },
+  { id: E.Z, user: MEMBER_ID, project: PROJECT_ID, minutes: 60, billable: true, invoiced: false, snapshot: "0.00" },
+  { id: E.Z2, user: MEMBER_ID, project: PROJECT_NO_RATE_ID, minutes: 60, billable: true, invoiced: false, snapshot: "0.00" },
   { id: E.M2, user: MEMBER2_ID, project: PROJECT_ID, minutes: 60, billable: true, invoiced: true, snapshot: "100" },
 ];
 type PayoutRow = { id: string; amount: string; date: string; method: string; status: string; ref: string; notes: string | null; links: string[] };
 const PAYOUTS: PayoutRow[] = [
   { id: P.P1, amount: "270.00", date: "2026-08-10", method: "ZELLE", status: "COMPLETED", ref: "Z-1", notes: null, links: [E.A] },
   { id: P.P2, amount: "500.00", date: "2026-03-06", method: "ZELLE", status: "COMPLETED", ref: "Z-0", notes: "old system", links: [] },
-  { id: P.P3, amount: "135.00", date: "2026-08-20", method: "ZELLE", status: "COMPLETED", ref: "Z-3", notes: null, links: [E.N] },
+  { id: P.P3, amount: "120.00", date: "2026-08-20", method: "ZELLE", status: "COMPLETED", ref: "Z-3", notes: null, links: [E.N] },
   { id: P.P4, amount: "135.00", date: "2026-09-01", method: "STRIPE_CONNECT", status: "PENDING", ref: "S-4", notes: null, links: [E.G] },
   { id: P.P5, amount: "89.00", date: "2026-08-25", method: "ZELLE", status: "COMPLETED", ref: "Z-5", notes: `${EXPENSE_REIMBURSEMENT_NOTE_PREFIX}flight`, links: [] },
   { id: P.P6, amount: "999.00", date: "2026-08-01", method: "ZELLE", status: "VOID", ref: "Z-6", notes: "voided", links: [] },
@@ -118,18 +124,18 @@ const PAYOUTS: PayoutRow[] = [
 
 // Expected member-1 figures, derived from the fixture above (see header).
 const EXPECTED = {
-  unbilledAmount: round2(135 + 112.5 + 0),
-  unbilledMinutes: 60 + 50 + 30,
+  unbilledAmount: round2(135 + 112.5 + 0 + 135 + 0),   // D + F + M + Z + Z2
+  unbilledMinutes: 60 + 50 + 30 + 60 + 60,
   awaitingAmount: 540,
   awaitingHours: 4,
-  totalOwed: round2(135 + 112.5 + 540),
+  totalOwed: round2(135 + 112.5 + 0 + 135 + 0 + 540),
   pendingAmount: 175,         // P4 135 (earnings, in flight) + P7 40 (approved reimbursement)
   paidHours: 3,               // A 2h + N 1h
-  earningsReceived: 905,      // P1 270 + P2 500 + P3 135
-  linkedToHours: 405,         // P1 + P3
+  earningsReceived: 890,      // P1 270 + P2 500 + P3 120
+  linkedToHours: 390,         // P1 + P3
   withoutLinkedHours: 500,    // P2
   reimbursements: 89,         // P5
-  totalReceivedAll: 994,
+  totalReceivedAll: 979,
 };
 
 beforeAll(async () => {
@@ -181,7 +187,7 @@ describe("GET /api/dashboard/my — earnings from the member's seat", () => {
     // a project with no rate is worth 0 and flagged — exactly like the admin page.
     expect(e.unbilled.minutes).toBe(EXPECTED.unbilledMinutes);
     expect(e.unbilled.amount).toBe(EXPECTED.unbilledAmount);
-    expect(e.unbilled.byProject.map((p: any) => [p.projectName, p.amount])).toEqual([["PT Project", 247.5], ["PT No-Rate Project", 0]]);
+    expect(e.unbilled.byProject.map((p: any) => [p.projectName, p.amount, p.minutes])).toEqual([["PT Project", 382.5, 170], ["PT No-Rate Project", 0, 90]]);
     expect(e.costRateMissing).toBe(true);
     expect(e.totalOwed).toBe(EXPECTED.totalOwed);
     // A pending payout is neither owed nor paid; it is shown as in flight.
@@ -198,7 +204,7 @@ describe("GET /api/dashboard/my — earnings from the member's seat", () => {
     const byId = Object.fromEntries(e.paid.items.map((i: any) => [i.id, i]));
     expect(byId[P.P1]).toMatchObject({ kind: "EARNINGS", linkedHours: 2, amount: 270, paymentMethod: "ZELLE" });
     expect(String(byId[P.P1].payoutDate)).toMatch(/^2026-08-10/);
-    expect(byId[P.P3]).toMatchObject({ kind: "EARNINGS", linkedHours: 1, amount: 135 });
+    expect(byId[P.P3]).toMatchObject({ kind: "EARNINGS", linkedHours: 1, amount: 120 });
     expect(byId[P.P2]).toMatchObject({ kind: "EARNINGS", linkedHours: 0, linkedMinutes: 0, amount: 500 });
     expect(byId[P.P5]).toMatchObject({ kind: "EXPENSE_REIMBURSEMENT", linkedHours: 0, amount: 89 });
   });
@@ -245,7 +251,11 @@ describe("GET /api/my/earnings — the badge equals the list, and both endpoints
     // Per-entry ledger foots to the buckets.
     const byId = Object.fromEntries(b.timeEntries.map((t: any) => [t.id, t]));
     expect(byId[E.A]).toMatchObject({ status: "PAID", isPaid: true, payoutId: P.P1, amount: 270 });
-    expect(byId[E.N]).toMatchObject({ status: "PAID", isPaid: true, payoutId: P.P3, amount: 135, billable: false });
+    // N was paid at an older rate: the ledger shows the 120 that was actually paid, not today's 135.
+    expect(byId[E.N]).toMatchObject({ status: "PAID", isPaid: true, payoutId: P.P3, amount: 120, billable: false });
+    // A "0.00" snapshot means "no rate when logged": the project rate applies now; no rate anywhere → 0 and flagged.
+    expect(byId[E.Z]).toMatchObject({ status: "UNBILLED", amount: 135, costRate: 135 });
+    expect(byId[E.Z2]).toMatchObject({ status: "UNBILLED", amount: 0, costRate: 0 });
     expect(byId[E.G]).toMatchObject({ status: "PENDING_PAYOUT", isPaid: false, payoutId: P.P4 });
     expect(byId[E.B]).toMatchObject({ status: "BILLED", isPaid: false, payoutId: null });
     expect(byId[E.F]).toMatchObject({ status: "UNBILLED", amount: 112.5, costRate: 135 });
@@ -258,7 +268,8 @@ describe("GET /api/my/earnings — the badge equals the list, and both endpoints
     // What the admin would be offered to pay right now:
     const unpaid = await storage.getUnpaidTimeEntriesForTeamMember(ORG_ID, MEMBER_ID);
     expect(round2(unpaid.reduce((s, e) => s + e.value, 0))).toBe(EXPECTED.totalOwed);
-    expect(unpaid.map(e => e.id).sort()).toEqual([E.B, E.C, E.D, E.F, E.M].sort());
+    expect(unpaid.map(e => e.id).sort()).toEqual([E.B, E.C, E.D, E.F, E.M, E.Z, E.Z2].sort());
+    expect(unpaid.find(e => e.id === E.Z)!.value).toBe(135);
     // What the admin Payouts page shows for this member:
     const adminRow = (await storage.getPayoutSummaryByTeamMember(ORG_ID)).find(r => r.teamMemberId === MEMBER_ID)!;
     expect(adminRow.unpaidTimeValue).toBe(EXPECTED.totalOwed);

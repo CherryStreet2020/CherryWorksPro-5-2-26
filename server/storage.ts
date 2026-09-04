@@ -4432,17 +4432,20 @@ export class DatabaseStorage {
 
     // One query for every hour these payouts cover (not one per payout).
     const linkRows = payouts.length === 0 ? [] : await db
-      .select({ payoutId: payoutTimeEntries.payoutId, timeEntryId: payoutTimeEntries.timeEntryId })
+      .select({ payoutId: payoutTimeEntries.payoutId, timeEntryId: payoutTimeEntries.timeEntryId, amount: payoutTimeEntries.amount })
       .from(payoutTimeEntries)
       .where(and(eq(payoutTimeEntries.orgId, orgId), inArray(payoutTimeEntries.payoutId, payouts.map(p => p.id))));
     const payoutById = new Map(payouts.map(p => [p.id, p]));
     const payoutIdByEntry = new Map<string, string>();
+    // The line amount recorded on the payout — what was actually paid for the entry.
+    const paidAmountByEntry = new Map<string, number | null>();
     for (const l of linkRows) {
       // linkTimeEntriesToPayout guarantees one non-VOID payout per entry; if legacy
       // data ever carries two, the COMPLETED one is the truth.
       const prev = payoutIdByEntry.get(l.timeEntryId);
       if (!prev || (payoutById.get(prev)?.status !== "COMPLETED" && payoutById.get(l.payoutId)?.status === "COMPLETED")) {
         payoutIdByEntry.set(l.timeEntryId, l.payoutId);
+        paidAmountByEntry.set(l.timeEntryId, l.amount == null ? null : round2(Number(l.amount)));
       }
     }
 
@@ -4478,9 +4481,13 @@ export class DatabaseStorage {
     type EntryStatus = "PAID" | "PENDING_PAYOUT" | "AWAITING_PAYOUT" | "UNBILLED";
     const ledger = entries.map(e => {
       const { rate, snapshotMissing } = resolveCostRate(e.costRateSnapshot, costRateByProject[e.projectId]);
-      const amount = timeEntryPayoutValue(e.minutes, rate);
       const payoutId = payoutIdByEntry.get(e.id) ?? null;
       const payout = payoutId ? payoutById.get(payoutId) : undefined;
+      // Owed hours are valued at today's chain; hours already on a payout carry the
+      // amount that payout recorded for them — never a re-valuation at today's rate.
+      const amount = payoutId
+        ? (paidAmountByEntry.get(e.id) ?? timeEntryPayoutValue(e.minutes, rate))
+        : timeEntryPayoutValue(e.minutes, rate);
       let status: EntryStatus;
       if (payout && payout.status === "COMPLETED") {
         status = "PAID";

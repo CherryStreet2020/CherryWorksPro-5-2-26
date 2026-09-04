@@ -4,7 +4,7 @@ import { db, pool } from "../db";
 import { eq, desc, and, gte } from "drizzle-orm";
 import { z } from "zod";
 import { createHash, randomBytes } from "crypto";
-import { invoiceLines, invoices, payments, projectMembers, timeEntries, glJournalEntries, generateInvoiceSchema, addInvoiceLineSchema, updateInvoiceLineSchema, updateInvoiceSchema, round2 } from "@shared/schema";
+import { invoiceLines, invoices, payments, projectMembers, timeEntries, glJournalEntries, generateInvoiceSchema, addInvoiceLineSchema, updateInvoiceLineSchema, updateInvoiceSchema, round2, resolveCostRate, timeEntryPayoutValue } from "@shared/schema";
 import { sanitizeErrorMessage, requireAdmin, requireManagerOrAbove, publicTokenLimiter, EDITABLE_STATUSES, buildInvoiceSnapshot, saveRevisionIfNeeded, createAutoJournalEntry, isGlPosted, buildInvoiceEmailHtml } from "./middleware";
 import { sendInvoiceEmail, getSmtpConfigFromOrg, pickRecipients } from "../email";
 import { generateInvoicePdf } from "../pdf";
@@ -951,7 +951,7 @@ app.post(
             const alreadyHasPayout = await storage.hasActiveInvoicePayout(orgId, invoice.id, invoice.number, teamMemberId);
             if (alreadyHasPayout) continue;
 
-            const memberships = await db.select().from(projectMembers).where(eq(projectMembers.userId, teamMemberId));
+            const memberships = await db.select().from(projectMembers).where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.userId, teamMemberId)));
             const costRateByProject: Record<string, number> = {};
             for (const m of memberships) {
               costRateByProject[m.projectId] = Number(m.costRateHourly) || 0;
@@ -963,8 +963,9 @@ app.post(
             let maxDate = entries[0].date;
 
             for (const e of entries) {
-              const rate = e.costRateSnapshot != null ? Number(e.costRateSnapshot) : (costRateByProject[e.projectId] || 0);
-              const amt = round2((e.minutes / 60) * rate);
+              // Same per-line math as Record Payment / POST /api/payouts (shared/schema.ts).
+              const { rate } = resolveCostRate(e.costRateSnapshot, costRateByProject[e.projectId]);
+              const amt = timeEntryPayoutValue(e.minutes, rate);
               totalOwed += amt;
               entryAmounts.push({ timeEntryId: e.id, amount: String(amt) });
               if (e.date < minDate) minDate = e.date;

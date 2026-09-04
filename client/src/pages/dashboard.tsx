@@ -627,7 +627,7 @@ function TeamMemberDashboard() {
   const baseCurrency = useBaseCurrency();
   const [, navigate] = useLocation();
   const { data: myData, isLoading } = useQuery<any>({ queryKey: ["/api/dashboard/my"] });
-  const { data: earningsData } = useQuery<any>({ queryKey: ["/api/my/earnings"] });
+  const { data: earningsData, isError: earningsError } = useQuery<any>({ queryKey: ["/api/my/earnings"] });
 
   if (isLoading) {
     return (
@@ -665,7 +665,8 @@ function TeamMemberDashboard() {
   const totalOwed = Number(earnings.totalOwed ?? 0);
   const totalReceived = Number(paid.totalReceived ?? 0);
   const recentPayouts: any[] = paid.items ?? [];
-  const hasAnyEarnings = unbilled.amount > 0 || awaiting.amount > 0 || totalReceived > 0 || pendingPayouts.count > 0 || reimbursements.count > 0;
+  const completedPayoutCount = (paid.linkedToHours?.count ?? 0) + withoutLinked.count + reimbursements.count;
+  const hasAnyEarnings = unbilled.amount > 0 || unbilled.hours > 0 || awaiting.amount > 0 || awaiting.hours > 0 || totalReceived > 0 || pendingPayouts.count > 0 || reimbursements.count > 0;
 
   return (
     <div className="px-6 lg:px-8 xl:px-10 py-6 space-y-6">
@@ -766,7 +767,10 @@ function TeamMemberDashboard() {
 
           {recentPayouts.length > 0 && (
             <div>
-              <p className="text-xs font-semibold mb-2" style={{ color: "var(--lux-text-secondary)" }}>Recent Payouts to You</p>
+              <p className="text-xs font-semibold mb-2" style={{ color: "var(--lux-text-secondary)" }}>
+                Recent Payouts to You
+                {completedPayoutCount > recentPayouts.length && <span className="font-normal" style={{ color: "var(--lux-text-muted)" }}> · {recentPayouts.length} most recent of {completedPayoutCount}; the totals above cover all of them</span>}
+              </p>
               <div className="space-y-1">
                 {recentPayouts.map((item: any, i: number) => (
                   <div key={item.id || i} className="flex items-center justify-between py-1.5 px-3 rounded" style={{ background: "var(--lux-surface-alt)" }} data-testid={`row-paid-${i}`}>
@@ -868,8 +872,18 @@ function TeamMemberDashboard() {
               </span>
             )}
           </div>
-          {earningsData?.payoutHistory?.length > 0 ? (
+          {earningsError && (
+            <p className="text-xs py-4" style={{ color: "#ef4444" }} data-testid="warning-payout-history-unavailable">
+              Your payout history couldn't be loaded right now. Refresh the page; if it persists, tell your admin.
+            </p>
+          )}
+          {!earningsError && earningsData?.payoutHistory?.length > 0 ? (
             <div className="space-y-2">
+              {earningsData.payoutHistory.length > 10 && (
+                <p className="text-xs" style={{ color: "var(--lux-text-muted)" }} data-testid="text-payout-history-truncated">
+                  Showing the 10 most recent of {earningsData.payoutHistory.length} payouts — the total above covers all {earningsData.payoutHistory.length}.
+                </p>
+              )}
               {earningsData.payoutHistory.slice(0, 10).map((p: any) => (
                 <div key={p.id} className="flex items-center justify-between py-2 px-3 rounded-lg" style={{ background: "var(--lux-surface-alt)" }} data-testid={`row-payout-${p.id}`}>
                   <div className="flex items-center gap-3">
@@ -898,7 +912,7 @@ function TeamMemberDashboard() {
                 </div>
               ))}
             </div>
-          ) : (
+          ) : !earningsError && (
             <p className="text-xs text-center py-6" style={{ color: "var(--lux-text-muted)" }}>
               No payouts recorded yet. Once your time is billed and paid, payouts will appear here.
             </p>
