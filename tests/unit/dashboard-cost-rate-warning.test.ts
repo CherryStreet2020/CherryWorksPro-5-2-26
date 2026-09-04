@@ -1,69 +1,21 @@
+/**
+ * GET /api/dashboard/my — plumbing of the member earnings summary.
+ *
+ * The earnings math itself lives in storage.getMemberEarningsSummary and is pinned
+ * against a real database in tests/integration/member-earnings-payout-truth.test.ts
+ * (rates, rounding, buckets, cost-rate-missing, agreement with the admin's payout
+ * math). This unit file only checks that the route passes the summary through
+ * unchanged, trims the recent-payout list to completed payouts, and degrades
+ * to an explicit "unavailable" flag — never a silent $0 — when the summary fails.
+ */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import type { AddressInfo, Server } from "node:net";
 
-type MockTimeEntry = {
-  id: string;
-  projectId: string;
-  projectName: string;
-  date: string;
-  minutes: number;
-  billable: boolean;
-  invoiced: boolean;
-  invoiceLineId: string | null;
-  notes: string | null;
-  serviceId: string | null;
-  serviceName: string | null;
-  costRate: string | number | null;
-};
-
-type MockInvoiceLine = { id: string; invoiceId: string; orgId: string };
-type MockInvoice = { id: string; orgId: string; status: string; dueDate: string | null };
-type MockPayment = { id: string; invoiceId: string; orgId: string; date: string };
-
-type DbResults = {
-  invoiceLines: MockInvoiceLine[];
-  invoices: MockInvoice[];
-  payments: MockPayment[];
-};
-
-type MockStorage = {
-  getDashboardStats: ReturnType<typeof vi.fn>;
-  getOutstandingAR: ReturnType<typeof vi.fn>;
-  getServiceRevenue: ReturnType<typeof vi.fn>;
-  getCollected: ReturnType<typeof vi.fn>;
-  getActiveTeamCount: ReturnType<typeof vi.fn>;
-  getActiveTeamMembersList: ReturnType<typeof vi.fn>;
-  getRecentActivity: ReturnType<typeof vi.fn>;
-  getBankConnectionsByOrg: ReturnType<typeof vi.fn>;
-  getBankTransactionsByOrg: ReturnType<typeof vi.fn>;
-  getTimeEntriesByUser: ReturnType<typeof vi.fn>;
-  getUserProjects: ReturnType<typeof vi.fn>;
-  getTimesheetWeek: ReturnType<typeof vi.fn>;
-};
-
-type MockDb = {
-  __setResults(r: DbResults): void;
-  select(): { from(table: unknown): SelectChain };
-};
-
-type SelectChain = {
-  from(table: unknown): SelectChain;
-  where(...args: unknown[]): SelectChain;
-  orderBy(...args: unknown[]): SelectChain;
-  limit(n: number): Promise<unknown[]>;
-};
-
 vi.mock("../../server/routes/middleware", () => {
   const passthrough = (req: Request, _res: Response, next: NextFunction) => {
-    const session = (req as Request & { session?: Record<string, unknown> }).session;
-    if (!session) {
-      (req as Request & { session: Record<string, unknown> }).session = {
-        userId: "user-1",
-        orgId: "org-1",
-        role: "ADMIN",
-      };
-    }
+    const r = req as Request & { session?: Record<string, unknown> };
+    if (!r.session) r.session = { userId: "user-1", orgId: "org-1", role: "TEAM_MEMBER" };
     next();
   };
   return {
@@ -75,8 +27,8 @@ vi.mock("../../server/routes/middleware", () => {
   };
 });
 
-vi.mock("../../server/storage", () => {
-  const storage: MockStorage = {
+vi.mock("../../server/storage", () => ({
+  storage: {
     getDashboardStats: vi.fn().mockResolvedValue({}),
     getOutstandingAR: vi.fn().mockResolvedValue(0),
     getServiceRevenue: vi.fn().mockResolvedValue(0),
@@ -86,208 +38,107 @@ vi.mock("../../server/storage", () => {
     getRecentActivity: vi.fn().mockResolvedValue([]),
     getBankConnectionsByOrg: vi.fn().mockResolvedValue([]),
     getBankTransactionsByOrg: vi.fn().mockResolvedValue([]),
-    getTimeEntriesByUser: vi.fn(),
+    getTimeEntriesByUser: vi.fn().mockResolvedValue([]),
     getUserProjects: vi.fn().mockResolvedValue([]),
     getTimesheetWeek: vi.fn().mockResolvedValue(null),
-  };
-  return { storage };
-});
+    getMemberEarningsSummary: vi.fn(),
+  },
+}));
 
-vi.mock("../../server/db", () => {
-  const dbResults: DbResults = { invoiceLines: [], invoices: [], payments: [] };
-  const buildChain = (rows: unknown[]): SelectChain => {
-    const chain: SelectChain = {
-      from: () => chain,
-      where: () => chain,
-      orderBy: () => chain,
-      limit: () => Promise.resolve(rows),
-    };
-    return chain;
-  };
-  const tableName = (table: unknown): string => {
-    const t = table as Record<PropertyKey, unknown>;
-    const symName = t?.[Symbol.for("drizzle:Name")];
-    if (typeof symName === "string") return symName;
-    if (typeof t?.name === "string") return t.name;
-    return "";
-  };
-  const db: MockDb = {
-    __setResults(r: DbResults) {
-      dbResults.invoiceLines = r.invoiceLines;
-      dbResults.invoices = r.invoices;
-      dbResults.payments = r.payments;
-    },
-    select: () => ({
-      from: (table: unknown) => {
-        const name = tableName(table);
-        if (name.includes("invoice_lines")) return buildChain(dbResults.invoiceLines);
-        if (name.includes("invoices")) return buildChain(dbResults.invoices);
-        if (name.includes("payments")) return buildChain(dbResults.payments);
-        return buildChain([]);
-      },
-    }),
-  };
-  return { db };
-});
+// dashboard-routes imports db at module load for the admin routes; the member route never touches it.
+vi.mock("../../server/db", () => ({ db: {} }));
 
-let app: Express;
-let baseUrl: string;
+import { storage } from "../../server/storage";
+import { registerDashboardRoutes } from "../../server/routes/dashboard-routes";
+
+const storageMock = storage as unknown as { getMemberEarningsSummary: ReturnType<typeof vi.fn> };
+
 let server: Server;
-let storageMock: MockStorage;
+let baseUrl: string;
 
 beforeEach(async () => {
-  const storageMod = await import("../../server/storage");
-  storageMock = (storageMod as unknown as { storage: MockStorage }).storage;
-  vi.clearAllMocks();
-  storageMock.getUserProjects.mockResolvedValue([]);
-  storageMock.getTimesheetWeek.mockResolvedValue(null);
-
-  const { registerDashboardRoutes } = await import("../../server/routes/dashboard-routes");
-  app = express();
+  const app: Express = express();
   app.use(express.json());
   registerDashboardRoutes(app);
   await new Promise<void>((resolve) => {
-    server = app.listen(0, () => resolve()) as unknown as Server;
+    server = app.listen(0, () => {
+      baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      resolve();
+    });
   });
-  const port = (server.address() as AddressInfo).port;
-  baseUrl = `http://127.0.0.1:${port}`;
 });
 
-afterEach(() => {
-  server?.close();
+afterEach(async () => {
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  vi.clearAllMocks();
 });
 
-const TODAY = new Date().toISOString().split("T")[0];
+function payout(id: string, status: string, kind = "EARNINGS", amount = 100) {
+  return { id, payoutDate: "2026-08-10", periodStart: null, periodEnd: null, paymentMethod: "ZELLE", referenceNumber: null, status, amount, kind, linkedMinutes: 0, linkedHours: 0 };
+}
 
-function unbilledEntry(costRate: string | number | null, idSuffix = "x"): MockTimeEntry {
+function summary(overrides: Record<string, unknown> = {}) {
   return {
-    id: `te-${idSuffix}`,
-    projectId: "p1",
-    projectName: "P1",
-    date: TODAY,
-    minutes: 60,
-    billable: true,
-    invoiced: false,
-    invoiceLineId: null,
-    notes: null,
-    serviceId: null,
-    serviceName: null,
-    costRate,
+    costRateMissing: false,
+    unbilled: { hours: 1, minutes: 60, amount: 135, byProject: [] },
+    awaitingPayout: { hours: 2, minutes: 120, amount: 270, byProject: [] },
+    totalOwed: 405,
+    pendingPayouts: { count: 0, amount: 0, hours: 0, reimbursements: { count: 0, amount: 0 } },
+    paid: { hours: 0, totalReceived: 0, linkedToHours: { count: 0, amount: 0 }, withoutLinkedHours: { count: 0, amount: 0 } },
+    reimbursements: { count: 0, amount: 0 },
+    totalReceivedIncludingReimbursements: 0,
+    payouts: [] as ReturnType<typeof payout>[],
+    entries: [],
+    ...overrides,
   };
 }
 
-function billedEntry(costRate: string | number | null, lineId = "line-1"): MockTimeEntry {
-  return {
-    ...unbilledEntry(costRate, `billed-${lineId}`),
-    invoiced: true,
-    invoiceLineId: lineId,
-  };
-}
-
-async function getMyDashboard(): Promise<{ earnings: { costRateMissing: boolean } }> {
+async function getMyDashboard(): Promise<any> {
   const res = await fetch(`${baseUrl}/api/dashboard/my`);
   expect(res.status).toBe(200);
-  return (await res.json()) as { earnings: { costRateMissing: boolean } };
+  return res.json();
 }
 
-describe("dashboard /api/dashboard/my cost-rate-missing warning (unbilled entries)", () => {
-  it("fires when costRate is null", async () => {
-    storageMock.getTimeEntriesByUser.mockResolvedValue([unbilledEntry(null, "null")]);
+describe("GET /api/dashboard/my — member earnings plumbing", () => {
+  it("passes the summary through: costRateMissing, buckets and totalOwed are the storage values", async () => {
+    storageMock.getMemberEarningsSummary.mockResolvedValue(summary({ costRateMissing: true }));
     const data = await getMyDashboard();
+    expect(storageMock.getMemberEarningsSummary).toHaveBeenCalledWith("org-1", "user-1");
+    expect(data.earningsUnavailable).toBe(false);
     expect(data.earnings.costRateMissing).toBe(true);
+    expect(data.earnings.totalOwed).toBe(405);
+    expect(data.earnings.unbilled).toEqual({ hours: 1, minutes: 60, amount: 135, byProject: [] });
+    expect(data.earnings.awaitingPayout.amount).toBe(270);
+    // The per-entry ledger is for /api/my/earnings only — the dashboard never carries it.
+    expect(data.earnings.entries).toBeUndefined();
   });
 
-  it("fires when costRate is empty string", async () => {
-    storageMock.getTimeEntriesByUser.mockResolvedValue([unbilledEntry("", "empty")]);
-    const data = await getMyDashboard();
-    expect(data.earnings.costRateMissing).toBe(true);
-  });
-
-  it("does NOT fire when costRate is the string '0'", async () => {
-    storageMock.getTimeEntriesByUser.mockResolvedValue([unbilledEntry("0", "zerostr")]);
-    const data = await getMyDashboard();
-    expect(data.earnings.costRateMissing).toBe(false);
-  });
-
-  it("does NOT fire when costRate is numeric zero", async () => {
-    storageMock.getTimeEntriesByUser.mockResolvedValue([unbilledEntry(0, "zeronum")]);
+  it("does not flag a cost rate when the summary does not", async () => {
+    storageMock.getMemberEarningsSummary.mockResolvedValue(summary({ costRateMissing: false }));
     const data = await getMyDashboard();
     expect(data.earnings.costRateMissing).toBe(false);
   });
 
-  it("does NOT fire when costRate is a normal positive numeric rate", async () => {
-    storageMock.getTimeEntriesByUser.mockResolvedValue([unbilledEntry(125, "pos")]);
+  it("lists only COMPLETED payouts as recent, at most five, in summary order, keeping their kind", async () => {
+    const payouts = [
+      payout("p-pending", "PENDING"),
+      payout("p1", "COMPLETED"), payout("p2", "COMPLETED", "EXPENSE_REIMBURSEMENT", 89), payout("p3", "COMPLETED"),
+      payout("p4", "COMPLETED"), payout("p5", "COMPLETED"), payout("p6", "COMPLETED"),
+    ];
+    storageMock.getMemberEarningsSummary.mockResolvedValue(summary({ payouts }));
     const data = await getMyDashboard();
-    expect(data.earnings.costRateMissing).toBe(false);
+    expect(data.earnings.paid.items.map((i: any) => i.id)).toEqual(["p1", "p2", "p3", "p4", "p5"]);
+    expect(data.earnings.paid.items[1].kind).toBe("EXPENSE_REIMBURSEMENT");
   });
 
-  it("does NOT fire when costRate is a normal positive string rate", async () => {
-    storageMock.getTimeEntriesByUser.mockResolvedValue([unbilledEntry("125.50", "posstr")]);
+  it("keeps the rest of the dashboard and says so when the summary fails — never a silent $0", async () => {
+    storageMock.getMemberEarningsSummary.mockRejectedValue(new Error("payout tables unavailable"));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const data = await getMyDashboard();
-    expect(data.earnings.costRateMissing).toBe(false);
-  });
-
-  it("fires when ANY entry in a mixed batch has a missing costRate", async () => {
-    storageMock.getTimeEntriesByUser.mockResolvedValue([
-      unbilledEntry(125, "good"),
-      unbilledEntry(0, "zero"),
-      unbilledEntry(null, "bad"),
-    ]);
-    const data = await getMyDashboard();
-    expect(data.earnings.costRateMissing).toBe(true);
-  });
-
-  it("does NOT fire when there are no unbilled billable entries", async () => {
-    storageMock.getTimeEntriesByUser.mockResolvedValue([
-      { ...unbilledEntry(null, "nb"), billable: false },
-    ]);
-    const data = await getMyDashboard();
-    expect(data.earnings.costRateMissing).toBe(false);
-  });
-});
-
-describe("dashboard /api/dashboard/my cost-rate-missing warning (billed entries)", () => {
-  async function withInvoice(status: string): Promise<void> {
-    const dbMod = await import("../../server/db");
-    (dbMod as unknown as { db: MockDb }).db.__setResults({
-      invoiceLines: [{ id: "line-1", invoiceId: "inv-1", orgId: "org-1" }],
-      invoices: [{ id: "inv-1", orgId: "org-1", status, dueDate: "2026-01-01" }],
-      payments: [],
-    });
-  }
-
-  it("fires when a billed entry has null costRate", async () => {
-    await withInvoice("SENT");
-    storageMock.getTimeEntriesByUser.mockResolvedValue([billedEntry(null)]);
-    const data = await getMyDashboard();
-    expect(data.earnings.costRateMissing).toBe(true);
-  });
-
-  it("fires when a billed entry has an empty-string costRate", async () => {
-    await withInvoice("PAID");
-    storageMock.getTimeEntriesByUser.mockResolvedValue([billedEntry("")]);
-    const data = await getMyDashboard();
-    expect(data.earnings.costRateMissing).toBe(true);
-  });
-
-  it("does NOT fire when a billed entry has costRate '0'", async () => {
-    await withInvoice("SENT");
-    storageMock.getTimeEntriesByUser.mockResolvedValue([billedEntry("0")]);
-    const data = await getMyDashboard();
-    expect(data.earnings.costRateMissing).toBe(false);
-  });
-
-  it("does NOT fire when a billed entry has numeric-zero costRate", async () => {
-    await withInvoice("SENT");
-    storageMock.getTimeEntriesByUser.mockResolvedValue([billedEntry(0)]);
-    const data = await getMyDashboard();
-    expect(data.earnings.costRateMissing).toBe(false);
-  });
-
-  it("does NOT fire when a billed entry has a normal positive costRate", async () => {
-    await withInvoice("PAID");
-    storageMock.getTimeEntriesByUser.mockResolvedValue([billedEntry(150)]);
-    const data = await getMyDashboard();
-    expect(data.earnings.costRateMissing).toBe(false);
+    spy.mockRestore();
+    expect(data.earningsUnavailable).toBe(true);
+    expect(data.earnings).toBeNull();
+    expect(data.hoursThisWeek).toEqual({ billable: 0, nonBillable: 0, total: 0 });
+    expect(data.timesheetStatus).toBe("DRAFT");
   });
 });

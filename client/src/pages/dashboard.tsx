@@ -68,7 +68,7 @@ import { MoneyDisplay } from "@/components/shared/money-display";
 import { DateDisplay } from "@/components/shared/date-display";
 import { EmptyState } from "@/components/shared/empty-state";
 import { AvatarInitials } from "@/components/shared/avatar-initials";
-import { formatMoney, formatHoursMinutes, formatRelativeDate, getCurrencySymbol, formatPercent, formatHours } from "@/components/shared/format";
+import { formatMoney, formatHoursMinutes, formatRelativeDate, getCurrencySymbol, formatPercent, formatHours, formatDate } from "@/components/shared/format";
 import { useBaseCurrency } from "@/hooks/use-base-currency";
 import { useDocumentTitle } from "@/lib/use-document-title";
 import { MailboxReconnectBanner } from "@/components/mailbox-reconnect-banner";
@@ -591,12 +591,43 @@ function ActivityItem({ item }: { item: ActivityFeedItem }) {
   );
 }
 
+// One list for both "by project" breakdowns on the member card.
+function ByProjectList({ title, accent, rows, testIdPrefix, baseCurrency }: {
+  title: string; accent: string; rows: any[]; testIdPrefix: string; baseCurrency: string;
+}) {
+  if (!rows?.length) return null;
+  return (
+    <div className="mb-4">
+      <p className="text-xs font-semibold mb-2" style={{ color: "var(--lux-text-secondary)" }}>{title}</p>
+      <div className="space-y-1">
+        {rows.map((p: any, i: number) => (
+          <div key={p.projectId || i} className="flex items-center justify-between py-1.5 px-3 rounded" style={{ background: "var(--lux-surface-alt)" }} data-testid={`${testIdPrefix}-${i}`}>
+            <span className="text-sm" style={{ color: "var(--lux-text)" }}>{p.projectName}</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs tabular-nums" style={{ color: "var(--lux-text-muted)" }}>{formatHours(p.hours)}h</span>
+              <span className="text-sm font-semibold tabular-nums" style={{ color: accent }}>{formatMoney(p.amount, baseCurrency)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// What a payout was for — stated as fact, never inferred. A payout either covers
+// hours tracked here, is an expense reimbursement, or has no tracked hours linked.
+function payoutCaption(p: any): string {
+  if (p.kind === "EXPENSE_REIMBURSEMENT") return "expense reimbursement";
+  if (p.linkedMinutes > 0) return `${formatHours(p.linkedHours)}h tracked`;
+  return "no tracked hours linked";
+}
+
 function TeamMemberDashboard() {
   const { user } = useAuth();
   const baseCurrency = useBaseCurrency();
   const [, navigate] = useLocation();
   const { data: myData, isLoading } = useQuery<any>({ queryKey: ["/api/dashboard/my"] });
-  const { data: earningsData } = useQuery<any>({ queryKey: ["/api/my/earnings"] });
+  const { data: earningsData, isError: earningsError } = useQuery<any>({ queryKey: ["/api/my/earnings"] });
 
   if (isLoading) {
     return (
@@ -611,28 +642,31 @@ function TeamMemberDashboard() {
 
   const hours = myData?.hoursThisWeek || { billable: 0, nonBillable: 0, total: 0 };
   const utilPct = hours.total > 0 ? Math.round((hours.billable / hours.total) * 100) : 0;
+  // Every figure on the earnings card comes from ONE server computation
+  // (storage.getMemberEarningsSummary) — the same one /api/my/earnings and the
+  // admin's payout math use — so no two numbers on this page can disagree.
+  const earningsUnavailable = Boolean(myData?.earningsUnavailable);
   const earnings = myData?.earnings || {
+    costRateMissing: false,
     unbilled: { hours: 0, amount: 0, byProject: [] },
-    billedAwaiting: { hours: 0, amount: 0, items: [], nextPaymentDate: null },
-    paid: { hours: 0, amount: 0, items: [] },
-    totalOutstanding: 0,
+    awaitingPayout: { hours: 0, amount: 0, byProject: [] },
+    totalOwed: 0,
+    pendingPayouts: { count: 0, amount: 0, hours: 0, reimbursements: { count: 0, amount: 0 } },
+    paid: { hours: 0, totalReceived: 0, linkedToHours: { count: 0, amount: 0 }, withoutLinkedHours: { count: 0, amount: 0 }, items: [] },
+    reimbursements: { count: 0, amount: 0 },
   };
-
-  function formatDate(dateStr: string | null): string {
-    if (!dateStr) return "—";
-    const d = new Date(dateStr + "T12:00:00");
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  }
-
-  function daysFromNow(dateStr: string | null): string {
-    if (!dateStr) return "";
-    const now = new Date();
-    const target = new Date(dateStr + "T12:00:00");
-    const diff = Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-    if (diff < 0) return `${Math.abs(diff)}d overdue`;
-    if (diff === 0) return "Due today";
-    return `in ${diff} days`;
-  }
+  const unbilled = earnings.unbilled ?? { hours: 0, amount: 0, byProject: [] };
+  const awaiting = earnings.awaitingPayout ?? { hours: 0, amount: 0, byProject: [] };
+  const paid = earnings.paid ?? { hours: 0, totalReceived: 0, linkedToHours: { count: 0, amount: 0 }, withoutLinkedHours: { count: 0, amount: 0 }, items: [] };
+  const pendingPayouts = earnings.pendingPayouts ?? { count: 0, amount: 0, hours: 0, reimbursements: { count: 0, amount: 0 } };
+  const pendingReimb = pendingPayouts.reimbursements ?? { count: 0, amount: 0 };
+  const reimbursements = earnings.reimbursements ?? { count: 0, amount: 0 };
+  const withoutLinked = paid.withoutLinkedHours ?? { count: 0, amount: 0 };
+  const totalOwed = Number(earnings.totalOwed ?? 0);
+  const totalReceived = Number(paid.totalReceived ?? 0);
+  const recentPayouts: any[] = paid.items ?? [];
+  const completedPayoutCount = (paid.linkedToHours?.count ?? 0) + withoutLinked.count + reimbursements.count;
+  const hasAnyEarnings = unbilled.amount > 0 || unbilled.hours > 0 || awaiting.amount > 0 || awaiting.hours > 0 || totalReceived > 0 || pendingPayouts.count > 0 || reimbursements.count > 0;
 
   return (
     <div className="px-6 lg:px-8 xl:px-10 py-6 space-y-6">
@@ -665,103 +699,93 @@ function TeamMemberDashboard() {
         </Card>
       )}
 
-      {/* ── Row 2: My Earnings (1099 / C2C only) ── */}
+      {/* ── Row 2: My Earnings (1099 / C2C only) ──
+          Every number here is about PAYOUTS TO THIS MEMBER. Nothing on this card
+          comes from the client invoice's status or dates: "Paid" means paid to you,
+          and the member cannot infer which invoices the client has paid. ── */}
       {(user as any)?.workerType !== "W2_EMPLOYEE" && (
       <Card className="border-0" style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }} data-testid="card-my-earnings">
         <CardContent className="p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold" style={{ color: "var(--lux-text)" }}>My Earnings</h3>
-            {earnings.billedAwaiting.nextPaymentDate && (
-              <span className="text-xs px-2 py-1 rounded-full" style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6" }} data-testid="badge-next-payment">
-                Next payment expected {daysFromNow(earnings.billedAwaiting.nextPaymentDate)}
+            {totalOwed > 0 && (
+              <span className="text-xs px-2 py-1 rounded-full" style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6" }} data-testid="badge-total-owed">
+                Owed to you: {formatMoney(totalOwed, baseCurrency)}
               </span>
             )}
           </div>
+
+          {earningsUnavailable && (
+            <div className="rounded-lg px-3 py-2 mb-3" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }} data-testid="warning-earnings-unavailable">
+              <span className="text-xs" style={{ color: "#ef4444" }}>Your earnings couldn't be loaded right now. Refresh the page; if it persists, tell your admin.</span>
+            </div>
+          )}
 
           {earnings.costRateMissing && (
             <div className="rounded-lg px-3 py-2 mb-3 flex items-center gap-2" style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)" }} data-testid="warning-cost-rate-missing">
               <span className="text-xs" style={{ color: "#f59e0b" }}>Cost rate not set — ask your admin to configure your pay rate</span>
             </div>
           )}
+
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
             <div className="rounded-lg px-4 py-3" style={{ background: "var(--lux-surface-alt)" }} data-testid="stat-unbilled">
               <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Unbilled</p>
-              <p className="text-lg font-bold tabular-nums" style={{ color: "#f59e0b" }} data-testid="text-unbilled-amount">{formatMoney(earnings.unbilled.amount, baseCurrency)}</p>
-              <p className="text-xs" style={{ color: "var(--lux-text-muted)" }} data-testid="text-unbilled-hours">{formatHours(earnings.unbilled.hours)}h not yet invoiced</p>
+              <p className="text-lg font-bold tabular-nums" style={{ color: "#f59e0b" }} data-testid="text-unbilled-amount">{formatMoney(unbilled.amount, baseCurrency)}</p>
+              <p className="text-xs" style={{ color: "var(--lux-text-muted)" }} data-testid="text-unbilled-hours">{formatHours(unbilled.hours)}h not yet invoiced</p>
             </div>
-            <div className="rounded-lg px-4 py-3" style={{ background: "var(--lux-surface-alt)" }} data-testid="stat-billed-awaiting">
-              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Billed — Awaiting Payment</p>
-              <p className="text-lg font-bold tabular-nums" style={{ color: "#3b82f6" }}>{formatMoney(earnings.billedAwaiting.amount, baseCurrency)}</p>
-              <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>{formatHours(earnings.billedAwaiting.hours)}h invoiced to client</p>
+            <div className="rounded-lg px-4 py-3" style={{ background: "var(--lux-surface-alt)" }} data-testid="stat-awaiting-payout">
+              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Awaiting Payout</p>
+              <p className="text-lg font-bold tabular-nums" style={{ color: "#3b82f6" }} data-testid="text-awaiting-amount">{formatMoney(awaiting.amount, baseCurrency)}</p>
+              <p className="text-xs" style={{ color: "var(--lux-text-muted)" }} data-testid="text-awaiting-hours">{formatHours(awaiting.hours)}h invoiced, not yet paid to you</p>
             </div>
             <div className="rounded-lg px-4 py-3" style={{ background: "var(--lux-surface-alt)" }} data-testid="stat-paid">
-              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Paid</p>
-              <p className="text-lg font-bold tabular-nums" style={{ color: "#22c55e" }}>{formatMoney(earnings.paid.amount, baseCurrency)}</p>
-              <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>{formatHours(earnings.paid.hours)}h total paid</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Paid to You</p>
+              <p className="text-lg font-bold tabular-nums" style={{ color: "#22c55e" }} data-testid="text-paid-amount">{formatMoney(totalReceived, baseCurrency)}</p>
+              <p className="text-xs" style={{ color: "var(--lux-text-muted)" }} data-testid="text-paid-hours">
+                {formatHours(paid.hours)}h tracked
+                {withoutLinked.count > 0 && <span> · {formatMoney(withoutLinked.amount, baseCurrency)} with no tracked hours linked</span>}
+              </p>
             </div>
           </div>
 
-          {earnings.unbilled.byProject.length > 0 && (
-            <div className="mb-4">
-              <p className="text-xs font-semibold mb-2" style={{ color: "var(--lux-text-secondary)" }}>Unbilled by Project</p>
-              <div className="space-y-1">
-                {earnings.unbilled.byProject.map((p: any, i: number) => (
-                  <div key={i} className="flex items-center justify-between py-1.5 px-3 rounded" style={{ background: "var(--lux-surface-alt)" }}>
-                    <span className="text-sm" style={{ color: "var(--lux-text)" }}>{p.projectName}</span>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs tabular-nums" style={{ color: "var(--lux-text-muted)" }}>{formatHours(p.hours)}h</span>
-                      <span className="text-sm font-semibold tabular-nums" style={{ color: "#f59e0b" }}>{formatMoney(p.amount, baseCurrency)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {pendingPayouts.count > 0 && (
+            <p className="text-xs mb-3" style={{ color: "var(--lux-text-muted)" }} data-testid="text-pending-payouts">
+              {formatMoney(pendingPayouts.amount, baseCurrency)} in {pendingPayouts.count} payout{pendingPayouts.count === 1 ? "" : "s"} being processed
+              {pendingReimb.count > 0 && <span> (of which {formatMoney(pendingReimb.amount, baseCurrency)} expense reimbursement{pendingReimb.count === 1 ? "" : "s"})</span>}
+              {" "}— not yet counted as paid.
+            </p>
           )}
 
-          {earnings.billedAwaiting.items.length > 0 && (
-            <div className="mb-4">
-              <p className="text-xs font-semibold mb-2" style={{ color: "var(--lux-text-secondary)" }}>Billed — Awaiting Payment</p>
-              <div className="space-y-1">
-                {earnings.billedAwaiting.items.map((item: any, i: number) => (
-                  <div key={i} className="flex items-center justify-between py-1.5 px-3 rounded" style={{ background: "var(--lux-surface-alt)" }}>
-                    <div>
-                      <span className="text-sm" style={{ color: "var(--lux-text)" }}>{item.projectName}</span>
-                      <span className="text-xs ml-2" style={{ color: "var(--lux-text-muted)" }}>
-                        Due {formatDate(item.invoiceDueDate)}
-                        {item.invoiceDueDate && <span className="ml-1" style={{ color: new Date(item.invoiceDueDate) < new Date() ? "#ef4444" : "#3b82f6" }}>({daysFromNow(item.invoiceDueDate)})</span>}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs tabular-nums" style={{ color: "var(--lux-text-muted)" }}>{formatHours(item.hours)}h</span>
-                      <span className="text-sm font-semibold tabular-nums" style={{ color: "#3b82f6" }}>{formatMoney(item.amount, baseCurrency)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {reimbursements.count > 0 && (
+            <p className="text-xs mb-3" style={{ color: "var(--lux-text-muted)" }} data-testid="text-reimbursements">
+              Plus {formatMoney(reimbursements.amount, baseCurrency)} in expense reimbursements, shown in Payout History but not counted as earnings.
+            </p>
           )}
 
-          {earnings.paid.items.length > 0 && (
+          <ByProjectList title="Unbilled by Project" accent="#f59e0b" rows={unbilled.byProject} testIdPrefix="row-unbilled" baseCurrency={baseCurrency} />
+          <ByProjectList title="Awaiting Payout by Project" accent="#3b82f6" rows={awaiting.byProject} testIdPrefix="row-awaiting" baseCurrency={baseCurrency} />
+
+          {recentPayouts.length > 0 && (
             <div>
-              <p className="text-xs font-semibold mb-2" style={{ color: "var(--lux-text-secondary)" }}>Recently Paid</p>
+              <p className="text-xs font-semibold mb-2" style={{ color: "var(--lux-text-secondary)" }}>
+                Recent Payouts to You
+                {completedPayoutCount > recentPayouts.length && <span className="font-normal" style={{ color: "var(--lux-text-muted)" }}> · {recentPayouts.length} most recent of {completedPayoutCount}; the totals above cover all of them</span>}
+              </p>
               <div className="space-y-1">
-                {earnings.paid.items.slice(0, 5).map((item: any, i: number) => (
-                  <div key={i} className="flex items-center justify-between py-1.5 px-3 rounded" style={{ background: "var(--lux-surface-alt)" }}>
+                {recentPayouts.map((item: any, i: number) => (
+                  <div key={item.id || i} className="flex items-center justify-between py-1.5 px-3 rounded" style={{ background: "var(--lux-surface-alt)" }} data-testid={`row-paid-${i}`}>
                     <div>
-                      <span className="text-sm" style={{ color: "var(--lux-text)" }}>{item.projectName}</span>
-                      {item.paidDate && <span className="text-xs ml-2" style={{ color: "var(--lux-text-muted)" }}>Paid {formatDate(item.paidDate)}</span>}
+                      <span className="text-sm" style={{ color: "var(--lux-text)" }}>Paid {formatDate(item.payoutDate)}</span>
+                      <span className="text-xs ml-2" style={{ color: "var(--lux-text-muted)" }}>via {item.paymentMethod} · {payoutCaption(item)}</span>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs tabular-nums" style={{ color: "var(--lux-text-muted)" }}>{formatHours(item.hours)}h</span>
-                      <span className="text-sm font-semibold tabular-nums" style={{ color: "#22c55e" }}>{formatMoney(item.amount, baseCurrency)}</span>
-                    </div>
+                    <span className="text-sm font-semibold tabular-nums" style={{ color: item.kind === "EXPENSE_REIMBURSEMENT" ? "var(--lux-text-muted)" : "#22c55e" }}>{formatMoney(item.amount, baseCurrency)}</span>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {earnings.unbilled.amount === 0 && earnings.billedAwaiting.amount === 0 && earnings.paid.amount === 0 && (
+          {!earningsUnavailable && !hasAnyEarnings && (
             <p className="text-xs text-center py-4" style={{ color: "var(--lux-text-muted)" }}>
               No earnings data yet. Log billable time and get invoiced to see your earnings here.
             </p>
@@ -837,28 +861,31 @@ function TeamMemberDashboard() {
         </CardContent>
       </Card>
 
-      {/* ── Row 4b: Payout History ── */}
+      {/* ── Row 4b: Payout History ── the badge is the SUM OF THIS LIST ── */}
       <Card className="border-0" style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }} data-testid="card-payout-history">
         <CardContent className="p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold" style={{ color: "var(--lux-text)" }}>Payout History</h3>
             {earningsData && (
-              <div className="flex items-center gap-3">
-                <span className="text-xs px-2 py-1 rounded-full" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e" }}>
-                  Total received: {formatMoney(earningsData.totalEarned || 0, baseCurrency)}
-                </span>
-                {earningsData.pendingPayout > 0 && (
-                  <span className="text-xs px-2 py-1 rounded-full" style={{ background: "rgba(245,158,11,0.1)", color: "#f59e0b" }}>
-                    Pending: {formatMoney(earningsData.pendingPayout, baseCurrency)}
-                  </span>
-                )}
-              </div>
+              <span className="text-xs px-2 py-1 rounded-full" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e" }} data-testid="badge-total-received">
+                Total received: {formatMoney(Number(earningsData.totalReceived ?? 0), baseCurrency)}
+              </span>
             )}
           </div>
-          {earningsData?.payoutHistory?.length > 0 ? (
+          {earningsError && (
+            <p className="text-xs py-4" style={{ color: "#ef4444" }} data-testid="warning-payout-history-unavailable">
+              Your payout history couldn't be loaded right now. Refresh the page; if it persists, tell your admin.
+            </p>
+          )}
+          {!earningsError && earningsData?.payoutHistory?.length > 0 ? (
             <div className="space-y-2">
+              {earningsData.payoutHistory.length > 10 && (
+                <p className="text-xs" style={{ color: "var(--lux-text-muted)" }} data-testid="text-payout-history-truncated">
+                  Showing the 10 most recent of {earningsData.payoutHistory.length} payouts — the total above covers all {earningsData.payoutHistory.length}.
+                </p>
+              )}
               {earningsData.payoutHistory.slice(0, 10).map((p: any) => (
-                <div key={p.id} className="flex items-center justify-between py-2 px-3 rounded-lg" style={{ background: "var(--lux-surface-alt)" }}>
+                <div key={p.id} className="flex items-center justify-between py-2 px-3 rounded-lg" style={{ background: "var(--lux-surface-alt)" }} data-testid={`row-payout-${p.id}`}>
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(34,197,94,0.12)" }}>
                       <DollarSign className="w-4 h-4" style={{ color: "#22c55e" }} />
@@ -872,6 +899,7 @@ function TeamMemberDashboard() {
                         {p.periodStart && p.periodEnd && (
                           <span> · {formatDate(p.periodStart)} – {formatDate(p.periodEnd)}</span>
                         )}
+                        <span> · {payoutCaption(p)}</span>
                       </p>
                     </div>
                   </div>
@@ -884,7 +912,7 @@ function TeamMemberDashboard() {
                 </div>
               ))}
             </div>
-          ) : (
+          ) : !earningsError && (
             <p className="text-xs text-center py-6" style={{ color: "var(--lux-text-muted)" }}>
               No payouts recorded yet. Once your time is billed and paid, payouts will appear here.
             </p>
