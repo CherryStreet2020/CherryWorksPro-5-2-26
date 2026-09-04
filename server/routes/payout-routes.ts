@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { storage, PayoutEntriesAlreadyPaidError } from "../storage";
 import { db } from "../db";
 import { eq, desc, and, inArray, sql } from "drizzle-orm";
-import { projectMembers, timeEntries, teamMemberPayoutsV2, payoutTimeEntries, round2, createPayoutSchema, PAYOUT_OFFLINE_METHODS, isExpenseReimbursementPayout } from "@shared/schema";
+import { projectMembers, timeEntries, teamMemberPayoutsV2, payoutTimeEntries, round2, resolveCostRate, timeEntryPayoutValue, createPayoutSchema, PAYOUT_OFFLINE_METHODS, isExpenseReimbursementPayout } from "@shared/schema";
 import { sanitizeErrorMessage, requireAuth, requireAdmin, createAutoJournalEntry, reverseGLBySourceRef } from "./middleware";
 import { seedDatabase } from "../seed";
 
@@ -91,9 +91,8 @@ app.post("/api/payouts", requireAdmin, async (req, res) => {
           )
         );
         entries = allTe.map(te => {
-          const snapshotMissing = te.costRateSnapshot == null || String(te.costRateSnapshot) === "";
-          const rate = !snapshotMissing ? Number(te.costRateSnapshot) : (costRateByProject[te.projectId] || 0);
-          return { timeEntryId: te.id, amount: String(round2((te.minutes / 60) * rate)) };
+          const { rate } = resolveCostRate(te.costRateSnapshot, costRateByProject[te.projectId]);
+          return { timeEntryId: te.id, amount: String(timeEntryPayoutValue(te.minutes, rate)) };
         });
         resolvedAmount = round2(entries.reduce((s, e) => s + Number(e.amount), 0));
       }
@@ -566,94 +565,35 @@ app.get("/api/my/earnings", requireAuth, async (req, res) => {
   try {
     const userId = req.session.userId!;
     const orgId = req.session.orgId!;
-
-    const allEntries = await db
-      .select()
-      .from(timeEntries)
-      .where(and(eq(timeEntries.orgId, orgId), eq(timeEntries.userId, userId)))
-      .orderBy(desc(timeEntries.date));
-
-    const memberships = await db.select().from(projectMembers).where(eq(projectMembers.userId, userId));
-    const costRateByProject: Record<string, number> = {};
-    for (const m of memberships) {
-      costRateByProject[m.projectId] = Number(m.costRateHourly) || 0;
-    }
-
-    const paidEntryRows = await db
-      .select({ timeEntryId: payoutTimeEntries.timeEntryId })
-      .from(payoutTimeEntries)
-      .innerJoin(teamMemberPayoutsV2, eq(payoutTimeEntries.payoutId, teamMemberPayoutsV2.id))
-      .where(and(
-        eq(teamMemberPayoutsV2.orgId, orgId),
-        eq(teamMemberPayoutsV2.teamMemberId, userId),
-        eq(teamMemberPayoutsV2.status, "COMPLETED"),
-      ));
-    const paidIds = new Set(paidEntryRows.map(r => r.timeEntryId));
-
-    let totalEarned = 0;
-    let pendingPayout = 0;
-    let billedToClient = 0;
-    let unbilledHours = 0;
-
-    for (const e of allEntries) {
-      const rate = e.costRateSnapshot != null ? Number(e.costRateSnapshot) : (costRateByProject[e.projectId] || 0);
-      const amount = round2((e.minutes / 60) * rate);
-      if (paidIds.has(e.id)) {
-        totalEarned += amount;
-      } else if (e.invoiced) {
-        billedToClient += amount;
-        pendingPayout += amount;
-      } else {
-        unbilledHours += e.minutes;
-        pendingPayout += amount;
-      }
-    }
-
-    const payoutHistoryRaw = await storage.getTeamMemberPayouts(orgId, { teamMemberId: userId, status: "COMPLETED" });
-    // Hours linked to each completed payout, so the history can say which payouts were
-    // for hours tracked here and which were for work outside this system. The badge
-    // above the list must equal the SUM OF THE LIST — `totalEarned` (value of tracked
-    // hours that have been paid) is NOT that number when any payout has no linked hours.
-    const linkedMinutesByPayout = new Map<string, number>();
-    if (payoutHistoryRaw.length > 0) {
-      const rows = await db
-        .select({ payoutId: payoutTimeEntries.payoutId, minutes: timeEntries.minutes })
-        .from(payoutTimeEntries)
-        .innerJoin(timeEntries, eq(payoutTimeEntries.timeEntryId, timeEntries.id))
-        .where(and(eq(payoutTimeEntries.orgId, orgId), inArray(payoutTimeEntries.payoutId, payoutHistoryRaw.map((p: any) => p.id))));
-      for (const r of rows) linkedMinutesByPayout.set(r.payoutId, (linkedMinutesByPayout.get(r.payoutId) || 0) + r.minutes);
-    }
-    const payoutHistory = payoutHistoryRaw.map((p: any) => {
-      const linkedHours = round2((linkedMinutesByPayout.get(p.id) || 0) / 60);
-      return { ...p, linkedHours, trackedHere: linkedHours > 0 };
-    });
-    const totalReceived = round2(payoutHistoryRaw.reduce((s: number, p: any) => s + Number(p.amount), 0));
-    const paidForTrackedHours = round2(totalEarned);
-    const paidOutsideTracking = round2(payoutHistory.filter(p => !p.trackedHere).reduce((s, p) => s + Number(p.amount), 0));
-
+    // Same single computation as /api/dashboard/my (storage.getMemberEarningsSummary):
+    // owed == the admin's unpaid time value for this member; received == the sum of
+    // the payouts listed below. Reimbursements are payouts but not earnings.
+    const s = await storage.getMemberEarningsSummary(orgId, userId);
+    const payoutHistory = s.payouts.filter(p => p.status === "COMPLETED");
+    const LEGACY_STATUS: Record<string, string> = { PAID: "PAID", PENDING_PAYOUT: "PENDING_PAYOUT", AWAITING_PAYOUT: "BILLED", UNBILLED: "UNBILLED" };
     return res.json({
-      // Money actually received = sum of completed payouts (matches the history list).
-      totalReceived,
-      paidForTrackedHours,
-      paidOutsideTracking,
-      // Kept for compatibility: value of tracked hours that have been paid out.
-      totalEarned: round2(totalEarned),
-      pendingPayout: round2(pendingPayout),
-      awaitingPayout: round2(billedToClient),
-      billedToClient: round2(billedToClient),
-      unbilledMinutes: unbilledHours,
-      unbilledHours: round2(unbilledHours / 60),
+      // Money actually received — the SUM OF payoutHistory, reimbursements included.
+      totalReceived: s.totalReceivedIncludingReimbursements,
+      earningsReceived: s.paid.totalReceived,
+      paidLinkedToHours: s.paid.linkedToHours,
+      paidWithoutLinkedHours: s.paid.withoutLinkedHours,
+      reimbursementsReceived: s.reimbursements,
+      paidHours: s.paid.hours,
+      // What the member is owed right now (same number as the dashboard badge).
+      pendingPayout: s.totalOwed,
+      totalOwed: s.totalOwed,
+      pendingPayouts: s.pendingPayouts,
+      awaitingPayout: s.awaitingPayout,
+      unbilled: s.unbilled,
+      unbilledMinutes: s.unbilled.minutes,
+      unbilledHours: s.unbilled.hours,
+      costRateMissing: s.costRateMissing,
       payoutHistory,
-      timeEntries: allEntries.map(e => {
-        const rate = e.costRateSnapshot != null ? Number(e.costRateSnapshot) : (costRateByProject[e.projectId] || 0);
-        return {
-          ...e,
-          costRate: rate,
-          amount: round2((e.minutes / 60) * rate),
-          isPaid: paidIds.has(e.id),
-          status: paidIds.has(e.id) ? "PAID" : e.invoiced ? "BILLED" : "UNBILLED",
-        };
-      }),
+      timeEntries: s.entries.map(e => ({
+        ...e,
+        isPaid: e.status === "PAID",
+        status: LEGACY_STATUS[e.status] || e.status,
+      })),
     });
   } catch (err: any) {
     return res.status(500).json({ message: sanitizeErrorMessage(err) });

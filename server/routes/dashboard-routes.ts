@@ -3,7 +3,6 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { eq, desc, and, sql, ne, gte, lte } from "drizzle-orm";
 import {
-  invoiceLines,
   invoices,
   payments,
   round2,
@@ -21,7 +20,6 @@ import {
   teamMemberPayoutsV2,
   users,
   importRuns,
-  payoutTimeEntries,
 } from "@shared/schema";
 import { sanitizeErrorMessage, requireAuth, requireAdmin, requireManagerOrAbove, dashboardBankingLimiter } from "./middleware";
 
@@ -145,88 +143,34 @@ app.get("/api/dashboard/my", requireAuth, async (req, res) => {
       serviceName: e.serviceName,
     }));
 
-    const billableEntries = myEntries.filter((e: any) => e.billable);
-
     // ── Earnings, from the member's own seat ──────────────────────────────
-    // Every figure below derives from PAYOUTS TO THIS MEMBER (team_member_payouts_v2
-    // + payout_time_entries), never from the client invoice's status or dates.
-    // Two reasons: (1) "paid" must mean "paid to you", not "the client paid the
-    // firm" — the old bucketing counted hours on a client-PAID invoice as paid
-    // even when no payout had happened; (2) a team member must not be able to
-    // infer which invoices the client has paid, or when, from this screen.
-    // Through storage (not db) so the route stays unit-testable with the storage mock.
-    const myCompletedPayouts: any[] = (await storage.getTeamMemberPayouts(orgId, { teamMemberId: userId, status: "COMPLETED" })) || [];
-    const payoutIdByEntry = new Map<string, string>();
-    for (const p of myCompletedPayouts) {
-      const links = (await storage.getPayoutTimeEntries(p.id, orgId)) || [];
-      for (const l of links) payoutIdByEntry.set(l.timeEntryId, p.id);
+    // One computation — storage.getMemberEarningsSummary — shared with
+    // /api/my/earnings and built on the same rate + rounding chain the admin's
+    // Record Payment pays from. "Paid" means paid TO THIS MEMBER; nothing here
+    // reads the client invoice's status or dates. If the summary fails the rest
+    // of the dashboard still renders and the card says so, rather than showing $0.
+    let earnings: any = null;
+    let earningsUnavailable = false;
+    try {
+      const s = await storage.getMemberEarningsSummary(orgId, userId);
+      earnings = {
+        costRateMissing: s.costRateMissing,
+        unbilled: s.unbilled,
+        awaitingPayout: s.awaitingPayout,
+        totalOwed: s.totalOwed,
+        pendingPayouts: s.pendingPayouts,
+        paid: {
+          ...s.paid,
+          // Most recent completed payouts (reimbursements included, labelled by kind).
+          items: s.payouts.filter(p => p.status === "COMPLETED").slice(0, 5),
+        },
+        reimbursements: s.reimbursements,
+        totalReceivedIncludingReimbursements: s.totalReceivedIncludingReimbursements,
+      };
+    } catch (err) {
+      console.error("[dashboard/my] earnings summary failed:", err);
+      earningsUnavailable = true;
     }
-
-    let costRateMissing = false;
-    const valueOf = (e: any) => {
-      const hrs = round2(Number(e.minutes) / 60);
-      const rate = Number(e.costRate || 0);
-      if (e.costRate == null || e.costRate === "") costRateMissing = true;
-      return { hrs, amt: round2(hrs * rate) };
-    };
-
-    // Unbilled: billable, not yet invoiced, not paid out.
-    let unbilledHours = 0;
-    let unbilledEarnings = 0;
-    const unbilledByProject: Record<string, { projectName: string; hours: number; amount: number }> = {};
-    // Awaiting payout: invoiced (or otherwise not unbilled) but no completed payout yet —
-    // regardless of whether the client has paid the firm.
-    let awaitingHours = 0;
-    let awaitingEarnings = 0;
-    const awaitingByProject: Record<string, { projectName: string; hours: number; amount: number }> = {};
-    // Paid: hours linked to a COMPLETED payout, grouped by that payout.
-    let paidHours = 0;
-    let paidEarnings = 0;
-    const paidByPayout: Record<string, { hours: number; amount: number }> = {};
-
-    for (const e of billableEntries) {
-      const { hrs, amt } = valueOf(e);
-      const key = e.projectName || "Unknown";
-      const payoutId = payoutIdByEntry.get(e.id);
-      if (payoutId) {
-        paidHours = round2(paidHours + hrs);
-        paidEarnings = round2(paidEarnings + amt);
-        if (!paidByPayout[payoutId]) paidByPayout[payoutId] = { hours: 0, amount: 0 };
-        paidByPayout[payoutId].hours = round2(paidByPayout[payoutId].hours + hrs);
-        paidByPayout[payoutId].amount = round2(paidByPayout[payoutId].amount + amt);
-      } else if (!e.invoiced) {
-        unbilledHours = round2(unbilledHours + hrs);
-        unbilledEarnings = round2(unbilledEarnings + amt);
-        if (!unbilledByProject[key]) unbilledByProject[key] = { projectName: key, hours: 0, amount: 0 };
-        unbilledByProject[key].hours = round2(unbilledByProject[key].hours + hrs);
-        unbilledByProject[key].amount = round2(unbilledByProject[key].amount + amt);
-      } else {
-        awaitingHours = round2(awaitingHours + hrs);
-        awaitingEarnings = round2(awaitingEarnings + amt);
-        if (!awaitingByProject[key]) awaitingByProject[key] = { projectName: key, hours: 0, amount: 0 };
-        awaitingByProject[key].hours = round2(awaitingByProject[key].hours + hrs);
-        awaitingByProject[key].amount = round2(awaitingByProject[key].amount + amt);
-      }
-    }
-
-    // Paid items are the payouts themselves (date = when the member was paid), newest first.
-    const paidItems = myCompletedPayouts
-      .map(p => ({
-        payoutId: p.id,
-        payoutDate: p.payoutDate,
-        paymentMethod: p.paymentMethod,
-        referenceNumber: p.referenceNumber,
-        amount: round2(Number(p.amount)),
-        hours: paidByPayout[p.id]?.hours ?? 0,
-        // A payout with no linked hours was paid for work tracked outside this system
-        // (e.g. before time tracking began). It counts toward money received, never
-        // toward tracked hours.
-        trackedHere: (paidByPayout[p.id]?.hours ?? 0) > 0,
-      }))
-      .sort((x, y) => String(y.payoutDate).localeCompare(String(x.payoutDate)));
-    const totalReceived = round2(myCompletedPayouts.reduce((s, p) => s + Number(p.amount), 0));
-    const paidOutsideTrackingAmount = round2(paidItems.filter(i => !i.trackedHere).reduce((s, i) => s + i.amount, 0));
-    const paidOutsideTrackingCount = paidItems.filter(i => !i.trackedHere).length;
 
     return res.json({
       hoursThisWeek: { billable, nonBillable, total: round2(billable + nonBillable) },
@@ -240,28 +184,8 @@ app.get("/api/dashboard/my", requireAuth, async (req, res) => {
         status: p.status,
         hoursThisWeek: thisWeekEntries.filter((e: any) => e.projectName === p.name).reduce((s: number, e: any) => round2(s + round2(Number(e.minutes) / 60)), 0),
       })),
-      earnings: {
-        costRateMissing,
-        unbilled: {
-          hours: unbilledHours,
-          amount: unbilledEarnings,
-          byProject: Object.values(unbilledByProject),
-        },
-        awaitingPayout: {
-          hours: awaitingHours,
-          amount: awaitingEarnings,
-          byProject: Object.values(awaitingByProject),
-        },
-        paid: {
-          hours: paidHours,
-          amount: paidEarnings,
-          items: paidItems,
-          totalReceived,
-          outsideTracking: { count: paidOutsideTrackingCount, amount: paidOutsideTrackingAmount },
-        },
-        totalOwed: round2(unbilledEarnings + awaitingEarnings),
-        totalOutstanding: round2(unbilledEarnings + awaitingEarnings),
-      },
+      earnings,
+      earningsUnavailable,
     });
   } catch (err: any) {
     return res.status(500).json({ message: sanitizeErrorMessage(err) });

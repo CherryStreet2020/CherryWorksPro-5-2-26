@@ -42,6 +42,9 @@ import {
   pendingInvites,
   computeInvoiceTotals,
   round2,
+  resolveCostRate,
+  timeEntryPayoutValue,
+  isExpenseReimbursementPayout,
   round4,
   computeUtilization,
   computeProfitability,
@@ -4378,10 +4381,185 @@ export class DatabaseStorage {
     if (dateFrom) unpaid = unpaid.filter(e => e.date >= dateFrom);
     if (dateTo) unpaid = unpaid.filter(e => e.date <= dateTo);
     return unpaid.map(({ costRateSnapshot, ...e }) => {
-      const snapshotMissing = costRateSnapshot == null || String(costRateSnapshot) === "";
-      const rate = !snapshotMissing ? Number(costRateSnapshot) : (costRateByProject[e.projectId] || 0);
-      return { ...e, value: round2((e.minutes / 60) * rate) };
+      const { rate } = resolveCostRate(costRateSnapshot, costRateByProject[e.projectId]);
+      return { ...e, value: timeEntryPayoutValue(e.minutes, rate) };
     });
+  }
+
+  // ── Member earnings summary — the ONE definition of owed / paid for a member ──
+  // Both member-facing endpoints (GET /api/dashboard/my, GET /api/my/earnings) read
+  // this, so every figure a team member sees is computed exactly once, with the
+  // same rate + rounding chain the admin's Record Payment dialog pays from
+  // (getUnpaidTimeEntriesForTeamMember → POST /api/payouts) and the admin Payouts
+  // page shows (getPayoutSummaryByTeamMember). Invariants:
+  //   • "paid" means paid TO THE MEMBER — a COMPLETED payout linked to the hours.
+  //     Nothing here reads the client invoice's status or payment dates, so the
+  //     member cannot infer which invoices the client has paid.
+  //   • totalOwed == the admin's unpaidTimeValue for this member: all entries not
+  //     on a non-VOID payout, valued per line, no billable filter, no row cap.
+  //   • Money received is the SUM OF THE PAYOUT AMOUNTS (what actually left the
+  //     bank), never a re-valuation of hours at today's rate.
+  //   • A payout with no linked hours is reported as exactly that. Expense
+  //     reimbursements are payouts too (expense-routes) but are NOT earnings.
+  async getMemberEarningsSummary(orgId: string, memberId: string) {
+    const [entries, memberships, payouts] = await Promise.all([
+      db
+        .select({
+          id: timeEntries.id,
+          date: timeEntries.date,
+          minutes: timeEntries.minutes,
+          billable: timeEntries.billable,
+          invoiced: timeEntries.invoiced,
+          projectId: timeEntries.projectId,
+          projectName: projects.name,
+          costRateSnapshot: timeEntries.costRateSnapshot,
+        })
+        .from(timeEntries)
+        .leftJoin(projects, eq(timeEntries.projectId, projects.id))
+        .where(and(eq(timeEntries.orgId, orgId), eq(timeEntries.userId, memberId)))
+        .orderBy(desc(timeEntries.date), desc(timeEntries.createdAt)),
+      db.select().from(projectMembers).where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.userId, memberId))),
+      db
+        .select()
+        .from(teamMemberPayoutsV2)
+        .where(and(
+          eq(teamMemberPayoutsV2.orgId, orgId),
+          eq(teamMemberPayoutsV2.teamMemberId, memberId),
+          ne(teamMemberPayoutsV2.status, "VOID"),
+        ))
+        .orderBy(desc(teamMemberPayoutsV2.payoutDate), desc(teamMemberPayoutsV2.createdAt)),
+    ]);
+
+    // One query for every hour these payouts cover (not one per payout).
+    const linkRows = payouts.length === 0 ? [] : await db
+      .select({ payoutId: payoutTimeEntries.payoutId, timeEntryId: payoutTimeEntries.timeEntryId })
+      .from(payoutTimeEntries)
+      .where(and(eq(payoutTimeEntries.orgId, orgId), inArray(payoutTimeEntries.payoutId, payouts.map(p => p.id))));
+    const payoutById = new Map(payouts.map(p => [p.id, p]));
+    const payoutIdByEntry = new Map<string, string>();
+    for (const l of linkRows) {
+      // linkTimeEntriesToPayout guarantees one non-VOID payout per entry; if legacy
+      // data ever carries two, the COMPLETED one is the truth.
+      const prev = payoutIdByEntry.get(l.timeEntryId);
+      if (!prev || (payoutById.get(prev)?.status !== "COMPLETED" && payoutById.get(l.payoutId)?.status === "COMPLETED")) {
+        payoutIdByEntry.set(l.timeEntryId, l.payoutId);
+      }
+    }
+
+    const costRateByProject: Record<string, number> = {};
+    const costRateDefinedForProject: Record<string, boolean> = {};
+    for (const m of memberships) {
+      costRateByProject[m.projectId] = Number(m.costRateHourly) || 0;
+      costRateDefinedForProject[m.projectId] = m.costRateHourly != null && String(m.costRateHourly) !== "";
+    }
+
+    type Bucket = { minutes: number; amount: number };
+    type ProjectBucket = Bucket & { projectId: string; projectName: string };
+    const bucket = (): Bucket => ({ minutes: 0, amount: 0 });
+    const add = (b: Bucket, minutes: number, amount: number) => { b.minutes += minutes; b.amount = round2(b.amount + amount); };
+    const addByProject = (map: Map<string, ProjectBucket>, e: { projectId: string; projectName: string | null }, minutes: number, amount: number) => {
+      let b = map.get(e.projectId);
+      if (!b) { b = { projectId: e.projectId, projectName: e.projectName || "Unknown project", minutes: 0, amount: 0 }; map.set(e.projectId, b); }
+      add(b, minutes, amount);
+    };
+    const finish = (b: Bucket) => ({ hours: round2(b.minutes / 60), minutes: b.minutes, amount: round2(b.amount) });
+    // Largest amount first, then by name — a stable order for the "by project" lists.
+    const finishByProject = (map: Map<string, ProjectBucket>) =>
+      Array.from(map.values())
+        .map(b => ({ projectId: b.projectId, projectName: b.projectName, ...finish(b) }))
+        .sort((a, b) => b.amount - a.amount || a.projectName.localeCompare(b.projectName));
+
+    const unbilled = bucket(), awaiting = bucket(), pending = bucket(), paid = bucket();
+    const unbilledByProject = new Map<string, ProjectBucket>();
+    const awaitingByProject = new Map<string, ProjectBucket>();
+    const linkedByPayout = new Map<string, Bucket>();
+    let costRateMissing = false;
+
+    type EntryStatus = "PAID" | "PENDING_PAYOUT" | "AWAITING_PAYOUT" | "UNBILLED";
+    const ledger = entries.map(e => {
+      const { rate, snapshotMissing } = resolveCostRate(e.costRateSnapshot, costRateByProject[e.projectId]);
+      const amount = timeEntryPayoutValue(e.minutes, rate);
+      const payoutId = payoutIdByEntry.get(e.id) ?? null;
+      const payout = payoutId ? payoutById.get(payoutId) : undefined;
+      let status: EntryStatus;
+      if (payout && payout.status === "COMPLETED") {
+        status = "PAID";
+        add(paid, e.minutes, amount);
+      } else if (payout) {
+        status = "PENDING_PAYOUT";
+        add(pending, e.minutes, amount);
+      } else {
+        // Unpaid hours are what the member is owed; a missing rate makes that
+        // figure wrong, so flag it exactly as the admin Payouts page does.
+        if (snapshotMissing && !costRateDefinedForProject[e.projectId]) costRateMissing = true;
+        if (e.invoiced) { status = "AWAITING_PAYOUT"; add(awaiting, e.minutes, amount); addByProject(awaitingByProject, e, e.minutes, amount); }
+        else { status = "UNBILLED"; add(unbilled, e.minutes, amount); addByProject(unbilledByProject, e, e.minutes, amount); }
+      }
+      if (payoutId) {
+        let lb = linkedByPayout.get(payoutId);
+        if (!lb) { lb = bucket(); linkedByPayout.set(payoutId, lb); }
+        add(lb, e.minutes, amount);
+      }
+      return {
+        id: e.id,
+        date: e.date,
+        minutes: e.minutes,
+        hours: round2(e.minutes / 60),
+        billable: e.billable,
+        invoiced: e.invoiced,
+        projectId: e.projectId,
+        projectName: e.projectName,
+        costRate: rate,
+        amount,
+        status,
+        payoutId,
+      };
+    });
+
+    const items = payouts.map(p => {
+      const linked = linkedByPayout.get(p.id);
+      return {
+        id: p.id,
+        payoutDate: p.payoutDate,
+        periodStart: p.periodStart,
+        periodEnd: p.periodEnd,
+        paymentMethod: p.paymentMethod,
+        referenceNumber: p.referenceNumber,
+        status: p.status,
+        amount: round2(Number(p.amount)),
+        kind: isExpenseReimbursementPayout(p.notes) ? "EXPENSE_REIMBURSEMENT" as const : "EARNINGS" as const,
+        linkedMinutes: linked?.minutes ?? 0,
+        linkedHours: round2((linked?.minutes ?? 0) / 60),
+      };
+    });
+    const sum = (arr: { amount: number }[]) => round2(arr.reduce((s, i) => s + i.amount, 0));
+    const completedEarnings = items.filter(i => i.status === "COMPLETED" && i.kind === "EARNINGS");
+    const completedReimbursements = items.filter(i => i.status === "COMPLETED" && i.kind === "EXPENSE_REIMBURSEMENT");
+    const pendingEarnings = items.filter(i => i.status === "PENDING" && i.kind === "EARNINGS");
+    const withoutLinkedHours = completedEarnings.filter(i => i.linkedMinutes === 0);
+    const totalReceived = sum(completedEarnings);
+    const reimbursementsReceived = sum(completedReimbursements);
+
+    return {
+      costRateMissing,
+      unbilled: { ...finish(unbilled), byProject: finishByProject(unbilledByProject) },
+      awaitingPayout: { ...finish(awaiting), byProject: finishByProject(awaitingByProject) },
+      // What the member is owed right now — identical to the admin's unpaidTimeValue.
+      totalOwed: round2(unbilled.amount + awaiting.amount),
+      // Payouts created but not yet completed (e.g. a Stripe transfer in flight).
+      pendingPayouts: { count: pendingEarnings.length, amount: sum(pendingEarnings), hours: round2(pending.minutes / 60) },
+      paid: {
+        hours: round2(paid.minutes / 60),
+        totalReceived,
+        linkedToHours: { count: completedEarnings.length - withoutLinkedHours.length, amount: round2(totalReceived - sum(withoutLinkedHours)) },
+        withoutLinkedHours: { count: withoutLinkedHours.length, amount: sum(withoutLinkedHours) },
+      },
+      reimbursements: { count: completedReimbursements.length, amount: reimbursementsReceived },
+      // Every completed payout, reimbursements included — the sum of the history list.
+      totalReceivedIncludingReimbursements: round2(totalReceived + reimbursementsReceived),
+      payouts: items,
+      entries: ledger,
+    };
   }
 
   async getPayoutSummaryByTeamMember(orgId: string) {
@@ -4500,11 +4678,8 @@ export class DatabaseStorage {
         // in the payout create handler and /api/my/earnings so the Outstanding
         // Balance foots to the sum of the line items the admin and consultant
         // see — round each line, then sum (not sum-then-round).
-        const snapshotMissing = e.costRateSnapshot == null || String(e.costRateSnapshot) === "";
-        const rate = !snapshotMissing
-          ? Number(e.costRateSnapshot)
-          : (costRateByProject[e.projectId] || 0);
-        amountOwed += round2((e.minutes / 60) * rate);
+        const { rate, snapshotMissing } = resolveCostRate(e.costRateSnapshot, costRateByProject[e.projectId]);
+        amountOwed += timeEntryPayoutValue(e.minutes, rate);
         if (snapshotMissing && !costRateDefinedForProject[e.projectId]) {
           missingProjectIds.add(e.projectId);
         }
