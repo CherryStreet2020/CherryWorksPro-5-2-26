@@ -1628,6 +1628,16 @@ export function resolveCostRate(
   const rate = !snapshotMissing ? Number(costRateSnapshot) : (projectCostRate || 0);
   return { rate, snapshotMissing };
 }
+// Who is paid as a contractor. W-2 employees are paid through payroll, and an
+// ADMIN is the firm's owner/partner — their hours are the firm's revenue, not a
+// payable, so they never get an auto-created payout and do not sit on the
+// Payouts page unless a payout was actually recorded for them by hand.
+export function isPayoutEligibleTeamMember(user: { role?: string | null; workerType?: string | null } | null | undefined): boolean {
+  if (!user) return false;
+  if (user.workerType === "W2_EMPLOYEE") return false;
+  if (user.role === "ADMIN") return false;
+  return true;
+}
 export function timeEntryPayoutValue(minutes: number, rate: number): number {
   return round2((Number(minutes) / 60) * rate);
 }

@@ -4579,10 +4579,13 @@ export class DatabaseStorage {
 
   async getPayoutSummaryByTeamMember(orgId: string) {
     const memberUsers = await db.select().from(users).where(and(eq(users.orgId, orgId), eq(users.role, "TEAM_MEMBER"), eq(users.isActive, true), ne(users.workerType, "W2_EMPLOYEE")));
+    // Anyone outside the contractor pool (an admin, a manager, a deactivated member)
+    // still appears if money was actually paid to them or a payout is in flight —
+    // VOID rows alone do not earn a row on the Payouts page.
     const usersWithPayouts = await db
       .select({ memberId: teamMemberPayoutsV2.teamMemberId })
       .from(teamMemberPayoutsV2)
-      .where(eq(teamMemberPayoutsV2.orgId, orgId))
+      .where(and(eq(teamMemberPayoutsV2.orgId, orgId), ne(teamMemberPayoutsV2.status, "VOID")))
       .groupBy(teamMemberPayoutsV2.teamMemberId);
     const memberIds = new Set(memberUsers.map(c => c.id));
     const missingIds = usersWithPayouts.filter(r => !memberIds.has(r.memberId)).map(r => r.memberId);

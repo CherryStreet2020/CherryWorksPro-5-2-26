@@ -4,7 +4,7 @@ import { db, pool } from "../db";
 import { eq, desc, and, gte } from "drizzle-orm";
 import { z } from "zod";
 import { createHash, randomBytes } from "crypto";
-import { invoiceLines, invoices, payments, projectMembers, timeEntries, glJournalEntries, generateInvoiceSchema, addInvoiceLineSchema, updateInvoiceLineSchema, updateInvoiceSchema, round2, resolveCostRate, timeEntryPayoutValue } from "@shared/schema";
+import { invoiceLines, invoices, payments, projectMembers, timeEntries, glJournalEntries, generateInvoiceSchema, addInvoiceLineSchema, updateInvoiceLineSchema, updateInvoiceSchema, round2, resolveCostRate, timeEntryPayoutValue, isPayoutEligibleTeamMember } from "@shared/schema";
 import { sanitizeErrorMessage, requireAdmin, requireManagerOrAbove, publicTokenLimiter, EDITABLE_STATUSES, buildInvoiceSnapshot, saveRevisionIfNeeded, createAutoJournalEntry, isGlPosted, buildInvoiceEmailHtml } from "./middleware";
 import { sendInvoiceEmail, getSmtpConfigFromOrg, pickRecipients } from "../email";
 import { generateInvoicePdf } from "../pdf";
@@ -938,9 +938,10 @@ app.post(
 
           // Get cost rates for each team member per project
           for (const [teamMemberId, entries] of Object.entries(byTeamMember)) {
-            // Skip W-2 employees — they are paid through payroll
+            // Skip W-2 employees (payroll) and ADMIN owners/partners (their hours are
+            // the firm's revenue, not a payable) — see isPayoutEligibleTeamMember.
             const teamMemberUser = await storage.getUserById(teamMemberId);
-            if (teamMemberUser?.workerType === "W2_EMPLOYEE") continue;
+            if (!isPayoutEligibleTeamMember(teamMemberUser)) continue;
 
             // Skip if a payout for this (invoice, member) already exists in ANY
             // non-VOID state. The old check only looked for PENDING payouts and
