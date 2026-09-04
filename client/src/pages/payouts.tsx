@@ -92,12 +92,20 @@ interface UnpaidEntry {
   value: number;
 }
 
+const PAYOUT_STATUS_LABELS: Record<string, string> = {
+  COMPLETED: "Completed",
+  PENDING: "Pending",
+  VOID: "Void",
+};
+
 export default function PayoutsPage() {
   useDocumentTitle("Payouts");
   const baseCurrency = useBaseCurrency();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
-  const [filters, setFilter] = useUrlFilterState({ q: "", status: "ALL" });
+  // Payment History opens on COMPLETED payouts only: voided and pending rows are one
+  // click away in the status dropdown (and the hub tiles), not in the default view.
+  const [filters, setFilter] = useUrlFilterState({ q: "", status: "COMPLETED" });
   const [hubFilter, setHubFilter] = useState<{ label: string } | null>(null);
   const search = filters.q;
   const statusFilter = filters.status;
@@ -613,16 +621,11 @@ export default function PayoutsPage() {
       <Card className="border-0" style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }}>
         <CardContent className="p-5">
           {(() => {
-            const statusLabels: Record<string, string> = {
-              COMPLETED: "Completed",
-              PENDING: "Pending",
-              VOID: "Void",
-            };
             const chips: FilterChipDescriptor[] = [];
             if (statusFilter !== "ALL") {
               chips.push({
                 id: "hub-filter",
-                label: hubFilter?.label || `Status: ${statusLabels[statusFilter] || statusFilter}`,
+                label: hubFilter?.label || `Status: ${PAYOUT_STATUS_LABELS[statusFilter] || statusFilter}`,
                 onClear: () => { setStatusFilter("ALL"); setHubFilter(null); },
               });
             }
@@ -690,7 +693,9 @@ export default function PayoutsPage() {
           {payoutsLoading ? (
             <div className="space-y-2">{[1, 2, 3].map(i => <Skeleton key={i} className="h-14 rounded-lg" />)}</div>
           ) : filteredPayouts.length === 0 ? (
-            <p className="text-sm py-8 text-center" style={{ color: "var(--lux-text-muted)" }}>No payments recorded yet</p>
+            <p className="text-sm py-8 text-center" style={{ color: "var(--lux-text-muted)" }} data-testid="text-payouts-empty">
+              {statusFilter === "ALL" ? "No payments recorded yet" : `No ${(PAYOUT_STATUS_LABELS[statusFilter] || statusFilter).toLowerCase()} payments${search ? " match your search" : ""} — choose another status above to see more`}
+            </p>
           ) : (
             <div className="space-y-1 max-h-[480px] overflow-y-auto pr-1">
               {filteredPayouts.map(p => (
