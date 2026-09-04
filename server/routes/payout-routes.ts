@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { storage, PayoutEntriesAlreadyPaidError } from "../storage";
 import { db } from "../db";
 import { eq, desc, and, inArray, sql } from "drizzle-orm";
-import { projectMembers, timeEntries, teamMemberPayoutsV2, payoutTimeEntries, round2, createPayoutSchema } from "@shared/schema";
+import { projectMembers, timeEntries, teamMemberPayoutsV2, payoutTimeEntries, round2, createPayoutSchema, PAYOUT_OFFLINE_METHODS, isExpenseReimbursementPayout } from "@shared/schema";
 import { sanitizeErrorMessage, requireAuth, requireAdmin, createAutoJournalEntry, reverseGLBySourceRef } from "./middleware";
 import { seedDatabase } from "../seed";
 
@@ -146,8 +146,18 @@ app.post("/api/payouts", requireAdmin, async (req, res) => {
     return res.status(400).json({ message: err.message });
   }
 });
+// A YYYY-MM-DD string that is a REAL calendar day. `Date.parse` alone is not
+// enough: V8 rolls "2026-02-30" over to March 2 instead of rejecting it, and
+// Postgres then throws on the `date` column with a raw driver message.
+function isValidCalendarDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
+
 app.patch("/api/payouts/:id", requireAdmin, async (req, res) => {
   try {
+    const orgId = req.session.orgId!;
     const { status, notes, referenceNumber, paymentMethod, payoutDate } = req.body;
     const updates: Record<string, any> = {};
     if (status !== undefined) {
@@ -158,42 +168,107 @@ app.patch("/api/payouts/:id", requireAdmin, async (req, res) => {
     if (notes !== undefined) updates.notes = notes;
     if (referenceNumber !== undefined) updates.referenceNumber = referenceNumber;
     if (paymentMethod !== undefined) {
-      const validMethods = ["ACH", "WIRE", "CHECK", "ZELLE", "OTHER"];
-      if (!validMethods.includes(paymentMethod)) return res.status(400).json({ message: "Invalid payment method" });
+      if (!(PAYOUT_OFFLINE_METHODS as readonly string[]).includes(paymentMethod)) return res.status(400).json({ message: "Invalid payment method" });
       updates.paymentMethod = paymentMethod;
     }
-    // "Mark paid" for an OFFLINE payment (Zelle/ACH/check) records the date the money
+    // "Mark Paid" for an OFFLINE payment (Zelle/ACH/check) records the date the money
     // actually moved, which is rarely the day the auto-payout was created on invoice send.
     if (payoutDate !== undefined) {
-      if (typeof payoutDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(payoutDate) || Number.isNaN(Date.parse(payoutDate))) {
-        return res.status(400).json({ message: "Invalid payout date (expected YYYY-MM-DD)" });
+      if (!isValidCalendarDate(payoutDate)) {
+        return res.status(400).json({ message: "Invalid payout date (expected a real YYYY-MM-DD date)" });
+      }
+      // One day of slack so a user west of UTC recording tonight's payment is not
+      // rejected by a server clock already on tomorrow; anything beyond is a typo.
+      const latest = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      if (payoutDate > latest) {
+        return res.status(400).json({ message: "Payout date cannot be in the future" });
+      }
+      // Same rule every other dated financial write in this codebase applies.
+      if (await storage.isDateInClosedPeriod(orgId, payoutDate)) {
+        return res.status(400).json({ message: `Period is closed — cannot record a payout dated ${payoutDate}` });
       }
       updates.payoutDate = payoutDate;
     }
-    const previousPayout = status ? await storage.getTeamMemberPayoutById(req.params.id as string, req.session.orgId!) : null;
-    // A payout that has a Stripe transfer is settled (or failed) by Stripe and its
-    // status is owned by the transfer webhook. Marking it COMPLETED by hand would
-    // record a Zelle/ACH payment on top of a Stripe one — a double payment on paper.
-    if (status === "COMPLETED" && previousPayout?.stripeTransferId) {
-      return res.status(400).json({ message: "This payout was sent via Stripe Connect; its status is updated by Stripe and cannot be marked paid manually" });
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ message: "No updatable fields (status, paymentMethod, referenceNumber, payoutDate, notes)" });
     }
+
+    // ALWAYS read the current row, whatever the body carries: the ownership and
+    // transition rules below apply to every money field, not only to `status`.
+    const previousPayout = await storage.getTeamMemberPayoutById(req.params.id as string, orgId);
+    if (!previousPayout) return res.status(404).json({ message: "Payout not found" });
+
+    // A payout with a LIVE Stripe transfer is settled (or pending) by Stripe: its
+    // status, method and reference are written by the transfer webhook. Editing
+    // any of them by hand would record a Zelle/ACH payment on top of a Stripe one
+    // — a double payment on paper. A transfer Stripe reported as FAILED moved no
+    // money, so that payout is released back to the offline path.
+    const stripeOwned = !!previousPayout.stripeTransferId && previousPayout.stripeTransferStatus !== "failed";
+    const touchesMoneyFields = ["status", "paymentMethod", "referenceNumber", "payoutDate"].some(k => k in updates);
+    if (stripeOwned && touchesMoneyFields) {
+      return res.status(400).json({ message: "This payout was sent via Stripe Connect; Stripe updates its status, method and reference, so they cannot be edited by hand" });
+    }
+
+    if (status === "COMPLETED") {
+      // Expense reimbursements settle from the Expenses page: that path also flips
+      // the expense to REIMBURSED and clears the accrual booked at approval.
+      // Completing the payout row alone would leave the liability on the books
+      // and let the GL backfill post the same amount a second time.
+      if (isExpenseReimbursementPayout(previousPayout.notes)) {
+        return res.status(400).json({ message: "This is an expense reimbursement — mark the expense as reimbursed from the Expenses page so the accrual is cleared with it" });
+      }
+      const releasedByFailedTransfer = previousPayout.status === "VOID" && previousPayout.stripeTransferStatus === "failed";
+      if (previousPayout.status !== "PENDING" && !releasedByFailedTransfer) {
+        return res.status(409).json({
+          message: previousPayout.status === "COMPLETED"
+            ? "This payout is already marked paid"
+            : "Only a pending payout can be marked paid — a voided payout must be recorded again",
+        });
+      }
+    }
+
     // updateTeamMemberPayout self-guards a VOID → non-VOID reactivation (re-checks the
     // entry-uniqueness invariant under the lock and throws on conflict → 409 below),
     // so this route, the Stripe webhook, and any future caller are all covered (audit #13).
-    const updated = await storage.updateTeamMemberPayout(req.params.id as string, req.session.orgId!, updates);
+    const updated = await storage.updateTeamMemberPayout(req.params.id as string, orgId, updates);
     if (!updated) return res.status(404).json({ message: "Payout not found" });
+
     if (status === "COMPLETED") {
+      // Offline settlement has no Stripe artifact behind it, so this audit row is
+      // the only independent record of how the money moved: log the method, the
+      // reference and the effective date, and what they replaced.
       await storage.createAuditLog({
-        orgId: req.session.orgId!,
+        orgId,
         userId: req.session.userId!,
         action: "PAYOUT_MARKED_PAID",
         entityType: "payout",
         entityId: updated.id,
-        details: { amount: updated.amount, teamMemberId: updated.teamMemberId, before: { status: previousPayout?.status || "PENDING" } },
+        details: {
+          amount: updated.amount,
+          teamMemberId: updated.teamMemberId,
+          paymentMethod: updated.paymentMethod,
+          referenceNumber: updated.referenceNumber,
+          payoutDate: updated.payoutDate,
+          before: { status: previousPayout.status, payoutDate: previousPayout.payoutDate, paymentMethod: previousPayout.paymentMethod },
+        },
       });
+      // Book it exactly as POST /api/payouts (Record Payment) does. The invoice-send
+      // auto-payout is created PENDING with no journal entry, so this transition is
+      // the moment the cost and the cash disbursement become real. createAutoJournalEntry
+      // is idempotent on the source ref, so a payout that already carries an entry
+      // (one recorded via POST, then dated here) is not posted twice.
+      const payoutOrg = await storage.getOrg(orgId);
+      if (payoutOrg?.autoPostJournalEntries) {
+        const member = await storage.getUserById(updated.teamMemberId);
+        const payoutAmt = Number(updated.amount).toFixed(2);
+        await createAutoJournalEntry(orgId, String(updated.payoutDate).slice(0, 10), `Payout to ${member?.name ?? "team member"}`, "PAYOUT", updated.id, [
+          { accountNumber: "5100", debit: payoutAmt, credit: "0.00", memo: "Team payout costs" },
+          { accountNumber: "1000", debit: "0.00", credit: payoutAmt, memo: "Cash disbursed" },
+        ], req.session.userId);
+      }
     } else if (status === "VOID") {
       await storage.createAuditLog({
-        orgId: req.session.orgId!,
+        orgId,
         userId: req.session.userId!,
         action: "PAYOUT_CANCELLED",
         entityType: "payout",
@@ -209,7 +284,7 @@ app.patch("/api/payouts/:id", requireAdmin, async (req, res) => {
         conflictingTimeEntryIds: err.conflictingTimeEntryIds,
       });
     }
-    return res.status(400).json({ message: err.message });
+    return res.status(400).json({ message: sanitizeErrorMessage(err) });
   }
 });
 app.delete("/api/payouts/:id", requireAdmin, async (req, res) => {

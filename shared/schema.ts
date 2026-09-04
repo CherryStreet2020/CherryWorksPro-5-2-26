@@ -1469,6 +1469,29 @@ export const createPayoutSchema = z.object({
   timeEntryIds: z.array(z.string()).max(1000, "Cannot exceed 1000 entries").optional(),
 });
 
+// The offline payment rails an admin can record by hand (Zelle, ACH, check, wire,
+// other). ONE list, shared by the server's PATCH validation and both client
+// selects — the method vocabulary had drifted into four copies with different
+// casing, so the same payout could carry "Zelle" or "ZELLE" depending on which
+// dialog wrote it. Stripe Connect is deliberately NOT here: a Stripe-settled
+// payout's method is written by the transfer webhook, never by hand.
+export const PAYOUT_OFFLINE_METHODS = ["ZELLE", "ACH", "CHECK", "WIRE", "OTHER"] as const;
+export type PayoutOfflineMethod = (typeof PAYOUT_OFFLINE_METHODS)[number];
+export const PAYOUT_OFFLINE_METHOD_LABELS: Record<PayoutOfflineMethod, string> = {
+  ZELLE: "Zelle", ACH: "ACH", CHECK: "Check", WIRE: "Wire", OTHER: "Other",
+};
+
+// Expense-reimbursement payouts live in the same table as time-based payouts but
+// settle through POST /api/expenses/:id/reimburse, which also flips the expense
+// to REIMBURSED and clears the 2200 accrual booked at approval. The table has no
+// structural marker for them, so the notes prefix written at creation is the
+// discriminator — kept here so the writer (expense-routes) and every reader
+// (the Mark Paid guard, client and server) cannot drift apart.
+export const EXPENSE_REIMBURSEMENT_NOTE_PREFIX = "Expense reimbursement: ";
+export function isExpenseReimbursementPayout(notes: string | null | undefined): boolean {
+  return typeof notes === "string" && notes.startsWith(EXPENSE_REIMBURSEMENT_NOTE_PREFIX);
+}
+
 // ── Expense insert schemas ──
 export const insertExpenseCategorySchema = createInsertSchema(expenseCategories).omit({
   id: true,
