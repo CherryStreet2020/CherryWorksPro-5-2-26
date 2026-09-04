@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "NODE_ENV=development tsx server/index.ts",
     "build": "tsx script/build.ts",
-    "prestart": "npm run db:migrate:prod",
+    "prestart": "echo \"[prestart] skipped: schema is applied by the container entrypoint on Azure; Replit is cold-standby and its schema is already current\"",
     "start": "NODE_ENV=production node dist/index.cjs",
     "db:migrate:prod": "tsx server/migrate-production.ts && drizzle-kit push --force",
     "check": "tsc",
