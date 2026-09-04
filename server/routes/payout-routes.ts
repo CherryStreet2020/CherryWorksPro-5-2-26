@@ -148,7 +148,7 @@ app.post("/api/payouts", requireAdmin, async (req, res) => {
 });
 app.patch("/api/payouts/:id", requireAdmin, async (req, res) => {
   try {
-    const { status, notes, referenceNumber, paymentMethod } = req.body;
+    const { status, notes, referenceNumber, paymentMethod, payoutDate } = req.body;
     const updates: Record<string, any> = {};
     if (status !== undefined) {
       const validStatuses = ["PENDING", "COMPLETED", "VOID"];
@@ -162,7 +162,21 @@ app.patch("/api/payouts/:id", requireAdmin, async (req, res) => {
       if (!validMethods.includes(paymentMethod)) return res.status(400).json({ message: "Invalid payment method" });
       updates.paymentMethod = paymentMethod;
     }
+    // "Mark paid" for an OFFLINE payment (Zelle/ACH/check) records the date the money
+    // actually moved, which is rarely the day the auto-payout was created on invoice send.
+    if (payoutDate !== undefined) {
+      if (typeof payoutDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(payoutDate) || Number.isNaN(Date.parse(payoutDate))) {
+        return res.status(400).json({ message: "Invalid payout date (expected YYYY-MM-DD)" });
+      }
+      updates.payoutDate = payoutDate;
+    }
     const previousPayout = status ? await storage.getTeamMemberPayoutById(req.params.id as string, req.session.orgId!) : null;
+    // A payout that has a Stripe transfer is settled (or failed) by Stripe and its
+    // status is owned by the transfer webhook. Marking it COMPLETED by hand would
+    // record a Zelle/ACH payment on top of a Stripe one — a double payment on paper.
+    if (status === "COMPLETED" && previousPayout?.stripeTransferId) {
+      return res.status(400).json({ message: "This payout was sent via Stripe Connect; its status is updated by Stripe and cannot be marked paid manually" });
+    }
     // updateTeamMemberPayout self-guards a VOID → non-VOID reactivation (re-checks the
     // entry-uniqueness invariant under the lock and throws on conflict → 409 below),
     // so this route, the Stripe webhook, and any future caller are all covered (audit #13).

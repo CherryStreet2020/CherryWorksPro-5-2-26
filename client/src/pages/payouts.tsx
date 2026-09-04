@@ -24,7 +24,7 @@ import { ActiveFilterBar, type FilterChipDescriptor } from "@/components/active-
 import { formatMoney, formatDate, formatRelativeDate, formatHours } from "@/components/shared/format";
 import { useBaseCurrency } from "@/hooks/use-base-currency";
 import {
-  DollarSign, Clock, Users, Plus, Search, ChevronDown, ChevronRight, XCircle, Zap, Send, Download, AlertTriangle, X, ArrowLeft,
+  DollarSign, Clock, Users, Plus, Search, ChevronDown, ChevronRight, XCircle, Zap, Send, Download, AlertTriangle, X, ArrowLeft, CheckCircle2,
 } from "lucide-react";
 import { CostRateInlineEditor } from "@/components/shared/cost-rate-inline-editor";
 import { Link, useLocation } from "wouter";
@@ -104,6 +104,14 @@ export default function PayoutsPage() {
   const [payoutDialogOpen, setPayoutDialogOpen] = useState(false);
   const [selectedTeamMember, setSelectedTeamMember] = useState<TeamMemberSummary | null>(null);
   const [expandedPayoutId, setExpandedPayoutId] = useState<string | null>(null);
+  // "Mark paid" — settle a PENDING auto-payout that was paid OFFLINE (Zelle/ACH/check).
+  // The auto-payout is created on invoice send; for a team that does not use Stripe
+  // Connect its only exits used to be "Send via Stripe" (fails: not onboarded) or Void.
+  const [markPaidPayout, setMarkPaidPayout] = useState<Payout | null>(null);
+  const [mpMethod, setMpMethod] = useState("ZELLE");
+  const [mpReference, setMpReference] = useState("");
+  const [mpDate, setMpDate] = useState(new Date().toISOString().split("T")[0]);
+  const [mpNotes, setMpNotes] = useState("");
   const [costRateWarningDismissed, setCostRateWarningDismissed] = useState(false);
 
   const [payTeamMemberId, setPayTeamMemberId] = useState("");
@@ -165,6 +173,38 @@ export default function PayoutsPage() {
     },
   });
 
+  const OFFLINE_METHODS = ["ZELLE", "ACH", "CHECK", "WIRE", "OTHER"] as const;
+  const openMarkPaid = (p: Payout) => {
+    const m = (p.paymentMethod || "").toUpperCase();
+    setMpMethod((OFFLINE_METHODS as readonly string[]).includes(m) ? m : "ZELLE");
+    setMpReference(p.referenceNumber || "");
+    setMpDate(new Date().toISOString().split("T")[0]);
+    setMpNotes("");
+    setMarkPaidPayout(p);
+  };
+  const markPaidMutation = useMutation({
+    mutationFn: async () => {
+      if (!markPaidPayout) throw new Error("No payout selected");
+      const res = await apiRequest("PATCH", `/api/payouts/${markPaidPayout.id}`, {
+        status: "COMPLETED",
+        paymentMethod: mpMethod,
+        referenceNumber: mpReference || null,
+        payoutDate: mpDate,
+        ...(mpNotes ? { notes: [markPaidPayout.notes, mpNotes].filter(Boolean).join(" — ") } : {}),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/payouts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payouts/summary"] });
+      setMarkPaidPayout(null);
+      toast({ title: "Marked paid", description: `Recorded as paid via ${mpMethod}.` });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Could not mark paid", description: err.message, variant: "destructive" });
+    },
+  });
+
   const voidPayoutMutation = useMutation({
     mutationFn: async (id: string) => {
       await apiRequest("PATCH", `/api/payouts/${id}`, { status: "VOID" });
@@ -203,9 +243,19 @@ export default function PayoutsPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/payouts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/payouts/summary"] });
-      const succeeded = data.results?.filter((r: any) => r.success).length || 0;
-      const failed = data.results?.filter((r: any) => !r.success).length || 0;
-      toast({ title: "Bulk payment complete", description: `${succeeded} sent, ${failed} skipped or failed.` });
+      const results: any[] = data.results || [];
+      const succeeded = results.filter(r => r.success).length;
+      const notOnStripe = results.filter(r => !r.success && /not connected/i.test(r.error || "")).length;
+      const failed = results.length - succeeded - notOnStripe;
+      toast({
+        title: succeeded > 0 ? "Bulk payment complete" : "Nothing sent via Stripe",
+        description: [
+          `${succeeded} sent via Stripe Connect`,
+          notOnStripe > 0 ? `${notOnStripe} paid offline — use “Mark paid” on each once you have sent the money` : null,
+          failed > 0 ? `${failed} failed` : null,
+        ].filter(Boolean).join(" · "),
+        variant: succeeded === 0 && notOnStripe > 0 ? "default" : undefined,
+      });
     },
     onError: (err: Error) => {
       toast({ title: "Bulk payment failed", description: err.message, variant: "destructive" });
@@ -653,6 +703,16 @@ export default function PayoutsPage() {
                     {p.status === "PENDING" && !p.stripeTransferId && (
                       <Tooltip>
                         <TooltipTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={e => { e.stopPropagation(); openMarkPaid(p); }} data-testid={`button-mark-paid-${p.id}`} aria-label="Mark paid">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Mark paid (Zelle / ACH / check)</TooltipContent>
+                      </Tooltip>
+                    )}
+                    {p.status === "PENDING" && !p.stripeTransferId && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={e => { e.stopPropagation(); executePayoutMutation.mutate(p.id); }} disabled={executePayoutMutation.isPending} data-testid={`button-execute-payout-${p.id}`} aria-label="Execute payout">
                             <Send className="w-3.5 h-3.5 text-blue-500" />
                           </Button>
@@ -685,6 +745,64 @@ export default function PayoutsPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={!!markPaidPayout} onOpenChange={v => { if (!v) setMarkPaidPayout(null); }}>
+        <DialogContent className="max-w-md" style={{ background: "var(--lux-surface)", borderColor: "var(--lux-border)" }}>
+          <DialogHeader>
+            <DialogTitle style={{ color: "var(--lux-text)" }}>
+              Mark paid{markPaidPayout?.teamMemberName ? ` — ${markPaidPayout.teamMemberName}` : ""}
+            </DialogTitle>
+          </DialogHeader>
+          {markPaidPayout && (
+            <div className="space-y-3 pt-1">
+              <div className="flex items-baseline justify-between p-2 rounded-lg" style={{ background: "var(--lux-bg)" }}>
+                <span className="text-xs" style={{ color: "var(--lux-text-muted)" }}>
+                  {markPaidPayout.periodStart && markPaidPayout.periodEnd ? `${formatDate(markPaidPayout.periodStart)} – ${formatDate(markPaidPayout.periodEnd)}` : "Pending payout"}
+                </span>
+                <span className="text-lg font-bold tabular-nums" style={{ color: "var(--lux-text)" }} data-testid="text-mark-paid-amount">
+                  {formatMoney(Number(markPaidPayout.amount), baseCurrency)}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Paid on *</Label>
+                  <Input type="date" value={mpDate} onChange={e => setMpDate(e.target.value)} data-testid="input-mark-paid-date" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Method *</Label>
+                  <Select value={mpMethod} onValueChange={setMpMethod}>
+                    <SelectTrigger data-testid="select-mark-paid-method"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ZELLE">Zelle</SelectItem>
+                      <SelectItem value="ACH">ACH</SelectItem>
+                      <SelectItem value="CHECK">Check</SelectItem>
+                      <SelectItem value="WIRE">Wire</SelectItem>
+                      <SelectItem value="OTHER">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Reference / confirmation #</Label>
+                <Input value={mpReference} onChange={e => setMpReference(e.target.value)} placeholder="Zelle confirmation, check #, trace ID" data-testid="input-mark-paid-reference" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Note</Label>
+                <Input value={mpNotes} onChange={e => setMpNotes(e.target.value)} placeholder="Optional" data-testid="input-mark-paid-notes" />
+              </div>
+              <p className="text-[11px]" style={{ color: "var(--lux-text-muted)" }}>
+                Records this payout as paid outside the app. The linked hours stay attached, so they will not show as unpaid again.
+              </p>
+              <div className="flex justify-end gap-2 pt-1">
+                <Button variant="ghost" onClick={() => setMarkPaidPayout(null)} data-testid="button-mark-paid-cancel">Cancel</Button>
+                <Button className="text-white" style={{ background: "var(--gradient-brand)" }} onClick={() => markPaidMutation.mutate()} disabled={markPaidMutation.isPending || !mpDate} data-testid="button-mark-paid-confirm">
+                  {markPaidMutation.isPending ? "Saving…" : "Mark paid"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={payoutDialogOpen} onOpenChange={v => { if (!v) { setPayoutDialogOpen(false); resetForm(); } else setPayoutDialogOpen(true); }}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden" style={{ background: "var(--lux-surface)", borderColor: "var(--lux-border)" }}>
