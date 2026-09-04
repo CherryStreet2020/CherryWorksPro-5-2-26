@@ -613,10 +613,13 @@ function TeamMemberDashboard() {
   const utilPct = hours.total > 0 ? Math.round((hours.billable / hours.total) * 100) : 0;
   const earnings = myData?.earnings || {
     unbilled: { hours: 0, amount: 0, byProject: [] },
-    billedAwaiting: { hours: 0, amount: 0, items: [], nextPaymentDate: null },
-    paid: { hours: 0, amount: 0, items: [] },
+    awaitingPayout: { hours: 0, amount: 0, byProject: [] },
+    paid: { hours: 0, amount: 0, items: [], totalReceived: 0, outsideTracking: { count: 0, amount: 0 } },
+    totalOwed: 0,
     totalOutstanding: 0,
   };
+  const paidOutside = earnings.paid?.outsideTracking || { count: 0, amount: 0 };
+  const totalReceived = Number(earnings.paid?.totalReceived ?? earningsData?.totalReceived ?? 0);
 
   function formatDate(dateStr: string | null): string {
     if (!dateStr) return "—";
@@ -665,19 +668,21 @@ function TeamMemberDashboard() {
         </Card>
       )}
 
-      {/* ── Row 2: My Earnings (1099 / C2C only) ── */}
+      {/* ── Row 2: My Earnings (1099 / C2C only) ──
+          Every number here is about PAYOUTS TO THIS MEMBER. Nothing on this card
+          comes from the client invoice's status or dates: "Paid" means paid to you,
+          and the member cannot infer which invoices the client has paid. ── */}
       {(user as any)?.workerType !== "W2_EMPLOYEE" && (
       <Card className="border-0" style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }} data-testid="card-my-earnings">
         <CardContent className="p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold" style={{ color: "var(--lux-text)" }}>My Earnings</h3>
-            {earnings.billedAwaiting.nextPaymentDate && (
-              <span className="text-xs px-2 py-1 rounded-full" style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6" }} data-testid="badge-next-payment">
-                Next payment expected {daysFromNow(earnings.billedAwaiting.nextPaymentDate)}
+            {earnings.totalOwed > 0 && (
+              <span className="text-xs px-2 py-1 rounded-full" style={{ background: "rgba(59,130,246,0.1)", color: "#3b82f6" }} data-testid="badge-total-owed">
+                Owed to you: {formatMoney(earnings.totalOwed, baseCurrency)}
               </span>
             )}
           </div>
-
           {earnings.costRateMissing && (
             <div className="rounded-lg px-3 py-2 mb-3 flex items-center gap-2" style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)" }} data-testid="warning-cost-rate-missing">
               <span className="text-xs" style={{ color: "#f59e0b" }}>Cost rate not set — ask your admin to configure your pay rate</span>
@@ -689,18 +694,20 @@ function TeamMemberDashboard() {
               <p className="text-lg font-bold tabular-nums" style={{ color: "#f59e0b" }} data-testid="text-unbilled-amount">{formatMoney(earnings.unbilled.amount, baseCurrency)}</p>
               <p className="text-xs" style={{ color: "var(--lux-text-muted)" }} data-testid="text-unbilled-hours">{formatHours(earnings.unbilled.hours)}h not yet invoiced</p>
             </div>
-            <div className="rounded-lg px-4 py-3" style={{ background: "var(--lux-surface-alt)" }} data-testid="stat-billed-awaiting">
-              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Billed — Awaiting Payment</p>
-              <p className="text-lg font-bold tabular-nums" style={{ color: "#3b82f6" }}>{formatMoney(earnings.billedAwaiting.amount, baseCurrency)}</p>
-              <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>{formatHours(earnings.billedAwaiting.hours)}h invoiced to client</p>
+            <div className="rounded-lg px-4 py-3" style={{ background: "var(--lux-surface-alt)" }} data-testid="stat-awaiting-payout">
+              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Awaiting Payout</p>
+              <p className="text-lg font-bold tabular-nums" style={{ color: "#3b82f6" }} data-testid="text-awaiting-amount">{formatMoney(earnings.awaitingPayout.amount, baseCurrency)}</p>
+              <p className="text-xs" style={{ color: "var(--lux-text-muted)" }} data-testid="text-awaiting-hours">{formatHours(earnings.awaitingPayout.hours)}h invoiced, not yet paid to you</p>
             </div>
             <div className="rounded-lg px-4 py-3" style={{ background: "var(--lux-surface-alt)" }} data-testid="stat-paid">
-              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Paid</p>
-              <p className="text-lg font-bold tabular-nums" style={{ color: "#22c55e" }}>{formatMoney(earnings.paid.amount, baseCurrency)}</p>
-              <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>{formatHours(earnings.paid.hours)}h total paid</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Paid to You</p>
+              <p className="text-lg font-bold tabular-nums" style={{ color: "#22c55e" }} data-testid="text-paid-amount">{formatMoney(totalReceived, baseCurrency)}</p>
+              <p className="text-xs" style={{ color: "var(--lux-text-muted)" }} data-testid="text-paid-hours">
+                {formatHours(earnings.paid.hours)}h tracked here
+                {paidOutside.amount > 0 && <span> · {formatMoney(paidOutside.amount, baseCurrency)} for work before time tracking</span>}
+              </p>
             </div>
           </div>
-
           {earnings.unbilled.byProject.length > 0 && (
             <div className="mb-4">
               <p className="text-xs font-semibold mb-2" style={{ color: "var(--lux-text-secondary)" }}>Unbilled by Project</p>
@@ -717,42 +724,36 @@ function TeamMemberDashboard() {
               </div>
             </div>
           )}
-
-          {earnings.billedAwaiting.items.length > 0 && (
+          {earnings.awaitingPayout.byProject.length > 0 && (
             <div className="mb-4">
-              <p className="text-xs font-semibold mb-2" style={{ color: "var(--lux-text-secondary)" }}>Billed — Awaiting Payment</p>
+              <p className="text-xs font-semibold mb-2" style={{ color: "var(--lux-text-secondary)" }}>Awaiting Payout by Project</p>
               <div className="space-y-1">
-                {earnings.billedAwaiting.items.map((item: any, i: number) => (
-                  <div key={i} className="flex items-center justify-between py-1.5 px-3 rounded" style={{ background: "var(--lux-surface-alt)" }}>
-                    <div>
-                      <span className="text-sm" style={{ color: "var(--lux-text)" }}>{item.projectName}</span>
-                      <span className="text-xs ml-2" style={{ color: "var(--lux-text-muted)" }}>
-                        Due {formatDate(item.invoiceDueDate)}
-                        {item.invoiceDueDate && <span className="ml-1" style={{ color: new Date(item.invoiceDueDate) < new Date() ? "#ef4444" : "#3b82f6" }}>({daysFromNow(item.invoiceDueDate)})</span>}
-                      </span>
-                    </div>
+                {earnings.awaitingPayout.byProject.map((p: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between py-1.5 px-3 rounded" style={{ background: "var(--lux-surface-alt)" }} data-testid={`row-awaiting-${i}`}>
+                    <span className="text-sm" style={{ color: "var(--lux-text)" }}>{p.projectName}</span>
                     <div className="flex items-center gap-3">
-                      <span className="text-xs tabular-nums" style={{ color: "var(--lux-text-muted)" }}>{formatHours(item.hours)}h</span>
-                      <span className="text-sm font-semibold tabular-nums" style={{ color: "#3b82f6" }}>{formatMoney(item.amount, baseCurrency)}</span>
+                      <span className="text-xs tabular-nums" style={{ color: "var(--lux-text-muted)" }}>{formatHours(p.hours)}h</span>
+                      <span className="text-sm font-semibold tabular-nums" style={{ color: "#3b82f6" }}>{formatMoney(p.amount, baseCurrency)}</span>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           )}
-
           {earnings.paid.items.length > 0 && (
             <div>
-              <p className="text-xs font-semibold mb-2" style={{ color: "var(--lux-text-secondary)" }}>Recently Paid</p>
+              <p className="text-xs font-semibold mb-2" style={{ color: "var(--lux-text-secondary)" }}>Recent Payouts to You</p>
               <div className="space-y-1">
                 {earnings.paid.items.slice(0, 5).map((item: any, i: number) => (
-                  <div key={i} className="flex items-center justify-between py-1.5 px-3 rounded" style={{ background: "var(--lux-surface-alt)" }}>
+                  <div key={item.payoutId || i} className="flex items-center justify-between py-1.5 px-3 rounded" style={{ background: "var(--lux-surface-alt)" }} data-testid={`row-paid-${i}`}>
                     <div>
-                      <span className="text-sm" style={{ color: "var(--lux-text)" }}>{item.projectName}</span>
-                      {item.paidDate && <span className="text-xs ml-2" style={{ color: "var(--lux-text-muted)" }}>Paid {formatDate(item.paidDate)}</span>}
+                      <span className="text-sm" style={{ color: "var(--lux-text)" }}>Paid {formatDate(item.payoutDate)}</span>
+                      <span className="text-xs ml-2" style={{ color: "var(--lux-text-muted)" }}>
+                        via {item.paymentMethod}{item.trackedHere ? "" : " · work before time tracking"}
+                      </span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="text-xs tabular-nums" style={{ color: "var(--lux-text-muted)" }}>{formatHours(item.hours)}h</span>
+                      <span className="text-xs tabular-nums" style={{ color: "var(--lux-text-muted)" }}>{item.trackedHere ? `${formatHours(item.hours)}h` : "—"}</span>
                       <span className="text-sm font-semibold tabular-nums" style={{ color: "#22c55e" }}>{formatMoney(item.amount, baseCurrency)}</span>
                     </div>
                   </div>
@@ -760,8 +761,7 @@ function TeamMemberDashboard() {
               </div>
             </div>
           )}
-
-          {earnings.unbilled.amount === 0 && earnings.billedAwaiting.amount === 0 && earnings.paid.amount === 0 && (
+          {earnings.unbilled.amount === 0 && earnings.awaitingPayout.amount === 0 && totalReceived === 0 && (
             <p className="text-xs text-center py-4" style={{ color: "var(--lux-text-muted)" }}>
               No earnings data yet. Log billable time and get invoiced to see your earnings here.
             </p>
@@ -837,19 +837,19 @@ function TeamMemberDashboard() {
         </CardContent>
       </Card>
 
-      {/* ── Row 4b: Payout History ── */}
+      {/* ── Row 4b: Payout History ── the badge is the SUM OF THIS LIST ── */}
       <Card className="border-0" style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }} data-testid="card-payout-history">
         <CardContent className="p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold" style={{ color: "var(--lux-text)" }}>Payout History</h3>
             {earningsData && (
               <div className="flex items-center gap-3">
-                <span className="text-xs px-2 py-1 rounded-full" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e" }}>
-                  Total received: {formatMoney(earningsData.totalEarned || 0, baseCurrency)}
+                <span className="text-xs px-2 py-1 rounded-full" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e" }} data-testid="badge-total-received">
+                  Total received: {formatMoney(earningsData.totalReceived ?? earningsData.totalEarned ?? 0, baseCurrency)}
                 </span>
                 {earningsData.pendingPayout > 0 && (
-                  <span className="text-xs px-2 py-1 rounded-full" style={{ background: "rgba(245,158,11,0.1)", color: "#f59e0b" }}>
-                    Pending: {formatMoney(earningsData.pendingPayout, baseCurrency)}
+                  <span className="text-xs px-2 py-1 rounded-full" style={{ background: "rgba(245,158,11,0.1)", color: "#f59e0b" }} data-testid="badge-pending-payout">
+                    Owed to you: {formatMoney(earningsData.pendingPayout, baseCurrency)}
                   </span>
                 )}
               </div>
@@ -858,7 +858,7 @@ function TeamMemberDashboard() {
           {earningsData?.payoutHistory?.length > 0 ? (
             <div className="space-y-2">
               {earningsData.payoutHistory.slice(0, 10).map((p: any) => (
-                <div key={p.id} className="flex items-center justify-between py-2 px-3 rounded-lg" style={{ background: "var(--lux-surface-alt)" }}>
+                <div key={p.id} className="flex items-center justify-between py-2 px-3 rounded-lg" style={{ background: "var(--lux-surface-alt)" }} data-testid={`payout-history-${p.id}`}>
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(34,197,94,0.12)" }}>
                       <DollarSign className="w-4 h-4" style={{ color: "#22c55e" }} />
@@ -872,6 +872,8 @@ function TeamMemberDashboard() {
                         {p.periodStart && p.periodEnd && (
                           <span> · {formatDate(p.periodStart)} – {formatDate(p.periodEnd)}</span>
                         )}
+                        {p.trackedHere === false && <span> · work before time tracking</span>}
+                        {p.trackedHere === true && p.linkedHours > 0 && <span> · {formatHours(p.linkedHours)}h</span>}
                       </p>
                     </div>
                   </div>
@@ -891,7 +893,6 @@ function TeamMemberDashboard() {
           )}
         </CardContent>
       </Card>
-
       {/* ── Row 5: Recent Entries ── */}
       {myData?.recentEntries?.length > 0 && (
         <Card className="border-0" style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }} data-testid="card-recent-entries">

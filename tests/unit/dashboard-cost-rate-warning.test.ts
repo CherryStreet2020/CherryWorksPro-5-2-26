@@ -40,6 +40,8 @@ type MockStorage = {
   getTimeEntriesByUser: ReturnType<typeof vi.fn>;
   getUserProjects: ReturnType<typeof vi.fn>;
   getTimesheetWeek: ReturnType<typeof vi.fn>;
+  getTeamMemberPayouts: ReturnType<typeof vi.fn>;
+  getPayoutTimeEntries: ReturnType<typeof vi.fn>;
 };
 
 type MockDb = {
@@ -89,6 +91,10 @@ vi.mock("../../server/storage", () => {
     getTimeEntriesByUser: vi.fn(),
     getUserProjects: vi.fn().mockResolvedValue([]),
     getTimesheetWeek: vi.fn().mockResolvedValue(null),
+    // The member earnings block now derives "paid" from payouts to the member.
+    // No payouts in these fixtures: every billable entry is unbilled or awaiting payout.
+    getTeamMemberPayouts: vi.fn().mockResolvedValue([]),
+    getPayoutTimeEntries: vi.fn().mockResolvedValue([]),
   };
   return { storage };
 });

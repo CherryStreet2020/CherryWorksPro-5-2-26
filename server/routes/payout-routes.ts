@@ -609,11 +609,37 @@ app.get("/api/my/earnings", requireAuth, async (req, res) => {
       }
     }
 
-    const payoutHistory = await storage.getTeamMemberPayouts(orgId, { teamMemberId: userId, status: "COMPLETED" });
+    const payoutHistoryRaw = await storage.getTeamMemberPayouts(orgId, { teamMemberId: userId, status: "COMPLETED" });
+    // Hours linked to each completed payout, so the history can say which payouts were
+    // for hours tracked here and which were for work outside this system. The badge
+    // above the list must equal the SUM OF THE LIST — `totalEarned` (value of tracked
+    // hours that have been paid) is NOT that number when any payout has no linked hours.
+    const linkedMinutesByPayout = new Map<string, number>();
+    if (payoutHistoryRaw.length > 0) {
+      const rows = await db
+        .select({ payoutId: payoutTimeEntries.payoutId, minutes: timeEntries.minutes })
+        .from(payoutTimeEntries)
+        .innerJoin(timeEntries, eq(payoutTimeEntries.timeEntryId, timeEntries.id))
+        .where(and(eq(payoutTimeEntries.orgId, orgId), inArray(payoutTimeEntries.payoutId, payoutHistoryRaw.map((p: any) => p.id))));
+      for (const r of rows) linkedMinutesByPayout.set(r.payoutId, (linkedMinutesByPayout.get(r.payoutId) || 0) + r.minutes);
+    }
+    const payoutHistory = payoutHistoryRaw.map((p: any) => {
+      const linkedHours = round2((linkedMinutesByPayout.get(p.id) || 0) / 60);
+      return { ...p, linkedHours, trackedHere: linkedHours > 0 };
+    });
+    const totalReceived = round2(payoutHistoryRaw.reduce((s: number, p: any) => s + Number(p.amount), 0));
+    const paidForTrackedHours = round2(totalEarned);
+    const paidOutsideTracking = round2(payoutHistory.filter(p => !p.trackedHere).reduce((s, p) => s + Number(p.amount), 0));
 
     return res.json({
+      // Money actually received = sum of completed payouts (matches the history list).
+      totalReceived,
+      paidForTrackedHours,
+      paidOutsideTracking,
+      // Kept for compatibility: value of tracked hours that have been paid out.
       totalEarned: round2(totalEarned),
       pendingPayout: round2(pendingPayout),
+      awaitingPayout: round2(billedToClient),
       billedToClient: round2(billedToClient),
       unbilledMinutes: unbilledHours,
       unbilledHours: round2(unbilledHours / 60),

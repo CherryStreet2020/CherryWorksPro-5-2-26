@@ -21,6 +21,7 @@ import {
   teamMemberPayoutsV2,
   users,
   importRuns,
+  payoutTimeEntries,
 } from "@shared/schema";
 import { sanitizeErrorMessage, requireAuth, requireAdmin, requireManagerOrAbove, dashboardBankingLimiter } from "./middleware";
 
@@ -146,107 +147,86 @@ app.get("/api/dashboard/my", requireAuth, async (req, res) => {
 
     const billableEntries = myEntries.filter((e: any) => e.billable);
 
-    const unbilledEntries = billableEntries.filter((e: any) => !e.invoiced);
-    let unbilledHours = 0;
-    let unbilledEarnings = 0;
+    // ── Earnings, from the member's own seat ──────────────────────────────
+    // Every figure below derives from PAYOUTS TO THIS MEMBER (team_member_payouts_v2
+    // + payout_time_entries), never from the client invoice's status or dates.
+    // Two reasons: (1) "paid" must mean "paid to you", not "the client paid the
+    // firm" — the old bucketing counted hours on a client-PAID invoice as paid
+    // even when no payout had happened; (2) a team member must not be able to
+    // infer which invoices the client has paid, or when, from this screen.
+    // Through storage (not db) so the route stays unit-testable with the storage mock.
+    const myCompletedPayouts: any[] = (await storage.getTeamMemberPayouts(orgId, { teamMemberId: userId, status: "COMPLETED" })) || [];
+    const payoutIdByEntry = new Map<string, string>();
+    for (const p of myCompletedPayouts) {
+      const links = (await storage.getPayoutTimeEntries(p.id, orgId)) || [];
+      for (const l of links) payoutIdByEntry.set(l.timeEntryId, p.id);
+    }
+
     let costRateMissing = false;
-    const unbilledByProject: Record<string, { projectName: string; hours: number; amount: number }> = {};
-    for (const e of unbilledEntries) {
+    const valueOf = (e: any) => {
       const hrs = round2(Number(e.minutes) / 60);
       const rate = Number(e.costRate || 0);
       if (e.costRate == null || e.costRate === "") costRateMissing = true;
-      unbilledHours = round2(unbilledHours + hrs);
-      unbilledEarnings = round2(unbilledEarnings + round2(hrs * rate));
-      const key = e.projectName || "Unknown";
-      if (!unbilledByProject[key]) unbilledByProject[key] = { projectName: key, hours: 0, amount: 0 };
-      unbilledByProject[key].hours = round2(unbilledByProject[key].hours + hrs);
-      unbilledByProject[key].amount = round2(unbilledByProject[key].amount + round2(hrs * rate));
-    }
+      return { hrs, amt: round2(hrs * rate) };
+    };
 
-    const billedEntries = billableEntries.filter((e: any) => e.invoiced && e.invoiceLineId);
-    const invoiceLineIds = [...new Set(billedEntries.map((e: any) => e.invoiceLineId).filter(Boolean))];
-
-    let billedAwaitingHours = 0;
-    let billedAwaitingEarnings = 0;
+    // Unbilled: billable, not yet invoiced, not paid out.
+    let unbilledHours = 0;
+    let unbilledEarnings = 0;
+    const unbilledByProject: Record<string, { projectName: string; hours: number; amount: number }> = {};
+    // Awaiting payout: invoiced (or otherwise not unbilled) but no completed payout yet —
+    // regardless of whether the client has paid the firm.
+    let awaitingHours = 0;
+    let awaitingEarnings = 0;
+    const awaitingByProject: Record<string, { projectName: string; hours: number; amount: number }> = {};
+    // Paid: hours linked to a COMPLETED payout, grouped by that payout.
     let paidHours = 0;
     let paidEarnings = 0;
-    const billedItems: Array<{
-      projectName: string;
-      hours: number;
-      amount: number;
-      invoiceStatus: string;
-      invoiceDueDate: string | null;
-      invoicePaidDate: string | null;
-    }> = [];
-    const paidItems: Array<{
-      projectName: string;
-      hours: number;
-      amount: number;
-      paidDate: string | null;
-    }> = [];
+    const paidByPayout: Record<string, { hours: number; amount: number }> = {};
 
-    const lineToEntries: Record<string, any[]> = {};
-    for (const e of billedEntries) {
-      if (!e.invoiceLineId) continue;
-      if (!lineToEntries[e.invoiceLineId]) lineToEntries[e.invoiceLineId] = [];
-      lineToEntries[e.invoiceLineId].push(e);
-    }
-
-    for (const lineId of invoiceLineIds) {
-      const entries = lineToEntries[lineId] || [];
-      if (entries.length === 0) continue;
-
-      let invoiceData: any = null;
-      try {
-        const line = await db.select().from(invoiceLines).where(and(eq(invoiceLines.id, lineId), eq(invoiceLines.orgId, orgId))).limit(1);
-        if (line.length > 0) {
-          const inv = await db.select().from(invoices).where(and(eq(invoices.id, line[0].invoiceId), eq(invoices.orgId, orgId))).limit(1);
-          if (inv.length > 0) invoiceData = inv[0];
-        }
-      } catch { /* skip if lookup fails */ }
-
-      let groupHours = 0;
-      let groupAmount = 0;
-      const projectName = entries[0].projectName || "Unknown";
-      for (const e of entries) {
-        const hrs = round2(Number(e.minutes) / 60);
-        const rate = Number(e.costRate || 0);
-        if (e.costRate == null || e.costRate === "") costRateMissing = true;
-        groupHours = round2(groupHours + hrs);
-        groupAmount = round2(groupAmount + round2(hrs * rate));
-      }
-
-      if (invoiceData && (invoiceData.status === "PAID")) {
-        paidHours = round2(paidHours + groupHours);
-        paidEarnings = round2(paidEarnings + groupAmount);
-        let paidDate: string | null = null;
-        try {
-          const pmts = await db.select().from(payments).where(and(eq(payments.invoiceId, invoiceData.id), eq(payments.orgId, orgId))).orderBy(desc(payments.date)).limit(1);
-          if (pmts.length > 0) paidDate = pmts[0].date;
-        } catch (err) { console.error("[auto-payout] Failed to look up payment date:", err); }
-        paidItems.push({ projectName, hours: groupHours, amount: groupAmount, paidDate });
-      } else if (invoiceData && (invoiceData.status === "SENT" || invoiceData.status === "PARTIAL")) {
-        billedAwaitingHours = round2(billedAwaitingHours + groupHours);
-        billedAwaitingEarnings = round2(billedAwaitingEarnings + groupAmount);
-        billedItems.push({
-          projectName,
-          hours: groupHours,
-          amount: groupAmount,
-          invoiceStatus: invoiceData.status,
-          invoiceDueDate: invoiceData.dueDate,
-          invoicePaidDate: null,
-        });
+    for (const e of billableEntries) {
+      const { hrs, amt } = valueOf(e);
+      const key = e.projectName || "Unknown";
+      const payoutId = payoutIdByEntry.get(e.id);
+      if (payoutId) {
+        paidHours = round2(paidHours + hrs);
+        paidEarnings = round2(paidEarnings + amt);
+        if (!paidByPayout[payoutId]) paidByPayout[payoutId] = { hours: 0, amount: 0 };
+        paidByPayout[payoutId].hours = round2(paidByPayout[payoutId].hours + hrs);
+        paidByPayout[payoutId].amount = round2(paidByPayout[payoutId].amount + amt);
+      } else if (!e.invoiced) {
+        unbilledHours = round2(unbilledHours + hrs);
+        unbilledEarnings = round2(unbilledEarnings + amt);
+        if (!unbilledByProject[key]) unbilledByProject[key] = { projectName: key, hours: 0, amount: 0 };
+        unbilledByProject[key].hours = round2(unbilledByProject[key].hours + hrs);
+        unbilledByProject[key].amount = round2(unbilledByProject[key].amount + amt);
+      } else {
+        awaitingHours = round2(awaitingHours + hrs);
+        awaitingEarnings = round2(awaitingEarnings + amt);
+        if (!awaitingByProject[key]) awaitingByProject[key] = { projectName: key, hours: 0, amount: 0 };
+        awaitingByProject[key].hours = round2(awaitingByProject[key].hours + hrs);
+        awaitingByProject[key].amount = round2(awaitingByProject[key].amount + amt);
       }
     }
 
-    let nextPaymentDate: string | null = null;
-    for (const item of billedItems) {
-      if (item.invoiceDueDate) {
-        if (!nextPaymentDate || item.invoiceDueDate < nextPaymentDate) {
-          nextPaymentDate = item.invoiceDueDate;
-        }
-      }
-    }
+    // Paid items are the payouts themselves (date = when the member was paid), newest first.
+    const paidItems = myCompletedPayouts
+      .map(p => ({
+        payoutId: p.id,
+        payoutDate: p.payoutDate,
+        paymentMethod: p.paymentMethod,
+        referenceNumber: p.referenceNumber,
+        amount: round2(Number(p.amount)),
+        hours: paidByPayout[p.id]?.hours ?? 0,
+        // A payout with no linked hours was paid for work tracked outside this system
+        // (e.g. before time tracking began). It counts toward money received, never
+        // toward tracked hours.
+        trackedHere: (paidByPayout[p.id]?.hours ?? 0) > 0,
+      }))
+      .sort((x, y) => String(y.payoutDate).localeCompare(String(x.payoutDate)));
+    const totalReceived = round2(myCompletedPayouts.reduce((s, p) => s + Number(p.amount), 0));
+    const paidOutsideTrackingAmount = round2(paidItems.filter(i => !i.trackedHere).reduce((s, i) => s + i.amount, 0));
+    const paidOutsideTrackingCount = paidItems.filter(i => !i.trackedHere).length;
 
     return res.json({
       hoursThisWeek: { billable, nonBillable, total: round2(billable + nonBillable) },
@@ -267,18 +247,20 @@ app.get("/api/dashboard/my", requireAuth, async (req, res) => {
           amount: unbilledEarnings,
           byProject: Object.values(unbilledByProject),
         },
-        billedAwaiting: {
-          hours: billedAwaitingHours,
-          amount: billedAwaitingEarnings,
-          items: billedItems,
-          nextPaymentDate,
+        awaitingPayout: {
+          hours: awaitingHours,
+          amount: awaitingEarnings,
+          byProject: Object.values(awaitingByProject),
         },
         paid: {
           hours: paidHours,
           amount: paidEarnings,
           items: paidItems,
+          totalReceived,
+          outsideTracking: { count: paidOutsideTrackingCount, amount: paidOutsideTrackingAmount },
         },
-        totalOutstanding: round2(unbilledEarnings + billedAwaitingEarnings),
+        totalOwed: round2(unbilledEarnings + awaitingEarnings),
+        totalOutstanding: round2(unbilledEarnings + awaitingEarnings),
       },
     });
   } catch (err: any) {
