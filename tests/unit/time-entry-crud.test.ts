@@ -52,12 +52,12 @@ describe("time_entry_crud_guards", () => {
     // future dates") and more than a year back, so pick a weekday 4–8 weeks
     // ago — far enough back that no other test file has locked that week.
     const randomOffset = 28 + Math.floor(Math.random() * 28);
-    const futureDate = new Date();
-    futureDate.setDate(futureDate.getDate() - randomOffset);
-    while (futureDate.getDay() === 0 || futureDate.getDay() === 6) {
-      futureDate.setDate(futureDate.getDate() + 1);
+    const entryDate = new Date();
+    entryDate.setDate(entryDate.getDate() - randomOffset);
+    while (entryDate.getDay() === 0 || entryDate.getDay() === 6) {
+      entryDate.setDate(entryDate.getDate() + 1);
     }
-    const dateStr = futureDate.toISOString().split("T")[0];
+    const dateStr = entryDate.toISOString().split("T")[0];
 
     const createRes = await api("POST", "/api/time-entries", teamMemberCookie, {
       projectId,
@@ -93,12 +93,12 @@ describe("time_entry_crud_guards", () => {
     // A week 10–14 weeks back: past (the route rejects future dates), inside
     // the one-year window, and far from the weeks other files touch.
     const randomOffset = 70 + Math.floor(Math.random() * 28);
-    const futureSunday = new Date();
-    futureSunday.setDate(futureSunday.getDate() - randomOffset);
-    while (futureSunday.getDay() !== 0) {
-      futureSunday.setDate(futureSunday.getDate() - 1);
+    const pastSunday = new Date();
+    pastSunday.setDate(pastSunday.getDate() - randomOffset);
+    while (pastSunday.getDay() !== 0) {
+      pastSunday.setDate(pastSunday.getDate() - 1);
     }
-    const weekStartDate = futureSunday.toISOString().split("T")[0];
+    const weekStartDate = pastSunday.toISOString().split("T")[0];
 
     const createRes = await api("POST", "/api/time-entries", teamMemberCookie, {
       projectId,

@@ -70,6 +70,9 @@ describe("Team Management API", () => {
     });
     expect(res.status).toBe(200);
     const data = await res.json();
+    // Record the id first so afterAll can deactivate the user even if an
+    // assertion below fails (the shared org roster must be left as found).
+    invitedUserId = data?.user?.id ?? "";
     expect(data.user).toBeDefined();
     expect(data.user.email).toBe(testEmail);
     expect(data.user.role).toBe("TEAM_MEMBER");
@@ -81,7 +84,6 @@ describe("Team Management API", () => {
       expect(typeof data.inviteUrl).toBe("string");
       expect(data.inviteUrl).toContain("tempPassword=");
     }
-    invitedUserId = data.user.id;
   });
 
   it("POST /api/team/invite rejects duplicate email", async () => {

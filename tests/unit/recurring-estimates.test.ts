@@ -238,7 +238,6 @@ describe("Estimates / Proposals", () => {
         ],
       }),
     });
-    if (res.status !== 201) console.log("DEBUG estimate create:", res.status, await res.clone().text());
     expect(res.status).toBe(201);
     const est = await res.json();
     expect(est.number).toMatch(/EST-/);

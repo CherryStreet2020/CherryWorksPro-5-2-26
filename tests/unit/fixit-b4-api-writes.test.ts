@@ -333,7 +333,6 @@ describe("FIXIT B4 — Public API v1 Write Endpoints", () => {
         dueDate,
         status: "SENT",
       });
-      if (res.status !== 201) console.log("DEBUG v1 invoice create:", res.status, await res.clone().text());
       expect(res.status).toBe(201);
       const body = await res.json();
       expect(body.status).toBe("DRAFT");
