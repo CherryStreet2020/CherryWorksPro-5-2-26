@@ -83,7 +83,7 @@ function summary(overrides: Record<string, unknown> = {}) {
     unbilled: { hours: 1, minutes: 60, amount: 135, byProject: [] },
     awaitingPayout: { hours: 2, minutes: 120, amount: 270, byProject: [] },
     totalOwed: 405,
-    pendingPayouts: { count: 0, amount: 0, hours: 0 },
+    pendingPayouts: { count: 0, amount: 0, hours: 0, reimbursements: { count: 0, amount: 0 } },
     paid: { hours: 0, totalReceived: 0, linkedToHours: { count: 0, amount: 0 }, withoutLinkedHours: { count: 0, amount: 0 } },
     reimbursements: { count: 0, amount: 0 },
     totalReceivedIncludingReimbursements: 0,

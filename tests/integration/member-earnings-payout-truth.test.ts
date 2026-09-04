@@ -24,6 +24,7 @@
  *   G 1h invoiced → linked to PENDING payout P4 (135)                     → PENDING_PAYOUT (not owed, not paid)
  *   M 30m not invoiced, NO snapshot, project WITHOUT a rate               → UNBILLED  0.00 + costRateMissing
  *   P2 COMPLETED 500, no links ("old system")  P5 COMPLETED 89 expense reimbursement  P6 VOID 999 (ignored)
+ *   P7 PENDING 40 expense reimbursement (approved, not yet paid) → pending, named as a reimbursement
  * Member 2: one 1h invoiced entry at 100, no payouts.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
@@ -90,7 +91,7 @@ async function get(app: Express, path: string): Promise<{ status: number; body: 
 const PAID_INVOICE = randomUUID();
 const SENT_INVOICE = randomUUID();
 const E = { A: randomUUID(), B: randomUUID(), C: randomUUID(), D: randomUUID(), N: randomUUID(), F: randomUUID(), G: randomUUID(), M: randomUUID(), M2: randomUUID() };
-const P = { P1: randomUUID(), P2: randomUUID(), P3: randomUUID(), P4: randomUUID(), P5: randomUUID(), P6: randomUUID() };
+const P = { P1: randomUUID(), P2: randomUUID(), P3: randomUUID(), P4: randomUUID(), P5: randomUUID(), P6: randomUUID(), P7: randomUUID() };
 
 type EntryRow = { id: string; user: string; project: string; minutes: number; billable: boolean; invoiced: boolean; snapshot: string | null };
 const ENTRIES: EntryRow[] = [
@@ -112,6 +113,7 @@ const PAYOUTS: PayoutRow[] = [
   { id: P.P4, amount: "135.00", date: "2026-09-01", method: "STRIPE_CONNECT", status: "PENDING", ref: "S-4", notes: null, links: [E.G] },
   { id: P.P5, amount: "89.00", date: "2026-08-25", method: "ZELLE", status: "COMPLETED", ref: "Z-5", notes: `${EXPENSE_REIMBURSEMENT_NOTE_PREFIX}flight`, links: [] },
   { id: P.P6, amount: "999.00", date: "2026-08-01", method: "ZELLE", status: "VOID", ref: "Z-6", notes: "voided", links: [] },
+  { id: P.P7, amount: "40.00", date: "2026-09-02", method: "ZELLE", status: "PENDING", ref: "Z-7", notes: `${EXPENSE_REIMBURSEMENT_NOTE_PREFIX}parking`, links: [] },
 ];
 
 // Expected member-1 figures, derived from the fixture above (see header).
@@ -121,7 +123,7 @@ const EXPECTED = {
   awaitingAmount: 540,
   awaitingHours: 4,
   totalOwed: round2(135 + 112.5 + 540),
-  pendingAmount: 135,
+  pendingAmount: 175,         // P4 135 (earnings, in flight) + P7 40 (approved reimbursement)
   paidHours: 3,               // A 2h + N 1h
   earningsReceived: 905,      // P1 270 + P2 500 + P3 135
   linkedToHours: 405,         // P1 + P3
@@ -183,7 +185,7 @@ describe("GET /api/dashboard/my — earnings from the member's seat", () => {
     expect(e.costRateMissing).toBe(true);
     expect(e.totalOwed).toBe(EXPECTED.totalOwed);
     // A pending payout is neither owed nor paid; it is shown as in flight.
-    expect(e.pendingPayouts).toEqual({ count: 1, amount: EXPECTED.pendingAmount, hours: 1 });
+    expect(e.pendingPayouts).toEqual({ count: 2, amount: EXPECTED.pendingAmount, hours: 1, reimbursements: { count: 1, amount: 40 } });
     // Paid = only what was actually paid out, incl. hours that were non-billable.
     expect(e.paid.hours).toBe(EXPECTED.paidHours);
     expect(e.paid.totalReceived).toBe(EXPECTED.earningsReceived);
@@ -238,7 +240,7 @@ describe("GET /api/my/earnings — the badge equals the list, and both endpoints
     // Owed = the same single number the dashboard badge shows.
     expect(b.pendingPayout).toBe(EXPECTED.totalOwed);
     expect(b.totalOwed).toBe(EXPECTED.totalOwed);
-    expect(b.pendingPayouts).toEqual({ count: 1, amount: 135, hours: 1 });
+    expect(b.pendingPayouts).toEqual({ count: 2, amount: 175, hours: 1, reimbursements: { count: 1, amount: 40 } });
     expect(b.costRateMissing).toBe(true);
     // Per-entry ledger foots to the buckets.
     const byId = Object.fromEntries(b.timeEntries.map((t: any) => [t.id, t]));
@@ -267,6 +269,8 @@ describe("GET /api/my/earnings — the badge equals the list, and both endpoints
     const member = await get(buildApp(MEMBER_ID), "/api/dashboard/my");
     expect(member.body.earnings.totalOwed).toBe(adminRow.unpaidTimeValue);
     expect(member.body.earnings.pendingPayouts.amount).toBe(adminRow.pendingPayoutAmount);
+    // The two member figures add up to the single "amount owed" the admin sees.
+    expect(round2(member.body.earnings.totalOwed + member.body.earnings.pendingPayouts.amount)).toBe(adminRow.amountOwed);
     expect(member.body.earnings.totalReceivedIncludingReimbursements).toBe(adminRow.totalPaidOut);
     // paid + pending hours on the member side == the admin's paidMinutes (non-VOID links)
     expect(round2(member.body.earnings.paid.hours + member.body.earnings.pendingPayouts.hours)).toBe(adminRow.paidHours);

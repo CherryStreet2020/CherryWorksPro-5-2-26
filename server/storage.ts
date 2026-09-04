@@ -4535,7 +4535,8 @@ export class DatabaseStorage {
     const sum = (arr: { amount: number }[]) => round2(arr.reduce((s, i) => s + i.amount, 0));
     const completedEarnings = items.filter(i => i.status === "COMPLETED" && i.kind === "EARNINGS");
     const completedReimbursements = items.filter(i => i.status === "COMPLETED" && i.kind === "EXPENSE_REIMBURSEMENT");
-    const pendingEarnings = items.filter(i => i.status === "PENDING" && i.kind === "EARNINGS");
+    const pendingAll = items.filter(i => i.status === "PENDING");
+    const pendingReimbursements = pendingAll.filter(i => i.kind === "EXPENSE_REIMBURSEMENT");
     const withoutLinkedHours = completedEarnings.filter(i => i.linkedMinutes === 0);
     const totalReceived = sum(completedEarnings);
     const reimbursementsReceived = sum(completedReimbursements);
@@ -4546,8 +4547,15 @@ export class DatabaseStorage {
       awaitingPayout: { ...finish(awaiting), byProject: finishByProject(awaitingByProject) },
       // What the member is owed right now — identical to the admin's unpaidTimeValue.
       totalOwed: round2(unbilled.amount + awaiting.amount),
-      // Payouts created but not yet completed (e.g. a Stripe transfer in flight).
-      pendingPayouts: { count: pendingEarnings.length, amount: sum(pendingEarnings), hours: round2(pending.minutes / 60) },
+      // Payouts created but not yet completed (e.g. a Stripe transfer in flight or an
+      // approved expense not yet reimbursed). Every PENDING payout counts here, so
+      // totalOwed + pendingPayouts.amount == the admin's amountOwed for this member.
+      pendingPayouts: {
+        count: pendingAll.length,
+        amount: sum(pendingAll),
+        hours: round2(pending.minutes / 60),
+        reimbursements: { count: pendingReimbursements.length, amount: sum(pendingReimbursements) },
+      },
       paid: {
         hours: round2(paid.minutes / 60),
         totalReceived,

@@ -651,14 +651,15 @@ function TeamMemberDashboard() {
     unbilled: { hours: 0, amount: 0, byProject: [] },
     awaitingPayout: { hours: 0, amount: 0, byProject: [] },
     totalOwed: 0,
-    pendingPayouts: { count: 0, amount: 0, hours: 0 },
+    pendingPayouts: { count: 0, amount: 0, hours: 0, reimbursements: { count: 0, amount: 0 } },
     paid: { hours: 0, totalReceived: 0, linkedToHours: { count: 0, amount: 0 }, withoutLinkedHours: { count: 0, amount: 0 }, items: [] },
     reimbursements: { count: 0, amount: 0 },
   };
   const unbilled = earnings.unbilled ?? { hours: 0, amount: 0, byProject: [] };
   const awaiting = earnings.awaitingPayout ?? { hours: 0, amount: 0, byProject: [] };
   const paid = earnings.paid ?? { hours: 0, totalReceived: 0, linkedToHours: { count: 0, amount: 0 }, withoutLinkedHours: { count: 0, amount: 0 }, items: [] };
-  const pendingPayouts = earnings.pendingPayouts ?? { count: 0, amount: 0, hours: 0 };
+  const pendingPayouts = earnings.pendingPayouts ?? { count: 0, amount: 0, hours: 0, reimbursements: { count: 0, amount: 0 } };
+  const pendingReimb = pendingPayouts.reimbursements ?? { count: 0, amount: 0 };
   const reimbursements = earnings.reimbursements ?? { count: 0, amount: 0 };
   const withoutLinked = paid.withoutLinkedHours ?? { count: 0, amount: 0 };
   const totalOwed = Number(earnings.totalOwed ?? 0);
@@ -748,7 +749,9 @@ function TeamMemberDashboard() {
 
           {pendingPayouts.count > 0 && (
             <p className="text-xs mb-3" style={{ color: "var(--lux-text-muted)" }} data-testid="text-pending-payouts">
-              {formatMoney(pendingPayouts.amount, baseCurrency)} in {pendingPayouts.count} payout{pendingPayouts.count === 1 ? "" : "s"} being processed — not yet counted as paid.
+              {formatMoney(pendingPayouts.amount, baseCurrency)} in {pendingPayouts.count} payout{pendingPayouts.count === 1 ? "" : "s"} being processed
+              {pendingReimb.count > 0 && <span> (of which {formatMoney(pendingReimb.amount, baseCurrency)} expense reimbursement{pendingReimb.count === 1 ? "" : "s"})</span>}
+              {" "}— not yet counted as paid.
             </p>
           )}
 
