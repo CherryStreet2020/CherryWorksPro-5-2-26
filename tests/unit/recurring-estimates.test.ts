@@ -19,6 +19,12 @@ async function login() {
   _orgId = user.orgId;
 }
 
+// The newest client (clients[0]) may be a temporary row another test file is
+// about to delete; the seeded QA client (oldest) is stable for the whole run.
+function stableClientId(clients: any[]): string {
+  return (clients.find((c: any) => /QA/i.test(c.name)) ?? clients[clients.length - 1]).id;
+}
+
 function authed(url: string, opts: RequestInit = {}) {
   return fetch(`${BASE}${url}`, {
     ...opts,
@@ -41,7 +47,7 @@ describe("Recurring Invoice Templates", () => {
     await authed("/api/recurring-templates", {
       method: "POST",
       body: JSON.stringify({
-        clientId: clients[0].id,
+        clientId: stableClientId(clients),
         frequency: "MONTHLY",
         nextIssueDate: "2026-05-01",
         dayOfMonth: 1,
@@ -64,7 +70,7 @@ describe("Recurring Invoice Templates", () => {
     const res = await authed("/api/recurring-templates", {
       method: "POST",
       body: JSON.stringify({
-        clientId: clients[0].id,
+        clientId: stableClientId(clients),
         frequency: "WEEKLY",
         nextIssueDate: "2026-04-07",
         templateLines: [{ description: "Weekly support", quantity: 5, unitRate: 100 }],
@@ -109,7 +115,7 @@ describe("Recurring Invoice Templates", () => {
     const createRes = await authed("/api/recurring-templates", {
       method: "POST",
       body: JSON.stringify({
-        clientId: clients[0].id,
+        clientId: stableClientId(clients),
         frequency: "MONTHLY",
         nextIssueDate: "2026-03-01",
         templateLines: [
@@ -159,7 +165,32 @@ describe("Estimates / Proposals", () => {
     expect(Array.isArray(data)).toBe(true);
   });
 
-  test("seeded estimates exist with at least 2 numbered entries", async () => {
+  // The QA seed creates no estimates; make sure at least two exist (one sent, so
+  // it carries a public token) before the list-shape tests below.
+  async function ensureEstimates(): Promise<void> {
+    const existing = await (await authed("/api/estimates")).json();
+    if (Array.isArray(existing) && existing.length >= 2 && existing.some((e: any) => e.publicToken)) return;
+    const clients = await (await authed("/api/clients")).json();
+    const made: string[] = [];
+    for (let i = 0; i < 2; i++) {
+      const res = await authed("/api/estimates", {
+        method: "POST",
+        body: JSON.stringify({
+          clientId: stableClientId(clients),
+          issuedDate: "2026-03-04",
+          taxRate: 0,
+          lines: [{ description: `Fixture line ${i + 1}`, quantity: 1, unitRate: 100 }],
+        }),
+      });
+      expect(res.status).toBe(201);
+      made.push((await res.json()).id);
+    }
+    const sent = await authed(`/api/estimates/${made[0]}/send`, { method: "POST", body: JSON.stringify({ emailTo: "qa@example.com" }) });
+    expect(sent.status).toBe(200);
+  }
+
+  test("estimates exist with numbered entries", async () => {
+    await ensureEstimates();
     const res = await authed("/api/estimates");
     const data = await res.json();
     expect(data.length).toBeGreaterThanOrEqual(2);
@@ -170,6 +201,7 @@ describe("Estimates / Proposals", () => {
   });
 
   test("at least one estimate has a public token", async () => {
+    await ensureEstimates();
     const res = await authed("/api/estimates");
     const data = await res.json();
     const withToken = data.find((e: any) => e.publicToken);
@@ -178,6 +210,7 @@ describe("Estimates / Proposals", () => {
   });
 
   test("estimates expose discount and tax fields", async () => {
+    await ensureEstimates();
     const res = await authed("/api/estimates");
     const data = await res.json();
     expect(data.length).toBeGreaterThan(0);
@@ -196,7 +229,7 @@ describe("Estimates / Proposals", () => {
     const res = await authed("/api/estimates", {
       method: "POST",
       body: JSON.stringify({
-        clientId: clients[0].id,
+        clientId: stableClientId(clients),
         issuedDate: "2026-03-04",
         taxRate: 0,
         lines: [

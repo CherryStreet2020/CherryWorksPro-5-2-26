@@ -25,6 +25,9 @@ let queryResponse: { data: unknown; isLoading: boolean; error: unknown } = {
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (_args: QueryArgs) => queryResponse,
+  useMutation: () => ({ mutate: () => {}, mutateAsync: async () => {}, isPending: false }),
+  useQueryClient: () => ({ invalidateQueries: async () => {}, setQueryData: () => {} }),
+  QueryClient: class { invalidateQueries() {} setQueryData() {} },
   keepPreviousData: undefined,
 }));
 

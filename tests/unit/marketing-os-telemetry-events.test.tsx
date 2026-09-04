@@ -25,6 +25,7 @@ vi.mock("@/lib/queryClient", () => ({
 }));
 
 const checkoutHelper = vi.fn();
+const navigateMock = vi.fn();
 vi.mock("@/lib/marketing-os-checkout", () => ({
   startMarketingOsCheckout: (...args: unknown[]) => checkoutHelper(...args),
 }));
@@ -62,6 +63,7 @@ vi.mock("lucide-react", () => ({
 
 vi.mock("wouter", () => ({
   Link: () => null,
+  useLocation: () => ["/dashboard", navigateMock],
 }));
 
 import { MarketingNavSection } from "@/components/marketing-nav-section";
@@ -178,19 +180,14 @@ describe("Marketing OS upgrade-prompt telemetry (Task 182)", () => {
   });
 
   describe("checkout_clicked", () => {
-    it("fires before the Stripe redirect when Upgrade is clicked", async () => {
-      const order: string[] = [];
-      apiRequestMock.mockImplementation((..._args: unknown[]) => {
-        order.push("telemetry");
-        return Promise.resolve({ json: async () => ({}) });
-      });
-      checkoutHelper.mockImplementation(() => {
-        order.push("checkout");
-        return Promise.resolve({ url: "https://stripe.example/c/abc" });
-      });
-
+    // The Upgrade button no longer starts a Stripe checkout from the modal: it
+    // records the same funnel event and routes the admin to Settings → Billing
+    // (the click target changed; the intent — "unlock Marketing OS" — did not).
+    it("records the event, closes the modal and routes to billing when Upgrade is clicked", async () => {
+      navigateMock.mockReset();
+      const onOpenChange = vi.fn();
       const { getByTestId } = render(
-        <MarketingOsUpgradeModal open onOpenChange={vi.fn()} />,
+        <MarketingOsUpgradeModal open onOpenChange={onOpenChange} />,
       );
       await act(async () => {
         fireEvent.click(getByTestId("button-upgrade-marketing-os"));
@@ -198,25 +195,19 @@ describe("Marketing OS upgrade-prompt telemetry (Task 182)", () => {
 
       const calls = telemetryCalls("marketing_os.discovery.checkout_clicked");
       expect(calls).toHaveLength(1);
-      expect(checkoutHelper).toHaveBeenCalledTimes(1);
-      // Telemetry must be emitted before the checkout helper runs.
-      expect(order[0]).toBe("telemetry");
-      expect(order.indexOf("telemetry")).toBeLessThan(
-        order.indexOf("checkout"),
-      );
-      expect(window.location.href).toBe("https://stripe.example/c/abc");
+      expect(checkoutHelper).not.toHaveBeenCalled();
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+      expect(navigateMock).toHaveBeenCalledWith("/settings/billing");
     });
 
-    it("still fires when the checkout helper rejects (no silent drop)", async () => {
-      checkoutHelper.mockRejectedValueOnce(new Error("Stripe down"));
+    it("does not leave the page from the modal (no Stripe redirect)", async () => {
       const { getByTestId } = render(
         <MarketingOsUpgradeModal open onOpenChange={vi.fn()} />,
       );
       await act(async () => {
         fireEvent.click(getByTestId("button-upgrade-marketing-os"));
       });
-      const calls = telemetryCalls("marketing_os.discovery.checkout_clicked");
-      expect(calls).toHaveLength(1);
+      expect(telemetryCalls("marketing_os.discovery.checkout_clicked")).toHaveLength(1);
       expect(window.location.href).toBe("");
     });
   });

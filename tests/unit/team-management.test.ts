@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 
 import { TEST_BASE as BASE } from "../helpers/base";
 
 interface Ctx { cookie: string; csrfToken: string }
 let adminCookie: Ctx = { cookie: "", csrfToken: "" };
 let teamMemberCookie: Ctx = { cookie: "", csrfToken: "" };
+let invitedUserId = "";
 
 async function api(method: string, path: string, ctx: Ctx, body?: unknown) {
   const opts: RequestInit = {
@@ -33,6 +34,12 @@ beforeAll(async () => {
   teamMemberCookie = await loginAs("team.test@cwpro.dev", "team123");
 });
 
+// The invited user is re-activated by the PATCH test; deactivate it on the way
+// out so the shared test org's active roster is unchanged for other files.
+afterAll(async () => {
+  if (invitedUserId) await api("POST", `/api/team/${invitedUserId}/deactivate`, adminCookie).catch(() => {});
+});
+
 describe("Team Management API", () => {
   it("GET /api/team returns 200 for admin with user data", async () => {
     const res = await api("GET", "/api/team", adminCookie);
@@ -55,7 +62,6 @@ describe("Team Management API", () => {
   });
 
   const testEmail = `testinvite_${Date.now()}@cherrystconsulting.com`;
-  let invitedUserId = "";
   it("POST /api/team/invite creates user with temp password", async () => {
     const res = await api("POST", "/api/team/invite", adminCookie, {
       name: "Test Invite User",
@@ -64,14 +70,20 @@ describe("Team Management API", () => {
     });
     expect(res.status).toBe(200);
     const data = await res.json();
+    // Record the id first so afterAll can deactivate the user even if an
+    // assertion below fails (the shared org roster must be left as found).
+    invitedUserId = data?.user?.id ?? "";
     expect(data.user).toBeDefined();
     expect(data.user.email).toBe(testEmail);
     expect(data.user.role).toBe("TEAM_MEMBER");
     expect(data.user.tempPassword).toBe(true);
-    expect(data.emailSent).toBe(false);
-    expect(typeof data.inviteUrl).toBe("string");
-    expect(data.inviteUrl).toContain("tempPassword=");
-    invitedUserId = data.user.id;
+    // The test server runs with the email flags on, so the invite may really be
+    // sent; when it is not, the admin must get a usable invite link instead.
+    expect(typeof data.emailSent).toBe("boolean");
+    if (!data.emailSent) {
+      expect(typeof data.inviteUrl).toBe("string");
+      expect(data.inviteUrl).toContain("tempPassword=");
+    }
   });
 
   it("POST /api/team/invite rejects duplicate email", async () => {

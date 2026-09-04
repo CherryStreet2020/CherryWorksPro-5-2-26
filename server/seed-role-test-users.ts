@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { orgs, users, clients, projects, invoices, invoiceLines, timeEntries } from "@shared/schema";
+import { orgs, users, clients, projects, projectMembers, invoices, invoiceLines, timeEntries } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { hashPassword } from "./auth";
 
@@ -174,6 +174,32 @@ export async function seedDevQaUsers() {
       .returning({ id: projects.id });
     projectRow = inserted[0];
     console.log(`[seed] Created project: QA Test Project`);
+  }
+
+  // The QA team member and manager must be MEMBERS of the QA project: the
+  // member-facing routes (/api/time-entries/my-projects, the time-entry form,
+  // the member dashboard) are driven by project_members, not by org role.
+  // Idempotent — one row per (project, user).
+  for (const role of ["TEAM_MEMBER", "MANAGER"] as const) {
+    const memberUserId = userIds[role];
+    if (!memberUserId) continue;
+    const existingMembership = await db
+      .select({ id: projectMembers.id })
+      .from(projectMembers)
+      .where(and(eq(projectMembers.projectId, projectRow.id), eq(projectMembers.userId, memberUserId)))
+      .then((r) => r[0]);
+    if (!existingMembership) {
+      await db.insert(projectMembers).values({
+        orgId,
+        projectId: projectRow.id,
+        userId: memberUserId,
+        hourlyRate: "150.00",
+        // 57.00 is the QA member's documented seeded cost rate (see
+        // tests/integration/project-routes-cost-visibility.test.ts).
+        costRateHourly: role === "TEAM_MEMBER" ? "57.00" : "100.00",
+      });
+      console.log(`[seed] Added ${role} to QA Test Project`);
+    }
   }
 
   let invoiceRow = await db

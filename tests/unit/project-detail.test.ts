@@ -103,8 +103,27 @@ describe("project_detail_endpoint", () => {
     expect(typeof data.stats.budgetRemaining).toBe("number");
   });
 
-  it("team member cannot access project detail (403)", async () => {
-    const res = await api("GET", `/api/projects/${projectId}`, teamMemberCookie);
+  it("team member can read a project they are a member of, but not one they are not on (403)", async () => {
+    // The QA seed makes team.test a member of the QA project, and the route
+    // lets project members read their own project. Prove the rule both ways:
+    // the seeded project is readable, a fresh project with no members is 403.
+    const mine = await (await api("GET", "/api/time-entries/my-projects", teamMemberCookie)).json();
+    expect(mine.length).toBeGreaterThan(0);
+    const own = await api("GET", `/api/projects/${mine[0].id}`, teamMemberCookie);
+    expect(own.status).toBe(200);
+
+    // Use the seeded QA client (the oldest row): the newest client may be a
+    // temporary one another test file is about to delete.
+    const clients = await (await api("GET", "/api/clients", adminCookie)).json();
+    const stableClient = clients.find((c: any) => /QA/i.test(c.name)) ?? clients[clients.length - 1];
+    const created = await api("POST", "/api/projects", adminCookie, {
+      clientId: stableClient.id,
+      name: `No-member project ${Date.now()}`,
+      status: "ACTIVE",
+    });
+    expect(created.ok).toBe(true);
+    const other = await created.json();
+    const res = await api("GET", `/api/projects/${other.id}`, teamMemberCookie);
     expect(res.status).toBe(403);
   });
 

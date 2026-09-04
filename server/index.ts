@@ -12,7 +12,7 @@ import helmet from "helmet";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
-import { runMigrationsAndSeed } from "./startup-orchestrator";
+import { runMigrationsAndSeed, markStartupComplete } from "./startup-orchestrator";
 import { startWebhookRetryProcessor } from "./webhooks";
 import { startReminderProcessor, stopReminderProcessor } from "./reminders";
 import {
@@ -215,6 +215,9 @@ app.use((req, res, next) => {
         } else {
           await runMigrationsAndSeed();
         }
+        // Seeds (incl. the test QA users) are done — /api/health now reports
+        // startup: "complete" and the vitest global setup may start the run.
+        markStartupComplete();
         try {
           // Sprint 2j — log add-on price availability once per boot, then
           // batch-flip any rows whose 7-day grace window has elapsed since

@@ -4037,8 +4037,22 @@ export class DatabaseStorage {
   }
 
   async createEstimate(data: InsertEstimate): Promise<Estimate> {
-    const [est] = await db.insert(estimates).values(data).returning();
-    return est;
+    // getNextEstimateNumber takes its FOR UPDATE lock in its own transaction,
+    // which has committed by the time the row is inserted here, so two
+    // concurrent creates can both compute the same next number. When the
+    // (org, number) unique index rejects the insert, recompute and try again.
+    let attempt = 0;
+    let values = data;
+    for (;;) {
+      try {
+        const [est] = await db.insert(estimates).values(values).returning();
+        return est;
+      } catch (err: any) {
+        const isNumberCollision = err?.code === "23505" && String(err?.constraint ?? "").includes("estimates_org_number");
+        if (!isNumberCollision || attempt++ >= 3) throw err;
+        values = { ...values, number: await this.getNextEstimateNumber(values.orgId) };
+      }
+    }
   }
 
   async updateEstimate(id: string, orgId: string, data: Record<string, any>) {

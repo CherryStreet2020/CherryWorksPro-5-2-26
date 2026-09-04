@@ -67,6 +67,7 @@ async function readMarketingOsRow(orgId: string): Promise<
   | {
       active: boolean;
       activatedAt: Date | null;
+      updatedAt: Date | null;
       gracePeriodEndsAt: Date | null;
       grandfatherExpiresAt: Date | null;
     }
@@ -76,6 +77,7 @@ async function readMarketingOsRow(orgId: string): Promise<
     .select({
       active: orgEntitlements.active,
       activatedAt: orgEntitlements.activatedAt,
+      updatedAt: orgEntitlements.updatedAt,
       gracePeriodEndsAt: orgEntitlements.gracePeriodEndsAt,
       grandfatherExpiresAt: orgEntitlements.grandfatherExpiresAt,
     })
@@ -229,9 +231,7 @@ describe("Task #392 — migration 0025 step 4 (past_due grace seed)", () => {
       subscriptionStatus: "past_due",
     });
 
-    const before = Date.now();
     await runMigrationStep4ForOrgs([businessActiveId, businessPastDueId]);
-    const after = Date.now();
 
     const activeRow = await readMarketingOsRow(businessActiveId);
     expect(activeRow).not.toBeNull();
@@ -243,11 +243,14 @@ describe("Task #392 — migration 0025 step 4 (past_due grace seed)", () => {
     expect(pastDueRow!.active).toBe(true);
     expect(pastDueRow!.gracePeriodEndsAt).toBeInstanceOf(Date);
     const sevenDaysMs = MARKETING_OS_PAST_DUE_GRACE_DAYS * 24 * 60 * 60 * 1000;
+    // Both columns are written by the same NOW() in the same statement and are
+    // tz-less `timestamp`s, so compare them to each other: grace == activation
+    // + 7 days. Comparing against Date.now() instead silently depends on the
+    // database session time zone (UTC on Azure; local on a developer machine).
+    expect(pastDueRow!.activatedAt).toBeInstanceOf(Date);
     const graceMs = pastDueRow!.gracePeriodEndsAt!.getTime();
-    // Allow ±5s of clock skew (NOW() is server-side, before/after are
-    // process-side).
-    expect(graceMs).toBeGreaterThanOrEqual(before + sevenDaysMs - 5000);
-    expect(graceMs).toBeLessThanOrEqual(after + sevenDaysMs + 5000);
+    const activatedMs = pastDueRow!.activatedAt!.getTime();
+    expect(Math.abs(graceMs - activatedMs - sevenDaysMs)).toBeLessThanOrEqual(5000);
   });
 
   it("REPLAY: an existing earlier grace deadline is preserved (no clock-reset on re-run)", async () => {
@@ -345,19 +348,20 @@ describe("Task #392 post-review fix — migration 0025 step 2 (legacy add-on gra
       grandfatherExpiresAt: null,
     });
 
-    const before = Date.now();
     await runMigrationStep2ForOrgs([orgId]);
-    const after = Date.now();
 
     const row = await readMarketingOsRow(orgId);
     expect(row).not.toBeNull();
     expect(row!.active).toBe(true);
     expect(row!.grandfatherExpiresAt).toBeInstanceOf(Date);
-    // 1-day sentinel ±5s clock skew; backfill will overwrite with real CPE.
+    // 1-day sentinel; backfill will overwrite with real CPE. The stamp and
+    // updated_at are both NOW() from the same UPDATE and both tz-less, so
+    // compare them to each other (comparing to Date.now() depends on the
+    // database session time zone).
     const oneDayMs = 24 * 60 * 60 * 1000;
+    expect(row!.updatedAt).toBeInstanceOf(Date);
     const stampMs = row!.grandfatherExpiresAt!.getTime();
-    expect(stampMs).toBeGreaterThanOrEqual(before + oneDayMs - 5000);
-    expect(stampMs).toBeLessThanOrEqual(after + oneDayMs + 5000);
+    expect(Math.abs(stampMs - row!.updatedAt!.getTime() - oneDayMs)).toBeLessThanOrEqual(5000);
   });
 
   it("stamps grandfather on STARTER legacy add-on holder (original case)", async () => {

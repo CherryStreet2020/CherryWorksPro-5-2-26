@@ -297,7 +297,10 @@ describe("Task #396 — Non-marketing admin routes still use strict requireAdmin
         // File may not exist in some checkouts — skip rather than fail.
         return;
       }
-      expect(src).toMatch(/\brequireAdmin\b(?!Or)/);
+      // Strict means requireAdmin or something STRICTER — secrets-routes moved
+      // to requirePlatformOperator (operator-only), which must not read as a
+      // regression.
+      expect(src).toMatch(/\b(requireAdmin|requireAdminOnly|requirePlatformOperator)\b(?!Or)/);
       expect(src).not.toMatch(/requireAdminOrManager/);
     });
   }

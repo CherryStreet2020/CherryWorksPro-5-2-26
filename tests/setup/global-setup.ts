@@ -27,14 +27,23 @@ const SHUTDOWN_TIMEOUT_MS = 5_000;
 
 let child: ChildProcess | null = null;
 
+// Ready means the port answers AND startup (migrations + the NODE_ENV=test QA
+// user seed) has finished: /api/health reports `startup: "complete"`. Waiting on
+// the port alone let files that log in as admin.test / team.test race the seed
+// and fail with 401 whenever integration files ran alongside them.
 async function waitForHealth(): Promise<void> {
   const start = Date.now();
   let lastErr: unknown = null;
   while (Date.now() - start < READY_TIMEOUT_MS) {
     try {
       const res = await fetch(HEALTH_URL);
-      if (res.ok) return;
-      lastErr = `status ${res.status}`;
+      if (res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { startup?: string };
+        if (body.startup === "complete") return;
+        lastErr = `healthy but startup=${body.startup ?? "unknown"} (seeds still running)`;
+      } else {
+        lastErr = `status ${res.status}`;
+      }
     } catch (err) {
       lastErr = err;
     }

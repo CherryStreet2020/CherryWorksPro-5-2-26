@@ -18,7 +18,7 @@
  * only deletes rows OLDER than the retention window, so future-dated rows
  * are safe and uniquely ours.
  */
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { TEST_BASE as BASE_URL } from "../helpers/base";
 import { db } from "../../server/db";
 import { emailFailureAlerts } from "@shared/schema";
@@ -110,6 +110,15 @@ describe("Task #247 — GET /api/admin/email/failure-alerts route contract", () 
 
   beforeAll(async () => {
     admin = await loginAs("admin.test@cwpro.dev", "admin123");
+  }, 30000);
+
+  // Seed before EVERY test: the alerts table is global, and other files
+  // (failure-tracker, webhook-health-check, failure-alerts-route) reset it
+  // wholesale between their own tests, which can land between two of ours.
+  beforeEach(async () => {
+    await db
+      .delete(emailFailureAlerts)
+      .where(and(gte(emailFailureAlerts.ts, new Date(fromMs)), lte(emailFailureAlerts.ts, new Date(toMs))));
 
     const rows = [];
     for (let i = 0; i < SEEDED_COUNT; i++) {

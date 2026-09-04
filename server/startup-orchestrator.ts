@@ -26,6 +26,13 @@ export type StartupOrchestratorResult = {
   failures: string[];
 };
 
+// Startup phase, surfaced on /api/health as `startup: "pending" | "complete"`.
+// The seeds (incl. the NODE_ENV=test QA users) run AFTER listen(), so anything
+// that waits on the port alone — the vitest global setup in particular — can
+// race them. Wait for "complete" instead.
+export const startupState = { complete: false };
+export function markStartupComplete(): void { startupState.complete = true; }
+
 export async function runMigrationsAndSeed(): Promise<StartupOrchestratorResult> {
   let migrationsOk = true;
   let migrationThrewReason: string | null = null;
