@@ -13,6 +13,7 @@ import {
   brands, marketingProspects, contactTags, contactActivities, contactTagAssignments, companies,
 } from "@shared/schema";
 import { inArray } from "drizzle-orm";
+import { ensureFixtureOrgs } from "../helpers/fixture-orgs";
 
 const ORG_A = "c89d120d-1f07-4010-938f-070a0e13b8f2";
 const ORG_B = "30cb6705-f98e-44c5-8e2a-fbe3f150a3eb";
@@ -28,6 +29,7 @@ const createdTagIds: string[] = [];
 const createdBrandIds: string[] = [];
 
 beforeAll(async () => {
+  await ensureFixtureOrgs();
   brandA1 = await storage.createBrand({ orgId: ORG_A, name: `2d-A1 ${RUN_TAG}`, slug: slugFor("a1") });
   brandA2 = await storage.createBrand({ orgId: ORG_A, name: `2d-A2 ${RUN_TAG}`, slug: slugFor("a2") });
   brandB  = await storage.createBrand({ orgId: ORG_B, name: `2d-B  ${RUN_TAG}`, slug: slugFor("b")  });
@@ -143,7 +145,7 @@ describe("Sprint 2d — addTagsToContacts is idempotent (single-add semantics)",
     await storage.addTagsToContacts(ORG_A, brandA1.id, [c.id], [tag.id]);
     await storage.addTagsToContacts(ORG_A, brandA1.id, [c.id], [tag.id]);
     const rows = await db
-      .select({ id: contactTagAssignments.contactId })
+      .select({ id: contactTagAssignments.prospectId })
       .from(contactTagAssignments)
       .where(inArray(contactTagAssignments.tagId, [tag.id]));
     expect(rows.length).toBe(1);

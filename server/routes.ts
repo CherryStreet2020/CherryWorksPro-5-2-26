@@ -1,4 +1,5 @@
 import express from "express";
+import { startupState } from "./startup-orchestrator";
 import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import session from "express-session";
@@ -393,7 +394,7 @@ export async function registerRoutes(
       await pool.query("SELECT 1");
       const active = pool.totalCount - pool.idleCount;
       const utilization = pool.totalCount > 0 ? Math.round((active / pool.totalCount) * 100) : 0;
-      res.json({ status: "ok", db: "connected", poolUtilization: `${utilization}%`, uptime: process.uptime() });
+      res.json({ status: "ok", db: "connected", poolUtilization: `${utilization}%`, uptime: process.uptime(), startup: startupState.complete ? "complete" : "pending" });
     } catch (err: any) {
       // Do NOT return err.message here. On Replit the database was not
       // internet-reachable; on Azure it is reachable from any Azure IP, and

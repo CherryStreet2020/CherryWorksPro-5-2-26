@@ -139,12 +139,12 @@ describe("Sprint 2e — marketing segment route contracts", () => {
     contactB = c2.body.id;
 
     // Assign VIP to both, Buyer to A only.
-    const r1 = await api(admin, "POST", "/api/marketing/contacts/bulk-tag", {
-      brandId, contactIds: [contactA, contactB], tagIds: [tagVip], op: "assign",
+    const r1 = await api(admin, "POST", "/api/marketing/prospects/bulk-tag", {
+      brandId, prospectIds: [contactA, contactB], tagIds: [tagVip], op: "assign",
     });
     expect(r1.status).toBe(200);
-    const r2 = await api(admin, "POST", "/api/marketing/contacts/bulk-tag", {
-      brandId, contactIds: [contactA], tagIds: [tagBuyer], op: "assign",
+    const r2 = await api(admin, "POST", "/api/marketing/prospects/bulk-tag", {
+      brandId, prospectIds: [contactA], tagIds: [tagBuyer], op: "assign",
     });
     expect(r2.status).toBe(200);
   }, 60000);

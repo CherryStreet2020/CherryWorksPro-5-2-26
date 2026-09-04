@@ -61,6 +61,7 @@ import { registerEmailDeliverabilityRoutes } from "../routes/email-deliverabilit
 import { resetFailureTrackerForTests, FAILURE_ALERT_THRESHOLD_PER_HOUR } from "./failure-tracker";
 
 const ORG_A_ID = randomUUID();
+const insertedAlertIds: string[] = [];
 const ORG_B_ID = randomUUID();
 const ORG_A_NAME = `Task249 Org A ${ORG_A_ID.slice(0, 8)}`;
 const ORG_B_NAME = `Task249 Org B ${ORG_B_ID.slice(0, 8)}`;
@@ -104,7 +105,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.delete(emailFailureAlerts);
+  // Only this file's rows — an unscoped delete here wiped the alerts another
+  // test file had just seeded (tests/integration/email-failure-alerts-route).
+  if (insertedAlertIds.length > 0) {
+    await db.delete(emailFailureAlerts).where(inArray(emailFailureAlerts.id, insertedAlertIds));
+  }
   await db.delete(orgs).where(inArray(orgs.id, [ORG_A_ID, ORG_B_ID]));
   if (ORIGINAL_OPERATOR_EMAILS === undefined) {
     delete process.env.PLATFORM_OPERATOR_EMAILS;
@@ -129,7 +134,7 @@ beforeEach(async () => {
       topErrorCode: "TIMEOUT",
     },
   };
-  await db.insert(emailFailureAlerts).values({
+  insertedAlertIds.push((await db.insert(emailFailureAlerts).values({
     ts: new Date(),
     failureCount: 12,
     threshold: FAILURE_ALERT_THRESHOLD_PER_HOUR,
@@ -138,7 +143,7 @@ beforeEach(async () => {
     topErrorCode: "SEND_FAILED_500",
     delivered: true,
     byOrg,
-  });
+  }).returning({ id: emailFailureAlerts.id }))[0].id);
 });
 
 describe("GET /api/admin/email/failure-alerts cross-org gating", () => {

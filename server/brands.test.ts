@@ -17,6 +17,7 @@ import { storage } from "./storage";
 import { db, pool } from "./db";
 import { brands } from "@shared/schema";
 import { eq, inArray } from "drizzle-orm";
+import { ensureFixtureOrgs } from "../tests/helpers/fixture-orgs";
 
 const ORG_A = "c89d120d-1f07-4010-938f-070a0e13b8f2";
 const ORG_B = "30cb6705-f98e-44c5-8e2a-fbe3f150a3eb";
@@ -27,6 +28,7 @@ const slugFor = (label: string) => `t-${label}-${RUN_TAG}`;
 const createdIds: string[] = [];
 
 beforeAll(async () => {
+  await ensureFixtureOrgs();
   // Defensive: clear any prior leftovers from this exact run tag (no-op
   // on a fresh run, useful if a previous test crashed mid-flight).
   await db.delete(brands).where(inArray(brands.slug, [

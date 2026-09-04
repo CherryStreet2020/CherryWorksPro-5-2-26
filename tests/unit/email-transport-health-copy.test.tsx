@@ -4,8 +4,20 @@
  * the masked recipient + transport + error code + timestamp on the
  * clipboard, and a toast confirms the copy.
  */
-import { describe, it, expect, afterEach, vi } from "vitest";
-import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { describe, it, expect, afterEach, vi, beforeEach } from "vitest";
+import { render as rtlRender, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactElement, ReactNode } from "react";
+
+// FailureDrilldown reads its suppressions/threshold data through react-query,
+// so every render needs a QueryClient (retries off so a missing endpoint fails fast).
+// One client for the whole file: a fresh client on every render/rerender would
+// put the component's queries back into their loading state mid-test.
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+function QueryWrapper({ children }: { children: ReactNode }) {
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
+const render = (ui: ReactElement) => rtlRender(ui, { wrapper: QueryWrapper });
 import {
   FailureDrilldown,
   formatFailureSampleForCopy,
@@ -22,6 +34,9 @@ afterEach(() => {
   cleanup();
   toastMock.mockReset();
 });
+// FailureDrilldown persists its error-code filter and Top-tab sort in
+// localStorage; without a reset each test inherits the previous test's choices.
+beforeEach(() => { window.localStorage.clear(); queryClient.clear(); });
 
 const sampleTs = Date.UTC(2026, 3, 22, 12, 34, 56);
 const sample = {

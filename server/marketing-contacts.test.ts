@@ -20,6 +20,7 @@ import {
   companies,
 } from "@shared/schema";
 import { inArray } from "drizzle-orm";
+import { ensureFixtureOrgs } from "../tests/helpers/fixture-orgs";
 
 const ORG_A = "c89d120d-1f07-4010-938f-070a0e13b8f2";
 const ORG_B = "30cb6705-f98e-44c5-8e2a-fbe3f150a3eb";
@@ -34,6 +35,7 @@ const createdTagIds: string[] = [];
 const createdBrandIds: string[] = [];
 
 beforeAll(async () => {
+  await ensureFixtureOrgs();
   brandA = await storage.createBrand({ orgId: ORG_A, name: `BrandA ${RUN_TAG}`, slug: slugFor("ba") });
   brandB = await storage.createBrand({ orgId: ORG_B, name: `BrandB ${RUN_TAG}`, slug: slugFor("bb") });
   createdBrandIds.push(brandA.id, brandB.id);

@@ -21,7 +21,7 @@ import { randomUUID } from "crypto";
 import { storage, invalidateBrandStatsCache } from "../../server/storage";
 import { db } from "../../server/db";
 import {
-  orgs, brands, clientContacts, contactActivities, companies,
+  orgs, brands, clientContacts, contactActivities, companies, marketingProspects,
 } from "@shared/schema";
 import { inArray } from "drizzle-orm";
 
@@ -32,6 +32,7 @@ const ORG_B = randomUUID();
 let brandAId: string;
 let brandBId: string;
 const createdContactIds: string[] = [];
+const createdProspectIds: string[] = [];
 
 beforeAll(async () => {
   await db.insert(orgs).values([
@@ -51,6 +52,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (createdProspectIds.length > 0) {
+    await db.delete(marketingProspects).where(inArray(marketingProspects.id, createdProspectIds));
+  }
   if (createdContactIds.length > 0) {
     await db.delete(contactActivities).where(inArray(contactActivities.contactId, createdContactIds));
     await db.delete(clientContacts).where(inArray(clientContacts.id, createdContactIds));
@@ -87,12 +91,14 @@ describe("Task #197 — listBrandsByOrg cache is per-org and does not leak", () 
     expect(await storage.listBrandsByOrg(ORG_B)).toBe(bWarm);
 
     // Mutate ONLY org A.
-    const c = await storage.createContact({
+    // contactCount counts marketing_prospects (Sprint 2o.0 5b1c.1), not PSO
+    // client_contacts — create a prospect on brand A.
+    const c = await storage.createProspect({
       orgId: ORG_A, brandId: brandAId,
       firstName: "Cross", lastName: "Org",
       email: `t197-${RUN}@x.test`,
     });
-    createdContactIds.push(c.id);
+    createdProspectIds.push(c.id);
 
     // Org A's cache must have been invalidated and the next read must
     // reflect the new contact.

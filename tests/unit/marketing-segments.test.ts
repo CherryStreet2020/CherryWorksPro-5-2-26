@@ -20,6 +20,7 @@ import {
 } from "@shared/schema";
 import { inArray } from "drizzle-orm";
 import { cleanupE2EBrandPollution } from "../../scripts/cleanup-e2e-brand-pollution";
+import { ensureFixtureOrgs } from "../helpers/fixture-orgs";
 
 const ORG_A = "c89d120d-1f07-4010-938f-070a0e13b8f2";
 
@@ -34,6 +35,7 @@ const createdSegmentIds: string[] = [];
 const createdBrandIds: string[] = [];
 
 beforeAll(async () => {
+  await ensureFixtureOrgs();
   brandA = await storage.createBrand({ orgId: ORG_A, name: `2e-A ${RUN}`, slug: slugFor("a") });
   // Second brand is used ONLY for the cascade test — it gets passed straight
   // into cleanupE2EBrandPollution and dropped, so we do NOT push it onto

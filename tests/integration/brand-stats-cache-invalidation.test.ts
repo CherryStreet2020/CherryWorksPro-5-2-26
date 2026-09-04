@@ -22,6 +22,7 @@ import {
   brands, marketingProspects, contactActivities, companies,
 } from "@shared/schema";
 import { inArray } from "drizzle-orm";
+import { ensureFixtureOrgs } from "../helpers/fixture-orgs";
 
 const ORG = "c89d120d-1f07-4010-938f-070a0e13b8f2";
 const RUN = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -30,6 +31,7 @@ let brandId: string;
 const createdContactIds: string[] = [];
 
 beforeAll(async () => {
+  await ensureFixtureOrgs();
   const b = await storage.createBrand({
     orgId: ORG,
     name: `t185 ${RUN}`,

@@ -47,20 +47,29 @@ describe("FIXIT B3 — Active team member count single source of truth", () => {
     expect(formerUsers.length).toBe(0);
   });
 
+  // Other test files (team invites, deactivations) change the shared test org's
+  // roster while this file runs, so each comparison reads the canonical count and
+  // the dashboard figure together rather than trusting a value captured earlier.
   it("dashboard executive KPI teamActive matches canonical", async () => {
-    const kpis = await get("/api/reports/executive-kpis");
-    expect(kpis.teamActive).toBe(canonicalActive);
-    expect(kpis.teamIndependents).toBe(canonicalIndependents);
-    expect(kpis.teamEmployees).toBe(canonicalEmployees);
+    const [canonical, kpis] = await Promise.all([get("/api/canonical/active-team"), get("/api/reports/executive-kpis")]);
+    expect(kpis.teamActive).toBe(canonical.active);
+    expect(kpis.teamIndependents).toBe(canonical.independents);
+    expect(kpis.teamEmployees).toBe(canonical.employees);
   });
 
   it("dashboard stats activeTeamCount matches canonical", async () => {
-    const stats = await get("/api/dashboard");
-    expect(stats.activeTeamCount).toBe(canonicalActive);
+    // /api/dashboard is the slowest of the three reads, so a roster change by a
+    // parallel file can land between the two fetches; compare up to three times.
+    let canonical: any, stats: any;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      [canonical, stats] = await Promise.all([get("/api/canonical/active-team"), get("/api/dashboard")]);
+      if (stats.activeTeamCount === canonical.active) break;
+    }
+    expect(stats.activeTeamCount).toBe(canonical.active);
   });
 
   it("dashboard utilization lists all active members", async () => {
-    const stats = await get("/api/dashboard");
-    expect(stats.teamMemberUtilization.length).toBe(canonicalActive);
+    const [canonical, stats] = await Promise.all([get("/api/canonical/active-team"), get("/api/dashboard")]);
+    expect(stats.teamMemberUtilization.length).toBe(canonical.active);
   });
 });

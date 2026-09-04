@@ -46,6 +46,7 @@ import {
 } from "./scheduled-send";
 import { MissingMailboxError } from "../email/types";
 import { db, pool } from "../db";
+import { flushSequenceFailureDigest } from "../notifications/marketing-failures";
 import {
   orgs,
   brands,
@@ -830,22 +831,30 @@ describe("admin failure notifications — integration (Task #305)", () => {
 
     await processScheduledSequenceEnrollments(new Date());
 
+    // Task #269 / #304: a step failure is queued into the per-sequence digest
+    // (flushed on an interval), not emailed one-per-failure. The notify call is
+    // fire-and-forget, so wait until the failure is queued, then flush it.
+    await vi.waitFor(
+      async () => {
+        const r = await flushSequenceFailureDigest(seqId);
+        if (!r || !("failureCount" in r) || r.failureCount === 0) throw new Error("step failure not yet queued");
+      },
+      { timeout: 5_000, interval: 50 },
+    );
+
     type Mail = { to: string; subject: string; text: string; html: string };
     const isOurs = (m: Mail) =>
-      m.to === adminEmail && m.subject.includes(recipientEmail);
+      m.to === adminEmail && m.text.includes(recipientEmail);
     await vi.waitFor(
       () => {
         const hit = sendMailMock.mock.calls.find((c) => isOurs(c[0] as Mail));
-        if (!hit) throw new Error("step alert not yet sent");
+        if (!hit) throw new Error("step digest not yet sent");
       },
       { timeout: 5_000, interval: 50 },
     );
 
     const ours = sendMailMock.mock.calls.find((c) => isOurs(c[0] as Mail))!;
     const mail = ours[0] as Mail;
-    // 1-indexed step label per buildSequenceStepAlertEmail.
-    expect(mail.subject).toContain("Step 1");
-    expect(mail.subject).toContain(recipientEmail);
     expect(mail.text).toContain("VALIDATION_ERROR");
     expect(mail.text).toContain(recipientEmail);
   });

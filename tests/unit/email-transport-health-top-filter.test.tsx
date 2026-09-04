@@ -2,14 +2,20 @@
 /**
  * Task #228: error-code chip filter + sort toggle on the Top recipients tab.
  */
-import { describe, it, expect, afterEach, vi } from "vitest";
-import {
-  render,
-  screen,
-  cleanup,
-  fireEvent,
-  within,
-} from "@testing-library/react";
+import { describe, it, expect, afterEach, vi, beforeEach } from "vitest";
+import { render as rtlRender, screen, cleanup, fireEvent, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactElement, ReactNode } from "react";
+
+// FailureDrilldown reads its suppressions/threshold data through react-query,
+// so every render needs a QueryClient (retries off so a missing endpoint fails fast).
+// One client for the whole file: a fresh client on every render/rerender would
+// put the component's queries back into their loading state mid-test.
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+function QueryWrapper({ children }: { children: ReactNode }) {
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
+const render = (ui: ReactElement) => rtlRender(ui, { wrapper: QueryWrapper });
 import { FailureDrilldown } from "@/components/email-transport-health-panel";
 
 vi.mock("@/hooks/use-toast", () => ({
@@ -17,6 +23,9 @@ vi.mock("@/hooks/use-toast", () => ({
 }));
 
 afterEach(() => cleanup());
+// FailureDrilldown persists its error-code filter and Top-tab sort in
+// localStorage; without a reset each test inherits the previous test's choices.
+beforeEach(() => { window.localStorage.clear(); queryClient.clear(); });
 
 const baseTs = Date.UTC(2026, 3, 22, 12, 0, 0);
 
@@ -88,30 +97,31 @@ describe("FailureDrilldown Top recipients filter & sort (task #228)", () => {
     ).toContain("a***@x***.com");
   });
 
-  it("shows the filter-specific empty state with a clear-filter action when a chip hides every row", () => {
-    // Start with samples covering both codes; pick TOKEN_REFRESH_FAILED, then
-    // rerender with samples that only contain SMTP_550 — the persisted chip
-    // selection now matches nothing and the filtered empty state should appear.
+  it("clears a persisted error-code chip that no longer matches any row, instead of showing an empty list", () => {
+    // The chip selection persists in localStorage. When the incoming rows no
+    // longer contain that code at all, the component drops the stale filter
+    // (see the reconcile effect on topErrorCodes) so the operator is never left
+    // staring at an empty Top tab because of yesterday's filter.
     const { rerender } = render(
       <FailureDrilldown recent={samples} transportFilter={null} onClear={() => {}} />,
     );
     openTopTab();
     fireEvent.click(screen.getByTestId("chip-top-error-code-TOKEN_REFRESH_FAILED"));
     expect(screen.queryByTestId("text-failure-drilldown-top-empty")).toBeNull();
+    expect(screen.getByTestId("chip-top-error-code-TOKEN_REFRESH_FAILED").getAttribute("aria-pressed")).toBe("true");
 
     const onlySmtp = samples.filter((s) => s.errorCode === "SMTP_550");
     rerender(<FailureDrilldown recent={onlySmtp} transportFilter={null} onClear={() => {}} />);
 
-    const empty = screen.getByTestId("text-failure-drilldown-top-empty");
-    expect(empty.textContent).toMatch(/filter/i);
-    expect(empty.textContent).toContain("TOKEN_REFRESH_FAILED");
-
-    const clearBtn = screen.getByTestId("button-top-clear-error-code");
-    fireEvent.click(clearBtn);
+    // Filter reset: the "all" chip is active again, the SMTP rows are visible,
+    // and no filtered empty state is rendered.
+    expect(screen.getByTestId("chip-top-error-code-all").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByTestId("chip-top-error-code-TOKEN_REFRESH_FAILED")).toBeNull();
     expect(screen.queryByTestId("text-failure-drilldown-top-empty")).toBeNull();
     const rows = within(screen.getByTestId("list-failure-drilldown-top")).getAllByTestId(
       /^row-top-recipient-/,
     );
     expect(rows.length).toBeGreaterThan(0);
+    expect(window.localStorage.getItem("email-failure-drilldown:error-code")).toBeNull();
   });
 });

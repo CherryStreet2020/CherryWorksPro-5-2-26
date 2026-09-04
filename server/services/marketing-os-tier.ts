@@ -184,7 +184,13 @@ export async function syncMarketingOsTierEntitlement(
         now.getTime() +
           MARKETING_OS_PAST_DUE_GRACE_DAYS * 24 * 60 * 60 * 1000,
       );
-      setBlock.gracePeriodEndsAt = sql`COALESCE(${orgEntitlements.gracePeriodEndsAt}, ${sevenDays})`;
+      // `grace_period_ends_at` is a tz-less timestamp. Drizzle-typed writes (the
+      // insert below, activatedAt/updatedAt) store the UTC wall time; a raw Date
+      // param here would be serialized by the driver in the process's LOCAL time
+      // and the column would drop the offset — the two paths disagree by the
+      // machine's UTC offset on any non-UTC host. Pass the UTC ISO string so the
+      // COALESCE fallback is written the same way as every other timestamp.
+      setBlock.gracePeriodEndsAt = sql`COALESCE(${orgEntitlements.gracePeriodEndsAt}, ${sevenDays.toISOString()}::timestamp)`;
     }
     await db
       .insert(orgEntitlements)
