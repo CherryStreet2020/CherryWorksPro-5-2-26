@@ -23,12 +23,14 @@ export interface CanonicalOrigin {
 
 /**
  * The canonical origin from the configured base URL, or null when it is unset,
- * malformed, or itself a www host (a www base would make the redirect loop).
+ * malformed, not http(s), or itself a www host (a www base would make the redirect loop).
  */
 export function resolveCanonicalOrigin(baseUrl: string | undefined): CanonicalOrigin | null {
   if (!baseUrl) return null;
   try {
     const url = new URL(baseUrl);
+    // Only http(s) has a usable origin; anything else serialises `origin` as the string "null".
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
     const hostname = url.hostname.toLowerCase();
     if (!hostname || hostname.startsWith("www.")) return null;
     return { origin: url.origin.toLowerCase(), hostname };

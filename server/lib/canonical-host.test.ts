@@ -78,11 +78,14 @@ describe("resolveCanonicalOrigin", () => {
     });
   });
 
-  it("returns null when the base URL is unset, malformed, or itself a www host", () => {
+  it("returns null when the base URL is unset, malformed, not http(s), or itself a www host", () => {
     expect(resolveCanonicalOrigin(undefined)).toBeNull();
     expect(resolveCanonicalOrigin("")).toBeNull();
     expect(resolveCanonicalOrigin("not a url")).toBeNull();
     expect(resolveCanonicalOrigin("https://www.example.com")).toBeNull();
+    // new URL("custom://host").origin is the string "null"; never redirect to "null/...".
+    expect(resolveCanonicalOrigin("custom://cherryworkspro.com")).toBeNull();
+    expect(resolveCanonicalOrigin("ftp://cherryworkspro.com")).toBeNull();
   });
 });
 
