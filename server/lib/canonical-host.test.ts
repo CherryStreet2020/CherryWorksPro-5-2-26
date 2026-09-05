@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import express from "express";
 import http from "http";
 import type { AddressInfo } from "net";
-import { canonicalHostRedirect, resolveCanonicalHost } from "./canonical-host";
+import { canonicalHostRedirect, resolveCanonicalOrigin } from "./canonical-host";
 
 const APEX = "cherryworkspro.com";
 
@@ -11,14 +11,15 @@ let port: number;
 
 type Reply = { status: number; location: string | undefined; body: string };
 
-function request(
+function requestOn(
+  p: number,
   path: string,
   headers: Record<string, string>,
   method = "GET",
 ): Promise<Reply> {
   return new Promise((resolve, reject) => {
     const req = http.request(
-      { host: "127.0.0.1", port, path, method, headers },
+      { host: "127.0.0.1", port: p, path, method, headers },
       (res) => {
         let body = "";
         res.on("data", (c) => (body += c));
@@ -32,38 +33,56 @@ function request(
   });
 }
 
-beforeAll(async () => {
+const request = (path: string, headers: Record<string, string>, method = "GET") =>
+  requestOn(port, path, headers, method);
+
+async function listen(app: express.Express): Promise<http.Server> {
+  return new Promise<http.Server>((resolve) => {
+    const inst = app.listen(0, "127.0.0.1", () => resolve(inst));
+  });
+}
+
+function appWith(baseUrl: string | undefined): express.Express {
   const app = express();
   app.set("trust proxy", 1);
-  app.use(canonicalHostRedirect(resolveCanonicalHost(`https://${APEX}`)));
+  app.use(canonicalHostRedirect(resolveCanonicalOrigin(baseUrl)));
   app.all("/{*path}", (_req, res) => res.status(200).send("served"));
-  await new Promise<void>((resolve) => {
-    server = app.listen(0, "127.0.0.1", () => {
-      port = (server.address() as AddressInfo).port;
-      resolve();
-    });
-  });
+  return app;
+}
+
+beforeAll(async () => {
+  server = await listen(appWith(`https://${APEX}`));
+  port = (server.address() as AddressInfo).port;
 });
 
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
-describe("resolveCanonicalHost", () => {
-  it("returns the host of BASE_URL", () => {
-    expect(resolveCanonicalHost("https://cherryworkspro.com")).toBe("cherryworkspro.com");
-    expect(resolveCanonicalHost("https://CherryWorksPro.com/")).toBe("cherryworkspro.com");
+describe("resolveCanonicalOrigin", () => {
+  it("returns the origin and hostname of the base URL", () => {
+    expect(resolveCanonicalOrigin("https://cherryworkspro.com")).toEqual({
+      origin: "https://cherryworkspro.com",
+      hostname: "cherryworkspro.com",
+    });
+    expect(resolveCanonicalOrigin("https://CherryWorksPro.com/")).toEqual({
+      origin: "https://cherryworkspro.com",
+      hostname: "cherryworkspro.com",
+    });
   });
 
-  it("keeps a port so a dev redirect target stays reachable", () => {
-    expect(resolveCanonicalHost("http://localhost:5000")).toBe("localhost:5000");
+  it("keeps the configured scheme and port so a dev redirect target stays reachable", () => {
+    expect(resolveCanonicalOrigin("http://localhost:5000")).toEqual({
+      origin: "http://localhost:5000",
+      hostname: "localhost",
+    });
   });
 
-  it("returns null when BASE_URL is unset, malformed, or itself a www host", () => {
-    expect(resolveCanonicalHost(undefined)).toBeNull();
-    expect(resolveCanonicalHost("")).toBeNull();
-    expect(resolveCanonicalHost("not a url")).toBeNull();
-    expect(resolveCanonicalHost("https://www.example.com")).toBeNull();
+  it("returns null when the base URL is unset, malformed, or itself a www host", () => {
+    expect(resolveCanonicalOrigin(undefined)).toBeNull();
+    expect(resolveCanonicalOrigin("")).toBeNull();
+    expect(resolveCanonicalOrigin("not a url")).toBeNull();
+    expect(resolveCanonicalOrigin("https://www.example.com")).toBeNull();
   });
 });
 
@@ -110,23 +129,27 @@ describe("canonicalHostRedirect", () => {
     }
   });
 
-  it("is a no-op when there is no canonical host", async () => {
-    const app = express();
-    app.use(canonicalHostRedirect(resolveCanonicalHost(undefined)));
-    app.all("/{*path}", (_req, res) => res.status(200).send("served"));
-    const s = await new Promise<http.Server>((resolve) => {
-      const inst = app.listen(0, "127.0.0.1", () => resolve(inst));
-    });
+  it("redirects to the configured scheme and port, not a hardcoded https", async () => {
+    const s = await listen(appWith("http://localhost:5000"));
     const p = (s.address() as AddressInfo).port;
-    const status = await new Promise<number>((resolve, reject) => {
-      http
-        .get({ host: "127.0.0.1", port: p, path: "/", headers: { host: `www.${APEX}` } }, (res) => {
-          res.resume();
-          resolve(res.statusCode ?? 0);
-        })
-        .on("error", reject);
-    });
-    await new Promise<void>((resolve) => s.close(() => resolve()));
-    expect(status).toBe(200);
+    try {
+      const r = await requestOn(p, "/x?y=1", { host: "www.localhost:5000" });
+      expect(r.status).toBe(301);
+      expect(r.location).toBe("http://localhost:5000/x?y=1");
+    } finally {
+      await new Promise<void>((resolve) => s.close(() => resolve()));
+    }
+  });
+
+  it("is a no-op when there is no canonical origin", async () => {
+    const s = await listen(appWith(undefined));
+    const p = (s.address() as AddressInfo).port;
+    try {
+      const r = await requestOn(p, "/", { host: `www.${APEX}` });
+      expect(r.status).toBe(200);
+      expect(r.body).toBe("served");
+    } finally {
+      await new Promise<void>((resolve) => s.close(() => resolve()));
+    }
   });
 });
