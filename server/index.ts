@@ -32,6 +32,7 @@ import {
   stopPendingAdminNotificationProcessor,
 } from "./notifications/marketing-failures";
 import { pool } from "./db";
+import { canonicalHostRedirect, resolveCanonicalHost } from "./lib/canonical-host";
 
 const app = express();
 const httpServer = createServer(app);
@@ -44,6 +45,10 @@ declare module "http" {
 
 // Trust Replit's reverse proxy so req.ip is correct and secure cookies work
 app.set("trust proxy", 1);
+
+// www.cherryworkspro.com → cherryworkspro.com (301/308) before anything else runs,
+// so cookies, CSRF tokens, OAuth callbacks and the Stripe webhook stay on one host.
+app.use(canonicalHostRedirect(resolveCanonicalHost(process.env.BASE_URL)));
 
 if (process.env.NODE_ENV === 'production') {
   app.use(helmet({
