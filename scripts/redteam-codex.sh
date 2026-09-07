@@ -118,7 +118,9 @@ BRANCH="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)"
 HEAD_SHA="$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
 case "$TARGET_KIND" in
   commit)
-    SHA="$(git -C "$REPO_ROOT" rev-parse --short "$TARGET_COMMIT" 2>/dev/null || echo "$TARGET_COMMIT")"
+    # An unresolvable commit-ish never reaches the filesystem as a path (Copilot #51).
+    SHA="$(git -C "$REPO_ROOT" rev-parse --short --verify "${TARGET_COMMIT}^{commit}" 2>/dev/null)" \
+      || { echo "redteam-codex: '$TARGET_COMMIT' is not a commit in this repo." >&2; exit 4; }
     LABEL="commit-${SHA}" ;;
   uncommitted)
     SHA="$HEAD_SHA"; LABEL="${BRANCH//\//-}-${SHA}-uncommitted" ;;
@@ -126,6 +128,7 @@ case "$TARGET_KIND" in
     SHA="$HEAD_SHA"; BASE_LABEL="${TARGET_BASE:-main}"
     LABEL="${BRANCH//\//-}-vs-${BASE_LABEL//\//-}-${SHA}" ;;
 esac
+LABEL="$(printf '%s' "$LABEL" | tr -c 'A-Za-z0-9._-' '_')"
 OUT="${OUT_DIR}/codex-${LABEL}.md"
 
 echo "redteam-codex: model=$MODEL effort=$EFFORT"
