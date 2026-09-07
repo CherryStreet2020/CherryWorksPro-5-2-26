@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────
+# cwp — CherryWorks Pro local toolchain dispatcher
+#
+# Stands up / drives the user-space local gates that CI does NOT run
+# (vitest + playwright + the app). CI only runs lint + migration-replay.
+# Target loop:  cwp validate  →  push  →  CI  →  deploy  →  live-verify.
+#
+# Built once (2026-06-20): user-space PostgreSQL 16.14 (~/.local/pgsql),
+# bash 5.2 (~/.local/bin/bash, for check-migrations.sh's `mapfile`), node 20
+# (~/.local/node). Local-only app secrets + DB URLs live in
+# ~/.local/pgsql/cwp-pg-env.sh (fresh keys, NOT the prod ones).
+#
+# Usage:
+#   cwp pg-start | pg-stop | pg-status     manage the Postgres cluster
+#   cwp app                                run the dev app on :5000 (foreground)
+#   cwp app-bg                             start the app on :5000 (background) + wait healthy
+#   cwp app-stop                           kill whatever is on :5000
+#   cwp vitest [args]                      fresh cwp_test → migrate → vitest (real unit/integration gate)
+#   cwp e2e [args]                         ensure app up → playwright (real e2e gate)
+#   cwp migcheck                           CI migration-replay mirror (bash5 + cwp_migcheck)
+#   cwp reset-dev                          drop+recreate+migrate+seed cwp_dev (clean app DB)
+#   cwp validate                           migcheck + lint + typecheck + vitest (the pre-push gate)
+#   cwp codex [--deep|--commit <sha>|--base <b>|--uncommitted|--plan PLAN.md]
+#                                          LOCAL Codex red-team leg (scripts/redteam-codex.sh) — RUN ON EVERY PR
+#   cwp psql [db]                          psql into cwp_dev (or named db)
+# ─────────────────────────────────────────────────────────────────────────────
+set -uo pipefail
+
+REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Local-only secrets + DB URLs (fresh keys, never prod). Copy scripts/dev/cwp-pg-env.example.sh
+# to ~/.local/pgsql/cwp-pg-env.sh and fill it in — see docs/SHIP.md for the toolchain build.
+if [ -f "$HOME/.local/pgsql/cwp-pg-env.sh" ]; then source "$HOME/.local/pgsql/cwp-pg-env.sh"; else
+  echo "[cwp] ~/.local/pgsql/cwp-pg-env.sh not found — build the local toolchain first (docs/SHIP.md)." >&2; exit 1; fi
+BASH5="$HOME/.local/bin/bash"
+TEST_DB_URL="postgres://deandunagan@localhost:5432/cwp_test"
+
+# Full env the dev/test server boots with (NODE_ENV=test → Vite serving +
+# relaxed rate limits + marketing/email flags on, matching vitest globalSetup).
+app_env() {
+  env DATABASE_URL="$CWP_DATABASE_URL" \
+      NODE_ENV=test E2E_SEED_ENABLED=true \
+      MARKETING_OS_ENABLED=true VITE_MARKETING_OS_ENABLED=true \
+      EMAIL_OAUTH_ENABLED=true VITE_EMAIL_OAUTH_ENABLED=true \
+      PORT=5000 "$@"
+}
+
+kill_5000() {
+  local pids; pids="$(lsof -ti tcp:5000 2>/dev/null || true)"
+  [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
+}
+
+wait_health() {
+  local i; for i in $(seq 1 60); do
+    curl -fsS --max-time 3 http://localhost:5000/api/health >/dev/null 2>&1 && { echo "[cwp] app healthy on :5000"; return 0; }
+    sleep 2
+  done
+  echo "[cwp] app did NOT become healthy on :5000 (see /tmp/cwp-app-5000.log)"; return 1
+}
+
+ensure_pg() {
+  pg_ctl -D "$PGDATA" status >/dev/null 2>&1 || pg_ctl -D "$PGDATA" -l "$PGHOME/logfile" -o "-p $PGPORT" -w start
+}
+
+cmd="${1:-help}"; shift 2>/dev/null || true
+case "$cmd" in
+  pg-start)  pg_ctl -D "$PGDATA" -l "$PGHOME/logfile" -o "-p $PGPORT" -w start ;;
+  pg-stop)   pg_ctl -D "$PGDATA" -w stop ;;
+  pg-status) pg_ctl -D "$PGDATA" status ;;
+
+  app)
+    ensure_pg; cd "$REPO"; kill_5000; sleep 1
+    exec app_env npx tsx server/index.ts ;;
+
+  app-bg)
+    ensure_pg; cd "$REPO"; kill_5000; sleep 1
+    app_env nohup npx tsx server/index.ts > /tmp/cwp-app-5000.log 2>&1 &
+    echo "[cwp] app pid $!"; wait_health ;;
+
+  app-stop) kill_5000; echo "[cwp] :5000 cleared" ;;
+
+  vitest)
+    ensure_pg; cd "$REPO"
+    echo "[cwp] fresh cwp_test → migrate → vitest"
+    dropdb -p "$PGPORT" --if-exists cwp_test; createdb -p "$PGPORT" cwp_test
+    DATABASE_URL="$TEST_DB_URL" NODE_ENV=development npm run db:migrate:prod
+    exec env DATABASE_URL="$TEST_DB_URL" npm run test -- "$@" ;;
+
+  e2e)
+    ensure_pg; cd "$REPO"
+    curl -fsS --max-time 3 http://localhost:5000/api/health >/dev/null 2>&1 || { echo "[cwp] starting app for e2e"; "$0" app-bg || exit 1; }
+    exec env DATABASE_URL="$CWP_DATABASE_URL" PORT=5000 npx playwright test "$@" ;;
+
+  migcheck)
+    ensure_pg; cd "$REPO"
+    dropdb -p "$PGPORT" --if-exists cwp_migcheck; createdb -p "$PGPORT" cwp_migcheck
+    exec env MIGRATION_CHECK_DATABASE_URL="$CWP_MIGCHECK_URL" "$BASH5" scripts/check-migrations.sh ;;
+
+  reset-dev)
+    ensure_pg; cd "$REPO"
+    echo "[cwp] dropping + recreating cwp_dev"
+    kill_5000
+    dropdb -p "$PGPORT" --if-exists cwp_dev; createdb -p "$PGPORT" cwp_dev
+    DATABASE_URL="$CWP_DATABASE_URL" NODE_ENV=development npm run db:migrate:prod
+    echo "[cwp] booting once to seed (dean admin + dev orgs)…"
+    "$0" app-bg && echo "[cwp] cwp_dev ready (app left running on :5000)" ;;
+
+  validate)
+    cd "$REPO"; set -e
+    echo "== [1/4] migration-replay ==";  "$0" migcheck
+    echo "== [2/4] lint ==";              export PATH="$HOME/.local/node/bin:$PATH"; npm run lint
+    echo "== [3/4] typecheck ==";         npm run typecheck
+    echo "== [4/4] vitest ==";            "$0" vitest
+    echo "[cwp] validate: all gates ran (review vitest summary for known pre-existing failures)" ;;
+
+  psql) exec psql -p "$PGPORT" -d "${1:-cwp_dev}" ;;
+
+  codex) exec "$REPO/scripts/redteam-codex.sh" "$@" ;;
+
+  *) sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//' ;;
+esac
