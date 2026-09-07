@@ -60,10 +60,22 @@ export async function verifyToken(raw: string): Promise<VerifyOutcome> {
   return { ok: true, userId: user.id, orgId: user.orgId, alreadyVerified: false };
 }
 
-/** The address is proven (link clicked, emailed temp password used, reset completed). */
-export async function markVerified(userId: string): Promise<void> {
-  await db.update(users).set({ emailVerifiedAt: new Date(), emailVerificationTokenHash: null, emailVerificationExpiresAt: null })
-    .where(and(eq(users.id, userId)));
+/**
+ * The address is proven (emailed temp password used, reset completed).
+ * Conditional on the address the proof was for: if it changed while the
+ * proof was in flight, nothing is verified. Returns whether a row changed.
+ */
+export async function markVerified(userId: string, forEmail: string): Promise<boolean> {
+  const { sql } = await import("drizzle-orm");
+  const rows = await db.update(users).set({ emailVerifiedAt: new Date(), emailVerificationTokenHash: null, emailVerificationExpiresAt: null })
+    .where(and(eq(users.id, userId), sql`lower(${users.email}) = ${forEmail.trim().toLowerCase()}`))
+    .returning({ id: users.id });
+  return rows.length > 0;
+}
+
+/** The temporary password was exposed to the caller (email failed) — it no longer proves anything. */
+export async function forgetTempCredential(userId: string): Promise<void> {
+  await db.update(users).set({ emailVerificationTokenHash: null }).where(eq(users.id, userId));
 }
 
 export const LEGACY_BACKFILL_KEY = "legacy_email_verification_backfill_done";
