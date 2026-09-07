@@ -13,10 +13,10 @@
  * that later completes checkout is reactivated by the Stripe webhook
  * (checkout.session.completed sets subscription_status = trialing).
  */
-import { and, eq, isNull, lt, ne, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, ne, sql, isNotNull } from "drizzle-orm";
 import type { NextFunction, Request, Response } from "express";
 import { db } from "./db";
-import { orgs, users, type Org } from "@shared/schema";
+import { orgs, users, auditLogs, type Org } from "@shared/schema";
 import { storage } from "./storage";
 import { sendTrialEndingEmail, sendTrialEndedEmail } from "./email";
 import { trustedBaseUrl } from "./lib/app-url";
@@ -73,6 +73,11 @@ async function deliverEndedEmail(org: Org, recipients: { email: string; name: st
   const claimed = await db.update(orgs).set({ trialExpiredAt: now })
     .where(and(eq(orgs.id, org.id), eq(orgs.subscriptionStatus, TRIAL_EXPIRED_STATUS), isNull(orgs.trialExpiredAt))).returning({ id: orgs.id });
   if (claimed.length === 0) return;
+  await sendEndedAndRecord(org, recipients);
+}
+
+/** Sends the ended email and records delivery; releases the claim when nobody could be reached. */
+async function sendEndedAndRecord(org: Org, recipients: { email: string; name: string }[]): Promise<void> {
   let delivered = 0;
   for (const r of recipients) {
     try { await sendTrialEndedEmail(r.email, r.name, org.name, billingUrl(), org); delivered++; }
@@ -80,7 +85,40 @@ async function deliverEndedEmail(org: Org, recipients: { email: string; name: st
   }
   if (recipients.length > 0 && delivered === 0) {
     await db.update(orgs).set({ trialExpiredAt: null }).where(eq(orgs.id, org.id));
+    return;
   }
+  await storage.createAuditLog({ orgId: org.id, userId: null, action: SENT_ENDED, entityType: "org", entityId: org.id, details: { recipients: recipients.map(r => r.email), delivered } });
+}
+
+const SENT_7D = "TRIAL_REMINDER_7D_SENT";
+const SENT_1D = "TRIAL_REMINDER_1D_SENT";
+const SENT_ENDED = "TRIAL_ENDED_EMAIL_SENT";
+const LEASE_MS = 10 * 60 * 1000;
+
+/**
+ * Crash recovery: a stamp (claim) older than the lease with no SENT audit row
+ * means the process died between claiming and delivering. Re-send and record.
+ */
+async function recoverInterruptedDeliveries(now: Date): Promise<number> {
+  const cutoff = new Date(now.getTime() - LEASE_MS);
+  let recovered = 0;
+  const missing = (action: string) => sql`NOT EXISTS (SELECT 1 FROM ${auditLogs} WHERE ${auditLogs.orgId} = ${orgs.id} AND ${auditLogs.action} = ${action})`;
+  const r7 = await db.select().from(orgs).where(and(eq(orgs.subscriptionStatus, "trialing"), isNull(orgs.stripeSubscriptionId), isNotNull(orgs.trialReminder7SentAt), lt(orgs.trialReminder7SentAt, cutoff), missing(SENT_7D)));
+  const r1 = await db.select().from(orgs).where(and(eq(orgs.subscriptionStatus, "trialing"), isNull(orgs.stripeSubscriptionId), isNotNull(orgs.trialReminder1SentAt), lt(orgs.trialReminder1SentAt, cutoff), missing(SENT_1D)));
+  for (const [rows, days, action] of [[r7, 7, SENT_7D], [r1, 1, SENT_1D]] as const) {
+    for (const org of rows) {
+      const recipients = await adminRecipients(org.id);
+      let delivered = 0;
+      for (const r of recipients) { try { await sendTrialEndingEmail(r.email, r.name, org.name, days, billingUrl(), org); delivered++; } catch { /* retried next tick */ } }
+      if (recipients.length === 0 || delivered > 0) {
+        await storage.createAuditLog({ orgId: org.id, userId: null, action, entityType: "org", entityId: org.id, details: { recovered: true, delivered } });
+        recovered++;
+      }
+    }
+  }
+  const ended = await db.select().from(orgs).where(and(eq(orgs.subscriptionStatus, TRIAL_EXPIRED_STATUS), isNotNull(orgs.trialExpiredAt), lt(orgs.trialExpiredAt, cutoff), missing(SENT_ENDED)));
+  for (const org of ended) { await sendEndedAndRecord(org, await adminRecipients(org.id)); recovered++; }
+  return recovered;
 }
 
 export interface TrialTickResult { reminded7: number; reminded1: number; expired: number; errors: number }
@@ -130,7 +168,7 @@ export async function runTrialLifecycleTick(now = new Date()): Promise<TrialTick
           result.errors++;
           continue;
         }
-        await storage.createAuditLog({ orgId: org.id, userId: null, action: "TRIAL_ENDING_SOON", entityType: "org", entityId: org.id, details: { daysRemaining: daysLeft, source: "trial-lifecycle", recipients: recipients.map(r => r.email), delivered } });
+        await storage.createAuditLog({ orgId: org.id, userId: null, action: action === "remind_7d" ? SENT_7D : SENT_1D, entityType: "org", entityId: org.id, details: { daysRemaining: daysLeft, source: "trial-lifecycle", recipients: recipients.map(r => r.email), delivered } });
         if (action === "remind_7d") result.reminded7++; else result.reminded1++;
       }
     } catch (err) {
@@ -138,6 +176,8 @@ export async function runTrialLifecycleTick(now = new Date()): Promise<TrialTick
       console.error("[trial-lifecycle] org failed", org.slug, (err as Error).message);
     }
   }
+  try { const n = await recoverInterruptedDeliveries(now); if (n) console.log(`[trial-lifecycle] recovered ${n} interrupted delivery(ies)`); }
+  catch (err) { result.errors++; console.error("[trial-lifecycle] recovery failed", (err as Error).message); }
   // Expired workspaces whose "ended" email never went out: retry delivery.
   const unmailed = await db.select().from(orgs).where(and(eq(orgs.subscriptionStatus, TRIAL_EXPIRED_STATUS), isNull(orgs.trialExpiredAt)));
   for (const org of unmailed) {

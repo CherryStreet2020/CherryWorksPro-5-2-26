@@ -1038,7 +1038,12 @@ async function handleSubscriptionTrialWillEnd(
       });
     } catch (err: any) {
       if (err?.code === "23505" || /duplicate|unique/i.test(String(err?.message))) {
-        return res.json({ received: true, duplicate: true }); // lost the race to a concurrent delivery
+        // Lost the race. Only a PROCESSED winner is a real duplicate; while the
+        // winner is still delivering, keep Stripe retrying.
+        const winner = await storage.getStripeEventByEventId(stripeEventId, org.id).catch(() => undefined);
+        return winner?.status === "PROCESSED"
+          ? res.json({ received: true, duplicate: true })
+          : res.status(503).json({ received: false, error: "Reminder delivery in progress; retry later" });
       }
       console.error(`[stripe-webhook] trial_will_end claim failed for ${org.slug}:`, err?.message);
       return res.status(500).json({ received: false, error: "Could not record event; will retry" });
