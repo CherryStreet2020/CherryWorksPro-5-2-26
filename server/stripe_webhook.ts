@@ -680,6 +680,7 @@ async function handleSubscriptionDeleted(
   const org = customerId ? await storage.getOrgByStripeCustomerId(customerId) : null;
 
   if (org) {
+    resetPlanGateCache(org.id);
     await storage.updateOrg(org.id, {
       planTier: "EXPIRED",
       subscriptionStatus: "canceled",
@@ -1006,6 +1007,18 @@ async function handleSubscriptionTrialWillEnd(
   const org = customerId ? await storage.getOrgByStripeCustomerId(customerId) : null;
 
   if (org) {
+    // Claim the event first: a Stripe retry that arrives while this delivery
+    // is still emailing must not send the reminder a second time.
+    const already = await storage.getStripeEventByEventId(stripeEventId, org.id);
+    if (already) return res.json({ received: true, duplicate: true });
+    try {
+      await storage.createStripeEvent({
+        orgId: org.id, stripeEventId, type: eventType, livemode, created,
+        status: "PROCESSED", failureCode: null, failureDetail: null,
+      });
+    } catch {
+      return res.json({ received: true, duplicate: true }); // lost the race to a concurrent delivery
+    }
     const adminUsers = await db.select({ id: users.id, email: users.email, name: users.name }).from(users).where(and(eq(users.orgId, org.id), eq(users.role, "ADMIN"), eq(users.isActive, true)));
     const adminEmail = adminUsers[0]?.email || "unknown";
     let billingLink = "http://localhost:5000/settings/billing";
@@ -1026,11 +1039,6 @@ async function handleSubscriptionTrialWillEnd(
     });
 
     console.info(`[stripe-webhook] Trial ending soon for org ${org.id} (admin: ${adminEmail}), subscription ${subscription?.id}`);
-
-    await storage.createStripeEvent({
-      orgId: org.id, stripeEventId, type: eventType, livemode, created,
-      status: "PROCESSED", failureCode: null, failureDetail: null,
-    });
   } else {
     console.warn(`[stripe-webhook] handleSubscriptionTrialWillEnd: no org found, event ${stripeEventId}`);
   }

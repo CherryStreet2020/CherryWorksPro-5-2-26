@@ -42,10 +42,14 @@ export function trialActionFor(org: Pick<Org, "planTier" | "subscriptionStatus" 
 }
 
 /** Pure: is this org's plan inactive (trial ended without a card, or subscription gone)? */
-export function planInactive(org: Pick<Org, "planTier" | "subscriptionStatus"> | null | undefined): boolean {
+export function planInactive(org: Pick<Org, "planTier" | "subscriptionStatus"> & Partial<Pick<Org, "stripeSubscriptionId" | "trialEndsAt">> | null | undefined, now = new Date()): boolean {
   if (!org) return false;
   if (org.planTier === "ENTERPRISE") return false; // comped by hand; never locked by automation
-  return org.subscriptionStatus === TRIAL_EXPIRED_STATUS || org.planTier === "EXPIRED";
+  if (org.subscriptionStatus === TRIAL_EXPIRED_STATUS || org.planTier === "EXPIRED") return true;
+  // The deadline holds on the request path too, not only when the hourly
+  // tick happens to run: a no-card trial past its end is over now.
+  if (org.subscriptionStatus === "trialing" && !org.stripeSubscriptionId && org.trialEndsAt && org.trialEndsAt.getTime() <= now.getTime()) return true;
+  return false;
 }
 
 async function adminRecipients(orgId: string): Promise<{ email: string; name: string }[]> {
@@ -134,7 +138,7 @@ export async function planGate(req: Request, res: Response, next: NextFunction) 
   try {
     let entry = orgCache.get(orgId);
     if (!entry || Date.now() - entry.at > ORG_CACHE_MS) {
-      const [org] = await db.select({ planTier: orgs.planTier, subscriptionStatus: orgs.subscriptionStatus }).from(orgs).where(eq(orgs.id, orgId));
+      const [org] = await db.select({ planTier: orgs.planTier, subscriptionStatus: orgs.subscriptionStatus, stripeSubscriptionId: orgs.stripeSubscriptionId, trialEndsAt: orgs.trialEndsAt }).from(orgs).where(eq(orgs.id, orgId));
       entry = { at: Date.now(), inactive: planInactive(org) };
       orgCache.set(orgId, entry);
     }

@@ -39,6 +39,10 @@ describe("trial lifecycle decisions", () => {
     expect(planInactive({ planTier: "TRIAL", subscriptionStatus: "trialing" })).toBe(false);
     expect(planInactive({ planTier: "PROFESSIONAL", subscriptionStatus: "past_due" })).toBe(false);
     expect(planInactive({ planTier: "ENTERPRISE", subscriptionStatus: "trial_expired" })).toBe(false);
+    // A no-card trial past its deadline is inactive on the request path, before the hourly tick lands.
+    expect(planInactive({ planTier: "TRIAL", subscriptionStatus: "trialing", stripeSubscriptionId: null, trialEndsAt: new Date(now.getTime() - 1) }, now)).toBe(true);
+    expect(planInactive({ planTier: "TRIAL", subscriptionStatus: "trialing", stripeSubscriptionId: "sub_1", trialEndsAt: new Date(now.getTime() - 1) }, now)).toBe(false);
+    expect(planInactive({ planTier: "TRIAL", subscriptionStatus: "trialing", stripeSubscriptionId: null, trialEndsAt: new Date(now.getTime() + DAY) }, now)).toBe(false);
     expect(planInactive(null)).toBe(false);
   });
 });

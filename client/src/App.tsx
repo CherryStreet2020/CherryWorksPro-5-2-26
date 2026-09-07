@@ -388,6 +388,7 @@ function Router() {
 
 function AuthenticatedGettingStarted() {
   const { user, loading } = useAuth();
+  const { planInactive } = useBillingStatus();
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center" style={{ background: "var(--lux-bg)" }}>
@@ -397,6 +398,12 @@ function AuthenticatedGettingStarted() {
   }
   if (!user) {
     return <Redirect to="/login?auth=required" />;
+  }
+  // Same rule as AppContent: an inactive plan only ever sees the plan picker.
+  // (Stripe's success URL lands here, so this also covers a lapsed-then-paid
+  // workspace until billing status refreshes.)
+  if (planInactive) {
+    return <Suspense fallback={<LazyFallback />}><TrialEndedPage /></Suspense>;
   }
   const style = {
     "--sidebar-width": "16rem",
