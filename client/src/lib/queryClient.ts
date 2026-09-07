@@ -3,6 +3,11 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
+    // 402 PLAN_INACTIVE: the workspace's plan just lapsed. Refresh billing
+    // status now so the app swaps to the plan picker without a reload.
+    if (res.status === 402 && text.includes("PLAN_INACTIVE")) {
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/status"] });
+    }
     throw new Error(`${res.status}: ${text}`);
   }
 }
