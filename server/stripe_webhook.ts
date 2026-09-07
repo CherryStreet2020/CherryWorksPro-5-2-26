@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { planFromPrice } from "./stripe-prices";
 import { storage, PayoutEntriesAlreadyPaidError } from "./storage";
 import type { CreateStripePaymentResult } from "./storage";
 import { db } from "./db";
@@ -196,6 +197,27 @@ const PLAN_TIER_MAP: Record<string, { tier: string; maxTeamMembers: number }> = 
   cherryworks_business_monthly: { tier: "BUSINESS", maxTeamMembers: 999999 },
   cherryworks_business_annual: { tier: "BUSINESS", maxTeamMembers: 999999 },
 };
+
+/**
+ * Which base plan a Stripe subscription represents. Pure, so it is testable.
+ * Precedence: the billed base price (a Customer Portal change updates the
+ * item, not the metadata stamped at checkout) → subscription.metadata.planTier
+ * → the legacy cherryworks_* lookup keys → for a live trial/active
+ * subscription on an org still marked TRIAL, PROFESSIONAL. Null = leave as is.
+ */
+export function planTierFromSubscription(subscription: any, currentOrgTier: string | null | undefined): string | null {
+  const items = subscription?.items?.data;
+  const basePrice = (items || []).map((it: any) => it?.price).find((pr: any) => pr?.id && !isAddonPriceId(pr.id)) ?? items?.[0]?.price;
+  const fromPrice = planFromPrice(basePrice);
+  if (fromPrice) return fromPrice;
+  const metaTier = subscription?.metadata?.planTier;
+  if (metaTier && ["STARTER", "PROFESSIONAL", "BUSINESS"].includes(metaTier)) return metaTier;
+  const lookupKey = basePrice?.lookup_key;
+  if (lookupKey && PLAN_TIER_MAP[lookupKey]) return PLAN_TIER_MAP[lookupKey].tier;
+  const status = subscription?.status;
+  if ((status === "active" || status === "trialing") && currentOrgTier === "TRIAL") return "PROFESSIONAL";
+  return null;
+}
 
 async function resolveEventOrgId(event: any): Promise<string | null> {
   const obj = event.data?.object;
@@ -588,19 +610,17 @@ async function handleSubscriptionUpdated(
     stripeSubscriptionId: subscription.id,
   };
 
-  const items = subscription.items?.data;
-  if (items && items.length > 0) {
-    const lookupKey = items[0].price?.lookup_key;
-    if (lookupKey && PLAN_TIER_MAP[lookupKey]) {
-      updates.planTier = PLAN_TIER_MAP[lookupKey].tier;
-      updates.maxTeamMembers = PLAN_TIER_MAP[lookupKey].maxTeamMembers;
-    }
-  }
-
-  if (status === "active" && org.planTier === "TRIAL") {
-    if (!updates.planTier) {
-      updates.planTier = "PROFESSIONAL";
-    }
+  // Which plan is this subscription? The checkout session stamps the chosen
+  // tier into subscription metadata (settings-routes: subscription_data.metadata),
+  // which survives every later subscription.* event. Then the price itself
+  // (env ids or the product name), then the legacy lookup keys.
+  // The billed price is the truth (a Customer Portal upgrade/downgrade changes
+  // the item but not the metadata stamped at checkout); metadata is the
+  // fallback when the price cannot be recognised; then the legacy lookup map.
+  const resolvedTier = planTierFromSubscription(subscription, org.planTier);
+  if (resolvedTier) {
+    updates.planTier = resolvedTier;
+    updates.maxTeamMembers = 999999;
   }
 
   await storage.updateOrg(org.id, updates);

@@ -1,4 +1,12 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import { appBaseUrl, trustedBaseUrl } from "../lib/app-url";
+
+/** Consumer mailbox providers: many unrelated people share one domain. */
+const PUBLIC_MAILBOX_DOMAINS = new Set([
+  "gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "msn.com",
+  "yahoo.com", "ymail.com", "icloud.com", "me.com", "mac.com", "aol.com", "proton.me", "protonmail.com",
+  "comcast.net", "att.net", "verizon.net", "sbcglobal.net", "mail.com", "zoho.com", "gmx.com", "fastmail.com",
+]);
 import { storage } from "../storage";
 import { db } from "../db";
 import { eq, and, gte, lte, sql, inArray } from "drizzle-orm";
@@ -306,8 +314,10 @@ app.post("/api/auth/signup", signupLimiter, awaitSessionSave, async (req, res) =
   try {
     const parsed = signupSchema.parse(req.body);
 
+    // Three signups a day from one company domain is a reasonable brake on
+    // scripted signups; three a day from gmail.com would lock out the public.
     const emailDomain = parsed.email.split("@")[1]?.toLowerCase();
-    if (emailDomain) {
+    if (emailDomain && !PUBLIC_MAILBOX_DOMAINS.has(emailDomain)) {
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       const recentSignups = await db
         .select({ id: auditLogs.id })
@@ -430,9 +440,7 @@ app.post("/api/auth/signup", signupLimiter, awaitSessionSave, async (req, res) =
 
     // Welcome email — best-effort. Three audit actions distinguish intent
     // (ATTEMPTED) from outcome (SUCCEEDED/FAILED).
-    const proto = (req.headers["x-forwarded-proto"] as string)?.split(",")[0] || req.protocol || "http";
-    const host = (req.headers["x-forwarded-host"] as string)?.split(",")[0] || req.get("host") || "localhost";
-    const loginUrl = `${proto}://${host}/login`;
+    const loginUrl = `${appBaseUrl(req)}/login`;
     storage.createAuditLog({
       orgId: org.id,
       userId: user.id,
@@ -606,8 +614,7 @@ app.post("/api/auth/forgot-password", forgotPasswordLimiter, async (req, res) =>
       return res.status(400).json({ message: "Email is required" });
     }
 
-    const appBaseUrl = process.env.APP_BASE_URL
-      || (process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : "http://localhost:5000");
+    const resetBaseUrl = trustedBaseUrl();
 
     let usersToReset: Array<{ id: string; orgId: string; email: string }> = [];
 
@@ -632,7 +639,7 @@ app.post("/api/auth/forgot-password", forgotPasswordLimiter, async (req, res) =>
         expiresAt,
       });
 
-      const resetUrl = `${appBaseUrl}/reset-password/${token}`;
+      const resetUrl = `${resetBaseUrl}/reset-password/${token}`;
 
       let smtpConfig = null;
       let org: Awaited<ReturnType<typeof storage.getOrg>> | null = null;

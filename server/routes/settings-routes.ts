@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import { appBaseUrl } from "../lib/app-url";
 import { storage } from "../storage";
 import { db } from "../db";
 import { eq, and, sql } from "drizzle-orm";
@@ -137,7 +138,9 @@ app.get("/api/implementation-status", requireAuth, async (req, res) => {
       const clients = await storage.getClientsByOrg(orgId);
       const projects = await storage.getProjectsByOrg(orgId);
       const users = await storage.getTeamMembersByOrg(orgId);
-      const team = users.filter((u: any) => u.role === "TEAM_MEMBER");
+      // "Invite Team" means someone besides you is on the workspace, whatever
+    // their role; requiring a TEAM_MEMBER left admin/manager firms at 4/5 forever.
+    const team = users.filter((u: any) => u.id !== req.session.userId && u.isActive !== false);
       const steps = [
         { id: "explore_dashboard", label: "Explore Your Dashboard", complete: true },
         { id: "review_clients", label: "Review Your Clients", complete: clients.length > 0 },
@@ -372,19 +375,19 @@ app.post("/api/billing/checkout", requireAuth, async (req, res) => {
 
     console.log(`[billing/checkout] plan=${planKey} annual_raw=${JSON.stringify(annual)} isAnnual=${isAnnual}`);
 
+    const Stripe = (await import("stripe")).default;
+    const stripe = new Stripe(stripeKey);
+
     let priceId: string;
     try {
-      const { getPriceId } = await import("../stripe-prices");
-      priceId = getPriceId(planKey as "STARTER" | "PROFESSIONAL" | "BUSINESS", isAnnual);
+      const { resolvePriceId } = await import("../stripe-prices");
+      priceId = await resolvePriceId(stripe as any, planKey as "STARTER" | "PROFESSIONAL" | "BUSINESS", isAnnual);
     } catch (priceErr: any) {
       console.error("[billing/checkout] Price ID resolution failed:", priceErr.message);
       return res.status(503).json({ message: "Billing configuration error, please contact support" });
     }
 
     console.log(`[billing/checkout] resolved priceId=${priceId} for ${planKey}/${isAnnual ? "yearly" : "monthly"}`);
-
-    const Stripe = (await import("stripe")).default;
-    const stripe = new Stripe(stripeKey);
 
     let customerId = org.stripeCustomerId;
     if (!customerId) {
@@ -398,7 +401,7 @@ app.post("/api/billing/checkout", requireAuth, async (req, res) => {
       await db.update(orgs).set({ stripeCustomerId: customerId }).where(eq(orgs.id, orgId));
     }
 
-    const baseUrl = (process.env.BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+    const baseUrl = appBaseUrl(req);
 
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
@@ -411,7 +414,8 @@ app.post("/api/billing/checkout", requireAuth, async (req, res) => {
       },
       payment_method_collection: "always",
       success_url: `${baseUrl}/getting-started?welcome=true&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${baseUrl}/signup?checkout=canceled&orgId=${orgId}`,
+      // The signup page restores plan + interval from these on the way back.
+      cancel_url: `${baseUrl}/signup?checkout=canceled&orgId=${orgId}&plan=${planKey}&annual=${isAnnual}`,
       metadata: { orgId, planTier: planKey, annual: String(isAnnual) },
     });
 

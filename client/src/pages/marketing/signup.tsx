@@ -66,6 +66,10 @@ export default function SignupPage() {
   const [annual, setAnnual] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Stripe's cancel_url brings a signed-in owner back here. Their workspace
+  // already exists, so the form collapses to "finish billing" instead of
+  // inviting a second signup (which used to create a duplicate "firm-1" org).
+  const [resume, setResume] = useState<{ name: string } | null>(null);
 
   const generatedSlug = firmName.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50);
 
@@ -85,7 +89,34 @@ export default function SignupPage() {
     if (params.get("annual") === "true") {
       setAnnual(true);
     }
+    if (params.get("checkout") === "canceled") {
+      fetch("/api/auth/me", { credentials: "include" })
+        .then(r => (r.ok ? r.json() : null))
+        .then(me => { if (me?.id) setResume({ name: me.name || me.firstName || me.email || "there" }); })
+        .catch(() => {});
+    }
   }, []);
+
+  const startCheckout = async (csrfToken: string) => {
+    const checkoutRes = await fetch("/api/billing/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+      credentials: "include",
+      body: JSON.stringify({ plan: selectedPlan, annual }),
+    });
+    if (!checkoutRes.ok) {
+      const data = await checkoutRes.json();
+      throw new Error(data.message || "Could not start checkout");
+    }
+    const checkoutData = await checkoutRes.json();
+    if (checkoutData.url && isValidStripeUrl(checkoutData.url)) {
+      window.location.href = checkoutData.url;
+    } else if (checkoutData.url) {
+      throw new Error("Invalid redirect URL");
+    } else {
+      throw new Error("No checkout URL received");
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,6 +124,14 @@ export default function SignupPage() {
     setLoading(true);
 
     try {
+      if (resume) {
+        const tokenRes = await fetch("/api/csrf-token", { credentials: "include" });
+        if (!tokenRes.ok) throw new Error("Your session has expired. Please log in and continue from Settings → Billing.");
+        const { token } = await tokenRes.json();
+        await startCheckout(token);
+        return;
+      }
+
       const signupRes = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -107,26 +146,7 @@ export default function SignupPage() {
         throw new Error(signupData.message || "Signup failed");
       }
 
-      const checkoutRes = await fetch("/api/billing/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
-        credentials: "include",
-        body: JSON.stringify({ plan: selectedPlan, annual }),
-      });
-
-      if (!checkoutRes.ok) {
-        const data = await checkoutRes.json();
-        throw new Error(data.message || "Could not start checkout");
-      }
-
-      const checkoutData = await checkoutRes.json();
-      if (checkoutData.url && isValidStripeUrl(checkoutData.url)) {
-        window.location.href = checkoutData.url;
-      } else if (checkoutData.url) {
-        throw new Error("Invalid redirect URL");
-      } else {
-        throw new Error("No checkout URL received");
-      }
+      await startCheckout(csrfToken);
     } catch (err: any) {
       setError(err.message || "Something went wrong");
       setLoading(false);
@@ -283,8 +303,13 @@ export default function SignupPage() {
               }}
               data-testid="signup-form-card"
             >
-              <h2 className="text-xl font-bold mb-1 hidden lg:block" style={{ color: "var(--lux-text)" }}>Start your free trial</h2>
-              <p className="text-sm mb-6 hidden lg:block" style={{ color: "var(--lux-text-muted)" }}>No commitment. Full access. Live in 5 minutes.</p>
+              <h2 className="text-xl font-bold mb-1 hidden lg:block" style={{ color: "var(--lux-text)" }}>{resume ? "Finish setting up billing" : "Start your free trial"}</h2>
+              <p className="text-sm mb-6 hidden lg:block" style={{ color: "var(--lux-text-muted)" }}>{resume ? `Welcome back, ${resume.name}. Your workspace is ready — pick a plan to start your 14-day trial.` : "No commitment. Full access. Live in 5 minutes."}</p>
+              {resume && (
+                <div className="mb-4 px-4 py-3 rounded-lg text-sm" style={{ background: "var(--lux-surface-alt)", color: "var(--lux-text)" }} data-testid="signup-resume-notice">
+                  Checkout was canceled, but your account was created. You can also do this later from <a href="/settings/billing" className="underline">Settings → Billing</a>, or <a href="/getting-started" className="underline">go to your dashboard</a> now.
+                </div>
+              )}
 
               {error && (
                 <div className="mb-4 px-4 py-3 rounded-lg text-sm" style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444" }} data-testid="signup-error">
@@ -293,6 +318,7 @@ export default function SignupPage() {
               )}
 
               <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
+                {!resume && (<>
                 <div>
                   <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--lux-text)" }}>Firm / Company Name</label>
                   <input type="text" value={firmName} onChange={(e) => setFirmName(e.target.value)} required className="w-full px-4 py-2.5 text-sm rounded-lg" style={{ background: "var(--color-surface-0)", border: "1px solid var(--lux-border)", color: "var(--lux-text)" }} placeholder="Your firm name" data-testid="input-firm-name" />
@@ -329,6 +355,8 @@ export default function SignupPage() {
                   </div>
                   <PasswordChecks password={password} />
                 </div>
+
+                </>)}
 
                 <div>
                   <label className="block text-xs font-medium mb-2" style={{ color: "var(--lux-text)" }}>Select Plan</label>
@@ -370,9 +398,9 @@ export default function SignupPage() {
                   </div>
                 </div>
 
-                <button type="submit" disabled={loading || !firmName || !firstName || !lastName || !email || !passwordValid} className="w-full px-4 py-3 text-sm font-semibold text-white rounded-lg transition-opacity hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2" style={{ background: "var(--gradient-brand)" }} data-testid="button-signup-submit">
+                <button type="submit" disabled={loading || (!resume && (!firmName || !firstName || !lastName || !email || !passwordValid))} className="w-full px-4 py-3 text-sm font-semibold text-white rounded-lg transition-opacity hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2" style={{ background: "var(--gradient-brand)" }} data-testid="button-signup-submit">
                   <CreditCard className="w-4 h-4" />
-                  {loading ? "Creating your account..." : "Continue to Payment"}
+                  {loading ? (resume ? "Opening checkout..." : "Creating your account...") : "Continue to Payment"}
                 </button>
               </form>
 
