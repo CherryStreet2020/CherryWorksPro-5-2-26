@@ -134,3 +134,11 @@ export async function requireVerifiedEmail(req: Request, res: Response, next: Ne
 export function unverifiedFields() {
   return { emailVerifiedAt: null as Date | null, emailVerificationTokenHash: null as string | null, emailVerificationExpiresAt: null as Date | null };
 }
+
+/** Outbound customer mail on behalf of a workspace requires at least one verified active admin. */
+export async function orgHasVerifiedAdmin(orgId: string): Promise<boolean> {
+  const { isNotNull } = await import("drizzle-orm");
+  const [row] = await db.select({ id: users.id }).from(users)
+    .where(and(eq(users.orgId, orgId), eq(users.role, "ADMIN"), eq(users.isActive, true), isNotNull(users.emailVerifiedAt))).limit(1);
+  return !!row;
+}

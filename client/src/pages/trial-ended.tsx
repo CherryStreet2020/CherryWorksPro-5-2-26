@@ -11,13 +11,14 @@ import { useBillingStatus } from "@/hooks/use-billing-status";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isValidStripeUrl } from "@/lib/url-validation";
 import { useDocumentTitle } from "@/lib/use-document-title";
+import { PLAN_PRICING, type PlanId } from "@shared/plan-pricing";
 import { DeletionBanner } from "@/components/deletion-banner";
 import { VerifyEmailBanner } from "@/components/account-banners";
 
-const PLANS = [
-  { id: "STARTER", name: "Starter", blurb: "5 clients · 3 projects · Full GL", monthly: 39, annual: 379 },
-  { id: "PROFESSIONAL", name: "Professional", blurb: "Unlimited · Approvals · Payouts · API", monthly: 89, annual: 849, popular: true },
-  { id: "BUSINESS", name: "Business", blurb: "Period closes · Dunning · Multi-entity", monthly: 159, annual: 1499 },
+const PLANS: { id: PlanId; name: string; blurb: string; monthly: number; annual: number; popular?: boolean }[] = [
+  { id: "STARTER", name: "Starter", blurb: "5 clients · 3 projects · Full GL", ...PLAN_PRICING.STARTER },
+  { id: "PROFESSIONAL", name: "Professional", blurb: "Unlimited · Approvals · Payouts · API", ...PLAN_PRICING.PROFESSIONAL, popular: true },
+  { id: "BUSINESS", name: "Business", blurb: "Period closes · Dunning · Multi-entity", ...PLAN_PRICING.BUSINESS },
 ];
 
 /** Back from Stripe with a session_id: the webhook usually lands within seconds; poll before offering anything. */
@@ -51,6 +52,14 @@ export default function TrialEndedPage() {
   // Also reachable at /choose-plan during a live trial (banner + reminder emails).
   const stillActive = billing ? !billing.planInactive : false;
   const ended = stillActive ? "Choose your plan" : billing?.planTier === "EXPIRED" ? "Your subscription has ended" : "Your free trial has ended";
+
+  const openPortal = async () => {
+    try {
+      const res = await apiRequest("POST", "/api/billing/portal");
+      const data = await res.json();
+      if (data.url && isValidStripeUrl(data.url)) window.location.href = data.url;
+    } catch (err: any) { setError(err?.message || "Could not open the billing portal"); }
+  };
 
   const checkout = async () => {
     setLoading(true); setError("");
@@ -103,6 +112,9 @@ export default function TrialEndedPage() {
             <button onClick={checkout} disabled={loading} className="mt-4 w-full px-4 py-3 text-sm font-semibold text-white rounded-lg flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: "var(--gradient-brand)" }} data-testid="button-trial-ended-checkout">
               <CreditCard className="w-4 h-4" />{loading ? "Opening checkout…" : "Continue to Payment"}
             </button>
+            {billing?.stripeCustomerId && (
+              <button onClick={openPortal} className="mt-3 w-full text-xs underline" style={{ color: "var(--lux-text-muted)" }} data-testid="button-trial-ended-portal">Manage existing billing (cards, add-ons, invoices) in Stripe</button>
+            )}
             <p className="mt-3 text-xs text-center" style={{ color: "var(--lux-text-muted)" }}>Questions? Email <a href="mailto:support@cherryworkspro.com" className="underline">support@cherryworkspro.com</a>.</p>
           </>
         ) : (

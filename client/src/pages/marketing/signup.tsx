@@ -5,11 +5,12 @@ import { BrandLockup } from "@/components/shared/brand-lockup";
 import { SEO } from "@/components/seo";
 import { MarketingChatBubble } from "@/components/marketing/marketing-chat-bubble";
 import { isValidStripeUrl } from "@/lib/url-validation";
+import { PLAN_PRICING, annualPerMonth, type PlanId } from "@shared/plan-pricing";
 
 const plans = [
-  { id: "STARTER", name: "Starter", monthly: 39, annual: 31, capacity: "Up to 5 clients · Unlimited users", features: "5 clients · 3 projects · Full GL" },
-  { id: "PROFESSIONAL", name: "Professional", monthly: 89, annual: 71, capacity: "Unlimited clients · Unlimited users", popular: true, features: "Unlimited · Approvals · Payouts · API" },
-  { id: "BUSINESS", name: "Business", monthly: 159, annual: 127, capacity: "Unlimited clients · API · Custom branding", features: "Period closes · Dunning · Multi-entity" },
+  { id: "STARTER", name: "Starter", monthly: PLAN_PRICING.STARTER.monthly, annual: annualPerMonth("STARTER"), capacity: "Up to 5 clients · Unlimited users", features: "5 clients · 3 projects · Full GL" },
+  { id: "PROFESSIONAL", name: "Professional", monthly: PLAN_PRICING.PROFESSIONAL.monthly, annual: annualPerMonth("PROFESSIONAL"), capacity: "Unlimited clients · Unlimited users", popular: true, features: "Unlimited · Approvals · Payouts · API" },
+  { id: "BUSINESS", name: "Business", monthly: PLAN_PRICING.BUSINESS.monthly, annual: annualPerMonth("BUSINESS"), capacity: "Unlimited clients · API · Custom branding", features: "Period closes · Dunning · Multi-entity" },
 ];
 
 function PasswordChecks({ password }: { password: string }) {
@@ -391,7 +392,7 @@ export default function SignupPage() {
                       </span>
                       <span className="text-xs mt-0.5" style={{ color: "var(--lux-text-muted)" }}>
                         {annual
-                          ? `$${(plans.find(p => p.id === selectedPlan)?.annual ?? 0) * 12}/yr — billed once per year`
+                          ? `$${PLAN_PRICING[selectedPlan as PlanId].annual.toLocaleString()}/yr — billed once per year`
                           : `$${plans.find(p => p.id === selectedPlan)?.monthly ?? 0}/mo — billed each month`}
                       </span>
                     </div>

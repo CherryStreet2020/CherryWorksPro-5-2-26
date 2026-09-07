@@ -1330,7 +1330,7 @@ app.get("/api/invoices/:id/pdf", requireManagerOrAbove, async (req, res) => {
     return res.status(500).json({ message: "PDF generation failed" });
   }
 });
-app.post("/api/reminders/process", requireManagerOrAbove, async (req, res) => {
+app.post("/api/reminders/process", requireManagerOrAbove, requireVerifiedEmail, async (req, res) => {
   try {
     const { processReminders } = await import("../reminders");
     const result = await processReminders(req.session.orgId!);
