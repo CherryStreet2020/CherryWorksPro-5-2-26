@@ -143,8 +143,12 @@ export default function SupportSettingsPage() {
 }
 
 
+interface JiraConnection { connected: boolean; baseUrl?: string; projectKey?: string; email?: string; clientId?: string | null; projectId?: string | null; connectedAs?: string | null; connectedAt?: string; lastImportAt?: string | null; lastImportSummary?: { pulled: number; imported: number; skipped: number; attachmentsImported?: number; errors: number } | null }
+
 function JiraImportCard({ card, muted, fieldStyle }: { card: React.CSSProperties; muted: React.CSSProperties; fieldStyle: React.CSSProperties }) {
   const { toast } = useToast();
+  const { data: saved, isLoading: savedLoading } = useQuery<JiraConnection>({ queryKey: ["/api/support/import/jira-connection"] });
+  const [editing, setEditing] = useState(false);
   const [baseUrl, setBaseUrl] = useState("https://cherrystreet.atlassian.net");
   const [email, setEmail] = useState("");
   const [apiToken, setApiToken] = useState("");
@@ -159,19 +163,38 @@ function JiraImportCard({ card, muted, fieldStyle }: { card: React.CSSProperties
     queryFn: async () => { const r = await fetch(`/api/support/clients/${clientId}/projects`, { credentials: "include" }); if (!r.ok) throw new Error(`${r.status}`); return r.json(); },
     enabled: !!clientId,
   });
-  const conn = { baseUrl: baseUrl.trim(), email: email.trim(), apiToken: apiToken.trim(), projectKey: projectKey.trim().toUpperCase() };
-  const ready = !!conn.baseUrl && !!conn.email && !!conn.apiToken && !!conn.projectKey;
+  // A saved connection fills the form (token stays server-side) and its client/project choice.
+  useEffect(() => {
+    if (!saved?.connected) return;
+    setBaseUrl(saved.baseUrl || baseUrl); setProjectKey(saved.projectKey || projectKey); setEmail(saved.email || "");
+    if (saved.clientId) setClientId(saved.clientId); if (saved.projectId) setProjectId(saved.projectId);
+  }, [saved?.connected, saved?.baseUrl, saved?.projectKey, saved?.email, saved?.clientId, saved?.projectId]);
 
+  const showForm = !saved?.connected || editing;
+  const conn = { baseUrl: baseUrl.trim(), email: email.trim(), apiToken: apiToken.trim(), projectKey: projectKey.trim().toUpperCase() };
+  // A saved connection can be edited without re-typing the token (the server keeps it).
+  const ready = !!conn.baseUrl && !!conn.email && !!conn.projectKey && (!!conn.apiToken || !!saved?.connected);
+  const usable = saved?.connected || ready;
+
+  const connect = useMutation({
+    mutationFn: async () => (await apiRequest("PUT", "/api/support/import/jira-connection", { ...conn, apiToken: conn.apiToken || undefined, clientId: clientId || null, projectId: projectId || null })).json(),
+    onSuccess: (r: JiraConnection) => { queryClient.setQueryData(["/api/support/import/jira-connection"], r); setApiToken(""); setEditing(false); toast({ title: `Connected to Jira as ${r.connectedAs || r.email}` }); },
+    onError: (err: Error) => toast({ title: "Could not connect to Jira", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }),
+  });
+  const disconnect = useMutation({
+    mutationFn: async () => (await apiRequest("DELETE", "/api/support/import/jira-connection")).json(),
+    onSuccess: () => { queryClient.setQueryData(["/api/support/import/jira-connection"], { connected: false }); setTest(null); setReport(null); setEditing(false); toast({ title: "Jira disconnected" }); },
+  });
   const testConn = useMutation({
-    mutationFn: async () => (await apiRequest("POST", "/api/support/import/jira-test", conn)).json(),
+    mutationFn: async () => (await apiRequest("POST", "/api/support/import/jira-test", { ...conn, apiToken: conn.apiToken || undefined })).json(),
     onSuccess: (r: JiraTest) => { setTest(r); setReport(null); },
     onError: (err: Error) => { setTest(null); toast({ title: "Could not connect to Jira", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }); },
   });
   const run = useMutation({
-    mutationFn: async (dryRun: boolean) => (await apiRequest("POST", "/api/support/import/jira-fetch", { ...conn, clientId, projectId: projectId || null, dryRun, relinkTime: true })).json(),
+    mutationFn: async (dryRun: boolean) => (await apiRequest("POST", "/api/support/import/jira-fetch", { ...conn, apiToken: conn.apiToken || undefined, clientId, projectId: projectId || null, dryRun, relinkTime: true })).json(),
     onSuccess: (r: ImportReport, dryRun) => {
       setReport(r);
-      if (!dryRun) { queryClient.invalidateQueries({ queryKey: ["/api/support/cases"] }); queryClient.invalidateQueries({ queryKey: ["/api/support/summary"] }); toast({ title: `Imported ${r.imported} cases` }); }
+      if (!dryRun) { queryClient.invalidateQueries({ queryKey: ["/api/support/cases"] }); queryClient.invalidateQueries({ queryKey: ["/api/support/summary"] }); queryClient.invalidateQueries({ queryKey: ["/api/support/import/jira-connection"] }); toast({ title: `Imported ${r.imported} cases` }); }
     },
     onError: (err: Error) => toast({ title: "Import failed", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }),
   });
@@ -180,19 +203,35 @@ function JiraImportCard({ card, muted, fieldStyle }: { card: React.CSSProperties
     <section className="rounded-2xl p-5 border-0 space-y-3" style={card} data-testid="card-jira-import">
       <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Import from Jira Service Management</h2>
       <p className="text-sm" style={{ color: "var(--lux-text-secondary)" }}>
-        Pulls every issue in a Jira project with its comments and status history, keeps the keys and dates, and continues the numbering here. The API token is used for this import only and is not stored. Create one at id.atlassian.com → Security → API tokens.
+        Pulls every issue in a Jira project with its comments, status history and attachments, keeps the keys and dates, and continues the numbering here. Re-running brings over anything new. The API token is stored encrypted; create one at id.atlassian.com → Security → API tokens.
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div><Label className="text-xs" style={muted}>Jira URL</Label><Input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} style={fieldStyle} data-testid="input-jira-url" /></div>
-        <div><Label className="text-xs" style={muted}>Project key</Label><Input value={projectKey} onChange={e => setProjectKey(e.target.value)} style={fieldStyle} data-testid="input-jira-project" /></div>
-        <div><Label className="text-xs" style={muted}>Atlassian account email</Label><Input type="email" value={email} onChange={e => setEmail(e.target.value)} style={fieldStyle} data-testid="input-jira-email" /></div>
-        <div><Label className="text-xs" style={muted}>API token</Label><Input type="password" value={apiToken} onChange={e => setApiToken(e.target.value)} style={fieldStyle} data-testid="input-jira-token" autoComplete="off" /></div>
-      </div>
+      {saved?.connected && !editing && (
+        <div className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm" style={{ background: "var(--lux-surface-alt)", border: "1px solid var(--lux-border)", color: "var(--lux-text)" }} data-testid="text-jira-connected">
+          <span>
+            Connected as <strong>{saved.connectedAs || saved.email}</strong> · {saved.projectKey} on {saved.baseUrl?.replace(/^https?:\/\//, "")}
+            {saved.lastImportAt && <span style={muted}> · last import {new Date(saved.lastImportAt).toLocaleString()}{saved.lastImportSummary ? ` (${saved.lastImportSummary.imported} new, ${saved.lastImportSummary.skipped} already here)` : ""}</span>}
+          </span>
+          <span className="flex gap-3 text-xs whitespace-nowrap">
+            <button className="underline" onClick={() => setEditing(true)} data-testid="button-jira-edit">Change</button>
+            <button className="underline" onClick={() => disconnect.mutate()} disabled={disconnect.isPending} data-testid="button-jira-disconnect">Disconnect</button>
+          </span>
+        </div>
+      )}
+      {showForm && !savedLoading && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div><Label className="text-xs" style={muted}>Jira URL</Label><Input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} style={fieldStyle} data-testid="input-jira-url" /></div>
+          <div><Label className="text-xs" style={muted}>Project key</Label><Input value={projectKey} onChange={e => setProjectKey(e.target.value)} style={fieldStyle} data-testid="input-jira-project" /></div>
+          <div><Label className="text-xs" style={muted}>Atlassian account email</Label><Input type="email" value={email} onChange={e => setEmail(e.target.value)} style={fieldStyle} data-testid="input-jira-email" /></div>
+          <div><Label className="text-xs" style={muted}>API token</Label><Input type="password" value={apiToken} onChange={e => setApiToken(e.target.value)} placeholder={saved?.connected ? "Leave blank to keep the saved token" : ""} style={fieldStyle} data-testid="input-jira-token" autoComplete="off" /></div>
+        </div>
+      )}
       <div className="flex items-center gap-2 flex-wrap">
-        <Button variant="outline" onClick={() => testConn.mutate()} disabled={!ready || testConn.isPending} data-testid="button-jira-test">{testConn.isPending ? "Connecting…" : "Test connection"}</Button>
+        {showForm && <Button className="text-white" onClick={() => connect.mutate()} disabled={!ready || connect.isPending} style={{ background: "var(--gradient-brand)" }} data-testid="button-jira-connect">{connect.isPending ? "Connecting…" : saved?.connected ? "Save connection" : "Connect"}</Button>}
+        {showForm && saved?.connected && <Button variant="outline" onClick={() => { setEditing(false); setApiToken(""); setBaseUrl(saved.baseUrl || ""); setProjectKey(saved.projectKey || ""); setEmail(saved.email || ""); }} data-testid="button-jira-cancel">Cancel</Button>}
+        <Button variant="outline" onClick={() => testConn.mutate()} disabled={!usable || testConn.isPending} data-testid="button-jira-test">{testConn.isPending ? "Checking…" : "Check project"}</Button>
         {test && <span className="text-xs" style={{ color: "var(--lux-text)" }} data-testid="text-jira-test">Connected as {test.connectedAs} · {test.issues} issues ({test.firstKey} → {test.lastKey})</span>}
       </div>
-      {test && (
+      {usable && (
         <div className="space-y-3 pt-2 border-t" style={{ borderColor: "var(--lux-border)" }}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>

@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { z } from "zod";
-import { storage } from "../storage";
+import { storage, encryptField, decryptField } from "../storage";
 import { requireAuth, requireManagerOrAbove, requireAdmin, sanitizeErrorMessage } from "./middleware";
 import { requireTier } from "../lib/tier-gate";
 import {
@@ -9,8 +9,7 @@ import {
   createSupportCaseMessageSchema,
   upsertSupportCaseTypeSchema,
   updateClientCaseSettingsSchema,
-  SUPPORT_CASE_STATUSES,
-} from "@shared/schema";
+  SUPPORT_CASE_STATUSES, supportJiraConnections } from "@shared/schema";
 import * as cases from "../support-cases";
 import { importJiraIssues } from "../support-import";
 import { JiraClient, JiraHttpError, pullProject, MAX_ISSUES } from "../support-jira";
@@ -29,7 +28,7 @@ import { resolvePolicy, upsertPolicy, deleteClientPolicy, getPolicyRow, DEFAULT_
 import { slaPolicySchema, supportSettingsSchema } from "@shared/schema";
 import { db } from "../db";
 import { orgs } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 // Validation and business-rule messages are meant for the user; everything
 // else goes through the production sanitizer.
@@ -370,6 +369,57 @@ export function registerSupportCaseRoutes(app: Express) {
     apiToken: z.string().min(8).max(500),
     projectKey: z.string().trim().regex(/^[A-Z][A-Z0-9]{1,9}$/, "Project key like ABS"),
   });
+  type JiraConn = z.infer<typeof jiraConnSchema>;
+
+  /** Explicit credentials in the body win; otherwise the workspace's saved connection. */
+  const resolveJiraConn = async (orgId: string, body: any): Promise<JiraConn> => {
+    if (body?.apiToken) return jiraConnSchema.parse(body);
+    const [saved] = await db.select().from(supportJiraConnections).where(eq(supportJiraConnections.orgId, orgId));
+    if (!saved) throw new z.ZodError([{ code: "custom", path: ["apiToken"], message: "No saved Jira connection — enter the API token and save the connection first" }]);
+    return jiraConnSchema.parse({
+      baseUrl: body?.baseUrl || saved.baseUrl, email: body?.email || saved.email,
+      apiToken: decryptField(saved.apiTokenEnc), projectKey: body?.projectKey || saved.projectKey,
+    });
+  };
+  const jiraConnectionView = (row: any) => row ? ({
+    connected: true, baseUrl: row.baseUrl, projectKey: row.projectKey, email: row.email, clientId: row.clientId, projectId: row.projectId,
+    connectedAs: row.connectedAs, connectedAt: row.connectedAt, lastImportAt: row.lastImportAt, lastImportSummary: row.lastImportSummary,
+  }) : { connected: false };
+
+  // ── Saved connection: view / save (verifies with Jira first) / remove ──
+  app.get("/api/support/import/jira-connection", requireAuth, requireAdmin, requireTier("PROFESSIONAL"), async (req, res) => {
+    const [row] = await db.select().from(supportJiraConnections).where(eq(supportJiraConnections.orgId, req.session.orgId!));
+    return res.json(jiraConnectionView(row));
+  });
+  app.put("/api/support/import/jira-connection", requireAuth, requireAdmin, requireTier("PROFESSIONAL"), async (req, res) => {
+    try {
+      const body = req.body ?? {};
+      // Editing a saved connection may leave the token blank: keep the stored one.
+      if (!body.apiToken) {
+        const [existing] = await db.select().from(supportJiraConnections).where(eq(supportJiraConnections.orgId, req.session.orgId!));
+        if (existing) body.apiToken = decryptField(existing.apiTokenEnc);
+      }
+      const conn = jiraConnSchema.parse(body);
+      const client = new JiraClient(conn);
+      const me = await client.whoAmI(); // never store a token that does not work
+      const values = {
+        orgId: req.session.orgId!, baseUrl: conn.baseUrl, projectKey: conn.projectKey, email: conn.email, apiTokenEnc: encryptField(conn.apiToken),
+        clientId: body.clientId ? String(body.clientId) : null, projectId: body.projectId ? String(body.projectId) : null,
+        connectedAs: me.displayName || null, connectedAt: new Date(), updatedByUserId: req.session.userId!,
+      };
+      const [row] = await db.insert(supportJiraConnections).values(values)
+        .onConflictDoUpdate({ target: supportJiraConnections.orgId, set: { ...values } }).returning();
+      await storage.createAuditLog({ orgId: req.session.orgId!, userId: req.session.userId!, action: "SUPPORT_JIRA_CONNECTED", entityType: "org", entityId: req.session.orgId!, details: { baseUrl: conn.baseUrl, projectKey: conn.projectKey, email: conn.email, connectedAs: me.displayName } });
+      return res.json(jiraConnectionView(row));
+    } catch (err: any) {
+      return res.status(400).json({ message: jiraError(err) });
+    }
+  });
+  app.delete("/api/support/import/jira-connection", requireAuth, requireAdmin, requireTier("PROFESSIONAL"), async (req, res) => {
+    await db.delete(supportJiraConnections).where(eq(supportJiraConnections.orgId, req.session.orgId!));
+    await storage.createAuditLog({ orgId: req.session.orgId!, userId: req.session.userId!, action: "SUPPORT_JIRA_DISCONNECTED", entityType: "org", entityId: req.session.orgId!, details: {} }).catch(() => {});
+    return res.json({ connected: false });
+  });
   const jiraError = (err: any): string => {
     if (err instanceof z.ZodError) return friendlyError(err);
     if (err instanceof JiraHttpError) return err.status === 401 || err.status === 403 ? `Jira ${err.status}: check the email and API token` : err.message;
@@ -379,7 +429,7 @@ export function registerSupportCaseRoutes(app: Express) {
 
   app.post("/api/support/import/jira-test", requireAuth, requireAdmin, requireTier("PROFESSIONAL"), async (req, res) => {
     try {
-      const conn = jiraConnSchema.parse(req.body);
+      const conn = await resolveJiraConn(req.session.orgId!, req.body);
       const client = new JiraClient(conn);
       const me = await client.whoAmI();
       const issues = await client.listIssues(conn.projectKey);
@@ -393,8 +443,15 @@ export function registerSupportCaseRoutes(app: Express) {
 
   app.post("/api/support/import/jira-fetch", requireAuth, requireAdmin, requireTier("PROFESSIONAL"), async (req, res) => {
     try {
-      const conn = jiraConnSchema.parse(req.body);
+      const conn = await resolveJiraConn(req.session.orgId!, req.body);
       const body = req.body ?? {};
+      const [saved] = await db.select().from(supportJiraConnections).where(eq(supportJiraConnections.orgId, req.session.orgId!));
+      // "Used the saved connection" = saved token, same site and project.
+      const usedSaved = !!saved && !body.apiToken && conn.baseUrl === saved.baseUrl && conn.projectKey === saved.projectKey;
+      // Saved destination applies only to that connection, and only when the
+      // request OMITS the field ("None" arrives as null and must stay None).
+      if (usedSaved && !("clientId" in body) && saved?.clientId) body.clientId = saved.clientId;
+      if (usedSaved && !("projectId" in body) && saved?.projectId && saved.clientId && String(body.clientId) === saved.clientId) body.projectId = saved.projectId;
       if (!body.clientId) return res.status(400).json({ message: "clientId is required" });
       const items = await pullProject(conn, conn.projectKey);
       if (items.length > MAX_ISSUES) return res.status(400).json({ message: `Import at most ${MAX_ISSUES} issues per request` });
@@ -410,6 +467,15 @@ export function registerSupportCaseRoutes(app: Express) {
           orgId: req.session.orgId!, userId: req.session.userId!, action: "SUPPORT_CASES_IMPORTED", entityType: "client", entityId: String(body.clientId),
           details: { source: "jira-fetch", projectKey: conn.projectKey, pulled: items.length, imported: report.imported, skipped: report.skipped.length, contactsCreated: report.contactsCreated, timeEntriesLinked: report.timeEntriesLinked, errors: report.errors.length },
         });
+      }
+      // Remember destination + history only for an import that used the saved
+      // connection — a one-off import with explicit credentials must not
+      // rewrite the saved connection's defaults.
+      if (!body.dryRun && saved && usedSaved) {
+        await db.update(supportJiraConnections).set({
+          clientId: String(body.clientId), projectId: body.projectId ? String(body.projectId) : null, lastImportAt: new Date(),
+          lastImportSummary: { pulled: items.length, imported: report.imported, skipped: report.skipped.length, attachmentsImported: (report as any).attachmentsImported ?? 0, errors: report.errors.length },
+        }).where(and(eq(supportJiraConnections.orgId, req.session.orgId!), eq(supportJiraConnections.connectedAt, saved.connectedAt))).catch(() => {}); // no-op if the connection changed meanwhile
       }
       return res.json({ pulled: items.length, ...report });
     } catch (err: any) {

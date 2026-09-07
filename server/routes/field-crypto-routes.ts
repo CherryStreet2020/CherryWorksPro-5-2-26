@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { and, eq } from "drizzle-orm";
 import { db } from "../db";
-import { users, orgs, webhookEndpoints } from "@shared/schema";
+import { users, orgs, webhookEndpoints, supportJiraConnections } from "@shared/schema";
 import { requirePlatformOperator } from "./middleware";
 import {
   storage,
@@ -23,6 +23,7 @@ import {
  *   - users.bank_routing_number, users.bank_account_number  (banking key)
  *   - webhook_endpoints.secret                              (banking key)
  *   - orgs.smtp_pass, orgs.email_oauth_refresh_token        (smtp key)
+ *   - support_jira_connections.api_token_enc                (banking key, via encryptField)
  * (mfaEnrollments.secret uses its own scheme and is intentionally excluded.)
  *
  * GET  /api/admin/field-crypto/status   — read-only: counts encrypted vs
@@ -68,6 +69,16 @@ async function collectStatus(): Promise<ColumnStat[]> {
       }
     }
     stats.push({ column: `users.${col}`, key: "banking", encrypted, onCurrentKey: onCurrent, pending: encrypted - onCurrent });
+  }
+
+  // saved Jira tokens (encryptField → banking key)
+  {
+    const rows = await db.select({ orgId: supportJiraConnections.orgId, apiTokenEnc: supportJiraConnections.apiTokenEnc }).from(supportJiraConnections);
+    let encrypted = 0; let onCurrent = 0;
+    for (const r of rows) {
+      if (typeof r.apiTokenEnc === "string" && r.apiTokenEnc.startsWith("enc:")) { encrypted++; if (isBankingCiphertextOnCurrentKey(r.apiTokenEnc)) onCurrent++; }
+    }
+    stats.push({ column: "support_jira_connections.apiTokenEnc", key: "banking", encrypted, onCurrentKey: onCurrent, pending: encrypted - onCurrent });
   }
 
   const whRows = await db
@@ -160,6 +171,23 @@ async function reencryptAll(): Promise<ReencryptResult> {
       } catch (e) {
         res.errors.push({ column: `users.${col}`, id: u.id, error: (e as Error).message });
       }
+    }
+  }
+
+  // saved Jira tokens
+  const jiraRows = await db.select({ orgId: supportJiraConnections.orgId, apiTokenEnc: supportJiraConnections.apiTokenEnc }).from(supportJiraConnections);
+  for (const j of jiraRows) {
+    const v = j.apiTokenEnc;
+    if (typeof v !== "string" || !v.startsWith("enc:")) continue;
+    res.scanned++;
+    if (isBankingCiphertextOnCurrentKey(v)) { res.skipped++; continue; }
+    try {
+      const updated = await db.update(supportJiraConnections).set({ apiTokenEnc: reencryptBankingVerified(v) })
+        .where(and(eq(supportJiraConnections.orgId, j.orgId), eq(supportJiraConnections.apiTokenEnc, v)))
+        .returning({ orgId: supportJiraConnections.orgId });
+      if (updated.length) { res.reencrypted++; bump("support_jira_connections.apiTokenEnc"); } else { res.staleSkipped++; }
+    } catch (e) {
+      res.errors.push({ column: "support_jira_connections.apiTokenEnc", id: j.orgId, error: (e as Error).message });
     }
   }
 
