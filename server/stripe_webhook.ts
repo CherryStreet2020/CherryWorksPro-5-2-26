@@ -1025,7 +1025,7 @@ async function handleSubscriptionTrialWillEnd(
     try { billingLink = `${trustedBaseUrl()}/settings/billing`; } catch { /* unconfigured non-production */ }
     for (const admin of adminUsers) {
       if (!admin.email) continue;
-      await sendTrialEndingEmail(admin.email, admin.name || "", org.name, 3, billingLink, org)
+      await sendTrialEndingEmail(admin.email, admin.name || "", org.name, 3, billingLink, org, true)
         .catch(err => console.warn(`[stripe-webhook] trial-ending email failed for ${org.slug}:`, (err as Error).message));
     }
 

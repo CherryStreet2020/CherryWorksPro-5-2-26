@@ -1170,21 +1170,30 @@ export async function sendTrialEndingEmail(
   daysLeft: number,
   billingUrl: string,
   org?: OrgForTransport | null,
+  /** true = a plan and card are on file with Stripe: the subscription simply starts billing. */
+  cardOnFile = false,
 ): Promise<{ messageId: string; previewUrl?: string }> {
   const transport = await pickTransport(org, null);
   const safeName = escapeHtml(recipientName || "there");
   const safeFirm = escapeHtml(firmName);
   const when = daysLeft <= 1 ? "tomorrow" : `in ${daysLeft} days`;
+  const body = cardOnFile
+    ? `Hi ${safeName}, your free trial ends ${when}. Your plan then starts billing automatically to the card on file — nothing to do, and nothing changes in your workspace. Want to switch plans, update the card, or cancel before then? It's all in Billing.`
+    : `Hi ${safeName}, your free trial ends ${when}. Pick a plan to keep everything exactly as it is — clients, projects, time, invoices and your books all carry over. Nothing is deleted when a trial ends; the workspace simply pauses until a plan is chosen.`;
+  const cta = cardOnFile ? "Manage billing" : "Choose a plan";
   const innerHtml = `
     <p style="font-size:20px;font-weight:700;color:${TEXT_PRIMARY};margin:0 0 4px;">Your trial ends ${when}</p>
     <p style="font-size:14px;color:${TEXT_MUTED};margin:0 0 28px;">${safeFirm} on CherryWorks Pro</p>
-    <p style="font-size:15px;color:${TEXT_SECONDARY};line-height:1.7;margin:0 0 24px;">Hi ${safeName}, your free trial ends ${when}. Pick a plan to keep everything exactly as it is — clients, projects, time, invoices and your books all carry over. Nothing is deleted when a trial ends; the workspace simply pauses until a plan is chosen.</p>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">${emailButton("Choose a plan", billingUrl)}</td></tr></table>
+    <p style="font-size:15px;color:${TEXT_SECONDARY};line-height:1.7;margin:0 0 24px;">${body}</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">${emailButton(cta, billingUrl)}</td></tr></table>
     ${emailDivider()}
     <p style="font-size:12px;color:${TEXT_MUTED};margin:0;text-align:center;">Questions about plans or pricing? Just reply to this email.</p>
   `;
   const html = wrapEmailLayout(innerHtml, { orgName: firmName, preheader: `Your CherryWorks Pro trial ends ${when}` });
-  const result = await transport.send({ to, subject: `Your CherryWorks Pro trial ends ${when}`, html, text: `Hi ${recipientName || "there"},\n\nYour free trial for ${firmName} ends ${when}. Choose a plan to keep everything as it is:\n${billingUrl}\n\nNothing is deleted when a trial ends; the workspace pauses until a plan is chosen.` });
+  const textBody = cardOnFile
+    ? `Hi ${recipientName || "there"},\n\nYour free trial for ${firmName} ends ${when}. Your plan then starts billing automatically to the card on file. To switch plans, update the card, or cancel:\n${billingUrl}`
+    : `Hi ${recipientName || "there"},\n\nYour free trial for ${firmName} ends ${when}. Choose a plan to keep everything as it is:\n${billingUrl}\n\nNothing is deleted when a trial ends; the workspace pauses until a plan is chosen.`;
+  const result = await transport.send({ to, subject: `Your CherryWorks Pro trial ends ${when}`, html, text: textBody });
   if (result.ok === false) throw new Error("Email was not sent — no email provider is configured.");
   return { messageId: result.messageId, previewUrl: result.previewUrl };
 }

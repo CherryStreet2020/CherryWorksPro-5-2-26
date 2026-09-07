@@ -71,3 +71,8 @@ export async function requireVerifiedEmail(req: Request, res: Response, next: Ne
   }
   next();
 }
+
+/** An address that changed is unproven again: clear the stamp and any outstanding token. */
+export function unverifiedFields() {
+  return { emailVerifiedAt: null as Date | null, emailVerificationTokenHash: null as string | null, emailVerificationExpiresAt: null as Date | null };
+}

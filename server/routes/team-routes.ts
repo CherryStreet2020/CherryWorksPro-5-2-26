@@ -1,5 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
-import { requireVerifiedEmail } from "../email-verification";
+import { requireVerifiedEmail, unverifiedFields } from "../email-verification";
 import { appBaseUrl } from "../lib/app-url";
 import { storage } from "../storage";
 import { paramId } from "../lib/req-params";
@@ -392,7 +392,11 @@ app.patch("/api/team/:id", requireAdmin, async (req, res) => {
       if (fn || ln) updates.name = [fn, ln].filter(Boolean).join(" ");
     }
     if (name !== undefined && firstName === undefined && lastName === undefined) updates.name = name;
-    if (email !== undefined) updates.email = email;
+    if (email !== undefined) {
+      updates.email = email;
+      const current = await storage.getUserById(paramId(req));
+      if (current && current.email.toLowerCase() !== String(email).toLowerCase()) Object.assign(updates, unverifiedFields());
+    }
     if (role !== undefined) {
       const validRoles = ["ADMIN", "MANAGER", "TEAM_MEMBER"];
       if (!validRoles.includes(role)) return res.status(400).json({ message: "Invalid role" });
@@ -446,6 +450,12 @@ app.post("/api/team/:id/reset-password", resetPasswordLimiter, requireAdmin, asy
     const targetUser = await storage.getUserById(paramId(req));
     if (!targetUser || targetUser.orgId !== req.session.orgId!) {
       return res.status(404).json({ message: "User not found" });
+    }
+    // Handing yourself a temporary password would let an unverified owner
+    // "prove" their address without any email. Own password → Change
+    // password (knows the current one) or Forgot password (emailed link).
+    if (targetUser.id === req.session.userId) {
+      return res.status(400).json({ message: "Use Change password for your own account, or Forgot password if you're locked out." });
     }
     const tempPwd = randomBytes(6).toString("base64url").slice(0, 12);
     const hashed = await hashPassword(tempPwd);

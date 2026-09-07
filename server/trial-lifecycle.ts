@@ -115,8 +115,11 @@ export async function runTrialLifecycleTick(now = new Date()): Promise<TrialTick
 let interval: NodeJS.Timeout | null = null;
 export function startTrialLifecycleProcessor(): void {
   if (interval) return;
-  interval = setInterval(() => { void runTrialLifecycleTick(); }, 60 * 60 * 1000);
-  setTimeout(() => { void runTrialLifecycleTick(); }, 30 * 1000);
+  // A rejected tick must never escape: server/index.ts exits the process on
+  // an unhandled rejection, and a transient DB error is not worth the server.
+  const safeTick = () => runTrialLifecycleTick().catch(err => console.error("[trial-lifecycle] tick failed:", (err as Error).message));
+  interval = setInterval(() => { void safeTick(); }, 60 * 60 * 1000);
+  setTimeout(() => { void safeTick(); }, 30 * 1000);
   console.log("[trial-lifecycle] processor started (60min interval, first pass in 30s)");
 }
 export function stopTrialLifecycleProcessor(): void {
@@ -126,15 +129,24 @@ export function stopTrialLifecycleProcessor(): void {
 // ─── API gate ────────────────────────────────────────────────────────────
 // Everything under /api answers 402 PLAN_INACTIVE for an inactive workspace,
 // except what the plan picker itself needs.
-const ALLOW_PREFIXES = ["/api/auth/", "/api/csrf-token", "/api/billing/", "/api/health", "/api/readyz", "/api/webhooks/", "/api/platform/", "/api/portal/", "/api/notifications/unread-count", "/api/help/", "/api/csp-report", "/api/entitlements"];
+// Lower-case: Express matches routes case-insensitively, so the gate must too.
+const ALLOW_PREFIXES = [
+  "/api/auth/", "/api/csrf-token", "/api/mfa/",            // sign-in and its completion
+  "/api/billing/", "/api/entitlements",                      // the way out
+  "/api/health", "/api/readyz", "/api/csp-report",
+  "/api/webhooks/", "/api/platform/",
+  "/api/portal/", "/api/public/", "/api/public-objects/",    // token-authenticated, other workspaces' documents
+  "/api/notifications/unread-count", "/api/help/",
+];
 const orgCache = new Map<string, { at: number; inactive: boolean }>();
 const ORG_CACHE_MS = 30 * 1000;
 export function resetPlanGateCache(orgId?: string): void { if (orgId) orgCache.delete(orgId); else orgCache.clear(); }
 
 export async function planGate(req: Request, res: Response, next: NextFunction) {
   const orgId = req.session?.orgId;
-  if (!orgId || !req.path.startsWith("/api/")) return next();
-  if (ALLOW_PREFIXES.some(p => req.path === p || req.path.startsWith(p))) return next();
+  const path = req.path.toLowerCase();
+  if (!orgId || !path.startsWith("/api/")) return next();
+  if (ALLOW_PREFIXES.some(p => path === p || path.startsWith(p))) return next();
   try {
     let entry = orgCache.get(orgId);
     if (!entry || Date.now() - entry.at > ORG_CACHE_MS) {

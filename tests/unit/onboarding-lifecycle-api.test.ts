@@ -48,4 +48,12 @@ describe("onboarding lifecycle endpoints", () => {
     const put = await fetch(`${BASE}/api/platform/settings/signup`, { method: "PUT", headers: { Cookie: admin.cookie, "X-CSRF-Token": admin.csrf, "Content-Type": "application/json" }, body: JSON.stringify({ enabled: false }) });
     expect(put.status).toBe(404);
   });
+
+  it("an admin cannot hand themselves a temporary password (no email-free path to 'verified')", async () => {
+    const admin = await login("admin.test@cwpro.dev", "admin123");
+    const me = await (await fetch(`${BASE}/api/auth/me`, { headers: { Cookie: admin.cookie } })).json();
+    const res = await fetch(`${BASE}/api/team/${me.id}/reset-password`, { method: "POST", headers: { Cookie: admin.cookie, "X-CSRF-Token": admin.csrf } });
+    expect(res.status).toBe(400);
+    expect((await res.json()).message).toMatch(/Change password|Forgot password/);
+  });
 });
