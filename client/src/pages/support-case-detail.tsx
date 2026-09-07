@@ -73,6 +73,22 @@ export default function SupportCaseDetailPage() {
     onError: (err: Error) => toast({ title: "Could not post", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }),
   });
 
+  const { data: settings } = useQuery<{ portalShowHours: boolean }>({
+    queryKey: ["/api/support/clients", c?.clientId, "settings"],
+    queryFn: () => fetch(`/api/support/clients/${c!.clientId}/settings`, { credentials: "include" }).then(r => r.json()),
+    enabled: !!c?.clientId && isManager,
+  });
+  const setShowHours = useMutation({
+    mutationFn: async (on: boolean) => (await apiRequest("PATCH", `/api/support/clients/${c!.clientId}/settings`, { portalShowHours: on })).json(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/support/clients", c?.clientId, "settings"] }),
+    onError: (err: Error) => toast({ title: "Could not update", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }),
+  });
+  const invite = useMutation({
+    mutationFn: async () => (await apiRequest("POST", `/api/support/contacts/${c!.requesterContactId}/portal-invite`)).json(),
+    onSuccess: () => toast({ title: `Sign-in link sent to ${c?.requesterEmail}` }),
+    onError: (err: Error) => toast({ title: "Could not send the link", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }),
+  });
+
   const del = useMutation({
     mutationFn: async () => (await apiRequest("DELETE", `/api/support/cases/${id}`)).json(),
     onSuccess: () => { invalidate(); toast({ title: `${c?.caseKey} deleted` }); navigate("/support/cases"); },
@@ -335,6 +351,26 @@ export default function SupportCaseDetailPage() {
                   </li>
                 ))}
               </ul>
+            )}
+          </section>
+
+          <section className="rounded-2xl p-5 border-0" style={card} data-testid="card-case-portal">
+            <h2 className="text-[11px] font-bold uppercase tracking-wider mb-2" style={muted}>Customer portal</h2>
+            {c.requesterContactId && c.requesterEmail ? (
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs" style={muted}>{c.requesterName} can sign in with a one-time link.</p>
+                <Button size="sm" variant="outline" onClick={() => invite.mutate()} disabled={invite.isPending} data-testid="button-send-portal-link">
+                  {invite.isPending ? "Sending…" : "Send sign-in link"}
+                </Button>
+              </div>
+            ) : (
+              <p className="text-xs" style={muted}>Set a saved contact with an email as the requester to invite them to the portal.</p>
+            )}
+            {isManager && (
+              <label className="mt-3 flex items-center gap-2 text-xs cursor-pointer" style={{ color: "var(--lux-text)" }}>
+                <input type="checkbox" checked={!!settings?.portalShowHours} onChange={e => setShowHours.mutate(e.target.checked)} data-testid="toggle-portal-show-hours" />
+                Customers at {c.clientName} see hours on their cases
+              </label>
             )}
           </section>
 

@@ -1031,3 +1031,43 @@ export function getSmtpConfigFromOrg(org: any): SmtpConfig | null {
     return null;
   }
 }
+
+
+// ─── Customer portal: one-time sign-in link ──────────────────────────────
+export async function sendPortalLoginEmail(input: {
+  to: string;
+  contactName: string;
+  orgName: string;
+  link: string;
+  org: OrgForTransport | null;
+}): Promise<{ messageId: string; previewUrl?: string }> {
+  const smtpConfig = input.org ? getSmtpConfigFromOrg(input.org) : null;
+  const transport = await pickTransport(input.org, smtpConfig);
+  const subject = `Your ${input.orgName} portal sign-in link`;
+  const innerHtml = `
+    <p style="font-size:20px;font-weight:700;color:${TEXT_PRIMARY};margin:0 0 4px;">Sign in to your portal</p>
+    <p style="font-size:14px;color:${TEXT_MUTED};margin:0 0 28px;">${escapeHtml(input.orgName)} client portal</p>
+    <p style="font-size:15px;color:${TEXT_SECONDARY};line-height:1.7;margin:0 0 24px;">
+      Hi ${escapeHtml(input.contactName || "there")}, use the button below to sign in. The link works once and expires in 15 minutes.
+    </p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr><td align="center">${emailButton("Sign in to the portal", input.link)}</td></tr>
+    </table>
+    ${emailDivider()}
+    <p style="font-size:12px;color:${TEXT_MUTED};margin:0;text-align:center;">
+      If you didn't request this, you can ignore this email. Nobody can sign in without the link.
+    </p>
+  `;
+  const html = wrapEmailLayout(innerHtml, { orgName: input.orgName, preheader: "Your one-time sign-in link" });
+  const message: SendableMessage = {
+    to: input.to,
+    subject,
+    html,
+    text: `Hi ${input.contactName || "there"},\n\nSign in to the ${input.orgName} portal with this one-time link (expires in 15 minutes):\n\n${input.link}\n\nIf you didn't request this, ignore this email.`,
+    replyTo: smtpConfig?.replyTo ?? null,
+    fromName: smtpConfig?.fromName ?? null,
+    fromEmail: smtpConfig?.fromEmail ?? null,
+  };
+  const result = await transport.send(message);
+  return { messageId: result.messageId, previewUrl: result.previewUrl };
+}

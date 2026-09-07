@@ -44,6 +44,7 @@ import { registerCompanyRoutes } from "./routes/marketing/companies";
 import { registerProjectRoutes } from "./routes/project-routes";
 import { registerTimeRoutes } from "./routes/time-routes";
 import { registerSupportCaseRoutes } from "./routes/support-case-routes";
+import { registerPortalRoutes } from "./routes/portal-routes";
 import { registerInvoiceRoutes } from "./routes/invoice-routes";
 import { registerPaymentRoutes } from "./routes/payment-routes";
 import { registerReportRoutes } from "./routes/report-routes";
@@ -222,6 +223,11 @@ export async function registerRoutes(
 
   const CSRF_EXEMPT_PREFIXES = [
     "/api/public/",
+    // Customer portal: no app session, so no CSRF cookie pair. Its writes are
+    // protected by the SameSite=Lax portal cookie plus a required custom
+    // header (see portal-routes requirePortalHeader), which forces a CORS
+    // preflight that no foreign origin passes.
+    "/api/portal/",
     "/api/webhooks/",
     "/api/auth/login",
     "/api/auth/signup",
@@ -646,6 +652,7 @@ export async function registerRoutes(
   registerProjectRoutes(app);
   registerTimeRoutes(app);
   registerSupportCaseRoutes(app);
+  registerPortalRoutes(app);
   registerInvoiceRoutes(app);
   registerPaymentRoutes(app);
   registerReportRoutes(app);
