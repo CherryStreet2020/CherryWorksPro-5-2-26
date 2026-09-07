@@ -104,7 +104,8 @@ if [ "$TARGET_KIND" = "uncommitted" ] && [ "${REDTEAM_CODEX_ALLOW_UNTRACKED:-0}"
       echo "redteam-codex: REFUSING --uncommitted — $N untracked file(s) present."
       echo "  codex review --uncommitted sends UNTRACKED files to OpenAI (may include .env,"
       echo "  credentials, customer data, audit exploit detail). First 10:"
-      printf '%s\n' "$UNTRACKED" | head -10 | sed 's/^/    /'
+      # sed reads all its input: no SIGPIPE under pipefail for a large untracked tree (Codex P2 on #51).
+      printf '%s\n' "$UNTRACKED" | sed -n '1,10s/^/    /p'
       [ "$N" -gt 10 ] && echo "    … and $((N-10)) more"
       echo "  Fix: commit / stash / gitignore them, or opt in deliberately:"
       echo "    REDTEAM_CODEX_ALLOW_UNTRACKED=1 $0 --uncommitted"
