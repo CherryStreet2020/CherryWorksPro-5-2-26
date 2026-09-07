@@ -612,9 +612,10 @@ export async function sendInviteEmail(
     subject,
     html,
     text: `Hi ${teamMemberName},\n\nYou've been invited to ${orgName} on CherryWorks Pro.\n\nEmail: ${to}\nTemporary Password: ${tempPassword}\n\nLog in at: ${loginUrl}\n\nYou'll be asked to set a new password on first login.`,
-    replyTo: smtpConfig?.replyTo ?? null,
-    fromName: smtpConfig?.fromName ?? null,
-    fromEmail: smtpConfig?.fromEmail ?? null,
+    // Platform sender identity: a tenant's smtpFromEmail would be rejected by a provider that pins senders.
+    replyTo: null,
+    fromName: null,
+    fromEmail: null,
   };
 
   const result = await transport.send(message);
@@ -722,9 +723,10 @@ export async function sendPasswordResetEmail(
     subject,
     html,
     text: `Password Reset\n\nWe received a request to reset your CherryWorks Pro password.\n\nClick the link below to set a new password (expires in 1 hour):\n${resetUrl}\n\nIf you didn't request this, you can safely ignore this email.`,
-    replyTo: smtpConfig?.replyTo ?? null,
-    fromName: smtpConfig?.fromName ?? null,
-    fromEmail: smtpConfig?.fromEmail ?? null,
+    // Platform sender identity: a tenant's smtpFromEmail would be rejected by a provider that pins senders.
+    replyTo: null,
+    fromName: null,
+    fromEmail: null,
   };
 
   const result = await transport.send(message);

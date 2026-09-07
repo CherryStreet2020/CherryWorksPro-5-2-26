@@ -175,6 +175,7 @@ const ALLOW_PREFIXES = [
   "/api/webhooks/", "/api/platform/",
   "/api/portal/", "/api/public/", "/api/public-objects/",    // token-authenticated, other workspaces' documents
   "/api/notifications/unread-count", "/api/help/",
+  "/api/account/cancel-deletion",                            // keeping the account must not require buying a plan
 ];
 const orgCache = new Map<string, { at: number; inactive: boolean }>();
 const ORG_CACHE_MS = 30 * 1000;

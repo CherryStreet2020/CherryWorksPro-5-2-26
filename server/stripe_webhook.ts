@@ -1018,8 +1018,12 @@ async function handleSubscriptionTrialWillEnd(
         // "FAILED" until delivery succeeds: the row is the claim; the status is the outcome.
         status: "FAILED", failureCode: "PENDING_DELIVERY", failureDetail: null,
       });
-    } catch {
-      return res.json({ received: true, duplicate: true }); // lost the race to a concurrent delivery
+    } catch (err: any) {
+      if (err?.code === "23505" || /duplicate|unique/i.test(String(err?.message))) {
+        return res.json({ received: true, duplicate: true }); // lost the race to a concurrent delivery
+      }
+      console.error(`[stripe-webhook] trial_will_end claim failed for ${org.slug}:`, err?.message);
+      return res.status(500).json({ received: false, error: "Could not record event; will retry" });
     }
     const adminUsers = await db.select({ id: users.id, email: users.email, name: users.name }).from(users).where(and(eq(users.orgId, org.id), eq(users.role, "ADMIN"), eq(users.isActive, true)));
     const adminEmail = adminUsers[0]?.email || "unknown";

@@ -11,6 +11,7 @@ import { useBillingStatus } from "@/hooks/use-billing-status";
 import { apiRequest } from "@/lib/queryClient";
 import { isValidStripeUrl } from "@/lib/url-validation";
 import { useDocumentTitle } from "@/lib/use-document-title";
+import { DeletionBanner } from "@/components/deletion-banner";
 
 const PLANS = [
   { id: "STARTER", name: "Starter", blurb: "5 clients · 3 projects · Full GL", monthly: 39, annual: 379 },
@@ -64,7 +65,9 @@ export default function TrialEndedPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-10" style={{ background: "var(--gradient-hero)" }}>
-      <div className="w-full max-w-lg rounded-2xl p-8" style={{ background: "var(--lux-surface)", border: "1px solid var(--lux-border)" }} data-testid="trial-ended-card">
+      <div className="w-full max-w-lg rounded-2xl overflow-hidden" style={{ background: "var(--lux-surface)", border: "1px solid var(--lux-border)" }} data-testid="trial-ended-card">
+        <DeletionBanner />
+        <div className="p-8">
         <div className="flex justify-center mb-6"><BrandLockup /></div>
         {settling ? (
           <div className="text-center py-8" data-testid="checkout-settling">
@@ -111,6 +114,7 @@ export default function TrialEndedPage() {
           <button onClick={() => logout()} className="mt-6 mx-auto flex items-center gap-1.5 text-xs underline" style={{ color: "var(--lux-text-muted)" }} data-testid="button-trial-ended-signout"><LogOut className="w-3.5 h-3.5" />Sign out</button>
         )}
         </>)}
+        </div>
       </div>
     </div>
   );
