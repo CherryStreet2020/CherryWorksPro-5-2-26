@@ -365,7 +365,7 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
         {c.description && (
           <section style={card}>
             <p style={{ margin: "0 0 6px", fontSize: 11, color: T.muted, letterSpacing: ".1em", textTransform: "uppercase", fontWeight: 600 }}>What you told us</p>
-            <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.65, color: T.text2 }}>{c.description}</p>
+            <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.65, color: T.text2 }}>{withInlineFiles(c.description, c.attachments)}</p>
           </section>
         )}
 
@@ -411,7 +411,7 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
               ) : (
                 <li key={item.m.id} style={{ ...card, padding: 14, background: item.m.fromTeam ? T.surface2 : T.accentSoft, borderColor: item.m.fromTeam ? T.line : "rgba(207,51,57,0.35)" }} data-testid={item.m.fromTeam ? "portal-message-team" : "portal-message-you"}>
                   <p style={{ margin: "0 0 6px", fontSize: 12, color: T.muted }}><strong style={{ color: T.text }}>{item.m.fromTeam ? item.m.authorName : "You"}</strong>{item.m.fromTeam ? ` · ${me.orgName}` : ""} · {new Date(item.m.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</p>
-                  <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.65 }}>{item.m.body}</p>
+                  <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.65 }}>{withInlineFiles(item.m.body, c.attachments)}</p>
                 </li>
               ))}
             </ol>
@@ -429,6 +429,26 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
       </div>
     </Shell>
   );
+}
+
+/** "[attachment: name]" markers from imported mail/Jira become the file itself when it is on the case. */
+function withInlineFiles(text: string, attachments: PortalAttachment[]): React.ReactNode {
+  const re = /\[attachment(?::\s*([^\]]+))?\]/g;
+  if (!re.test(text)) return text;
+  re.lastIndex = 0;
+  const out: React.ReactNode[] = [];
+  let last = 0; let i = 0; let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    const name = m[1]?.trim();
+    const att = name ? attachments.find(a => a.filename === name) : undefined;
+    if (att && att.isImage) out.push(<a key={`a${i++}`} href={att.url} target="_blank" rel="noopener" style={{ display: "block", margin: "8px 0" }}><img src={att.url} alt={att.filename} style={{ maxHeight: 280, maxWidth: "100%", borderRadius: 8, border: `1px solid ${T.line}` }} loading="lazy" /></a>);
+    else if (att) out.push(<a key={`a${i++}`} href={att.url} target="_blank" rel="noopener" style={{ color: T.accent }}>{att.filename}</a>);
+    else out.push(<span key={`m${i++}`} style={{ color: T.muted, fontSize: 12 }}>[{name ? `file: ${name}` : "see files above"}]</span>);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
 }
 
 // ─── Billing ──────────────────────────────────────────────────────────────

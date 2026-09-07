@@ -124,6 +124,23 @@ export async function importJiraIssues(opts: ImportOptions): Promise<ImportRepor
   const attachmentsMode = opts.attachmentsForExisting ?? "open";
   const knownRefs = opts.downloadAttachment ? await existingExternalRefs(opts.orgId, existingRows.map(r => r.id)) : new Set<string>();
 
+  /** On re-run, bring existing imported cases' text up to date (e.g. media markers that now carry filenames). */
+  const refreshImportedText = async (caseId: string, item: JiraExportIssue) => {
+    if (opts.dryRun) return;
+    const [row] = await db.select({ description: supportCases.description, source: supportCases.source }).from(supportCases).where(eq(supportCases.id, caseId));
+    if (!row || row.source !== "IMPORT") return;
+    const desc = item.description || null;
+    if (desc !== row.description) await db.update(supportCases).set({ description: desc }).where(eq(supportCases.id, caseId));
+    const msgs = await db.select({ id: supportCaseMessages.id, authorName: supportCaseMessages.authorName, body: supportCaseMessages.body, createdAt: supportCaseMessages.createdAt })
+      .from(supportCaseMessages).where(eq(supportCaseMessages.caseId, caseId));
+    for (const c of item.comments || []) {
+      const at = new Date(c.created).getTime();
+      const match = msgs.find(m => Math.abs(m.createdAt.getTime() - at) < 2000 && m.authorName === (c.author || (c.agent ? "Team" : "Customer")));
+      const body = c.body || "(empty)";
+      if (match && match.body !== body) await db.update(supportCaseMessages).set({ body }).where(eq(supportCaseMessages.id, match.id));
+    }
+  };
+
   const importAttachments = async (caseId: string, item: JiraExportIssue) => {
     if (!opts.downloadAttachment || opts.dryRun) return;
     for (const att of item.attachments || []) {
@@ -159,6 +176,7 @@ export async function importJiraIssues(opts: ImportOptions): Promise<ImportRepor
       report.skipped.push(item.key);
       const ex = existingByKey.get(item.key)!;
       const isOpen = ["NEW", "WAITING_ON_SUPPORT", "IN_PROGRESS", "WAITING_ON_CUSTOMER"].includes(ex.status);
+      await refreshImportedText(ex.id, item);
       if (attachmentsMode === "all" || (attachmentsMode === "open" && isOpen)) await importAttachments(ex.id, item);
       continue;
     }

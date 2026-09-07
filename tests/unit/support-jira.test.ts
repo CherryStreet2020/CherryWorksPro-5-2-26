@@ -56,8 +56,9 @@ describe("Jira fetcher", () => {
     clientId = (await c.json()).id;
   });
 
-  it("flattens ADF", () => {
+  it("flattens ADF and keeps inline media filenames", () => {
     expect(adfToText({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Hello " }, { type: "mention", attrs: { text: "@Dean" } }] }, { type: "mediaSingle" }] }).trim()).toBe("Hello @Dean\n[attachment]");
+    expect(adfToText({ type: "mediaSingle", content: [{ type: "media", attrs: { id: "x", alt: "shot.png" } }] }).trim()).toBe("[attachment: shot.png]");
   });
 
   it("shapes an issue with comments and transitions", () => {

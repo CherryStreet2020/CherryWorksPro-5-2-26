@@ -224,7 +224,7 @@ export default function SupportCaseDetailPage() {
               </div>
             ) : (
               <p className="text-sm whitespace-pre-wrap leading-relaxed" style={{ color: c.description ? "var(--lux-text)" : "var(--lux-text-muted)" }} data-testid="text-case-description">
-                {c.description ? renderWithAttachmentMarkers(c.description) : "No description yet."}
+                {c.description ? renderWithAttachmentMarkers(c.description, c.attachments) : "No description yet."}
               </p>
             )}
           </section>
@@ -299,7 +299,7 @@ export default function SupportCaseDetailPage() {
                       )}
                       <span className="ml-auto" style={muted}>{new Date(item.m.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
                     </div>
-                    <p className="text-sm whitespace-pre-wrap leading-relaxed" style={{ color: "var(--lux-text)" }}>{renderWithAttachmentMarkers(item.m.body)}</p>
+                    <p className="text-sm whitespace-pre-wrap leading-relaxed" style={{ color: "var(--lux-text)" }}>{renderWithAttachmentMarkers(item.m.body, c.attachments)}</p>
                   </li>
                 ))}
               </ol>
@@ -527,14 +527,30 @@ function describeEvent(kind: string, from: string | null, to: string | null, age
 }
 
 
-/** Imported Jira text carries "[attachment]" where an inline image was; show it as a quiet marker. */
-function renderWithAttachmentMarkers(text: string): React.ReactNode {
-  const parts = text.split("[attachment]");
-  if (parts.length === 1) return text;
-  return parts.flatMap((part, i) => i === 0 ? [part] : [
-    <span key={`m${i}`} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] align-middle" style={{ background: "var(--lux-surface-alt)", color: "var(--lux-text-muted)", border: "1px solid var(--lux-border)" }}>
-      <Paperclip className="w-3 h-3" /> see attachments
-    </span>,
-    part,
-  ]);
+/**
+ * Imported Jira text carries "[attachment: name]" (or a bare "[attachment]")
+ * where an inline image was. When the named file is on the case, show it
+ * inline; otherwise a quiet marker pointing at the Attachments card.
+ */
+function renderWithAttachmentMarkers(text: string, attachments: CaseDetail["attachments"] = []): React.ReactNode {
+  const re = /\[attachment(?::\s*([^\]]+))?\]/g;
+  if (!re.test(text)) return text;
+  re.lastIndex = 0;
+  const out: React.ReactNode[] = [];
+  let last = 0; let i = 0; let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    const name = m[1]?.trim();
+    const att = name ? attachments.find(a => a.filename === name || a.filename === name.replace(/[^\w.\- ()]+/g, "_")) : undefined;
+    if (att && att.isImage) {
+      out.push(<a key={`a${i++}`} href={att.url} target="_blank" rel="noopener" className="block my-2"><img src={att.url} alt={att.filename} className="max-h-72 rounded-lg border" style={{ borderColor: "var(--lux-border)" }} loading="lazy" /></a>);
+    } else if (att) {
+      out.push(<a key={`a${i++}`} href={att.url} target="_blank" rel="noopener" className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] align-middle" style={{ background: "var(--lux-surface-alt)", color: "var(--lux-accent)", border: "1px solid var(--lux-border)" }}><Paperclip className="w-3 h-3" /> {att.filename}</a>);
+    } else {
+      out.push(<span key={`m${i++}`} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] align-middle" style={{ background: "var(--lux-surface-alt)", color: "var(--lux-text-muted)", border: "1px solid var(--lux-border)" }}><Paperclip className="w-3 h-3" /> {name ? name : "see attachments"}</span>);
+    }
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
 }

@@ -15,7 +15,14 @@ export function adfToText(node: any): string {
   if (node.type === "mention") return node.attrs?.text || "";
   if (node.type === "emoji") return node.attrs?.text || "";
   if (node.type === "inlineCard") return node.attrs?.url || "";
-  if (node.type === "media" || node.type === "mediaSingle" || node.type === "mediaGroup") return "[attachment]\n";
+  if (node.type === "media") {
+    const name = node.attrs?.alt || node.attrs?.__fileName || node.attrs?.name;
+    return name ? `[attachment: ${String(name).trim()}]\n` : "[attachment]\n";
+  }
+  if (node.type === "mediaSingle" || node.type === "mediaGroup") {
+    const inner = (node.content || []).map(adfToText).join("");
+    return inner || "[attachment]\n";
+  }
   const inner = (node.content || []).map(adfToText).join("");
   if (["paragraph", "heading", "blockquote", "codeBlock", "listItem", "tableRow"].includes(node.type)) return inner + "\n";
   if (node.type === "tableCell" || node.type === "tableHeader") return inner + "\t";
