@@ -43,19 +43,33 @@ try {
   held = true;
   console.log("[db-push] lock held; running drizzle-kit push --force");
 
+  // drizzle-kit push exits 0 even when a statement fails (2026-09-07: it
+  // printed `error: could not create unique index "inbound_emails_message_id_unique"`
+  // plus the pg error object, and the entrypoint started the server without
+  // the index). The exit code is therefore not trusted: the output is scanned
+  // for the driver's error line / error-object dump and any hit is fatal.
+  // (A "second pass finds nothing" check is NOT possible: push re-emits the
+  // same defaults/FKs/expression indexes on every run — verified locally.)
   const res = spawnSync("node_modules/.bin/drizzle-kit", ["push", "--force"], {
-    stdio: "inherit",
+    encoding: "utf8",
     env: process.env,
+    maxBuffer: 64 * 1024 * 1024,
   });
+  const out = `${res.stdout ?? ""}${res.stderr ?? ""}`;
+  process.stdout.write(out);
+  const errorInOutput =
+    /^\s*error:/im.test(out) ||
+    /^\s*(severity|routine|constraint):\s/m.test(out) ||
+    /\b(could not|permission denied|syntax error|does not exist)\b/i.test(out);
 
   if (res.error) {
     console.error("[db-push] could not execute drizzle-kit:", res.error.message);
     exitCode = 1;
-  } else if (res.status !== 0) {
-    console.error(`[db-push] drizzle-kit push FAILED (exit ${res.status})`);
-    exitCode = res.status ?? 1;
+  } else if (res.status !== 0 || errorInOutput) {
+    console.error(`[db-push] drizzle-kit push FAILED (exit ${res.status}${errorInOutput ? ", error in output" : ""}) — refusing to start.`);
+    exitCode = res.status || 1;
   } else {
-    console.log("[db-push] schema push complete");
+    console.log("[db-push] schema push complete (no errors in output)");
   }
 } catch (err) {
   console.error("[db-push] fatal:", err?.message ?? err);
