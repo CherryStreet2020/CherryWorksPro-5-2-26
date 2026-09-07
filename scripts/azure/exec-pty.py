@@ -1,5 +1,15 @@
+#!/usr/bin/env python3
+# Run a command under a pseudo-terminal and exit with ITS status.
+# `az containerapp exec` refuses to run without a tty, so prod SQL one-liners go
+# through here (see docs/DEPLOY.md). Output is buffered and printed once the
+# child exits, on purpose: the pty's CR/LF translation is stripped in one place,
+# and the payloads are tiny (the exec websocket URL 404s on scripts of roughly
+# a kilobyte or more anyway). A 110 s deadline terminates a wedged child.
 import os, pty, sys, select, time
 cmd = sys.argv[1:]
+if not cmd:
+    sys.stderr.write("usage: exec-pty.py <command> [args...]\n  runs the command under a pty, prints its output on exit, exits with its status (124 on the 110 s deadline)\n")
+    sys.exit(2)
 pid, fd = pty.fork()
 if pid == 0:
     os.execvp(cmd[0], cmd)

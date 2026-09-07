@@ -25,25 +25,48 @@
 #                                          LOCAL Codex red-team leg (scripts/redteam-codex.sh) — RUN ON EVERY PR
 #   cwp psql [db]                          psql into cwp_dev (or named db)
 # ─────────────────────────────────────────────────────────────────────────────
+# No `set -e` on purpose: this is a case-dispatcher whose branches run functions
+# in conditions (app_ready, wait_health) and `exec` chains, where -e is either
+# suppressed or surprising. Every consequential step checks its own status
+# (`|| exit 1`); `validate` opts in to -e for its linear gate sequence.
 set -uo pipefail
 
 SELF="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/$(basename -- "${BASH_SOURCE[0]}")"
 REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # Local-only secrets + DB URLs (fresh keys, never prod). Copy scripts/dev/cwp-pg-env.example.sh
-# to ~/.local/pgsql/cwp-pg-env.sh and fill it in — see docs/SHIP.md for the toolchain build.
+# to ~/.local/pgsql/cwp-pg-env.sh and fill it in (the template documents the expected layout;
+# the header above lists what the toolchain consists of).
 if [ -f "$HOME/.local/pgsql/cwp-pg-env.sh" ]; then source "$HOME/.local/pgsql/cwp-pg-env.sh"; else
-  echo "[cwp] ~/.local/pgsql/cwp-pg-env.sh not found — build the local toolchain first (docs/SHIP.md)." >&2; exit 1; fi
+  echo "[cwp] ~/.local/pgsql/cwp-pg-env.sh not found — copy scripts/dev/cwp-pg-env.example.sh there and fill it in (see the header of scripts/dev/cwp)." >&2; exit 1; fi
 BASH5="$HOME/.local/bin/bash"
 # Same cluster/role as the env file (CWP_DATABASE_URL points at cwp_dev); swap the db name.
 TEST_DB_URL="${CWP_TEST_DATABASE_URL:-$(printf '%s' "$CWP_DATABASE_URL" | sed 's#/cwp_dev\([?].*\)\{0,1\}$#/cwp_test\1#')}"
 # The reset below always recreates the database named cwp_test, so the URL must point at exactly that.
-case "$TEST_DB_URL" in */cwp_test|*/cwp_test\?*) ;; *) echo "[cwp] the test DB URL must end in /cwp_test (got: ${TEST_DB_URL%%\?*}); set CWP_TEST_DATABASE_URL accordingly" >&2; exit 1 ;; esac
-# Administrative connection = the same role/host/port as a URL, pointed at the maintenance db.
-admin_url() { # swap only the database segment; keep ?host=…&user=… parameters
-  local base="${1%%\?*}" qs=""; case "$1" in *\?*) qs="?${1#*\?}";; esac
-  printf '%s%s' "$(printf '%s' "$base" | sed 's#/[^/]*$#/postgres#')" "$qs"; }
-recreate_db() { # $1 = url of the db to recreate
-  local url="$1" name; name="$(printf '%s' "${url%%\?*}" | sed 's#.*/##')"
+case "$TEST_DB_URL" in */cwp_test) ;; *) echo "[cwp] the test DB URL must end in /cwp_test with no query parameters (got: ${TEST_DB_URL%%\?*}); set CWP_TEST_DATABASE_URL accordingly" >&2; exit 1 ;; esac
+# A destructive reset must be provably LOCAL and provably the EXPECTED database.
+# libpq lets URL query parameters override both the host and the dbname
+# (postgresql://localhost/cwp_migcheck?host=db.internal connects to db.internal),
+# so a guard that only inspects the part before "?" can be steered at a remote
+# database. Refuse any query string outright, then check the host and the name
+# from the URL itself. Only loopback hosts (or none, i.e. the local socket) pass.
+assert_disposable_local_db() { # $1 = url, $2 = the database name it MUST address
+  local url="$1" want="$2" rest hostport host name
+  case "$url" in
+    *\?*|*\#*) echo "[cwp] refusing to reset $want: the URL must not carry query parameters or a fragment (libpq honours ?host=/?dbname= overrides); got ${url%%[?#]*}…" >&2; return 1 ;;
+  esac
+  rest="${url#*://}"; rest="${rest##*@}"          # scheme and userinfo (may contain / and @) removed
+  case "$rest" in */*) ;; *) echo "[cwp] refusing to reset $want: no database name in URL" >&2; return 1 ;; esac
+  hostport="${rest%%/*}"; name="${rest#*/}"
+  case "$hostport" in \[*\]*) host="${hostport#\[}"; host="${host%%\]*}" ;; *) host="${hostport%%:*}" ;; esac
+  case "$host" in ""|localhost|127.0.0.1|::1) ;;
+    *) echo "[cwp] refusing to reset $want: host '$host' is not loopback" >&2; return 1 ;; esac
+  [ "$name" = "$want" ] || { echo "[cwp] refusing to reset $want: URL names database '$name'" >&2; return 1; }
+}
+# Administrative connection = the same role/host/port as a (validated, query-free) URL, pointed at the maintenance db.
+admin_url() { printf '%s' "$1" | sed 's#/[^/]*$#/postgres#'; }
+recreate_db() { # $1 = url of the db to recreate, $2 = the name it must address (guard lives HERE so no caller can skip it)
+  local url="$1" name="$2"
+  assert_disposable_local_db "$url" "$name" || return 1
   psql "$(admin_url "$url")" -Atqc "DROP DATABASE IF EXISTS \"$name\"" || { echo "[cwp] drop $name failed (another session holding it open?)" >&2; return 1; }
   psql "$(admin_url "$url")" -Atqc "CREATE DATABASE \"$name\"" || return 1
 }
@@ -74,8 +97,9 @@ wait_health() {
   echo "[cwp] app did NOT become ready on :5000 (see /tmp/cwp-app-5000.log)"; return 1
 }
 
-ensure_pg() {
-  pg_ctl -D "$PGDATA" status >/dev/null 2>&1 || pg_ctl -D "$PGDATA" -l "$PGHOME/logfile" -o "-p $PGPORT" -w start
+ensure_pg() { # a command that needs Postgres cannot continue without it
+  pg_ctl -D "$PGDATA" status >/dev/null 2>&1 && return 0
+  pg_ctl -D "$PGDATA" -l "$PGHOME/logfile" -o "-p $PGPORT" -w start || { echo "[cwp] Postgres did not start (see $PGHOME/logfile)" >&2; exit 1; }
 }
 
 cmd="${1:-help}"; shift 2>/dev/null || true
@@ -85,11 +109,11 @@ case "$cmd" in
   pg-status) pg_ctl -D "$PGDATA" status ;;
 
   app)
-    ensure_pg; cd "$REPO"; kill_5000; sleep 1
+    ensure_pg; cd "$REPO" || exit 1; kill_5000; sleep 1
     app_env npx tsx server/index.ts ;;   # a shell function cannot be exec'd
 
   app-bg)
-    ensure_pg; cd "$REPO"; kill_5000; sleep 1
+    ensure_pg; cd "$REPO" || exit 1; kill_5000; sleep 1
     app_env nohup npx tsx server/index.ts > /tmp/cwp-app-5000.log 2>&1 &
     APP_PID=$!
     echo "[cwp] app pid $APP_PID"; wait_health || exit 1
@@ -98,35 +122,31 @@ case "$cmd" in
   app-stop) kill_5000; echo "[cwp] :5000 cleared" ;;
 
   vitest)
-    ensure_pg; cd "$REPO"
+    ensure_pg; cd "$REPO" || exit 1
     echo "[cwp] fresh cwp_test → migrate → vitest"
     # Fail fast: a stale or half-migrated test DB must never run the suite.
-    recreate_db "$TEST_DB_URL" || exit 1
+    recreate_db "$TEST_DB_URL" cwp_test || exit 1
     DATABASE_URL="$TEST_DB_URL" NODE_ENV=development npm run db:migrate:prod || { echo "[cwp] migration of cwp_test failed" >&2; exit 1; }
     exec env DATABASE_URL="$TEST_DB_URL" npm run test -- "$@" ;;
 
   e2e)
-    ensure_pg; cd "$REPO"
+    ensure_pg; cd "$REPO" || exit 1
     # Always a fresh server from this launcher: tsx is not in watch mode, so a
     # reused process would test stale code (and a stranger's server, stale flags).
     echo "[cwp] starting app for e2e with the test configuration"; "$SELF" app-bg || exit 1
     exec env DATABASE_URL="$CWP_DATABASE_URL" PORT=5000 npx playwright test "$@" ;;
 
   migcheck)
-    ensure_pg; cd "$REPO"
-    # Destructive reset: only ever a LOCAL database literally named cwp_migcheck.
-    case "${CWP_MIGCHECK_URL%%\?*}" in
-      *://*@localhost/cwp_migcheck|*://*@localhost:*/cwp_migcheck|*://localhost/cwp_migcheck|*://localhost:*/cwp_migcheck|*://*@127.0.0.1*/cwp_migcheck|*://127.0.0.1*/cwp_migcheck|*:///cwp_migcheck) ;;
-      *) echo "[cwp] refusing migcheck reset: CWP_MIGCHECK_URL must be a local database named cwp_migcheck (got ${CWP_MIGCHECK_URL%%\?*})" >&2; exit 1 ;;
-    esac
-    recreate_db "$CWP_MIGCHECK_URL" || exit 1
+    ensure_pg; cd "$REPO" || exit 1
+    # Destructive reset: only ever a LOCAL database literally named cwp_migcheck (recreate_db enforces it).
+    recreate_db "$CWP_MIGCHECK_URL" cwp_migcheck || exit 1
     exec env MIGRATION_CHECK_DATABASE_URL="$CWP_MIGCHECK_URL" "$BASH5" scripts/check-migrations.sh ;;
 
   reset-dev)
-    ensure_pg; cd "$REPO"
+    ensure_pg; cd "$REPO" || exit 1
     echo "[cwp] dropping + recreating cwp_dev"
     kill_5000
-    recreate_db "$CWP_DATABASE_URL" || exit 1
+    recreate_db "$CWP_DATABASE_URL" cwp_dev || exit 1
     DATABASE_URL="$CWP_DATABASE_URL" NODE_ENV=development npm run db:migrate:prod || { echo "[cwp] migration of cwp_dev failed" >&2; exit 1; }
     echo "[cwp] booting once to seed (dean admin + dev orgs)…"
     "$SELF" app-bg || exit 1
@@ -135,7 +155,7 @@ case "$cmd" in
     echo "[cwp] cwp_dev ready (app left running on :5000; admin dean@cherrystconsulting.com ready for e2e)" ;;
 
   validate)
-    cd "$REPO"; set -e
+    cd "$REPO" || exit 1; set -e
     echo "== [1/4] migration-replay ==";  "$SELF" migcheck
     echo "== [2/4] lint ==";              export PATH="$HOME/.local/node/bin:$PATH"; npm run lint
     echo "== [3/4] typecheck ==";         npm run typecheck
