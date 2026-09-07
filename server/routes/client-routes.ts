@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { clients, createClientSchema, projects, projectMembers } from "@shared/schema";
 import { db } from "../db";
-import { sanitizeErrorMessage, requireAdmin, requireManagerOrAbove, requireAuth, fetchClientLogo } from "./middleware";
+import { sanitizeErrorMessage, requireAdmin, requireManagerOrAbove, requireAuth, fetchClientLogo, stripCostFieldsForRole } from "./middleware";
 import { fireWebhookEvent } from "../webhooks";
 
 export function registerClientRoutes(app: Express) {
@@ -129,7 +129,14 @@ app.get("/api/clients/:id", requireAuth, async (req, res) => {
   else if (outstanding > 5000) score -= 8;
 
   const healthScore = Math.max(0, Math.min(100, score));
-  return res.json({ ...detail, healthScore });
+  // Time entries carry rate and cost snapshots; scrub them for non-managers.
+  const viewer = await storage.getUserById(req.session.userId!);
+  return res.json({
+    ...detail,
+    recentTimeEntries: stripCostFieldsForRole(detail.recentTimeEntries, viewer?.role),
+    timeEntries: stripCostFieldsForRole(detail.timeEntries, viewer?.role),
+    healthScore,
+  });
 });
 app.patch("/api/clients/:id", requireManagerOrAbove, async (req, res) => {
   try {
