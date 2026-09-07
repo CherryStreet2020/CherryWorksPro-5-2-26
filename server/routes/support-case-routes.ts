@@ -57,6 +57,29 @@ const listQuerySchema = z.object({
  * PROFESSIONAL tier.
  */
 export function registerSupportCaseRoutes(app: Express) {
+  // Test-only: exercises the inbound processor without a mailbox (vitest).
+  if (process.env.NODE_ENV === "test") {
+    app.post("/api/test/inbound-email", async (req, res) => {
+      const { type, from, to, subject, text, html, messageId } = req.body || {};
+      if (type && type !== "email.received") return res.status(200).json({ message: "Event type ignored", type });
+      const { randomUUID } = await import("crypto");
+      const { processInboundEmail } = await import("../inbound-email");
+      const { inboundEmails } = await import("@shared/schema");
+      const { db } = await import("../db");
+      const id = randomUUID();
+      const claimed = await db.insert(inboundEmails).values({ id, from: typeof from === "string" ? from : JSON.stringify(from ?? "unknown"), to: typeof to === "string" ? to : JSON.stringify(to ?? "unknown"), subject: subject || null, bodyText: text || null, bodyHtml: html || null, headers: null, resendMessageId: messageId || null }).onConflictDoNothing().returning({ id: inboundEmails.id });
+      if (claimed.length === 0) return res.status(200).json({ success: true, duplicate: true });
+      try {
+        const result = await processInboundEmail({ from, to, subject: subject ?? null, text: text ?? null, html: html ?? null, messageId: messageId || null });
+        return res.status(200).json({ success: true, emailId: id, ...result });
+      } catch (err) {
+        const { eq } = await import("drizzle-orm");
+        await db.delete(inboundEmails).where(eq(inboundEmails.id, id)).catch(() => {});
+        return res.status(500).json({ message: (err as Error).message });
+      }
+    });
+  }
+
   const gate = [requireAuth, requireTier("PROFESSIONAL")] as const;
 
   const actorOf = async (req: any): Promise<cases.Actor> => {

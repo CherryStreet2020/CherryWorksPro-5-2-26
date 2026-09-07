@@ -1,4 +1,8 @@
 /**
+ * Inbound email → Support Cases. Fed by the Microsoft 365 inbox reader
+ * (server/support-inbound-graph.ts). The former Resend/Svix webhook was
+ * removed 2026-09-07 ("we are ditching Resend").
+ *
  * Inbound email (Resend → webhook) → Support Cases.
  *
  * 1. Verify the Svix signature when RESEND_WEBHOOK_SECRET is set (it always
@@ -13,14 +17,11 @@
  * 4. Otherwise, if the sender is a known contact of the org, open a case.
  * 5. Anything else is stored for triage only.
  */
-import type { Express, Request, Response } from "express";
-import { createHmac, timingSafeEqual } from "crypto";
 import { and, eq, sql } from "drizzle-orm";
-import { db } from "../db";
+import { db } from "./db";
 import { inboundEmails, orgs, supportCases } from "@shared/schema";
-import { randomUUID } from "crypto";
-import * as cases from "../support-cases";
-import { findPortalContact } from "../portal-auth";
+import * as cases from "./support-cases";
+import { findPortalContact } from "./portal-auth";
 
 const CASE_KEY_RE = /\b([A-Z][A-Z0-9]{1,9}-\d{1,7})\b/;
 
@@ -50,22 +51,6 @@ export function allAddresses(value: unknown): string[] {
 }
 
 /** Svix-style signature: v1,<base64 HMAC-SHA256 of "<id>.<timestamp>.<rawBody>">. */
-export function verifySvixSignature(secret: string, headers: Record<string, string | undefined>, rawBody: Buffer | string): boolean {
-  const id = headers["svix-id"];
-  const ts = headers["svix-timestamp"];
-  const sig = headers["svix-signature"];
-  if (!id || !ts || !sig) return false;
-  const skew = Math.abs(Date.now() / 1000 - Number(ts));
-  if (!Number.isFinite(skew) || skew > 5 * 60) return false;
-  const key = Buffer.from(secret.replace(/^whsec_/, ""), "base64");
-  const expected = createHmac("sha256", key).update(`${id}.${ts}.`).update(rawBody).digest("base64");
-  return sig.split(" ").some(part => {
-    const [, value] = part.split(",");
-    if (!value) return false;
-    const a = Buffer.from(value); const b = Buffer.from(expected);
-    return a.length === b.length && timingSafeEqual(a, b);
-  });
-}
 
 /** Strips a quoted reply ("On … wrote:" and everything below) from a plain-text body. */
 export function stripQuotedReply(text: string): string {
@@ -131,58 +116,4 @@ export async function processInboundEmail(input: {
   }
 
   return { outcome: "stored", orgId: org.id };
-}
-
-export function registerResendInboundRoutes(app: Express) {
-  app.post("/api/webhooks/resend/inbound", async (req: Request, res: Response) => {
-    try {
-      const secret = process.env.RESEND_WEBHOOK_SECRET;
-      if (secret) {
-        const raw = (req as any).rawBody as Buffer | undefined;
-        const ok = raw ? verifySvixSignature(secret, req.headers as Record<string, string | undefined>, raw) : false;
-        if (!ok) return res.status(401).json({ message: "Invalid webhook signature" });
-      } else if (process.env.NODE_ENV === "production") {
-        console.error("[resend-inbound] RESEND_WEBHOOK_SECRET not configured; refusing inbound mail");
-        return res.status(500).json({ message: "Webhook not configured" });
-      }
-
-      const body = req.body;
-      if (!body || !body.type) return res.status(400).json({ message: "Invalid webhook payload" });
-      if (body.type !== "email.received") return res.status(200).json({ message: "Event type ignored", type: body.type });
-
-      const data = body.data || {};
-      const emailId = randomUUID();
-      const claimed = await db.insert(inboundEmails).values({
-        id: emailId,
-        from: typeof data.from === "string" ? data.from : JSON.stringify(data.from ?? "unknown"),
-        to: typeof data.to === "string" ? data.to : JSON.stringify(data.to ?? "unknown"),
-        subject: data.subject || null,
-        bodyText: data.text || null,
-        bodyHtml: data.html || null,
-        headers: data.headers || null,
-        resendMessageId: data.message_id || data.id || null,
-      }).onConflictDoNothing({ target: inboundEmails.resendMessageId, where: sql`resend_message_id IS NOT NULL` }).returning({ id: inboundEmails.id });
-      if (claimed.length === 0) {
-        console.log(`[resend-inbound] duplicate delivery of ${data.message_id || data.id} ignored`);
-        return res.status(200).json({ success: true, duplicate: true });
-      }
-
-      let result: Awaited<ReturnType<typeof processInboundEmail>>;
-      try {
-        result = await processInboundEmail({
-          from: data.from, to: data.to, subject: data.subject ?? null, text: data.text ?? null, html: data.html ?? null,
-          messageId: data.message_id || data.id || null,
-        });
-      } catch (err) {
-        // Release the claim so Resend's retry is processed instead of reported as a duplicate.
-        await db.delete(inboundEmails).where(eq(inboundEmails.id, emailId)).catch(() => {});
-        throw err;
-      }
-      console.log(`[resend-inbound] ${emailId} → ${result.outcome}${result.caseKey ? ` ${result.caseKey}` : ""}`);
-      return res.status(200).json({ success: true, emailId, ...result });
-    } catch (err: any) {
-      console.error("[resend-inbound] Error processing webhook:", err.message);
-      return res.status(500).json({ message: "Internal server error" });
-    }
-  });
 }

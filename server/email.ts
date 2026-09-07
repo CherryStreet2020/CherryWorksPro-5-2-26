@@ -262,6 +262,33 @@ class FileCaptureTransport implements EmailTransport {
   }
 }
 
+let platformOrgCache: { at: number; org: OrgForTransport | null } | null = null;
+
+/**
+ * The workspace whose connected mailbox sends platform mail. Null when the
+ * variable is unset or that workspace has no healthy OAuth mailbox — then the
+ * env SMTP fallback applies. Exposed for tests.
+ */
+export async function platformMailboxOrg(loader?: (slug: string) => Promise<OrgForTransport | undefined>): Promise<OrgForTransport | null> {
+  const slug = (process.env.PLATFORM_MAILBOX_ORG_SLUG || "").trim();
+  if (!slug) return null;
+  if (!loader && platformOrgCache && Date.now() - platformOrgCache.at < 60_000) return platformOrgCache.org;
+  const load = loader ?? (async (s: string) => (await import("./storage")).storage.getOrgBySlug(s));
+  let org: OrgForTransport | null = null;
+  try {
+    const found = await load(slug);
+    const provider = (found as any)?.emailProviderType;
+    const healthy = !!found && (provider === "m365" || provider === "google") && !!(found as any).emailOauthRefreshToken && ((found as any).emailOauthStatus ?? "ok") === "ok";
+    if (healthy) org = found as OrgForTransport;
+    else if (found) console.warn(`[email] PLATFORM_MAILBOX_ORG_SLUG=${slug} has no healthy OAuth mailbox (provider=${provider}, status=${(found as any).emailOauthStatus}); falling back to env SMTP`);
+    else console.warn(`[email] PLATFORM_MAILBOX_ORG_SLUG=${slug} not found; falling back to env SMTP`);
+  } catch (err) {
+    console.warn("[email] platform mailbox lookup failed:", (err as Error).message);
+  }
+  if (!loader) platformOrgCache = { at: Date.now(), org };
+  return org;
+}
+
 async function pickTransport(
   org: OrgForTransport | null | undefined,
   smtpConfig: SmtpConfig | null | undefined,
@@ -278,6 +305,19 @@ async function pickTransport(
     } else {
       console.log(`[email] capture-mode dir=${captureDir} org=${org?.id ?? "none"}`);
       return new FileCaptureTransport(captureDir);
+    }
+  }
+
+  // Platform mail (no org, no tenant SMTP): the platform's own Microsoft 365
+  // mailbox — the operator workspace named by PLATFORM_MAILBOX_ORG_SLUG,
+  // sent through Graph (OAuth). Basic-auth SMTP to Microsoft is locked by
+  // security defaults; env SMTP remains only as the fallback.
+  if (!org && !smtpConfig) {
+    const platformOrg = await platformMailboxOrg();
+    if (platformOrg) {
+      const t = await trackSelection(platformOrg.id, () => selectTransport(platformOrg));
+      console.log(`[email] flag=${isEmailOauthEnabled()}, org=none, transport=${t.kind} (platform mailbox ${process.env.PLATFORM_MAILBOX_ORG_SLUG})`);
+      return t;
     }
   }
 

@@ -57,13 +57,6 @@ const apps = [
     zaps: ["Log new projects in a Notion database", "Track invoices in a Notion table"],
   },
   {
-    name: "Resend",
-    icon: null,
-    color: "#000000",
-    label: "RS",
-    zaps: ["Send marketing campaigns and sequence steps via Resend", "Deliver transactional emails through your Resend domain"],
-  },
-  {
     name: "Gmail / M365 OAuth",
     icon: SiGmail,
     color: "#EA4335",

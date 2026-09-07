@@ -143,6 +143,7 @@ export interface TrialTickResult { reminded7: number; reminded1: number; expired
 
 export async function runTrialLifecycleTick(now = new Date()): Promise<TrialTickResult> {
   const result: TrialTickResult = { reminded7: 0, reminded1: 0, expired: 0, errors: 0 };
+  const attemptedThisTick = new Set<string>();
   const candidates = await db.select().from(orgs).where(and(
     eq(orgs.subscriptionStatus, "trialing"),
     isNull(orgs.stripeSubscriptionId),
@@ -166,6 +167,7 @@ export async function runTrialLifecycleTick(now = new Date()): Promise<TrialTick
         if (changed.length === 0) continue;
         resetPlanGateCache(org.id);
         await storage.createAuditLog({ orgId: org.id, userId: null, action: "TRIAL_EXPIRED", entityType: "org", entityId: org.id, details: { trialEndsAt: org.trialEndsAt, recipients: recipients.map(r => r.email) } });
+        attemptedThisTick.add(org.id);
         await deliverEndedEmail(org, recipients, now);
         result.expired++;
       } else {
@@ -199,6 +201,7 @@ export async function runTrialLifecycleTick(now = new Date()): Promise<TrialTick
   // Expired workspaces whose "ended" email never went out: retry delivery.
   const unmailed = await db.select().from(orgs).where(and(eq(orgs.subscriptionStatus, TRIAL_EXPIRED_STATUS), isNull(orgs.trialExpiredAt)));
   for (const org of unmailed) {
+    if (attemptedThisTick.has(org.id)) continue; // already tried moments ago; next tick retries
     try { await deliverEndedEmail(org, await adminRecipients(org.id), now); }
     catch (err) { result.errors++; console.error("[trial-lifecycle] ended-email retry failed", org.slug, (err as Error).message); }
   }

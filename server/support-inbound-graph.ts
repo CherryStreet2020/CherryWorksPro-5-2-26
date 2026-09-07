@@ -17,7 +17,7 @@ import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { db } from "./db";
 import { inboundEmails, orgs, supportCases } from "@shared/schema";
 import { refreshGraphAccessToken } from "./email/graph-transport";
-import { processInboundEmail, extractCaseKey } from "./routes/resend-inbound-routes";
+import { processInboundEmail, extractCaseKey } from "./inbound-email";
 import { createAttachment, MAX_ATTACHMENT_BYTES } from "./support-attachments";
 import { randomUUID } from "crypto";
 

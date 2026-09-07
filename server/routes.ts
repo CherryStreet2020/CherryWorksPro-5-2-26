@@ -113,7 +113,6 @@ import { registerClosePeriodRoutes } from "./routes/close-period-routes";
 import { registerSessionRoutes } from "./routes/session-routes";
 import { hashSessionId, updateSessionActivity } from "./routes/session-routes";
 import { registerNotificationRoutes } from "./routes/notification-routes";
-import { registerResendInboundRoutes } from "./routes/resend-inbound-routes";
 import { registerActivityRoutes } from "./routes/activity-routes";
 import { entitlementContextMiddleware, registerEntitlementRoutes } from "./services/entitlements";
 import { registerEntitlementCheckoutRoutes } from "./routes/entitlement-checkout-routes";
@@ -236,6 +235,7 @@ export async function registerRoutes(
     "/api/auth/forgot-password",
     "/api/auth/reset-password/",
     "/api/auth/verify-email",
+    "/api/test/", // registered only when NODE_ENV=test
     "/api/v1/",
     "/api/newsletter/",
     "/api/csp-report",
@@ -733,7 +733,6 @@ export async function registerRoutes(
   registerClosePeriodRoutes(app);
   registerSessionRoutes(app);
   registerNotificationRoutes(app);
-  registerResendInboundRoutes(app);
   registerActivityRoutes(app);
   registerRateMatrixRoutes(app);
 
