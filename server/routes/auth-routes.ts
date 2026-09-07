@@ -141,7 +141,7 @@ app.post("/api/auth/login", loginLimiter, awaitSessionSave, async (req, res) => 
       rehashAndUpdate(parsed.password, user.password, user.id, user.orgId).catch(() => {});
       // Signing in with the temporary password that was emailed to THIS
       // address demonstrates possession of the inbox.
-      if (user.tempPassword && tempCredentialProves(user)) markVerified(user.id).catch(() => {});
+      if (user.tempPassword && tempCredentialProves(user)) markVerified(user.id, user.email).catch(() => {});
 
       req.session.regenerate((err) => {
         if (err) {
@@ -181,7 +181,7 @@ app.post("/api/auth/login", loginLimiter, awaitSessionSave, async (req, res) => 
       }
       if (!user.isActive) return res.status(403).json({ message: "Your account has been deactivated. Please contact your administrator." });
       const valid = await comparePasswords(parsed.password, user.password);
-      if (valid && user.tempPassword && tempCredentialProves(user)) markVerified(user.id).catch(() => {});
+      if (valid && user.tempPassword && tempCredentialProves(user)) markVerified(user.id, user.email).catch(() => {});
       if (!valid) {
         recordFailedLogin(parsed.email);
         storage.createAuditLog({ orgId: user.orgId, userId: user.id, action: "LOGIN_FAILED", entityType: "user", entityId: user.id, details: { email: parsed.email, ip: clientIp, reason: "wrong_password" } }).catch(() => {});
@@ -201,7 +201,7 @@ app.post("/api/auth/login", loginLimiter, awaitSessionSave, async (req, res) => 
     for (const c of candidates) {
       if (await comparePasswords(parsed.password, c.password)) {
         matches.push(c);
-        if (c.tempPassword && tempCredentialProves(c)) markVerified(c.id).catch(() => {});
+        if (c.tempPassword && tempCredentialProves(c)) markVerified(c.id, c.email).catch(() => {});
       }
     }
     if (matches.length === 0) {
@@ -778,10 +778,13 @@ app.post("/api/auth/reset-password/:token", passwordChangeLimiter, async (req, r
       return res.status(400).json({ message: "This reset link is invalid or has expired." });
     }
 
+    // The address the link was mailed to, read BEFORE the password write: if
+    // an admin changes the address mid-flight, this proves nothing for the new one.
+    const linkOwner = await storage.getUserById(record.userId);
     const hashed = await hashPassword(password);
     await db.update(users).set({ password: hashed, tempPassword: false }).where(eq(users.id, record.userId));
     // The reset link reached this inbox: the address is proven.
-    await markVerified(record.userId).catch(() => {});
+    if (linkOwner?.email) await markVerified(record.userId, linkOwner.email).catch(() => {});
 
     await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, record.userId));
 

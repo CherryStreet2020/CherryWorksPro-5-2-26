@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { passwordResetTokens } from "@shared/schema";
-import { requireVerifiedEmail, unverifiedFields, noteTempCredential } from "../email-verification";
+import { requireVerifiedEmail, unverifiedFields, noteTempCredential, forgetTempCredential } from "../email-verification";
 import { appBaseUrl } from "../lib/app-url";
 import { storage } from "../storage";
 import { paramId } from "../lib/req-params";
@@ -218,6 +218,7 @@ app.post("/api/team/invite", userCreationLimiter, requireAdmin, requireVerifiedE
       emailSent = true;
       previewUrl = result.previewUrl;
     } catch (emailErr: any) {
+      await forgetTempCredential(user.id).catch(() => {}); // exposed to the caller below: no longer proof of the inbox
       emailError = emailErr.message || "Failed to send email";
       console.error("[invite] Failed to send invite email:", emailErr.message);
     }
@@ -255,6 +256,7 @@ app.post("/api/team/:id/resend-invite", requireAdmin, requireVerifiedEmail, asyn
       await sendInviteEmail(targetUser.email, targetUser.name, orgName, tempPwd, loginUrl, smtpConfig, org);
       emailSent = true;
     } catch (emailErr: any) {
+      await forgetTempCredential(targetUser.id).catch(() => {}); // exposed to the caller below: no longer proof of the inbox
       console.error("[resend-invite] Failed to send invite email:", emailErr.message);
     }
 
@@ -338,6 +340,7 @@ app.post("/api/team/invites/:id/resend", requireAdmin, requireVerifiedEmail, asy
       await sendInviteEmail(invite.email, resolvedName, orgName, tempPwd, loginUrl, smtpConfig, org);
       emailSent = true;
     } catch (emailErr: any) {
+      if (targetUser) await forgetTempCredential(targetUser.id).catch(() => {}); // exposed to the caller below: no longer proof of the inbox
       emailError = emailErr.message || "Failed to send email";
       console.error("[resend-invite] Failed to send invite email:", emailErr.message);
     }
@@ -482,6 +485,7 @@ app.post("/api/team/:id/reset-password", resetPasswordLimiter, requireAdmin, asy
       await sendInviteEmail(updated.email, updated.name, orgName, tempPwd, loginUrl, smtpConfig, org);
       emailSent = true;
     } catch (emailErr: any) {
+      await forgetTempCredential(updated.id).catch(() => {}); // exposed to the caller below: no longer proof of the inbox
       console.error("[reset-password] Failed to send email:", emailErr.message);
     }
 
