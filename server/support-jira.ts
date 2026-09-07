@@ -24,6 +24,17 @@ export function adfToText(node: any): string {
 
 export interface JiraConnection { baseUrl: string; email: string; apiToken: string }
 
+/** A non-2xx from Jira: safe to surface as "Jira <status> on <path>". */
+export class JiraHttpError extends Error {
+  constructor(public readonly status: number, public readonly path: string) {
+    super(`Jira ${status} on ${path}`);
+    this.name = "JiraHttpError";
+  }
+}
+
+export const MAX_ISSUES = 2000;
+const MAX_PAGES = Math.ceil(MAX_ISSUES / 100);
+
 export class JiraClient {
   private readonly base: string;
   private readonly auth: string;
@@ -35,8 +46,10 @@ export class JiraClient {
   async get<T>(path: string): Promise<T> {
     const res = await this.fetchImpl(`${this.base}${path}`, { headers: { Accept: "application/json", Authorization: this.auth } });
     if (!res.ok) {
+      // Upstream bodies can carry HTML or account details; keep them out of the thrown message.
       const text = await res.text().catch(() => "");
-      throw new Error(`Jira ${res.status} on ${path}: ${text.slice(0, 200)}`);
+      console.warn(`[support-jira] ${res.status} on ${path.split("?")[0]}: ${text.slice(0, 300).replace(/\s+/g, " ")}`);
+      throw new JiraHttpError(res.status, path.split("?")[0]);
     }
     return res.json() as Promise<T>;
   }
@@ -51,20 +64,23 @@ export class JiraClient {
     const jql = encodeURIComponent(`project=${projectKey} ORDER BY created ASC`);
     const issues: any[] = [];
     let token: string | null = null;
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; ; i++) {
+      if (i >= MAX_PAGES) throw new Error(`Project has more than ${MAX_ISSUES} issues; import it in smaller projects or raise the cap`);
       const page: any = await this.get(`/rest/api/3/search/jql?jql=${jql}&maxResults=100&fields=${fields}&expand=changelog${token ? `&nextPageToken=${encodeURIComponent(token)}` : ""}`);
       issues.push(...(page.issues || []));
       onPage?.(issues.length);
       if (page.isLast || !page.nextPageToken) break;
       token = page.nextPageToken;
     }
+    if (issues.length > MAX_ISSUES) throw new Error(`Project has more than ${MAX_ISSUES} issues`);
     return issues;
   }
 
   async listComments(issueKey: string): Promise<any[]> {
     const out: any[] = [];
     let start = 0;
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; ; i++) {
+      if (i >= 50) throw new Error(`${issueKey} has more than 5000 comments`);
       const page: any = await this.get(`/rest/api/3/issue/${encodeURIComponent(issueKey)}/comment?maxResults=100&startAt=${start}`);
       out.push(...(page.comments || []));
       start += (page.comments || []).length;

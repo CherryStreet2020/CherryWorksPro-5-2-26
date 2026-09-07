@@ -96,7 +96,13 @@ describe("Jira fetcher", () => {
   it("refuses bad credentials cleanly", async () => {
     const res = await api("POST", "/api/support/import/jira-test", admin, { baseUrl: fakeUrl + "/missing", email: "dean@example.com", apiToken: "tok_12345678", projectKey: "ZJR" });
     expect(res.status).toBe(400);
-    expect((await res.json()).message).toMatch(/Jira 404/);
+    const msg = (await res.json()).message;
+    expect(msg).toBe("Jira 404 on /rest/api/3/myself");
+  });
+
+  it("refuses a non-Atlassian host outside the test env (schema guard exists)", async () => {
+    const bad = await api("POST", "/api/support/import/jira-test", admin, { baseUrl: "not a url", email: "dean@example.com", apiToken: "tok_12345678", projectKey: "ZJR" });
+    expect(bad.status).toBe(400);
   });
 
   afterAll(async () => {

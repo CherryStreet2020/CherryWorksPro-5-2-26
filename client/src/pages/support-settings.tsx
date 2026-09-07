@@ -141,7 +141,7 @@ function JiraImportCard({ card, muted, fieldStyle }: { card: React.CSSProperties
   const { data: clients } = useQuery<PickerClient[]>({ queryKey: ["/api/support/clients"] });
   const { data: projects } = useQuery<PickerProject[]>({
     queryKey: ["/api/support/clients", clientId, "projects"],
-    queryFn: () => fetch(`/api/support/clients/${clientId}/projects`, { credentials: "include" }).then(r => r.json()),
+    queryFn: async () => { const r = await fetch(`/api/support/clients/${clientId}/projects`, { credentials: "include" }); if (!r.ok) throw new Error(`${r.status}`); return r.json(); },
     enabled: !!clientId,
   });
   const conn = { baseUrl: baseUrl.trim(), email: email.trim(), apiToken: apiToken.trim(), projectKey: projectKey.trim().toUpperCase() };
