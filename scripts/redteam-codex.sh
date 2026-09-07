@@ -16,9 +16,9 @@
 #   scripts/redteam-codex.sh --uncommitted   # review working-tree changes (pre-commit)
 #
 # MODEL / COST
-#   Default gpt-6-astra at `medium` reasoning — Dean's call, 2026-09-07
-#   ("we should be running Astra at med"): the frontier model, kept fast by
-#   effort. Use --deep (same model, xhigh) for PRs that warrant the ceiling:
+#   Default gpt-6-astra at `high` reasoning — Dean's call, 2026-09-07
+#   ("Astra ... use it at high"): the frontier model at high effort; xhigh is
+#   reserved for --deep, for PRs that warrant the ceiling:
 #   authz fences, money/posting paths, migrations, concurrency. Both are
 #   passed PER INVOCATION with `-c`, so the global ~/.codex/config.toml
 #   (interactive Codex) is untouched.
@@ -44,7 +44,7 @@
 set -euo pipefail
 
 MODEL="${REDTEAM_CODEX_MODEL:-gpt-6-astra}"
-EFFORT="${REDTEAM_CODEX_EFFORT:-medium}"
+EFFORT="${REDTEAM_CODEX_EFFORT:-high}"
 
 ARGS=()
 TARGET_COMMIT=""
