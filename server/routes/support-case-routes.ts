@@ -13,6 +13,7 @@ import {
 } from "@shared/schema";
 import * as cases from "../support-cases";
 import { importJiraIssues } from "../support-import";
+import { JiraClient, pullProject } from "../support-jira";
 import { resolvePolicy, upsertPolicy, deleteClientPolicy, getPolicyRow, DEFAULT_POLICY } from "../support-sla";
 import { slaPolicySchema, supportSettingsSchema } from "@shared/schema";
 import { db } from "../db";
@@ -249,6 +250,50 @@ export function registerSupportCaseRoutes(app: Express) {
       return res.json(report);
     } catch (err: any) {
       return res.status(400).json({ message: friendlyError(err) });
+    }
+  });
+
+  // ── Jira import straight from Jira Cloud (admin). The API token is used for this request only. ──
+  const jiraConnSchema = z.object({
+    baseUrl: z.string().trim().url().refine(u => process.env.NODE_ENV === "test" || u.startsWith("https://"), "Jira URL must be https"),
+    email: z.string().trim().email(),
+    apiToken: z.string().min(8).max(500),
+    projectKey: z.string().trim().regex(/^[A-Z][A-Z0-9]{1,9}$/, "Project key like ABS"),
+  });
+
+  app.post("/api/support/import/jira-test", requireAuth, requireAdmin, requireTier("PROFESSIONAL"), async (req, res) => {
+    try {
+      const conn = jiraConnSchema.parse(req.body);
+      const client = new JiraClient(conn);
+      const me = await client.whoAmI();
+      const issues = await client.listIssues(conn.projectKey);
+      const statuses: Record<string, number> = {};
+      for (const it of issues) { const n = it.fields?.status?.name || "?"; statuses[n] = (statuses[n] || 0) + 1; }
+      return res.json({ ok: true, connectedAs: me.displayName, issues: issues.length, firstKey: issues[0]?.key ?? null, lastKey: issues[issues.length - 1]?.key ?? null, statuses });
+    } catch (err: any) {
+      return res.status(400).json({ message: String(err?.message || "Could not reach Jira") });
+    }
+  });
+
+  app.post("/api/support/import/jira-fetch", requireAuth, requireAdmin, requireTier("PROFESSIONAL"), async (req, res) => {
+    try {
+      const conn = jiraConnSchema.parse(req.body);
+      const body = req.body ?? {};
+      if (!body.clientId) return res.status(400).json({ message: "clientId is required" });
+      const items = await pullProject(conn, conn.projectKey);
+      const report = await importJiraIssues({
+        orgId: req.session.orgId!, clientId: String(body.clientId), projectId: body.projectId ? String(body.projectId) : null,
+        items, relinkTime: body.relinkTime !== false, dryRun: body.dryRun === true,
+      });
+      if (!body.dryRun) {
+        await storage.createAuditLog({
+          orgId: req.session.orgId!, userId: req.session.userId!, action: "SUPPORT_CASES_IMPORTED", entityType: "client", entityId: String(body.clientId),
+          details: { source: "jira-fetch", projectKey: conn.projectKey, pulled: items.length, imported: report.imported, skipped: report.skipped.length, contactsCreated: report.contactsCreated, timeEntriesLinked: report.timeEntriesLinked, errors: report.errors.length },
+        });
+      }
+      return res.json({ pulled: items.length, ...report });
+    } catch (err: any) {
+      return res.status(400).json({ message: err instanceof z.ZodError ? friendlyError(err) : String(err?.message || "Import failed") });
     }
   });
 
