@@ -114,6 +114,11 @@ case "$cmd" in
 
   migcheck)
     ensure_pg; cd "$REPO"
+    # Destructive reset: only ever a LOCAL database literally named cwp_migcheck.
+    case "${CWP_MIGCHECK_URL%%\?*}" in
+      *://*@localhost/cwp_migcheck|*://*@localhost:*/cwp_migcheck|*://localhost/cwp_migcheck|*://localhost:*/cwp_migcheck|*://*@127.0.0.1*/cwp_migcheck|*://127.0.0.1*/cwp_migcheck|*:///cwp_migcheck) ;;
+      *) echo "[cwp] refusing migcheck reset: CWP_MIGCHECK_URL must be a local database named cwp_migcheck (got ${CWP_MIGCHECK_URL%%\?*})" >&2; exit 1 ;;
+    esac
     recreate_db "$CWP_MIGCHECK_URL" || exit 1
     exec env MIGRATION_CHECK_DATABASE_URL="$CWP_MIGCHECK_URL" "$BASH5" scripts/check-migrations.sh ;;
 
