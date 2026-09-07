@@ -93,6 +93,8 @@ export const orgs = pgTable("orgs", {
   smtpPort: integer("smtp_port"),
   smtpUser: text("smtp_user"),
   smtpPass: text("smtp_pass"),
+  // Support Cases: the mailbox that receives customer emails (inbound webhook resolves the org by it).
+  supportInboundAddress: text("support_inbound_address"),
   smtpFromName: text("smtp_from_name"),
   smtpFromEmail: text("smtp_from_email"),
   smtpReplyTo: text("smtp_reply_to"),
@@ -1291,6 +1293,10 @@ export const supportCases = pgTable("support_cases", {
   resolvedAt: timestamp("resolved_at"),
   closedAt: timestamp("closed_at"),
   externalRef: text("external_ref"),
+  // SLA clocks pause while the case waits on the customer.
+  slaPausedAt: timestamp("sla_paused_at"),
+  firstResponseAlertedAt: timestamp("first_response_alerted_at"),
+  resolutionAlertedAt: timestamp("resolution_alerted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
@@ -1362,6 +1368,43 @@ export const portalSessions = pgTable("portal_sessions", {
 }));
 
 export type PortalSession = typeof portalSessions.$inferSelect;
+
+export const supportSlaPolicies = pgTable("support_sla_policies", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id", { length: 36 }).notNull().references(() => orgs.id),
+  /** NULL = the org default; a row with a client overrides it for that client. */
+  clientId: varchar("client_id", { length: 36 }).references(() => clients.id, { onDelete: "cascade" }),
+  firstResponseHours: numeric("first_response_hours", { precision: 6, scale: 2 }).notNull().default("8"),
+  resolutionHours: numeric("resolution_hours", { precision: 6, scale: 2 }).notNull().default("24"),
+  businessHoursOnly: boolean("business_hours_only").notNull().default(true),
+  businessStartHour: integer("business_start_hour").notNull().default(9),
+  businessEndHour: integer("business_end_hour").notNull().default(17),
+  timezone: text("timezone").notNull().default("America/New_York"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  orgClientUnique: uniqueIndex("support_sla_policies_org_client_unique").on(table.orgId, table.clientId),
+}));
+
+/** Persisted notification center (replaces the in-process map). */
+export const userNotifications = pgTable("user_notifications", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id", { length: 36 }).notNull().references(() => orgs.id),
+  userId: varchar("user_id", { length: 36 }).notNull().references(() => users.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  link: text("link"),
+  metadata: jsonb("metadata"),
+  readAt: timestamp("read_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  userCreatedIdx: index("idx_user_notifications_user_created").on(table.userId, table.createdAt),
+  userUnreadIdx: index("idx_user_notifications_user_unread").on(table.userId, table.readAt),
+}));
+
+export type SupportSlaPolicy = typeof supportSlaPolicies.$inferSelect;
+export type UserNotification = typeof userNotifications.$inferSelect;
 
 export type SupportCaseType = typeof supportCaseTypes.$inferSelect;
 export type SupportCase = typeof supportCases.$inferSelect;
@@ -1623,6 +1666,19 @@ export const portalCreateCaseSchema = z.object({
 });
 export const portalMessageSchema = z.object({
   body: z.string().trim().min(1, "Write a message first").max(20000, "Must be at most 20000 characters"),
+});
+
+export const slaPolicySchema = z.object({
+  firstResponseHours: z.coerce.number().min(0.25).max(720),
+  resolutionHours: z.coerce.number().min(0.25).max(2000),
+  businessHoursOnly: z.boolean().default(true),
+  businessStartHour: z.coerce.number().int().min(0).max(23).default(9),
+  businessEndHour: z.coerce.number().int().min(1).max(24).default(17),
+  timezone: z.string().min(1).max(64).default("America/New_York"),
+}).refine(p => p.businessEndHour > p.businessStartHour, { message: "Business day must end after it starts" });
+
+export const supportSettingsSchema = z.object({
+  supportInboundAddress: z.string().trim().email().max(320).nullable().optional().or(z.literal("").transform(() => null)),
 });
 
 export const updateClientCaseSettingsSchema = z.object({

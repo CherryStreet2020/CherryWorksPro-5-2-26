@@ -8,6 +8,8 @@
  */
 import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { db } from "./db";
+import { dueDatesForNewCase, clockPatchForStatus, slaStateFor } from "./support-sla";
+import { notifyCaseCreated, notifyCaseMessage, notifyCaseUpdated } from "./support-notifications";
 import {
   clientActivities,
   clientContacts,
@@ -25,7 +27,7 @@ import {
   type SupportCaseStatus,
 } from "@shared/schema";
 
-export type CaseView = "open" | "mine" | "unassigned" | "waiting" | "resolved" | "all";
+export type CaseView = "open" | "mine" | "unassigned" | "waiting" | "breaching" | "resolved" | "all";
 
 export interface ListCasesFilter {
   view?: CaseView;
@@ -136,10 +138,16 @@ const caseListSelect = {
   lastAgentMessageAt: supportCases.lastAgentMessageAt,
   resolvedAt: supportCases.resolvedAt,
   closedAt: supportCases.closedAt,
+  slaPausedAt: supportCases.slaPausedAt,
   createdAt: supportCases.createdAt,
   updatedAt: supportCases.updatedAt,
   minutesLogged: hoursSubquery(supportCases.id),
 };
+
+/** Attach the computed SLA state to a case row for the API. */
+export function withSla<T extends { status: string; createdAt: Date; firstResponseAt: Date | null; firstResponseDueAt: Date | null; resolutionDueAt: Date | null; resolvedAt: Date | null; slaPausedAt: Date | null }>(row: T) {
+  return { ...row, sla: slaStateFor(row) };
+}
 
 export async function listCases(orgId: string, f: ListCasesFilter) {
   const where: SQL[] = [eq(supportCases.orgId, orgId)];
@@ -154,6 +162,18 @@ export async function listCases(orgId: string, f: ListCasesFilter) {
       where.push(isNull(supportCases.assigneeUserId));
       break;
     case "waiting": where.push(eq(supportCases.status, "WAITING_ON_CUSTOMER")); break;
+    case "breaching": {
+      // Timestamps are stored UTC-naive; compare against an explicit UTC string so
+      // the driver never re-interprets a Date in the server's local zone.
+      const soon = utcNaive(new Date(Date.now() + 3600000));
+      where.push(inArray(supportCases.status, ["NEW", "WAITING_ON_SUPPORT", "IN_PROGRESS"]));
+      where.push(isNull(supportCases.slaPausedAt));
+      where.push(or(
+        and(isNull(supportCases.firstResponseAt), sql`${supportCases.firstResponseDueAt} < ${soon}::timestamp`),
+        sql`${supportCases.resolutionDueAt} < ${soon}::timestamp`,
+      )!);
+      break;
+    }
     case "resolved": where.push(inArray(supportCases.status, ["RESOLVED", "CLOSED"])); break;
     case "all":
     default: break;
@@ -177,7 +197,13 @@ export async function listCases(orgId: string, f: ListCasesFilter) {
     .limit(Math.min(Math.max(f.limit ?? 200, 1), 500));
 }
 
+/** "2026-09-07 03:36:31.455" — the UTC wall clock, no zone, as timestamps are stored. */
+export function utcNaive(d: Date): string {
+  return d.toISOString().replace("T", " ").replace("Z", "");
+}
+
 export async function summary(orgId: string, userId: string) {
+  const soon = utcNaive(new Date(Date.now() + 3600000));
   const [row] = await db
     .select({
       open: sql<number>`COUNT(*) FILTER (WHERE ${supportCases.status} IN ('NEW','WAITING_ON_SUPPORT','IN_PROGRESS','WAITING_ON_CUSTOMER'))`,
@@ -185,6 +211,7 @@ export async function summary(orgId: string, userId: string) {
       unassigned: sql<number>`COUNT(*) FILTER (WHERE ${supportCases.status} IN ('NEW','WAITING_ON_SUPPORT','IN_PROGRESS','WAITING_ON_CUSTOMER') AND ${supportCases.assigneeUserId} IS NULL)`,
       waiting: sql<number>`COUNT(*) FILTER (WHERE ${supportCases.status} = 'WAITING_ON_CUSTOMER')`,
       resolved: sql<number>`COUNT(*) FILTER (WHERE ${supportCases.status} IN ('RESOLVED','CLOSED'))`,
+      breaching: sql<number>`COUNT(*) FILTER (WHERE ${supportCases.status} IN ('NEW','WAITING_ON_SUPPORT','IN_PROGRESS') AND ${supportCases.slaPausedAt} IS NULL AND ((${supportCases.firstResponseAt} IS NULL AND ${supportCases.firstResponseDueAt} < ${soon}::timestamp) OR ${supportCases.resolutionDueAt} < ${soon}::timestamp))`,
       all: sql<number>`COUNT(*)`,
     })
     .from(supportCases)
@@ -195,6 +222,7 @@ export async function summary(orgId: string, userId: string) {
     unassigned: Number(row?.unassigned ?? 0),
     waiting: Number(row?.waiting ?? 0),
     resolved: Number(row?.resolved ?? 0),
+    breaching: Number(row?.breaching ?? 0),
     all: Number(row?.all ?? 0),
   };
 }
@@ -324,7 +352,12 @@ export async function createCase(orgId: string, input: CreateCaseInput, actor: A
   }
 
   const { caseKey, caseNumber } = await mintCaseKey(orgId, input.clientId);
+  const createdAt = new Date();
+  const due = await dueDatesForNewCase(orgId, input.clientId, createdAt);
   const [row] = await db.insert(supportCases).values({
+    createdAt,
+    firstResponseDueAt: due.firstResponseDueAt,
+    resolutionDueAt: due.resolutionDueAt,
     orgId,
     clientId: input.clientId,
     projectId: input.projectId ?? null,
@@ -347,6 +380,7 @@ export async function createCase(orgId: string, input: CreateCaseInput, actor: A
   await writeEvent(orgId, row.id, "created", null, row.status, actor);
   if (row.assigneeUserId) await writeEvent(orgId, row.id, "assignee", null, row.assigneeUserId, actor);
   await writeActivity(orgId, row.clientId, actor, "SUPPORT_CASE_OPENED", `${caseKey} opened`, row.subject, row.id, { caseKey });
+  void notifyCaseCreated(row).catch(err => console.warn("[support] notifyCaseCreated failed", (err as Error)?.message));
   return row;
 }
 
@@ -391,9 +425,11 @@ export async function updateCase(orgId: string, id: string, input: UpdateCaseInp
     if (input.status === "RESOLVED") { patch.resolvedAt = now; patch.closedAt = null; }
     else if (input.status === "CLOSED") { patch.closedAt = now; if (!existing.resolvedAt) patch.resolvedAt = now; }
     else { patch.resolvedAt = null; patch.closedAt = null; }
+    Object.assign(patch, clockPatchForStatus(existing, input.status, now));
   }
 
   const [row] = await db.update(supportCases).set(patch).where(and(eq(supportCases.id, id), eq(supportCases.orgId, orgId))).returning();
+  void notifyCaseUpdated(existing, row, actor).catch(err => console.warn("[support] notifyCaseUpdated failed", (err as Error)?.message));
 
   if (patch.status && patch.status !== existing.status) {
     await writeEvent(orgId, id, "status", existing.status, patch.status, actor);
@@ -463,10 +499,13 @@ export async function addMessage(orgId: string, caseId: string, input: AddMessag
     if (existing.status === "WAITING_ON_CUSTOMER" || existing.status === "RESOLVED") patch.status = "WAITING_ON_SUPPORT";
     if (existing.status === "RESOLVED") { patch.resolvedAt = null; }
   }
+  if (patch.status && patch.status !== existing.status) Object.assign(patch, clockPatchForStatus(existing, patch.status, now));
   const [row] = await db.update(supportCases).set(patch).where(eq(supportCases.id, caseId)).returning();
   if (patch.status && patch.status !== existing.status) {
     await writeEvent(orgId, caseId, "status", existing.status, patch.status, isAgent ? { userId: input.author.userId!, name: input.author.name } : null);
   }
+  void notifyCaseMessage(row, { authorUserId: input.author.userId ?? null, authorName: input.author.name, body: input.body, visibility: input.visibility })
+    .catch(err => console.warn("[support] notifyCaseMessage failed", (err as Error)?.message));
   if (input.visibility === "CUSTOMER") {
     await writeActivity(orgId, row.clientId, isAgent ? { userId: input.author.userId!, name: input.author.name } : null,
       isAgent ? "SUPPORT_CASE_REPLY" : "SUPPORT_CASE_CUSTOMER_MESSAGE",

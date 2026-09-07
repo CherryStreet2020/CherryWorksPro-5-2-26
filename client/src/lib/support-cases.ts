@@ -2,7 +2,7 @@
 
 export type CaseStatus = "NEW" | "WAITING_ON_SUPPORT" | "IN_PROGRESS" | "WAITING_ON_CUSTOMER" | "RESOLVED" | "CLOSED";
 export type CasePriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
-export type CaseView = "open" | "mine" | "unassigned" | "waiting" | "resolved" | "all";
+export type CaseView = "open" | "mine" | "unassigned" | "waiting" | "breaching" | "resolved" | "all";
 
 export const CASE_STATUS_ORDER: CaseStatus[] = ["NEW", "WAITING_ON_SUPPORT", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "RESOLVED", "CLOSED"];
 export const CASE_PRIORITY_ORDER: CasePriority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
@@ -66,7 +66,13 @@ export interface CaseListRow {
   createdAt: string;
   updatedAt: string;
   minutesLogged: number;
+  slaPausedAt?: string | null;
+  firstResponseDueAt?: string | null;
+  resolutionDueAt?: string | null;
+  sla?: { firstResponse: SlaState; resolution: SlaState; nextDueAt: string | null; label: string };
 }
+
+export type SlaState = "none" | "ok" | "warning" | "breached" | "paused" | "met";
 
 export interface CaseMessage {
   id: string;
