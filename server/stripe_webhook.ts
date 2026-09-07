@@ -1015,7 +1015,8 @@ async function handleSubscriptionTrialWillEnd(
     try {
       claim = await storage.createStripeEvent({
         orgId: org.id, stripeEventId, type: eventType, livemode, created,
-        status: "PROCESSING", failureCode: null, failureDetail: null,
+        // "FAILED" until delivery succeeds: the row is the claim; the status is the outcome.
+        status: "FAILED", failureCode: "PENDING_DELIVERY", failureDetail: null,
       });
     } catch {
       return res.json({ received: true, duplicate: true }); // lost the race to a concurrent delivery
@@ -1035,7 +1036,7 @@ async function handleSubscriptionTrialWillEnd(
       await db.delete(stripeEvents).where(eq(stripeEvents.id, claim.id)).catch(() => {});
       return res.status(500).json({ received: false, error: "Reminder email could not be delivered; will retry" });
     }
-    await db.update(stripeEvents).set({ status: "PROCESSED" }).where(eq(stripeEvents.id, claim.id)).catch(() => {});
+    await db.update(stripeEvents).set({ status: "PROCESSED", failureCode: null }).where(eq(stripeEvents.id, claim.id)).catch(() => {});
 
     await storage.createAuditLog({
       orgId: org.id,
