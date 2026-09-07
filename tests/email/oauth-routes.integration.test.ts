@@ -38,6 +38,7 @@ const getUserById = vi.fn(async (_id: string) => ({
   email: "u@example.com",
   isActive: true,
   role: "ADMIN",
+  emailVerifiedAt: new Date(),
 }));
 const createAuditLog = vi.fn(async (entry: any) => ({ id: "audit-1", ...entry }));
 
@@ -112,6 +113,7 @@ beforeEach(async () => {
     email: "u@example.com",
     isActive: true,
     role: "ADMIN",
+    emailVerifiedAt: new Date(),
   }));
   delete process.env.PLATFORM_OPERATOR_EMAILS;
   rescanSpy.mockClear();
