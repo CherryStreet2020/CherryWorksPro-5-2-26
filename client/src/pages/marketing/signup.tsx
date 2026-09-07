@@ -95,18 +95,21 @@ export default function SignupPage() {
     if (params.get("checkout") === "canceled") {
       fetch("/api/auth/me", { credentials: "include" })
         .then(r => (r.ok ? r.json() : null))
-        .then(async me => {
+        .then(me => {
           if (!me?.id) return;
-          // The charge date is the signup deadline, not a fresh 14 days.
-          let chargeNote = "Billing starts as soon as you complete checkout.";
-          try {
-            const b = await fetch("/api/billing/status", { credentials: "include" }).then(r => (r.ok ? r.json() : null));
-            const ends = b?.trialEndsAt ? new Date(b.trialEndsAt) : null;
-            if (b?.subscriptionStatus === "trialing" && !b?.hasSubscription && ends && ends.getTime() > Date.now()) {
-              chargeNote = `Your card won't be charged until your trial ends on ${ends.toLocaleDateString("en-US", { month: "long", day: "numeric" })}. Cancel any time before then.`;
-            }
-          } catch { /* keep the safe default */ }
-          setResume({ name: me.name || me.firstName || me.email || "there", chargeNote });
+          // Recognise the signed-in owner IMMEDIATELY (the form must never invite a
+          // second signup); the charge note refines itself once billing status arrives.
+          const name = me.name || me.firstName || me.email || "there";
+          setResume({ name, chargeNote: "Billing starts as soon as you complete checkout." });
+          fetch("/api/billing/status", { credentials: "include" })
+            .then(r => (r.ok ? r.json() : null))
+            .then(b => {
+              const ends = b?.trialEndsAt ? new Date(b.trialEndsAt) : null;
+              if (b?.subscriptionStatus === "trialing" && !b?.hasSubscription && ends && ends.getTime() > Date.now()) {
+                setResume({ name, chargeNote: `Your card won't be charged until your trial ends on ${ends.toLocaleDateString("en-US", { month: "long", day: "numeric" })}. Cancel any time before then.` });
+              }
+            })
+            .catch(() => {});
         })
         .catch(() => {});
     }
@@ -319,7 +322,7 @@ export default function SignupPage() {
               data-testid="signup-form-card"
             >
               <h2 className="text-xl font-bold mb-1 hidden lg:block" style={{ color: "var(--lux-text)" }}>{resume ? "Finish setting up billing" : "Start your free trial"}</h2>
-              <p className="text-sm mb-6 hidden lg:block" style={{ color: "var(--lux-text-muted)" }}>{resume ? `Welcome back, ${resume.name}. Your workspace is ready — pick a plan to start your 14-day trial.` : "No commitment. Full access. Live in 5 minutes."}</p>
+              <p className="text-sm mb-6 hidden lg:block" style={{ color: "var(--lux-text-muted)" }}>{resume ? `Welcome back, ${resume.name}. Your workspace is ready — pick a plan to continue.` : "No commitment. Full access. Live in 5 minutes."}</p>
               {closed && !resume && (
                 <div className="mb-4 px-4 py-3 rounded-lg text-sm" style={{ background: "var(--lux-surface-alt)", color: "var(--lux-text)" }} data-testid="signup-closed-notice">
                   <strong>Signups are closed for the moment.</strong> {closed} Want a heads-up when they reopen? <a href="/contact" className="underline">Get in touch</a>.
