@@ -70,19 +70,18 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-# --- resolve the codex binary (PATH first, then the desktop-app installs) ----
+# --- resolve the codex binary --------------------------------------------------
+# The desktop-app bundle comes FIRST: codex looks for its sibling
+# `codex-code-mode-host` next to its own path, so a lone symlink in ~/.local/bin
+# makes every run log "Code Mode is unavailable" and fail tool calls closed.
 CODEX=""
-if command -v codex >/dev/null 2>&1; then
-  CODEX="$(command -v codex)"
-else
-  for cand in \
-    "/Applications/ChatGPT.app/Contents/Resources/codex" \
-    "$HOME/.codex/plugins/.plugin-appserver/codex" \
-    "/Applications/Codex.app/Contents/MacOS/codex" \
-    "$HOME/.local/bin/codex"; do
-    [ -x "$cand" ] && CODEX="$cand" && break
-  done
-fi
+for cand in \
+  "/Applications/ChatGPT.app/Contents/Resources/codex" \
+  "/Applications/Codex.app/Contents/MacOS/codex" \
+  "$HOME/.codex/plugins/.plugin-appserver/codex"; do
+  [ -x "$cand" ] && CODEX="$cand" && break
+done
+if [ -z "$CODEX" ] && command -v codex >/dev/null 2>&1; then CODEX="$(command -v codex)"; fi
 if [ -z "$CODEX" ]; then
   echo "redteam-codex: codex CLI not found (PATH, ChatGPT.app, Codex.app, ~/.local/bin)." >&2
   echo "  Install the ChatGPT/Codex desktop app, or symlink the binary into ~/.local/bin." >&2
@@ -134,9 +133,13 @@ echo "redteam-codex: args=${ARGS[*]}"
 echo "redteam-codex: writing → $OUT"
 
 set +e
+# mcp_servers={} : a review needs git + the tree only. The interactive config's
+# MCP servers (VPN-only pipeline hosts, browser/computer-use) otherwise spew
+# transport errors into the findings file and slow the run.
 ( cd "$REPO_ROOT" && "$CODEX" review \
     -c model="$MODEL" \
     -c model_reasoning_effort="$EFFORT" \
+    -c 'mcp_servers={}' \
     "${ARGS[@]}" ) > "$OUT" 2>&1
 rc=$?
 set -e
