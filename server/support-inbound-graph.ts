@@ -116,7 +116,9 @@ export async function pollOrg(org: { id: string; supportInboundAddress: string; 
       bodyHtml: msg.body?.contentType?.toLowerCase() === "html" ? (msg.body.content || null) : null,
       headers: { source: "m365-graph", graphId: msg.id, receivedDateTime: msg.receivedDateTime ?? null }, resendMessageId: messageId,
     }).onConflictDoNothing({ target: inboundEmails.resendMessageId, where: sql`resend_message_id IS NOT NULL` }).returning({ id: inboundEmails.id });
-    if (claimed.length === 0) { result.skipped++; await graphPatch(token, `/me/messages/${msg.id}`, { isRead: true }).catch(() => {}); continue; }
+    // Lost the claim: leave isRead alone. The claiming pass marks it read after
+    // it succeeds; if it fails it drops its ledger row and the mail is retried.
+    if (claimed.length === 0) { result.skipped++; continue; }
 
     let outcome: Awaited<ReturnType<typeof processInboundEmail>>;
     try {
