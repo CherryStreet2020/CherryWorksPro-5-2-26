@@ -348,7 +348,7 @@ app.post("/api/auth/resend-verification", passwordChangeLimiter, async (req, res
   if (user.emailVerifiedAt) return res.json({ ok: true, alreadyVerified: true });
   const org = await storage.getOrg(user.orgId);
   try {
-    const rawToken = await issueVerificationToken(user.id);
+    const rawToken = await issueVerificationToken(user.id, user.email);
     const verifyUrl = `${appBaseUrl(req)}/verify-email?token=${rawToken}`;
     const { sendVerificationEmail } = await import("../email");
     const sent = await sendVerificationEmail(user.email, user.name || user.firstName || "", verifyUrl, org);
@@ -496,7 +496,7 @@ app.post("/api/auth/signup", signupLimiter, awaitSessionSave, async (req, res) =
     const loginUrl = `${appBaseUrl(req)}/login`;
     let verifyUrl: string | null = null;
     try {
-      const rawToken = await issueVerificationToken(user.id);
+      const rawToken = await issueVerificationToken(user.id, parsed.email);
       verifyUrl = `${appBaseUrl(req)}/verify-email?token=${rawToken}`;
     } catch (err) {
       console.error("[signup] could not issue verification token:", (err as Error).message);

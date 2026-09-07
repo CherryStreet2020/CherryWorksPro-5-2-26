@@ -8,7 +8,7 @@ import { CreditCard, LogOut, ShieldCheck } from "lucide-react";
 import { BrandLockup } from "@/components/shared/brand-lockup";
 import { useAuth } from "@/lib/auth";
 import { useBillingStatus } from "@/hooks/use-billing-status";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isValidStripeUrl } from "@/lib/url-validation";
 import { useDocumentTitle } from "@/lib/use-document-title";
 import { DeletionBanner } from "@/components/deletion-banner";
@@ -111,11 +111,44 @@ export default function TrialEndedPage() {
         {stillActive ? (
           <a href="/" className="mt-6 mx-auto block text-center text-xs underline" style={{ color: "var(--lux-text-muted)" }} data-testid="link-choose-plan-back">Back to dashboard</a>
         ) : (
-          <button onClick={() => logout()} className="mt-6 mx-auto flex items-center gap-1.5 text-xs underline" style={{ color: "var(--lux-text-muted)" }} data-testid="button-trial-ended-signout"><LogOut className="w-3.5 h-3.5" />Sign out</button>
+          <div className="mt-6 flex items-center justify-center gap-4 text-xs" style={{ color: "var(--lux-text-muted)" }}>
+            <button onClick={() => logout()} className="flex items-center gap-1.5 underline" data-testid="button-trial-ended-signout"><LogOut className="w-3.5 h-3.5" />Sign out</button>
+            {isAdmin && <DeleteWorkspaceLink />}
+          </div>
         )}
         </>)}
         </div>
       </div>
     </div>
+  );
+}
+
+/** Not continuing? The existing 30-day deletion flow stays available without a plan (password-confirmed). */
+function DeleteWorkspaceLink() {
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const submit = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const res = await apiRequest("POST", "/api/account/delete-request", { password });
+      const data = await res.json();
+      setMsg(data.message || "Deletion scheduled. Sign back in within 30 days to cancel.");
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/status"] });
+    } catch (err: any) {
+      setMsg(err?.message?.replace(/^\d+:\s*/, "") || "Could not schedule deletion");
+    } finally { setBusy(false); }
+  };
+  if (!open) return <button onClick={() => setOpen(true)} className="underline" data-testid="button-delete-workspace">Delete this workspace</button>;
+  return (
+    <span className="flex flex-col items-center gap-2" data-testid="delete-workspace-form">
+      <span>Confirm with your password. Deletion happens in 30 days and can be cancelled by signing in.</span>
+      <span className="flex gap-2">
+        <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" className="px-2 py-1 rounded text-xs" style={{ background: "var(--color-surface-0)", border: "1px solid var(--lux-border)", color: "var(--lux-text)" }} data-testid="input-delete-password" />
+        <button onClick={submit} disabled={busy || !password} className="underline disabled:opacity-60" data-testid="button-delete-confirm">{busy ? "…" : "Schedule deletion"}</button>
+      </span>
+      {msg && <span data-testid="delete-workspace-message">{msg}</span>}
+    </span>
   );
 }
