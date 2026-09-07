@@ -46,6 +46,7 @@ app_env() {
       NODE_ENV=test E2E_SEED_ENABLED=true \
       MARKETING_OS_ENABLED=true VITE_MARKETING_OS_ENABLED=true \
       EMAIL_OAUTH_ENABLED=true VITE_EMAIL_OAUTH_ENABLED=true \
+      ADMIN_EMAIL=dean@cherrystconsulting.com \
       PORT=5000 "$@"
 }
 
@@ -81,6 +82,8 @@ case "$cmd" in
   app-bg)
     ensure_pg; cd "$REPO"; kill_5000; sleep 1
     app_env nohup npx tsx server/index.ts > /tmp/cwp-app-5000.log 2>&1 &
+    # Marker: which launcher/DB owns :5000, so `e2e` never reuses a stranger's server.
+    printf 'db=%s\nlauncher=cwp\n' "${CWP_DATABASE_URL%%\?*}" > /tmp/cwp-app-5000.launched
     echo "[cwp] app pid $!"; wait_health ;;
 
   app-stop) kill_5000; echo "[cwp] :5000 cleared" ;;
@@ -96,7 +99,12 @@ case "$cmd" in
 
   e2e)
     ensure_pg; cd "$REPO"
-    app_ready || { echo "[cwp] starting app for e2e"; "$SELF" app-bg || exit 1; }
+    # Reuse :5000 only if THIS launcher started it against THIS database (flags + seeds guaranteed); else restart.
+    if app_ready && [ -f /tmp/cwp-app-5000.launched ] && grep -qx "db=${CWP_DATABASE_URL%%\?*}" /tmp/cwp-app-5000.launched; then
+      echo "[cwp] reusing the cwp-launched app on :5000"
+    else
+      echo "[cwp] (re)starting app for e2e with the test configuration"; "$SELF" app-bg || exit 1
+    fi
     exec env DATABASE_URL="$CWP_DATABASE_URL" PORT=5000 npx playwright test "$@" ;;
 
   migcheck)
