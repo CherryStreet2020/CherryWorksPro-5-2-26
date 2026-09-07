@@ -55,8 +55,12 @@ try {
     env: process.env,
     maxBuffer: 64 * 1024 * 1024,
   });
-  const out = `${res.stdout ?? ""}${res.stderr ?? ""}`;
-  process.stdout.write(out);
+  const stdout = res.stdout ?? "";
+  const stderr = res.stderr ?? "";
+  process.stdout.write(stdout);
+  process.stderr.write(stderr);
+  // Newline-separated so line-anchored checks still match at the boundary.
+  const out = `${stdout}\n${stderr}`;
   const errorInOutput =
     /^\s*error:/im.test(out) ||
     /^\s*(severity|routine|constraint):\s/m.test(out) ||
