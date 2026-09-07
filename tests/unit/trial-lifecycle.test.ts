@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { trialActionFor, planInactive } from "../../server/trial-lifecycle";
+import { tempCredentialMarker, tempCredentialProves, hashToken } from "../../server/email-verification";
 
 const DAY = 86_400_000;
 const now = new Date("2026-09-10T12:00:00Z");
@@ -44,5 +45,16 @@ describe("trial lifecycle decisions", () => {
     expect(planInactive({ planTier: "TRIAL", subscriptionStatus: "trialing", stripeSubscriptionId: "sub_1", trialEndsAt: new Date(now.getTime() - 1) }, now)).toBe(false);
     expect(planInactive({ planTier: "TRIAL", subscriptionStatus: "trialing", stripeSubscriptionId: null, trialEndsAt: new Date(now.getTime() + DAY) }, now)).toBe(false);
     expect(planInactive(null)).toBe(false);
+  });
+
+  it("temp-credential marker fits the column, is address-bound, and can never equal a token hash", () => {
+    const m = tempCredentialMarker("  Person@Example.com ");
+    expect(m.length).toBe(64);
+    expect(m).toBe(tempCredentialMarker("person@example.com"));
+    expect(tempCredentialProves({ email: "person@example.com", emailVerificationTokenHash: m })).toBe(true);
+    expect(tempCredentialProves({ email: "other@example.com", emailVerificationTokenHash: m })).toBe(false);
+    expect(tempCredentialProves({ email: "person@example.com", emailVerificationTokenHash: null })).toBe(false);
+    expect(/^[0-9a-f]{64}$/.test(hashToken("anything"))).toBe(true);
+    expect(/^[0-9a-f]{64}$/.test(m)).toBe(false);
   });
 });

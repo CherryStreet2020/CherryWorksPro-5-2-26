@@ -68,9 +68,13 @@ export async function backfillLegacyVerified(cutoff = new Date("2026-09-08T00:00
   return (result as any).rowCount ?? 0;
 }
 
-/** Marker stored in the token-hash column while a temporary password is outstanding: "temp:" + sha256(address). A raw token can never hash to it (hex only). */
+/**
+ * Marker stored in the 64-char token-hash column while a temporary password
+ * is outstanding: "temp:" + the first 59 hex chars of sha256(address). A raw
+ * token's hash is 64 hex characters, so it can never equal a marker.
+ */
 export function tempCredentialMarker(email: string): string {
-  return `temp:${createHash("sha256").update(email.trim().toLowerCase()).digest("hex")}`;
+  return `temp:${createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 59)}`;
 }
 
 /** Record which address an emailed temporary password proves. */

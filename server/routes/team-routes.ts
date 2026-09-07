@@ -463,8 +463,8 @@ app.post("/api/team/:id/reset-password", resetPasswordLimiter, requireAdmin, asy
     const tempPwd = randomBytes(6).toString("base64url").slice(0, 12);
     const hashed = await hashPassword(tempPwd);
     const updated = await storage.updateUser(paramId(req), req.session.orgId!, { password: hashed, tempPassword: true });
-    await noteTempCredential(updated.id, updated.email); // the emailed temp password proves THIS address
     if (!updated) return res.status(404).json({ message: "User not found" });
+    await noteTempCredential(updated.id, updated.email); // the emailed temp password proves THIS address
 
     console.log(`[reset-password] Temp password generated for user ${updated.id} (${maskEmail(updated.email)})`);
 
