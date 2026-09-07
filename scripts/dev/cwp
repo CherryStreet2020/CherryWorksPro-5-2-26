@@ -82,9 +82,10 @@ case "$cmd" in
   app-bg)
     ensure_pg; cd "$REPO"; kill_5000; sleep 1
     app_env nohup npx tsx server/index.ts > /tmp/cwp-app-5000.log 2>&1 &
-    # Marker: which launcher/DB owns :5000, so `e2e` never reuses a stranger's server.
-    printf 'db=%s\nlauncher=cwp\n' "${CWP_DATABASE_URL%%\?*}" > /tmp/cwp-app-5000.launched
-    echo "[cwp] app pid $!"; wait_health ;;
+    APP_PID=$!
+    echo "[cwp] app pid $APP_PID"; wait_health || exit 1
+    # Marker bound to the LISTENING pid: `e2e` reuses :5000 only when the same process still owns it.
+    printf 'db=%s\nlauncher=cwp\npid=%s\n' "${CWP_DATABASE_URL%%\?*}" "$(lsof -ti tcp:5000 -sTCP:LISTEN 2>/dev/null | head -1)" > /tmp/cwp-app-5000.launched ;;
 
   app-stop) kill_5000; echo "[cwp] :5000 cleared" ;;
 
@@ -100,7 +101,10 @@ case "$cmd" in
   e2e)
     ensure_pg; cd "$REPO"
     # Reuse :5000 only if THIS launcher started it against THIS database (flags + seeds guaranteed); else restart.
-    if app_ready && [ -f /tmp/cwp-app-5000.launched ] && grep -qx "db=${CWP_DATABASE_URL%%\?*}" /tmp/cwp-app-5000.launched; then
+    LISTEN_PID="$(lsof -ti tcp:5000 -sTCP:LISTEN 2>/dev/null | head -1)"
+    if app_ready && [ -n "$LISTEN_PID" ] && [ -f /tmp/cwp-app-5000.launched ] \
+       && grep -qx "db=${CWP_DATABASE_URL%%\?*}" /tmp/cwp-app-5000.launched \
+       && grep -qx "pid=$LISTEN_PID" /tmp/cwp-app-5000.launched; then
       echo "[cwp] reusing the cwp-launched app on :5000"
     else
       echo "[cwp] (re)starting app for e2e with the test configuration"; "$SELF" app-bg || exit 1
@@ -119,7 +123,10 @@ case "$cmd" in
     dropdb -p "$PGPORT" --if-exists cwp_dev || { echo "[cwp] dropdb cwp_dev failed (another session holding it open?)" >&2; exit 1; }; createdb -p "$PGPORT" cwp_dev || exit 1
     DATABASE_URL="$CWP_DATABASE_URL" NODE_ENV=development npm run db:migrate:prod || { echo "[cwp] migration of cwp_dev failed" >&2; exit 1; }
     echo "[cwp] booting once to seed (dean admin + dev orgs)…"
-    "$SELF" app-bg && echo "[cwp] cwp_dev ready (app left running on :5000)" ;;
+    "$SELF" app-bg || exit 1
+    # The seeded admin boots with a temporary password; browser tests need a normal account.
+    psql -p "$PGPORT" -d cwp_dev -Atqc "update users set temp_password=false, onboarding_complete=true, email_verified_at=coalesce(email_verified_at, now()) where email='dean@cherrystconsulting.com'" >/dev/null || { echo "[cwp] could not prepare the seeded admin" >&2; exit 1; }
+    echo "[cwp] cwp_dev ready (app left running on :5000; admin dean@cherrystconsulting.com ready for e2e)" ;;
 
   validate)
     cd "$REPO"; set -e
