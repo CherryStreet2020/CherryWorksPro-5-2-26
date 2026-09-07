@@ -1071,3 +1071,56 @@ export async function sendPortalLoginEmail(input: {
   const result = await transport.send(message);
   return { messageId: result.messageId, previewUrl: result.previewUrl };
 }
+
+
+// ─── Support Cases: one renderer for every case email ────────────────────
+export interface CaseEmailInput {
+  to: string;
+  org: OrgForTransport | null;
+  orgName: string;
+  caseKey: string;
+  subject: string;          // the case subject
+  heading: string;          // "New reply on ABS-158"
+  intro: string;            // one or two sentences, plain text
+  body?: string | null;     // quoted message body, plain text
+  ctaText: string;
+  ctaUrl: string;
+  footer?: string;
+}
+
+export async function sendCaseEmail(input: CaseEmailInput): Promise<{ messageId: string; previewUrl?: string }> {
+  const smtpConfig = input.org ? getSmtpConfigFromOrg(input.org) : null;
+  const transport = await pickTransport(input.org, smtpConfig);
+  const subject = `[${input.caseKey}] ${input.subject}`;
+  const quoted = input.body
+    ? `<div style="margin:0 0 24px;padding:14px 16px;border-left:3px solid ${ACCENT};background:${ACCENT_LIGHT};border-radius:0 6px 6px 0;">
+         <p style="font-size:14px;color:${TEXT_SECONDARY};line-height:1.7;margin:0;white-space:pre-wrap;">${escapeHtml(input.body)}</p>
+       </div>`
+    : "";
+  const innerHtml = `
+    <p style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:${TEXT_MUTED};margin:0 0 6px;">${escapeHtml(input.caseKey)}</p>
+    <p style="font-size:20px;font-weight:700;color:${TEXT_PRIMARY};margin:0 0 4px;">${escapeHtml(input.heading)}</p>
+    <p style="font-size:14px;color:${TEXT_MUTED};margin:0 0 24px;">${escapeHtml(input.subject)}</p>
+    <p style="font-size:15px;color:${TEXT_SECONDARY};line-height:1.7;margin:0 0 20px;">${escapeHtml(input.intro)}</p>
+    ${quoted}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr><td align="center">${emailButton(input.ctaText, input.ctaUrl)}</td></tr>
+    </table>
+    ${emailDivider()}
+    <p style="font-size:12px;color:${TEXT_MUTED};margin:0;text-align:center;">
+      ${escapeHtml(input.footer || `Reply to this email to add to the case. Keep ${input.caseKey} in the subject.`)}
+    </p>
+  `;
+  const html = wrapEmailLayout(innerHtml, { orgName: input.orgName, preheader: input.intro });
+  const message: SendableMessage = {
+    to: input.to,
+    subject,
+    html,
+    text: `${input.heading}\n${input.caseKey} — ${input.subject}\n\n${input.intro}\n${input.body ? "\n" + input.body + "\n" : ""}\n${input.ctaText}: ${input.ctaUrl}\n`,
+    replyTo: smtpConfig?.replyTo ?? null,
+    fromName: smtpConfig?.fromName ?? null,
+    fromEmail: smtpConfig?.fromEmail ?? null,
+  };
+  const result = await transport.send(message);
+  return { messageId: result.messageId, previewUrl: result.previewUrl };
+}

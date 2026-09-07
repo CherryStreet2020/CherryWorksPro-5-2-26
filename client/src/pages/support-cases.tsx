@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { LifeBuoy, Plus, Search, Inbox, UserCircle2, Hourglass, CheckCircle2, Layers } from "lucide-react";
+import { LifeBuoy, Plus, Search, Inbox, UserCircle2, Hourglass, CheckCircle2, Layers, AlarmClock, Settings2 } from "lucide-react";
 import {
   type CaseListRow, type CaseView, type CaseType, type CasePriority,
   STATUS_LABEL, STATUS_COLOR, PRIORITY_LABEL, PRIORITY_COLOR, CASE_PRIORITY_ORDER, hoursLabel, relativeTime,
@@ -38,16 +38,25 @@ export function PriorityChip({ priority }: { priority: CaseListRow["priority"] }
   );
 }
 
-const VIEWS: { key: CaseView; label: string; icon: any; countKey: "open" | "mine" | "unassigned" | "waiting" | "resolved" | "all" }[] = [
+const VIEWS: { key: CaseView; label: string; icon: any; countKey: "open" | "mine" | "unassigned" | "waiting" | "breaching" | "resolved" | "all" }[] = [
   { key: "open", label: "All open", icon: Inbox, countKey: "open" },
   { key: "mine", label: "Assigned to me", icon: UserCircle2, countKey: "mine" },
   { key: "unassigned", label: "Unassigned", icon: Layers, countKey: "unassigned" },
   { key: "waiting", label: "Waiting on customer", icon: Hourglass, countKey: "waiting" },
+  { key: "breaching", label: "Breaching soon", icon: AlarmClock, countKey: "breaching" },
   { key: "resolved", label: "Resolved", icon: CheckCircle2, countKey: "resolved" },
   { key: "all", label: "All", icon: LifeBuoy, countKey: "all" },
 ];
 
-interface Summary { open: number; mine: number; unassigned: number; waiting: number; resolved: number; all: number }
+interface Summary { open: number; mine: number; unassigned: number; waiting: number; breaching: number; resolved: number; all: number }
+
+export function SlaChip({ sla }: { sla?: CaseListRow["sla"] }) {
+  if (!sla || !sla.label) return <span className="text-xs" style={{ color: "var(--lux-text-muted)" }}>—</span>;
+  const active = sla.firstResponse === "met" || sla.firstResponse === "none" ? sla.resolution : sla.firstResponse;
+  const color = active === "breached" ? "#b91c1c" : active === "warning" ? "#b45309" : active === "paused" ? "var(--lux-text-muted)" : "var(--lux-text-secondary)";
+  const bg = active === "breached" ? "rgba(185,28,28,0.12)" : active === "warning" ? "rgba(180,83,9,0.14)" : "transparent";
+  return <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap tabular-nums" style={{ color, background: bg }} data-testid={`chip-sla-${active}`}>{sla.label}</span>;
+}
 
 export default function SupportCasesPage() {
   useDocumentTitle("Support Cases");
@@ -105,6 +114,9 @@ export default function SupportCasesPage() {
               </div>
             ))}
           </div>
+          {isManager && (
+            <Button variant="outline" size="icon" onClick={() => navigate("/support/settings")} aria-label="Support settings" data-testid="button-support-settings"><Settings2 className="w-4 h-4" /></Button>
+          )}
           <Button className="text-white" onClick={() => setShowNew(true)} data-testid="button-new-case" style={{ background: "var(--gradient-brand)" }}>
             <Plus className="w-4 h-4 mr-2" /> New support case
           </Button>
@@ -155,7 +167,7 @@ export default function SupportCasesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ background: "var(--lux-table-header-bg)" }}>
-                  {["Key", "Subject", "Type", "Priority", "Status", "Assignee", "Hours", "Updated"].map(h => (
+                  {["Key", "Subject", "Type", "Priority", "Status", "Assignee", "SLA", "Hours", "Updated"].map(h => (
                     <th key={h} className={`px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider ${h === "Hours" ? "text-right" : "text-left"}`} style={{ color: "var(--lux-text-muted)" }}>{h}</th>
                   ))}
                 </tr>
@@ -182,6 +194,7 @@ export default function SupportCasesPage() {
                     <td className="px-4 py-3"><PriorityChip priority={r.priority} /></td>
                     <td className="px-4 py-3"><StatusChip status={r.status} /></td>
                     <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: r.assigneeName ? "var(--lux-text)" : "var(--lux-text-muted)" }}>{r.assigneeName ?? "Unassigned"}</td>
+                    <td className="px-4 py-3"><SlaChip sla={r.sla} /></td>
                     <td className="px-4 py-3 text-right tabular-nums text-xs font-medium whitespace-nowrap" style={{ color: "var(--lux-text)" }}>{hoursLabel(r.minutesLogged)}</td>
                     <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: "var(--lux-text-muted)" }}>{relativeTime(r.updatedAt)}</td>
                   </tr>

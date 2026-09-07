@@ -19,7 +19,7 @@ import {
   type CaseDetail, type CaseStatus, type CasePriority, type CaseType,
   STATUS_LABEL, PRIORITY_LABEL, CASE_STATUS_ORDER, CASE_PRIORITY_ORDER, hoursLabel, relativeTime,
 } from "@/lib/support-cases";
-import { StatusChip, PriorityChip } from "@/pages/support-cases";
+import { StatusChip, PriorityChip, SlaChip } from "@/pages/support-cases";
 
 interface Agent { id: string; name: string }
 interface PickerProject { id: string; name: string }
@@ -372,6 +372,18 @@ export default function SupportCaseDetailPage() {
                 Customers at {c.clientName} see hours on their cases
               </label>
             )}
+          </section>
+
+          <section className="rounded-2xl p-5 border-0" style={card} data-testid="card-case-sla">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Service level</h2>
+              <SlaChip sla={c.sla} />
+            </div>
+            <dl className="text-xs space-y-1.5">
+              <Row k="First response" v={c.firstResponseAt ? `met ${relativeTime(c.firstResponseAt)}` : c.firstResponseDueAt ? `due ${new Date(c.firstResponseDueAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "no target"} />
+              <Row k="Resolution" v={c.resolvedAt ? `met ${relativeTime(c.resolvedAt)}` : c.resolutionDueAt ? `due ${new Date(c.resolutionDueAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "no target"} />
+              {c.slaPausedAt && <Row k="Clocks" v="paused while waiting on customer" />}
+            </dl>
           </section>
 
           <section className="rounded-2xl p-5 border-0" style={card}>

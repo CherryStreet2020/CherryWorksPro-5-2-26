@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
-import { requireAuth, requireManagerOrAbove, sanitizeErrorMessage } from "./middleware";
+import { requireAuth, requireManagerOrAbove, requireAdmin, sanitizeErrorMessage } from "./middleware";
 import { requireTier } from "../lib/tier-gate";
 import {
   createSupportCaseSchema,
@@ -12,10 +12,16 @@ import {
   SUPPORT_CASE_STATUSES,
 } from "@shared/schema";
 import * as cases from "../support-cases";
+import { importJiraIssues } from "../support-import";
+import { resolvePolicy, upsertPolicy, deleteClientPolicy, getPolicyRow, DEFAULT_POLICY } from "../support-sla";
+import { slaPolicySchema, supportSettingsSchema } from "@shared/schema";
+import { db } from "../db";
+import { orgs } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 // Validation and business-rule messages are meant for the user; everything
 // else goes through the production sanitizer.
-const USER_FACING = [/not found/i, /belongs to a different client/i, /does not belong/i, /is required/i, /at most/i, /must be/i, /starting with a letter/i, /already used by another client/i];
+const USER_FACING = [/not found/i, /belongs to a different client/i, /does not belong/i, /is required/i, /at most/i, /must be/i, /starting with a letter/i, /already used by another client/i, /exactly one key prefix/i];
 function friendlyError(err: any): string {
   if (err instanceof z.ZodError) return err.issues[0]?.message || "Invalid input";
   const msg = String(err?.message || "");
@@ -24,7 +30,7 @@ function friendlyError(err: any): string {
 }
 
 const listQuerySchema = z.object({
-  view: z.enum(["open", "mine", "unassigned", "waiting", "resolved", "all"]).optional(),
+  view: z.enum(["open", "mine", "unassigned", "waiting", "breaching", "resolved", "all"]).optional(),
   clientId: z.string().optional(),
   status: z.enum(SUPPORT_CASE_STATUSES).optional(),
   assigneeUserId: z.string().optional(),
@@ -101,7 +107,7 @@ export function registerSupportCaseRoutes(app: Express) {
     try {
       const q = listQuerySchema.parse(req.query);
       const rows = await cases.listCases(req.session.orgId!, { ...q, userId: req.session.userId! });
-      return res.json(rows.map(r => ({ ...r, minutesLogged: Number(r.minutesLogged) })));
+      return res.json(rows.map(r => cases.withSla({ ...r, minutesLogged: Number(r.minutesLogged) })));
     } catch (err: any) {
       return res.status(400).json({ message: friendlyError(err) });
     }
@@ -128,7 +134,7 @@ export function registerSupportCaseRoutes(app: Express) {
       cases.listEvents(orgId, id),
       cases.listCaseTime(orgId, id),
     ]);
-    return res.json({ ...row, minutesLogged: Number(row.minutesLogged), messages, events, time });
+    return res.json({ ...cases.withSla({ ...row, minutesLogged: Number(row.minutesLogged) }), messages, events, time });
   });
 
   app.patch("/api/support/cases/:id", ...gate, async (req, res) => {
@@ -168,6 +174,82 @@ export function registerSupportCaseRoutes(app: Express) {
     const row = await cases.getCaseRaw(req.session.orgId!, req.params.id as string);
     if (!row) return res.status(404).json({ message: "Support case not found" });
     return res.json(await cases.listCaseTime(req.session.orgId!, row.id));
+  });
+
+  // ── Service levels ────────────────────────────────────────────────────
+  app.get("/api/support/sla", ...gate, async (req, res) => {
+    const orgId = req.session.orgId!;
+    const row = await getPolicyRow(orgId, null);
+    const org = await storage.getOrg(orgId);
+    return res.json({ policy: row ? {
+      firstResponseHours: Number(row.firstResponseHours), resolutionHours: Number(row.resolutionHours),
+      businessHoursOnly: row.businessHoursOnly, businessStartHour: row.businessStartHour, businessEndHour: row.businessEndHour, timezone: row.timezone,
+    } : DEFAULT_POLICY, isDefault: !row, supportInboundAddress: org?.supportInboundAddress ?? null });
+  });
+
+  app.put("/api/support/sla", requireAuth, requireManagerOrAbove, requireTier("PROFESSIONAL"), async (req, res) => {
+    try {
+      const parsed = slaPolicySchema.parse(req.body);
+      const row = await upsertPolicy(req.session.orgId!, null, parsed);
+      return res.json(row);
+    } catch (err: any) {
+      return res.status(400).json({ message: friendlyError(err) });
+    }
+  });
+
+  app.get("/api/support/clients/:clientId/sla", ...gate, async (req, res) => {
+    const r = await resolvePolicy(req.session.orgId!, req.params.clientId as string);
+    return res.json(r);
+  });
+
+  app.put("/api/support/clients/:clientId/sla", requireAuth, requireManagerOrAbove, requireTier("PROFESSIONAL"), async (req, res) => {
+    try {
+      const parsed = slaPolicySchema.parse(req.body);
+      const row = await upsertPolicy(req.session.orgId!, req.params.clientId as string, parsed);
+      return res.json(row);
+    } catch (err: any) {
+      return res.status(400).json({ message: friendlyError(err) });
+    }
+  });
+
+  app.delete("/api/support/clients/:clientId/sla", requireAuth, requireManagerOrAbove, requireTier("PROFESSIONAL"), async (req, res) => {
+    const ok = await deleteClientPolicy(req.session.orgId!, req.params.clientId as string);
+    return res.json({ ok });
+  });
+
+  app.patch("/api/support/settings", requireAuth, requireManagerOrAbove, requireTier("PROFESSIONAL"), async (req, res) => {
+    try {
+      const parsed = supportSettingsSchema.parse(req.body);
+      if (parsed.supportInboundAddress !== undefined) {
+        await db.update(orgs).set({ supportInboundAddress: parsed.supportInboundAddress }).where(eq(orgs.id, req.session.orgId!));
+      }
+      const org = await storage.getOrg(req.session.orgId!);
+      return res.json({ supportInboundAddress: org?.supportInboundAddress ?? null });
+    } catch (err: any) {
+      return res.status(400).json({ message: friendlyError(err) });
+    }
+  });
+
+  // ── Jira import (admin). Body: { clientId, projectId?, items: JiraExportIssue[], relinkTime?, dryRun? } ──
+  app.post("/api/support/import/jira", requireAuth, requireAdmin, requireTier("PROFESSIONAL"), async (req, res) => {
+    try {
+      const body = req.body ?? {};
+      if (!body.clientId || !Array.isArray(body.items)) return res.status(400).json({ message: "clientId and items[] are required" });
+      if (body.items.length > 2000) return res.status(400).json({ message: "Import at most 2000 issues per request" });
+      const report = await importJiraIssues({
+        orgId: req.session.orgId!, clientId: String(body.clientId), projectId: body.projectId ? String(body.projectId) : null,
+        items: body.items, relinkTime: body.relinkTime !== false, dryRun: body.dryRun === true,
+      });
+      if (!body.dryRun) {
+        await storage.createAuditLog({
+          orgId: req.session.orgId!, userId: req.session.userId!, action: "SUPPORT_CASES_IMPORTED", entityType: "client", entityId: String(body.clientId),
+          details: { imported: report.imported, skipped: report.skipped.length, contactsCreated: report.contactsCreated, timeEntriesLinked: report.timeEntriesLinked, errors: report.errors.length },
+        });
+      }
+      return res.json(report);
+    } catch (err: any) {
+      return res.status(400).json({ message: friendlyError(err) });
+    }
   });
 
   app.get("/api/support/clients/:clientId/settings", ...gate, async (req, res) => {

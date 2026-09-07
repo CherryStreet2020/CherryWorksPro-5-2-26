@@ -171,6 +171,7 @@ const ClientPortalPage = lazy(() => lazyRetry(() => import("@/pages/client-porta
 const PortalApp = lazy(() => lazyRetry(() => import("@/pages/portal/portal-app")));
 const SupportCasesPage = lazy(() => lazyRetry(() => import("@/pages/support-cases")));
 const SupportCaseDetailPage = lazy(() => lazyRetry(() => import("@/pages/support-case-detail")));
+const SupportSettingsPage = lazy(() => lazyRetry(() => import("@/pages/support-settings")));
 const MarketingHomePage = lazy(() => lazyRetry(() => import("@/pages/marketing/home")));
 const FeaturesPage = lazy(() => lazyRetry(() => import("@/pages/marketing/features")));
 const PricingPage = lazy(() => lazyRetry(() => import("@/pages/marketing/pricing")));
@@ -307,6 +308,7 @@ function Router() {
       <Route path="/projects/:id">{() => <LazyRoute component={() => <ProjectDetailWrapper />} />}</Route>
       <Route path="/projects">{() => <LazyRoute component={ProjectsPage} />}</Route>
       <Route path="/time">{() => <LazyRoute component={TimeTrackingPage} />}</Route>
+      <Route path="/support/settings">{() => <ManagerRoute component={SupportSettingsPage} />}</Route>
       <Route path="/support/cases/:id">{() => <LazyRoute component={SupportCaseDetailPage} />}</Route>
       <Route path="/support/cases">{() => <LazyRoute component={SupportCasesPage} />}</Route>
       <Route path="/support"><Redirect to="/support/cases" /></Route>
