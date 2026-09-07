@@ -13,6 +13,7 @@ import { AddressInfo } from "net";
 const getUserById = vi.fn(async (_id: string) => ({
   id: "user-1",
   email: "ops@example.com",
+    emailVerifiedAt: new Date(),
   isActive: true,
   role: "ADMIN",
 }));
@@ -62,6 +63,7 @@ beforeEach(async () => {
   getUserById.mockImplementation(async (_id: string) => ({
     id: "user-1",
     email: "ops@example.com",
+    emailVerifiedAt: new Date(),
     isActive: true,
     role: "ADMIN",
   }));
