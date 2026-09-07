@@ -12,7 +12,7 @@ import { storage } from "../../storage";
 import { requireAdminOrManager, sanitizeErrorMessage } from "../middleware";
 import { requireFeature } from "../../services/entitlements";
 import { paramId } from "../../lib/req-params";
-import { sendEmail, ResendSendError } from "../../lib/resend";
+import { selectTransport } from "../../email/transport-selector";
 import {
   insertMarketingCampaignSchema,
   insertMarketingSequenceSchema,
@@ -295,7 +295,7 @@ export function registerMarketingCampaignRoutes(app: Express) {
   });
 
   // ── Sprint 2p — Immediate-dispatch "Send Now" ────────────────────────
-  // One-shot synchronous broadcast via Resend. Resolves the audience
+  // One-shot synchronous broadcast through the workspace's connected mailbox. Resolves the audience
   // (all-brand or saved segment), iterates recipients sequentially,
   // writes a terminal email_send_attempts row per recipient, and stamps
   // campaigns.sent_at on success. No scheduler, no retry, no queueing —
@@ -403,33 +403,45 @@ export function registerMarketingCampaignRoutes(app: Express) {
           return res.status(422).json({ message: "No deliverable recipients in audience" });
         }
 
-        const fromHeader = fromName ? `${fromName} <${fromEmail}>` : fromEmail;
         const subject = campaign.subject;
         const html = campaign.body || "";
+
+        // The workspace's own connected mailbox (Microsoft 365 / Google via
+        // OAuth, or its SMTP). A mailbox sends as itself; fromName/fromEmail
+        // are honoured where the provider allows overrides.
+        const org = await storage.getOrg(orgId);
+        if (!org) return res.status(404).json({ message: "Organization not found" });
+        const transport = await selectTransport(org);
+        // An OAuth mailbox sends only as its authorised identity (org.emailSenderAddress,
+        // as sendViaConnectedMailbox does); the brand's from-address applies to SMTP.
+        const oauth = transport.kind === "graph" || transport.kind === "gmail";
+        const senderEmail = oauth ? ((org as any).emailSenderAddress || null) : (fromEmail || null);
 
         let sentCount = 0;
         let failedCount = 0;
         for (const r of recipients) {
           try {
-            const result = await sendEmail({
-              from: fromHeader,
+            const result = await transport.send({
               to: r.email,
               subject,
               html,
+              fromName: fromName || null,
+              fromEmail: senderEmail,
               replyTo: replyTo || null,
             });
+            if (result.ok === false) throw new Error("This workspace has no working email provider: connect a Microsoft 365 or Google mailbox, or configure SMTP, in Settings → Email.");
             await storage.recordCampaignSendAttempt({
               orgId,
               campaignId: id,
               prospectId: r.id,
               recipientEmail: r.email,
               status: "success",
-              providerMessageId: result.id,
+              providerMessageId: result.messageId,
+              transport: transport.kind,
             });
             sentCount += 1;
           } catch (sendErr) {
-            const code =
-              sendErr instanceof ResendSendError ? sendErr.code : "send_error";
+            const code = "send_error";
             const message =
               sendErr instanceof Error ? sendErr.message : String(sendErr);
             await storage.recordCampaignSendAttempt({

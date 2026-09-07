@@ -24,7 +24,7 @@ async function login(email: string, password: string): Promise<Ctx> {
   return { cookie: cookies.map((c: string) => c.split(";")[0]).join("; "), csrfToken: res.headers.get("x-csrf-token") || "" };
 }
 async function webhook(payload: any) {
-  return fetch(`${BASE}/api/webhooks/resend/inbound`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  return fetch(`${BASE}/api/test/inbound-email`, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "vitest" }, body: JSON.stringify({ type: payload.type, ...(payload.data || {}), messageId: payload.data?.message_id }) });
 }
 
 describe("support phase 3: service levels, persisted notifications, email-to-case", () => {

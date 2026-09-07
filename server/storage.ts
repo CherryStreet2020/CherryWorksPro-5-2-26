@@ -7221,7 +7221,7 @@ export class DatabaseStorage {
 
   // ── Sprint 2p: immediate-dispatch "Send Now" helpers ─────────────────
   // These two methods support POST /api/marketing/campaigns/:id/send-now
-  // which dispatches a campaign synchronously via Resend.
+  // which dispatches a campaign synchronously through the workspace mailbox.
 
   /** Insert a single per-recipient terminal send attempt. */
   async recordCampaignSendAttempt(input: {
@@ -7233,6 +7233,7 @@ export class DatabaseStorage {
     providerMessageId?: string | null;
     errorCode?: string | null;
     errorMessage?: string | null;
+    transport?: string;
   }): Promise<void> {
     await db.insert(emailSendAttempts).values({
       orgId: input.orgId,
@@ -7242,7 +7243,7 @@ export class DatabaseStorage {
       recipientEmail: input.recipientEmail,
       attemptNumber: 1,
       status: input.status,
-      transport: "resend",
+      transport: input.transport ?? "mailbox",
       providerMessageId: input.providerMessageId ?? null,
       errorCode: input.errorCode ?? null,
       errorMessage: input.errorMessage ?? null,
