@@ -41,7 +41,9 @@ export function getMsAuthorizeUrl(): string {
   return `https://login.microsoftonline.com/${getMsTenant()}/oauth2/v2.0/authorize`;
 }
 
-export const MS_GRAPH_SCOPES = ["offline_access", "Mail.Send", "openid", "email", "profile"];
+// Mail.ReadWrite lets the Support Cases inbox reader turn emails into cases;
+// mailboxes connected before it was added keep sending and are asked to reconnect once.
+export const MS_GRAPH_SCOPES = ["offline_access", "Mail.Send", "Mail.ReadWrite", "openid", "email", "profile"];
 
 function checkHeader(value: string, field: string): void {
   if (HEADER_INJECTION_RE.test(value)) {

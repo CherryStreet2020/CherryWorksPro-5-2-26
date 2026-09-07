@@ -15,6 +15,17 @@ import {
   readCookie, setSessionCookie, clearSessionCookie, resolveSession, portalBaseUrl, PORTAL_COOKIE,
 } from "../portal-auth";
 import { sendPortalLoginEmail } from "../email";
+import multer from "multer";
+import { MAX_ATTACHMENT_BYTES, createAttachment, listAttachments, getAttachment, streamBytes, attachmentView, isAllowedAttachment } from "../support-attachments";
+
+const portalUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_ATTACHMENT_BYTES, files: 10 },
+  fileFilter: (_req, file, cb) => {
+    if (!isAllowedAttachment(file.originalname)) return cb(new Error("That file type is not allowed"));
+    cb(null, true);
+  },
+});
 import { requireAuth, requireManagerOrAbove, sanitizeErrorMessage } from "./middleware";
 import { requireTier } from "../lib/tier-gate";
 
@@ -31,7 +42,7 @@ const linkLimiter = rateLimit({
 function friendly(err: any): string {
   if (err instanceof z.ZodError) return err.issues[0]?.message || "Invalid input";
   const msg = String(err?.message || "");
-  if (/not found|write a message|tell us|at most|valid email/i.test(msg)) return msg;
+  if (/not found|write a message|tell us|at most|valid email|not allowed|15 MB|is empty|No files/i.test(msg)) return msg;
   return sanitizeErrorMessage(err);
 }
 
@@ -203,10 +214,12 @@ export function registerPortalRoutes(app: Express) {
       const t = await cases.listCaseTime(p.orgId, row.id);
       hours = { minutes: t.totals.minutes, billableMinutes: t.totals.billableMinutes };
     }
+    const attachments = await listAttachments(p.orgId, row.id);
     const { assigneeUserId: _a, ...safe } = row;
     return res.json({
       ...safe,
       assigneeName,
+      attachments: attachments.map(a => attachmentView(a, `/api/portal/${p.orgSlug}/attachments`)),
       messages: messages.map(m => ({ id: m.id, authorName: m.authorName, fromTeam: !!m.authorUserId, body: m.body, createdAt: m.createdAt })),
       events: events.filter(e => e.kind === "status" || e.kind === "created").map(e => ({ id: e.id, kind: e.kind, toValue: e.toValue, createdAt: e.createdAt })),
       hours,
@@ -228,6 +241,38 @@ export function registerPortalRoutes(app: Express) {
     } catch (err: any) {
       return res.status(400).json({ message: friendly(err) });
     }
+  });
+
+  app.post("/api/portal/:orgSlug/cases/:id/attachments", requirePortal, (req, res, next) => {
+    portalUpload.array("files", 10)(req, res, (err: any) => {
+      if (err) return res.status(400).json({ message: err?.code === "LIMIT_FILE_SIZE" ? "Files must be 15 MB or smaller" : (err?.message || "Upload failed") });
+      next();
+    });
+  }, async (req, res) => {
+    try {
+      const p = req.portal!;
+      const [row] = await db.select({ id: supportCases.id }).from(supportCases).where(and(visibleCaseWhere(req), eq(supportCases.id, String(req.params.id))));
+      if (!row) return res.status(404).json({ message: "Support case not found" });
+      const files = ((req as any).files as Express.Multer.File[] | undefined) ?? [];
+      if (files.length === 0) return res.status(400).json({ message: "No files were uploaded" });
+      const created = [];
+      for (const f of files) {
+        created.push(await createAttachment({ orgId: p.orgId, caseId: row.id, filename: f.originalname, mimeType: f.mimetype, bytes: f.buffer, uploadedByContactId: p.contact.id, source: "PORTAL" }));
+      }
+      return res.status(201).json(created.map(a => attachmentView(a, `/api/portal/${p.orgSlug}/attachments`)));
+    } catch (err: any) {
+      return res.status(400).json({ message: friendly(err) });
+    }
+  });
+
+  app.get("/api/portal/:orgSlug/attachments/:id", requirePortal, async (req, res) => {
+    const p = req.portal!;
+    const a = await getAttachment(p.orgId, String(req.params.id));
+    if (!a) return res.status(404).json({ message: "Attachment not found" });
+    const [row] = await db.select({ id: supportCases.id }).from(supportCases).where(and(visibleCaseWhere(req), eq(supportCases.id, a.caseId)));
+    if (!row) return res.status(404).json({ message: "Attachment not found" });
+    const inline = a.mimeType.startsWith("image/") || a.mimeType === "application/pdf";
+    await streamBytes(a.storageKey, a.mimeType, a.filename, res, inline && req.query.download !== "1");
   });
 
   app.get("/api/portal/:orgSlug/billing", requirePortal, async (req, res) => {

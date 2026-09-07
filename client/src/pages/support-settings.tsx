@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Settings2, Copy, Check } from "lucide-react";
 
 interface Policy { firstResponseHours: number; resolutionHours: number; businessHoursOnly: boolean; businessStartHour: number; businessEndHour: number; timezone: string }
-interface SlaResponse { policy: Policy; isDefault: boolean; supportInboundAddress: string | null }
+interface SlaResponse { policy: Policy; isDefault: boolean; supportInboundAddress: string | null; mailbox?: { provider: string; connected: boolean; status: string; canReadInbox: boolean; requiredScope: string; senderAddress: string | null } }
 interface PortalInfo { orgSlug: string; portalUrl: string }
 interface PickerClient { id: string; name: string }
 interface PickerProject { id: string; name: string }
@@ -32,6 +32,11 @@ export default function SupportSettingsPage() {
     mutationFn: async () => (await apiRequest("PUT", "/api/support/sla", p)).json(),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/support/sla"] }); toast({ title: "Service levels saved" }); },
     onError: (err: Error) => toast({ title: "Could not save", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }),
+  });
+  const checkNow = useMutation({
+    mutationFn: async () => (await apiRequest("POST", "/api/support/inbound/check-now")).json(),
+    onSuccess: (r: { scanned: number; processed: number; skipped: number; outcomes: Record<string, number>; error?: string }) => toast({ title: r.error ? "Inbox not readable yet" : `Checked ${r.scanned} unread, processed ${r.processed}`, description: r.error || Object.entries(r.outcomes).map(([k, v]) => `${k}: ${v}`).join(", ") || undefined, variant: r.error ? "destructive" : undefined }),
+    onError: (err: Error) => toast({ title: "Inbox check failed", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }),
   });
   const saveInbound = useMutation({
     mutationFn: async () => (await apiRequest("PATCH", "/api/support/settings", { supportInboundAddress: inbound.trim() || null })).json(),
@@ -113,14 +118,24 @@ export default function SupportSettingsPage() {
 
       <JiraImportCard card={card} muted={muted} fieldStyle={fieldStyle} />
 
-      <section className="rounded-2xl p-5 border-0 space-y-3" style={card}>
-        <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Email to case</h2>
+      <section className="rounded-2xl p-5 border-0 space-y-3" style={card} data-testid="card-email-to-case">
+        <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Email to case (Microsoft 365)</h2>
         <p className="text-sm" style={{ color: "var(--lux-text-secondary)" }}>
-          Emails delivered to this address become cases (from known contacts) or replies (when the subject carries the case key, which every case email includes). Point your inbound mail route at CherryWorks and enter the address here.
+          CherryWorks reads your connected Microsoft 365 inbox every two minutes. Unread mail sent to the address below becomes a case (from a known contact) or a reply (when the subject carries the case key, which every case email includes). File attachments come along. Processed mail is marked read.
         </p>
+        {data?.mailbox && (
+          <p className="text-xs" style={{ color: data.mailbox.canReadInbox ? "var(--lux-text)" : "#b45309" }} data-testid="text-mailbox-status">
+            {data.mailbox.provider !== "m365" || !data.mailbox.connected
+              ? "No Microsoft 365 mailbox is connected. Connect one under Settings → Email, then come back here."
+              : data.mailbox.canReadInbox
+                ? `Mailbox connected${data.mailbox.senderAddress ? ` (${data.mailbox.senderAddress})` : ""} with inbox access.`
+                : `Mailbox connected, but it was authorised before inbox reading existed. Reconnect it once under Settings → Email to grant ${data.mailbox.requiredScope}.`}
+          </p>
+        )}
         <form className="flex items-center gap-2" onSubmit={e => { e.preventDefault(); saveInbound.mutate(); }}>
           <Input type="email" value={inbound} onChange={e => setInbound(e.target.value)} placeholder="support@yourfirm.com" style={fieldStyle} data-testid="input-inbound-address" />
           <Button type="submit" variant="outline" disabled={saveInbound.isPending} data-testid="button-save-inbound">Save</Button>
+          <Button type="button" variant="outline" onClick={() => checkNow.mutate()} disabled={checkNow.isPending || !data?.supportInboundAddress} data-testid="button-check-inbox">{checkNow.isPending ? "Checking…" : "Check inbox now"}</Button>
         </form>
       </section>
     </div>

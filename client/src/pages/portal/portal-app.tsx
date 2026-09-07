@@ -66,7 +66,8 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 interface Me { orgSlug: string; orgName: string; orgLogoUrl: string | null; contact: { id: string; firstName: string; lastName: string; email: string; isPrimary: boolean }; client: { id: string; name: string; showHours: boolean }; org: { name: string; logoUrl: string | null; email: string | null; phone: string | null; website: string | null } | null }
 interface PortalCaseRow { id: string; caseKey: string; subject: string; status: CaseStatus; priority: CasePriority; typeName: string | null; requesterName: string | null; createdAt: string; updatedAt: string; awaitingYou: boolean; hasNewReply: boolean; resolvedAt: string | null }
-interface PortalCaseDetail { id: string; caseKey: string; subject: string; description: string | null; status: CaseStatus; priority: CasePriority; typeName: string | null; requesterName: string | null; assigneeName: string | null; createdAt: string; firstResponseAt: string | null; resolvedAt: string | null; messages: { id: string; authorName: string; fromTeam: boolean; body: string; createdAt: string }[]; events: { id: string; kind: string; toValue: string | null; createdAt: string }[]; hours: { minutes: number; billableMinutes: number } | null }
+interface PortalAttachment { id: string; filename: string; mimeType: string; size: number; isImage: boolean; url: string; createdAt: string }
+interface PortalCaseDetail { id: string; caseKey: string; subject: string; description: string | null; status: CaseStatus; priority: CasePriority; typeName: string | null; requesterName: string | null; assigneeName: string | null; createdAt: string; firstResponseAt: string | null; resolvedAt: string | null; attachments: PortalAttachment[]; messages: { id: string; authorName: string; fromTeam: boolean; body: string; createdAt: string }[]; events: { id: string; kind: string; toValue: string | null; createdAt: string }[]; hours: { minutes: number; billableMinutes: number } | null }
 interface PortalType { id: string; name: string; description: string | null }
 
 function useMe(slug: string) {
@@ -329,6 +330,17 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
     mutationFn: () => api("POST", `/api/portal/${slug}/cases/${id}/messages`, { body }),
     onSuccess: () => { setBody(""); qc.invalidateQueries({ queryKey: ["portal-case", slug, id] }); qc.invalidateQueries({ queryKey: ["portal-cases", slug] }); },
   });
+  const upload = useMutation({
+    mutationFn: async (files: FileList) => {
+      const fd = new FormData();
+      Array.from(files).forEach(f => fd.append("files", f));
+      const res = await fetch(`/api/portal/${slug}/cases/${id}/attachments`, { method: "POST", credentials: "include", headers: { "X-Requested-With": "cwp-portal" }, body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || `${res.status}`);
+      return data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["portal-case", slug, id] }),
+  });
   if (isLoading) return <Shell slug={slug} me={me} active="support"><p style={{ color: T.muted }}>Loading…</p></Shell>;
   if (isError || !c) return <Shell slug={slug} me={me} active="support"><p>That case isn't available.</p><Link href={`/portal/${slug}`} style={{ color: T.accent }}>Back to your cases</Link></Shell>;
   const thread = [
@@ -356,6 +368,34 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
             <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.65, color: T.text2 }}>{c.description}</p>
           </section>
         )}
+
+        <section style={card} data-testid="portal-attachments">
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+            <p style={{ margin: 0, fontSize: 11, color: T.muted, letterSpacing: ".1em", textTransform: "uppercase", fontWeight: 600 }}>Files{c.attachments.length ? ` (${c.attachments.length})` : ""}</p>
+            {c.status !== "CLOSED" && (
+              <label style={{ ...btnGhost, padding: "7px 12px", fontSize: 13, cursor: upload.isPending ? "wait" : "pointer" }}>
+                {upload.isPending ? "Uploading…" : "Add files"}
+                <input type="file" multiple style={{ display: "none" }} onChange={e => { if (e.target.files?.length) upload.mutate(e.target.files); e.currentTarget.value = ""; }} data-testid="portal-file-input" />
+              </label>
+            )}
+          </div>
+          {upload.isError && <p style={{ color: T.warn, fontSize: 13, margin: "0 0 10px" }}>{(upload.error as Error).message}</p>}
+          {c.attachments.length === 0 ? (
+            <p style={{ margin: 0, color: T.text2, fontSize: 14 }}>No files yet. Screenshots help us fix things faster.</p>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
+              {c.attachments.map(a => (
+                <a key={a.id} href={a.url} target="_blank" rel="noopener" style={{ textDecoration: "none", color: "inherit", background: T.surface2, border: `1px solid ${T.line}`, borderRadius: 10, overflow: "hidden" }} data-testid={`portal-attachment-${a.id}`}>
+                  {a.isImage ? <img src={a.url} alt={a.filename} style={{ width: "100%", height: 110, objectFit: "cover", display: "block" }} loading="lazy" /> : <div style={{ height: 110, display: "flex", alignItems: "center", justifyContent: "center", color: T.muted, fontSize: 12 }}>{a.mimeType.split("/")[1]?.toUpperCase() || "FILE"}</div>}
+                  <div style={{ padding: "6px 8px", fontSize: 11, display: "flex", justifyContent: "space-between", gap: 6 }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={a.filename}>{a.filename}</span>
+                    <span style={{ color: T.muted, whiteSpace: "nowrap" }}>{a.size < 1048576 ? `${Math.round(a.size / 1024)} KB` : `${(a.size / 1048576).toFixed(1)} MB`}</span>
+                  </div>
+                </a>
+              ))}
+            </div>
+          )}
+        </section>
 
         <section style={card}>
           <p style={{ margin: "0 0 14px", fontSize: 11, color: T.muted, letterSpacing: ".1em", textTransform: "uppercase", fontWeight: 600 }}>Conversation</p>

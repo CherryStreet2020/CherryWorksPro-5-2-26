@@ -4,7 +4,7 @@
  * support-import.ts. Nothing here is stored; the token lives only for the
  * duration of the request that carries it.
  */
-import type { JiraExportIssue, JiraExportComment, JiraExportTransition } from "./support-import";
+import type { JiraExportIssue, JiraExportComment, JiraExportTransition, JiraExportAttachment } from "./support-import";
 
 /** Flattens Atlassian Document Format to plain text. */
 export function adfToText(node: any): string {
@@ -54,13 +54,24 @@ export class JiraClient {
     return res.json() as Promise<T>;
   }
 
+  /** Downloads an attachment's bytes (same Basic auth). */
+  async getBytes(url: string, maxBytes: number): Promise<Buffer> {
+    const target = new URL(url, this.base);
+    if (target.origin !== new URL(this.base).origin) throw new Error("Attachment is not on the Jira site");
+    const res = await this.fetchImpl(target.toString(), { headers: { Authorization: this.auth }, redirect: "follow" });
+    if (!res.ok) throw new JiraHttpError(res.status, target.pathname);
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > maxBytes) throw new Error("Attachment larger than the limit");
+    return buf;
+  }
+
   /** Verifies the credentials and returns the caller's display name. */
   async whoAmI(): Promise<{ displayName: string; emailAddress?: string }> {
     return this.get("/rest/api/3/myself");
   }
 
   async listIssues(projectKey: string, onPage?: (n: number) => void): Promise<any[]> {
-    const fields = "summary,description,status,created,updated,resolutiondate,reporter,assignee,priority,issuetype,customfield_10010,components";
+    const fields = "summary,description,status,created,updated,resolutiondate,reporter,assignee,priority,issuetype,customfield_10010,components,attachment";
     const jql = encodeURIComponent(`project=${projectKey} ORDER BY created ASC`);
     const issues: any[] = [];
     let token: string | null = null;
@@ -103,8 +114,12 @@ export function shapeIssue(it: any, comments: any[]): JiraExportIssue {
   const transitions: JiraExportTransition[] = (it.changelog?.histories || []).flatMap((h: any) =>
     (h.items || []).filter((x: any) => x.field === "status").map((x: any) => ({ from: x.fromString ?? null, to: x.toString ?? null, at: h.created, by: h.author?.displayName ?? null })),
   );
+  const attachments: JiraExportAttachment[] = (f.attachment || []).map((a: any) => ({
+    id: String(a.id), filename: a.filename || `attachment-${a.id}`, mimeType: a.mimeType ?? null, size: a.size ?? null, contentUrl: a.content, created: a.created ?? null,
+  }));
   return {
     key: it.key,
+    attachments,
     summary: f.summary || "(no subject)",
     description: adfToText(f.description).trim().slice(0, 20000) || null,
     status: f.status?.name || "",

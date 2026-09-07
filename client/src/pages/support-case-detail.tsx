@@ -14,11 +14,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import TimeEntryDialog from "@/components/time/time-entry-dialog";
 import type { ProjectOption, ServiceOption } from "@/components/time/utils";
-import { Clock, MessageSquare, Lock, Send, Trash2, Pencil, Check, X, Building2, User as UserIcon } from "lucide-react";
+import { Clock, MessageSquare, Lock, Send, Trash2, Pencil, Check, X, Building2, User as UserIcon, Paperclip, FileText } from "lucide-react";
 import {
   type CaseDetail, type CaseStatus, type CasePriority, type CaseType,
-  STATUS_LABEL, PRIORITY_LABEL, CASE_STATUS_ORDER, CASE_PRIORITY_ORDER, hoursLabel, relativeTime,
+  STATUS_LABEL, PRIORITY_LABEL, CASE_STATUS_ORDER, CASE_PRIORITY_ORDER, hoursLabel, relativeTime, fileSizeLabel,
 } from "@/lib/support-cases";
+import { useRef } from "react";
 import { StatusChip, PriorityChip, SlaChip } from "@/pages/support-cases";
 
 interface Agent { id: string; name: string }
@@ -87,6 +88,27 @@ export default function SupportCaseDetailPage() {
     mutationFn: async () => (await apiRequest("POST", `/api/support/contacts/${c!.requesterContactId}/portal-invite`)).json(),
     onSuccess: () => toast({ title: `Sign-in link sent to ${c?.requesterEmail}` }),
     onError: (err: Error) => toast({ title: "Could not send the link", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }),
+  });
+
+  const fileInput = useRef<HTMLInputElement>(null);
+  const upload = useMutation({
+    mutationFn: async (files: FileList) => {
+      const fd = new FormData();
+      Array.from(files).forEach(f => fd.append("files", f));
+      const { getCSRFToken, ensureCSRFToken } = await import("@/lib/queryClient");
+      await ensureCSRFToken();
+      const res = await fetch(`/api/support/cases/${id}/attachments`, { method: "POST", credentials: "include", headers: { "X-CSRF-Token": getCSRFToken() || "" }, body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || `${res.status}`);
+      return data;
+    },
+    onSuccess: (rows: unknown[]) => { invalidate(); toast({ title: `${rows.length} file${rows.length === 1 ? "" : "s"} attached` }); if (fileInput.current) fileInput.current.value = ""; },
+    onError: (err: Error) => toast({ title: "Upload failed", description: err.message, variant: "destructive" }),
+  });
+  const removeAttachment = useMutation({
+    mutationFn: async (attId: string) => (await apiRequest("DELETE", `/api/support/attachments/${attId}`)).json(),
+    onSuccess: () => invalidate(),
+    onError: (err: Error) => toast({ title: "Could not remove the file", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }),
   });
 
   const del = useMutation({
@@ -202,8 +224,44 @@ export default function SupportCaseDetailPage() {
               </div>
             ) : (
               <p className="text-sm whitespace-pre-wrap leading-relaxed" style={{ color: c.description ? "var(--lux-text)" : "var(--lux-text-muted)" }} data-testid="text-case-description">
-                {c.description || "No description yet."}
+                {c.description ? renderWithAttachmentMarkers(c.description) : "No description yet."}
               </p>
+            )}
+          </section>
+
+          <section className="rounded-2xl p-5 border-0" style={card} data-testid="card-case-attachments">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Attachments{c.attachments.length ? ` (${c.attachments.length})` : ""}</h2>
+              <div>
+                <input ref={fileInput} type="file" multiple className="hidden" onChange={e => { if (e.target.files?.length) upload.mutate(e.target.files); }} data-testid="input-case-files" />
+                <Button size="sm" variant="outline" onClick={() => fileInput.current?.click()} disabled={upload.isPending} data-testid="button-attach-files">
+                  <Paperclip className="w-3.5 h-3.5 mr-1.5" /> {upload.isPending ? "Uploading…" : "Attach files"}
+                </Button>
+              </div>
+            </div>
+            {c.attachments.length === 0 ? (
+              <p className="text-xs" style={muted}>No files yet. Screenshots, PDFs and spreadsheets up to 15 MB.</p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {c.attachments.map(a => (
+                  <figure key={a.id} className="group relative rounded-xl overflow-hidden border" style={{ borderColor: "var(--lux-border)", background: "var(--lux-surface-alt)" }} data-testid={`attachment-${a.id}`}>
+                    <a href={a.url} target="_blank" rel="noopener" className="block">
+                      {a.isImage ? (
+                        <img src={a.url} alt={a.filename} className="w-full h-36 object-cover" loading="lazy" />
+                      ) : (
+                        <div className="h-36 flex items-center justify-center"><FileText className="w-8 h-8" style={muted} /></div>
+                      )}
+                    </a>
+                    <figcaption className="px-2.5 py-2 text-[11px] flex items-center justify-between gap-2">
+                      <span className="truncate" style={{ color: "var(--lux-text)" }} title={a.filename}>{a.filename}</span>
+                      <span className="whitespace-nowrap" style={muted}>{fileSizeLabel(a.size)}</span>
+                    </figcaption>
+                    <button className="absolute top-1.5 right-1.5 rounded-md px-1.5 py-1 opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: "rgba(0,0,0,0.55)", color: "#fff" }} onClick={() => removeAttachment.mutate(a.id)} aria-label={`Remove ${a.filename}`} data-testid={`button-remove-attachment-${a.id}`}>
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </figure>
+                ))}
+              </div>
             )}
           </section>
 
@@ -241,7 +299,7 @@ export default function SupportCaseDetailPage() {
                       )}
                       <span className="ml-auto" style={muted}>{new Date(item.m.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
                     </div>
-                    <p className="text-sm whitespace-pre-wrap leading-relaxed" style={{ color: "var(--lux-text)" }}>{item.m.body}</p>
+                    <p className="text-sm whitespace-pre-wrap leading-relaxed" style={{ color: "var(--lux-text)" }}>{renderWithAttachmentMarkers(item.m.body)}</p>
                   </li>
                 ))}
               </ol>
@@ -468,3 +526,15 @@ function describeEvent(kind: string, from: string | null, to: string | null, age
   }
 }
 
+
+/** Imported Jira text carries "[attachment]" where an inline image was; show it as a quiet marker. */
+function renderWithAttachmentMarkers(text: string): React.ReactNode {
+  const parts = text.split("[attachment]");
+  if (parts.length === 1) return text;
+  return parts.flatMap((part, i) => i === 0 ? [part] : [
+    <span key={`m${i}`} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] align-middle" style={{ background: "var(--lux-surface-alt)", color: "var(--lux-text-muted)", border: "1px solid var(--lux-border)" }}>
+      <Paperclip className="w-3 h-3" /> see attachments
+    </span>,
+    part,
+  ]);
+}
