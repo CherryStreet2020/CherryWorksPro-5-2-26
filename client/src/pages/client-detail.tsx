@@ -229,6 +229,12 @@ export default function ClientDetailPage() {
   const [activityFilters, setActivityFilters] = useState<Record<string, boolean>>({});
   const [activityLimit, setActivityLimit] = useState<number>(50);
   const [timeRange, setTimeRange] = useState<"7d" | "30d" | "90d" | "month" | "all">("30d");
+  // The Time & Billing tab sums AND lists this; compute it once per render so the
+  // cards and the table always agree (one `now`, one filter pass).
+  const rangedTimeEntries = useMemo(
+    () => clientDetail ? timeEntriesInRange(clientDetail.timeEntries ?? clientDetail.recentTimeEntries, timeRange) : [],
+    [clientDetail, timeRange],
+  );
   const activeTypes = useMemo(
     () => Object.keys(activityFilters).filter(k => activityFilters[k]),
     [activityFilters]
@@ -1097,7 +1103,7 @@ export default function ClientDetailPage() {
             <div className="space-y-4 lux-tab-content">
               {(() => {
                 // Sum and filter the FULL history, not the ten-row Overview sample.
-                const ranged = timeEntriesInRange(clientDetail.timeEntries ?? clientDetail.recentTimeEntries, timeRange);
+                const ranged = rangedTimeEntries;
                 const totalMinutes = ranged.reduce((s, te) => s + te.minutes, 0);
                 const billableMinutes = ranged.filter(te => te.billable !== false).reduce((s, te) => s + te.minutes, 0);
                 const unbilledMinutes = totalMinutes - billableMinutes;
@@ -1146,7 +1152,7 @@ export default function ClientDetailPage() {
                   </>
                 );
               })()}
-              {timeEntriesInRange(clientDetail.timeEntries ?? clientDetail.recentTimeEntries, timeRange).length === 0 ? (
+              {rangedTimeEntries.length === 0 ? (
                 <div className="text-center py-8">
                   <Timer className="w-8 h-8 mx-auto mb-2" style={{ color: "var(--lux-text-muted)" }} />
                   <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>
@@ -1167,7 +1173,7 @@ export default function ClientDetailPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {timeEntriesInRange(clientDetail.timeEntries ?? clientDetail.recentTimeEntries, timeRange).map(te => (
+                      {rangedTimeEntries.map(te => (
                         <tr key={te.id} className="border-t hover:bg-black/[0.02] transition-colors" style={{ borderColor: "var(--lux-border)" }}>
                           <td className="px-3 py-2.5" style={{ color: "var(--lux-text-secondary)" }}>
                             {(() => { try { return format(new Date(te.date + "T00:00:00"), "MMM d"); } catch { return te.date; } })()}
