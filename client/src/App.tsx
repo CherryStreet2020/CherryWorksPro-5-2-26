@@ -253,11 +253,13 @@ function PublicEstimateWrapper() {
 
 // /portal/<64-hex> is the legacy shared-link portal; anything else under
 // /portal/<slug>/… is the signed-in customer portal keyed by org slug.
+// NOTE: wouter's `:rest*` matches exactly one extra segment in this version,
+// so the route uses `/*?` (any depth) and this wrapper does the split.
 function ClientPortalWrapper() {
-  const params = useParams<{ token: string }>();
-  const token = params.token || "";
-  if (/^[0-9a-f]{64}$/i.test(token)) {
-    return <Suspense fallback={<LazyFallback />}><ClientPortalPage token={token} /></Suspense>;
+  const params = useParams<{ slug: string }>();
+  const first = params.slug || "";
+  if (/^[0-9a-f]{64}$/i.test(first)) {
+    return <Suspense fallback={<LazyFallback />}><ClientPortalPage token={first} /></Suspense>;
   }
   return <Suspense fallback={<LazyFallback />}><PortalApp /></Suspense>;
 }
@@ -641,8 +643,7 @@ function App() {
           <Switch>
             <Route path="/i/:token" component={PublicInvoiceWrapper} />
             <Route path="/e/:token" component={PublicEstimateWrapper} />
-            <Route path="/portal/:slug/:rest*">{() => <Suspense fallback={<LazyFallback />}><PortalApp /></Suspense>}</Route>
-            <Route path="/portal/:token" component={ClientPortalWrapper} />
+            <Route path="/portal/:slug/*?" component={ClientPortalWrapper} />
             <Route path="/features">{() => <LazyRoute component={FeaturesPage} />}</Route>
             <Route path="/pricing">{() => <LazyRoute component={PricingPage} />}</Route>
             <Route path="/marketing">{() => <LazyRoute component={MarketingLandingPage} />}</Route>

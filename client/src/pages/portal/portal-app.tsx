@@ -79,6 +79,7 @@ function Shell({ slug, me, children, active }: { slug: string; me?: Me | null; c
   const qc = useQueryClient();
   const logout = useMutation({ mutationFn: () => api("POST", `/api/portal/${slug}/auth/logout`), onSuccess: () => { qc.removeQueries({ queryKey: ["portal-me", slug] }); navigate(`/portal/${slug}/login`); } });
   const name = me?.orgName ?? me?.org?.name;
+  useEffect(() => { document.title = name ? `${name} · Client Portal` : "Client Portal"; }, [name]);
   return (
     <div style={{ minHeight: "100vh", background: T.bg, color: T.text, fontFamily: "Inter, -apple-system, 'Segoe UI', sans-serif" }} data-testid="portal-page">
       <header style={{ borderBottom: `1px solid ${T.line}` }}>

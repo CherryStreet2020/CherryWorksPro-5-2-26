@@ -143,7 +143,7 @@ export function registerPortalRoutes(app: Express) {
         resolvedAt: supportCases.resolvedAt,
       })
       .from(supportCases)
-      .leftJoin(supportCaseTypes, eq(supportCases.typeId, supportCaseTypes.id))
+      .leftJoin(supportCaseTypes, and(eq(supportCases.typeId, supportCaseTypes.id), eq(supportCaseTypes.orgId, req.portal!.orgId)))
       .where(visibleCaseWhere(req))
       .orderBy(sql`${supportCases.updatedAt} desc`)
       .limit(300);
@@ -186,7 +186,7 @@ export function registerPortalRoutes(app: Express) {
         assigneeUserId: supportCases.assigneeUserId,
       })
       .from(supportCases)
-      .leftJoin(supportCaseTypes, eq(supportCases.typeId, supportCaseTypes.id))
+      .leftJoin(supportCaseTypes, and(eq(supportCases.typeId, supportCaseTypes.id), eq(supportCaseTypes.orgId, p.orgId)))
       .where(and(visibleCaseWhere(req), eq(supportCases.id, String(req.params.id))));
     if (!row) return res.status(404).json({ message: "Support case not found" });
     const [messages, events] = await Promise.all([

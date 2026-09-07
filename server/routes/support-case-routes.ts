@@ -54,7 +54,8 @@ export function registerSupportCaseRoutes(app: Express) {
   app.get("/api/support/portal-info", ...gate, async (req, res) => {
     const org = await storage.getOrg(req.session.orgId!);
     if (!org) return res.status(404).json({ message: "Organization not found" });
-    const base = (process.env.APP_BASE_URL || process.env.BASE_URL || "").replace(/\/$/, "");
+    const configured = (process.env.APP_BASE_URL || process.env.BASE_URL || "").trim().replace(/\/$/, "");
+    const base = /^https?:\/\//i.test(configured) ? configured : `${req.protocol}://${req.get("host")}`;
     return res.json({ orgSlug: org.slug, portalUrl: `${base}/portal/${org.slug}` });
   });
 
