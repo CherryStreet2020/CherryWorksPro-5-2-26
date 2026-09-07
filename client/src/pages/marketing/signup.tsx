@@ -70,7 +70,7 @@ export default function SignupPage() {
   // Stripe's cancel_url brings a signed-in owner back here. Their workspace
   // already exists, so the form collapses to "finish billing" instead of
   // inviting a second signup (which used to create a duplicate "firm-1" org).
-  const [resume, setResume] = useState<{ name: string } | null>(null);
+  const [resume, setResume] = useState<{ name: string; chargeNote: string } | null>(null);
   const [closed, setClosed] = useState<string | null>(null);
 
   const generatedSlug = firmName.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50);
@@ -95,7 +95,19 @@ export default function SignupPage() {
     if (params.get("checkout") === "canceled") {
       fetch("/api/auth/me", { credentials: "include" })
         .then(r => (r.ok ? r.json() : null))
-        .then(me => { if (me?.id) setResume({ name: me.name || me.firstName || me.email || "there" }); })
+        .then(async me => {
+          if (!me?.id) return;
+          // The charge date is the signup deadline, not a fresh 14 days.
+          let chargeNote = "Billing starts as soon as you complete checkout.";
+          try {
+            const b = await fetch("/api/billing/status", { credentials: "include" }).then(r => (r.ok ? r.json() : null));
+            const ends = b?.trialEndsAt ? new Date(b.trialEndsAt) : null;
+            if (b?.subscriptionStatus === "trialing" && !b?.hasSubscription && ends && ends.getTime() > Date.now()) {
+              chargeNote = `Your card won't be charged until your trial ends on ${ends.toLocaleDateString("en-US", { month: "long", day: "numeric" })}. Cancel any time before then.`;
+            }
+          } catch { /* keep the safe default */ }
+          setResume({ name: me.name || me.firstName || me.email || "there", chargeNote });
+        })
         .catch(() => {});
     }
   }, []);
@@ -413,7 +425,7 @@ export default function SignupPage() {
               </form>
 
               <p className="text-xs text-center mt-4" style={{ color: "var(--lux-text-muted)" }}>
-                Your card won't be charged for 14 days. Cancel anytime during trial.
+                {resume ? resume.chargeNote : "Your card won't be charged for 14 days. Cancel anytime during trial."}
               </p>
 
               <div className="mt-6 pt-4 text-center" style={{ borderTop: "1px solid var(--lux-border)" }}>
