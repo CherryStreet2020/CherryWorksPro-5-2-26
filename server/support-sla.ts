@@ -8,7 +8,7 @@
  * paused duration. A processor alerts the assignee shortly before and at
  * breach.
  */
-import { and, eq, isNull, or, lt, sql } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { db } from "./db";
 import { supportCases, supportSlaPolicies, type SupportSlaPolicy } from "@shared/schema";
 
@@ -107,16 +107,14 @@ export function slaStateFor(row: {
 }, now = new Date()): { firstResponse: SlaState; resolution: SlaState; nextDueAt: string | null; label: string } {
   const t = (v: Date | string | null) => (v ? new Date(v).getTime() : null);
   const open = ["NEW", "WAITING_ON_SUPPORT", "IN_PROGRESS", "WAITING_ON_CUSTOMER"].includes(row.status);
-  const created = t(row.createdAt)!;
   const judge = (dueAt: number | null, doneAt: number | null): SlaState => {
     if (!dueAt) return "none";
     if (doneAt) return doneAt <= dueAt ? "met" : "breached";
     if (!open) return "met";
     if (row.slaPausedAt) return "paused";
     if (now.getTime() > dueAt) return "breached";
-    const remaining = dueAt - now.getTime();
-    const window = Math.max(1, dueAt - created);
-    return remaining < Math.min(window * 0.25, 3600000) || remaining < 3600000 ? "warning" : "ok";
+    // Warning inside the last hour before the target.
+    return dueAt - now.getTime() < 3600000 ? "warning" : "ok";
   };
   const fr = judge(t(row.firstResponseDueAt), t(row.firstResponseAt));
   const rs = judge(t(row.resolutionDueAt), t(row.resolvedAt));
@@ -207,14 +205,20 @@ export function clockPatchForStatus(existing: { status: string; slaPausedAt: Dat
 export interface SlaAlert { caseId: string; kind: "first_response" | "resolution"; overdue: boolean; dueAt: Date }
 
 /** Cases whose next clock is inside the warning window or overdue and not yet alerted. */
+/** "2026-09-07 03:36:31.455" — timestamps are stored UTC-naive; compare with explicit UTC strings. */
+function utcNaive(d: Date): string {
+  return d.toISOString().replace("T", " ").replace("Z", "");
+}
+
 export async function findCasesNeedingAlert(now = new Date()): Promise<Array<{ row: typeof supportCases.$inferSelect; alert: SlaAlert }>> {
   const soon = new Date(now.getTime() + 3600000);
+  const soonSql = utcNaive(soon);
   const rows = await db.select().from(supportCases).where(and(
     sql`${supportCases.status} IN ('NEW','WAITING_ON_SUPPORT','IN_PROGRESS')`,
     isNull(supportCases.slaPausedAt),
     or(
-      and(isNull(supportCases.firstResponseAt), isNull(supportCases.firstResponseAlertedAt), lt(supportCases.firstResponseDueAt, soon)),
-      and(isNull(supportCases.resolutionAlertedAt), lt(supportCases.resolutionDueAt, soon)),
+      and(isNull(supportCases.firstResponseAt), isNull(supportCases.firstResponseAlertedAt), sql`${supportCases.firstResponseDueAt} < ${soonSql}::timestamp`),
+      and(isNull(supportCases.resolutionAlertedAt), sql`${supportCases.resolutionDueAt} < ${soonSql}::timestamp`),
     ),
   )).limit(200);
   const out: Array<{ row: typeof supportCases.$inferSelect; alert: SlaAlert }> = [];

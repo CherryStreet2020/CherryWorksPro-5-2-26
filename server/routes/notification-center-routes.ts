@@ -129,9 +129,12 @@ export function registerNotificationCenterRoutes(
     const typeFilter = req.query.type as string | undefined;
     const where = [eq(userNotifications.orgId, orgId), eq(userNotifications.userId, userId)];
     if (typeFilter && VALID_TYPES.includes(typeFilter)) where.push(eq(userNotifications.type, typeFilter));
-    const rows = await db.select().from(userNotifications).where(and(...where)).orderBy(desc(userNotifications.createdAt)).limit(200);
+    const [rows, [totals]] = await Promise.all([
+      db.select().from(userNotifications).where(and(...where)).orderBy(desc(userNotifications.createdAt)).limit(200),
+      db.select({ count: sql<number>`count(*)`, unread: sql<number>`count(*) filter (where ${userNotifications.readAt} is null)` }).from(userNotifications).where(and(...where)),
+    ]);
     const list = rows.map(toView);
-    res.json({ success: true, count: list.length, unreadCount: list.filter((n) => !n.read).length, notifications: list, supportedTypes: VALID_TYPES });
+    res.json({ success: true, count: Number(totals?.count ?? list.length), unreadCount: Number(totals?.unread ?? 0), notifications: list, supportedTypes: VALID_TYPES });
   });
 
   app.get("/api/notifications/unread-count", requireAuth, async (req: Request, res: Response) => {

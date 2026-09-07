@@ -21,7 +21,6 @@ import { inboundEmails, orgs, supportCases } from "@shared/schema";
 import { randomUUID } from "crypto";
 import * as cases from "../support-cases";
 import { findPortalContact } from "../portal-auth";
-import { notifyCaseCreated, notifyCaseMessage } from "../support-notifications";
 
 const CASE_KEY_RE = /\b([A-Z][A-Z0-9]{1,9}-\d{1,7})\b/;
 
@@ -108,7 +107,7 @@ export async function processInboundEmail(input: {
           emailMessageId: input.messageId,
         });
         if (result) {
-          void notifyCaseMessage(result.case, { authorUserId: null, authorName, body, visibility: "CUSTOMER" });
+          // addMessage() already notifies the assignee / managers.
           return { outcome: "appended", caseId: row.id, caseKey: row.caseKey, orgId: org.id };
         }
       }
@@ -125,7 +124,7 @@ export async function processInboundEmail(input: {
       requesterEmail: sender.email,
       source: "EMAIL",
     }, null);
-    void notifyCaseCreated(created);
+    // createCase() already emails the requester and alerts the team.
     return { outcome: "created", caseId: created.id, caseKey: created.caseKey, orgId: org.id };
   }
 
