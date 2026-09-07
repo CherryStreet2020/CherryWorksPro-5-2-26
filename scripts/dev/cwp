@@ -39,7 +39,9 @@ TEST_DB_URL="${CWP_TEST_DATABASE_URL:-$(printf '%s' "$CWP_DATABASE_URL" | sed 's
 # The reset below always recreates the database named cwp_test, so the URL must point at exactly that.
 case "$TEST_DB_URL" in */cwp_test|*/cwp_test\?*) ;; *) echo "[cwp] the test DB URL must end in /cwp_test (got: ${TEST_DB_URL%%\?*}); set CWP_TEST_DATABASE_URL accordingly" >&2; exit 1 ;; esac
 # Administrative connection = the same role/host/port as a URL, pointed at the maintenance db.
-admin_url() { printf '%s' "${1%%\?*}" | sed 's#/[^/]*$#/postgres#'; }
+admin_url() { # swap only the database segment; keep ?host=…&user=… parameters
+  local base="${1%%\?*}" qs=""; case "$1" in *\?*) qs="?${1#*\?}";; esac
+  printf '%s%s' "$(printf '%s' "$base" | sed 's#/[^/]*$#/postgres#')" "$qs"; }
 recreate_db() { # $1 = url of the db to recreate
   local url="$1" name; name="$(printf '%s' "${url%%\?*}" | sed 's#.*/##')"
   psql "$(admin_url "$url")" -Atqc "DROP DATABASE IF EXISTS \"$name\"" || { echo "[cwp] drop $name failed (another session holding it open?)" >&2; return 1; }
@@ -125,7 +127,7 @@ case "$cmd" in
     echo "[cwp] booting once to seed (dean admin + dev orgs)…"
     "$SELF" app-bg || exit 1
     # The seeded admin boots with a temporary password; browser tests need a normal account.
-    psql -p "$PGPORT" -d cwp_dev -Atqc "update users set temp_password=false, onboarding_complete=true, email_verified_at=coalesce(email_verified_at, now()) where email='dean@cherrystconsulting.com'" >/dev/null || { echo "[cwp] could not prepare the seeded admin" >&2; exit 1; }
+    psql "$CWP_DATABASE_URL" -Atqc "update users set temp_password=false, onboarding_complete=true, email_verified_at=coalesce(email_verified_at, now()) where email='dean@cherrystconsulting.com'" >/dev/null || { echo "[cwp] could not prepare the seeded admin" >&2; exit 1; }
     echo "[cwp] cwp_dev ready (app left running on :5000; admin dean@cherrystconsulting.com ready for e2e)" ;;
 
   validate)
