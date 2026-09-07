@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import { checkoutTrialFor } from "../billing-trial";
 import { planInactive } from "../trial-lifecycle";
 import { appBaseUrl } from "../lib/app-url";
 import { storage } from "../storage";
@@ -358,7 +359,7 @@ app.post("/api/support-request", requireAuth, async (req, res) => {
 });
 
 // ─── STRIPE BILLING: CHECKOUT SESSION ──────────────────────
-app.post("/api/billing/checkout", requireAuth, async (req, res) => {
+app.post("/api/billing/checkout", requireAuth, requireAdmin, async (req, res) => {
   try {
     const stripeKey = process.env.STRIPE_SECRET_KEY;
     if (!stripeKey) {
@@ -414,7 +415,8 @@ app.post("/api/billing/checkout", requireAuth, async (req, res) => {
       line_items: [{ price: priceId, quantity: 1 }],
       mode: "subscription",
       subscription_data: {
-        trial_period_days: 14,
+        // The signup deadline, not a fresh 14 days (see server/billing-trial.ts).
+        ...(checkoutTrialFor(org) ?? {}),
         metadata: { orgId, planTier: planKey },
       },
       payment_method_collection: "always",
@@ -431,7 +433,7 @@ app.post("/api/billing/checkout", requireAuth, async (req, res) => {
 });
 
 // ─── STRIPE BILLING: CUSTOMER PORTAL ──────────────────────
-app.post("/api/billing/portal", requireAuth, async (req, res) => {
+app.post("/api/billing/portal", requireAuth, requireAdmin, async (req, res) => {
   try {
     const stripeKey = process.env.STRIPE_SECRET_KEY;
     if (!stripeKey) {
