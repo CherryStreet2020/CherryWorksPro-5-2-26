@@ -412,6 +412,10 @@ export function registerMarketingCampaignRoutes(app: Express) {
         const org = await storage.getOrg(orgId);
         if (!org) return res.status(404).json({ message: "Organization not found" });
         const transport = await selectTransport(org);
+        // An OAuth mailbox sends only as its authorised identity (org.emailSenderAddress,
+        // as sendViaConnectedMailbox does); the brand's from-address applies to SMTP.
+        const oauth = transport.kind === "graph" || transport.kind === "gmail";
+        const senderEmail = oauth ? ((org as any).emailSenderAddress || null) : (fromEmail || null);
 
         let sentCount = 0;
         let failedCount = 0;
@@ -422,7 +426,7 @@ export function registerMarketingCampaignRoutes(app: Express) {
               subject,
               html,
               fromName: fromName || null,
-              fromEmail: fromEmail || null,
+              fromEmail: senderEmail,
               replyTo: replyTo || null,
             });
             if (result.ok === false) throw new Error("No email provider is connected for this workspace. Connect a mailbox in Settings → Email.");

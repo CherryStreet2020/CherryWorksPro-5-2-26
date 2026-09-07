@@ -235,7 +235,7 @@ export async function registerRoutes(
     "/api/auth/forgot-password",
     "/api/auth/reset-password/",
     "/api/auth/verify-email",
-    "/api/test/", // registered only when NODE_ENV=test
+    "/api/test/inbound-email", // registered only when NODE_ENV=test
     "/api/v1/",
     "/api/newsletter/",
     "/api/csp-report",
