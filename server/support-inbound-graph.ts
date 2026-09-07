@@ -39,6 +39,7 @@ interface GraphMessage {
   internetMessageId?: string;
   receivedDateTime?: string;
   hasAttachments?: boolean;
+  isRead?: boolean;
   from?: { emailAddress?: { address?: string; name?: string } };
   toRecipients?: { emailAddress?: { address?: string; name?: string } }[];
   ccRecipients?: { emailAddress?: { address?: string; name?: string } }[];
@@ -104,6 +105,22 @@ export async function pollOrg(org: { id: string; supportInboundAddress: string; 
     }
     const link = page["@odata.nextLink"];
     next = link ? link.replace(GRAPH, "") : null;
+  }
+  // Beyond the page cap a large unread backlog could hide older support mail
+  // forever (no cursor is kept, unrelated mail stays unread). A second,
+  // targeted query asks Graph for mail sent to the support address itself,
+  // independent of how much newer unrelated mail sits above it.
+  try {
+    const seen = new Set(relevant.map(m => m.id));
+    const search = encodeURIComponent(`"recipients:${org.supportInboundAddress}"`);
+    const targeted = await graphGet<{ value?: GraphMessage[] }>(token,
+      `/me/messages?$search=${search}&$top=100&$select=id,subject,internetMessageId,receivedDateTime,hasAttachments,isRead,from,toRecipients,ccRecipients,body,bodyPreview`);
+    for (const msg of targeted.value || []) {
+      if (msg.isRead !== false || seen.has(msg.id)) continue;
+      if (isRelevant(msg, org.supportInboundAddress, caseKeys)) { relevant.push(msg); seen.add(msg.id); }
+    }
+  } catch (err) {
+    console.warn("[support-inbound-graph] targeted search failed", (err as Error).message);
   }
   // Oldest first so a thread's replies land in order.
   relevant.sort((a, b) => (a.receivedDateTime || "").localeCompare(b.receivedDateTime || ""));
