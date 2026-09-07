@@ -118,11 +118,15 @@ if [ "$TARGET_KIND" = "plan" ]; then
   PLAN_SHA="$(shasum -a 256 "$PLAN_ABS" | cut -c1-64)"
   PLAN_LABEL="$(basename -- "$PLAN_FILE" | tr -c 'A-Za-z0-9._-' '_')"
   OUT="${OUT_DIR}/codex-plan-${PLAN_LABEL%.*}-${PLAN_SHA:0:12}.md"
+  # Review an immutable SNAPSHOT of exactly the bytes that were hashed, so an
+  # edit racing the review cannot be certified under the recorded sha.
+  SNAP="${OUT_DIR}/.plan-snapshot-${PLAN_SHA:0:12}.md"
+  cp -- "$PLAN_ABS" "$SNAP"
   echo "redteam-codex: model=$MODEL effort=$EFFORT target=plan file=$PLAN_FILE sha256=${PLAN_SHA:0:12}…"
   echo "redteam-codex: writing → $OUT"
   PROMPT="You are the independent PLAN REVIEWER for this repository (CherryWorks Pro: Express + Drizzle/Postgres server in server/, React client in client/src, shared schema in shared/). You have a READ-ONLY sandbox: read the plan and any code it touches; do not modify anything.
 
-Review the plan at: $PLAN_ABS
+Review the plan at: $SNAP  (an immutable snapshot of $PLAN_ABS)
 
 Judge it against the ACTUAL code, not in the abstract. Hunt for: security and authorization gaps (multi-tenant isolation, CSRF/session, secrets), data-loss or money-movement risk, race conditions and crash windows, missing migrations or schema mismatches (NOTE: Azure provisions schema with drizzle-kit push from shared/schema.ts only; migrations/*.sql never run there), missing tests/proof steps, unclear acceptance criteria, and anything the plan assumes about the codebase that is false.
 
@@ -142,17 +146,26 @@ APPROVED means no unresolved P1/P2. BLOCKED means the plan cannot proceed as wri
       "$PROMPT" < /dev/null ) > "$OUT.raw" 2>&1   # </dev/null: exec otherwise waits on stdin when not a TTY
   rc=$?
   set -e
+  # The verdict comes ONLY from Codex's final message (-o). The transcript
+  # echoes our own prompt, which contains the word VERDICT, so it is never parsed.
+  VERDICT=""
+  if [ -s "$OUT.msg" ]; then
+    VERDICT="$(grep -m1 -E '^[[:space:]]*\**VERDICT:?\**[[:space:]]*\**(APPROVED|REVISE|BLOCKED)\**[[:space:]]*$' "$OUT.msg" | grep -o -E 'APPROVED|REVISE|BLOCKED' | head -1)"
+  fi
   {
     echo "# Plan review — $(basename -- "$PLAN_FILE")"
     echo "- plan: $PLAN_ABS"
-    echo "- sha256: $PLAN_SHA"
+    echo "- sha256: $PLAN_SHA (reviewed from snapshot $SNAP)"
     echo "- model: $MODEL @ $EFFORT · $(date -u +%Y-%m-%dT%H:%M:%SZ) · codex exit $rc"
     echo
-    if [ -s "$OUT.msg" ]; then cat "$OUT.msg"; else echo "(no final message — transcript follows)"; echo; cat "$OUT.raw"; fi
+    if [ -s "$OUT.msg" ]; then cat "$OUT.msg"; else echo "(no final message from Codex — NOT a verdict; transcript follows)"; echo; cat "$OUT.raw"; fi
   } > "$OUT"
-  rm -f "$OUT.raw" "$OUT.msg"
+  rm -f "$OUT.raw" "$OUT.msg" "$SNAP"
   if [ $rc -ne 0 ]; then echo "redteam-codex: codex exited $rc — see $OUT" >&2; tail -20 "$OUT" >&2; exit 2; fi
-  VERDICT="$(grep -m1 -o 'VERDICT: *[A-Z]*' "$OUT" | awk '{print $2}')"
+  NOW_SHA="$(shasum -a 256 "$PLAN_ABS" | cut -c1-64)"
+  if [ "$NOW_SHA" != "$PLAN_SHA" ]; then
+    echo "redteam-codex: WARNING — $PLAN_FILE changed during the review; this verdict covers sha ${PLAN_SHA:0:12}, not the file as it is now (${NOW_SHA:0:12}). Review again." >&2
+  fi
   echo "---------------------------------------------------------------"
   cat "$OUT"
   echo "---------------------------------------------------------------"
@@ -161,7 +174,7 @@ APPROVED means no unresolved P1/P2. BLOCKED means the plan cannot proceed as wri
     APPROVED) exit 0 ;;
     REVISE)   echo "redteam-codex: fold the findings, then review the REVISED plan again (the sha changes)." >&2; exit 5 ;;
     BLOCKED)  exit 6 ;;
-    *)        echo "redteam-codex: could not parse a verdict — read the output." >&2; exit 2 ;;
+    *)        echo "redteam-codex: no unambiguous VERDICT line in Codex's final message — this is NOT an approval; read $OUT." >&2; exit 2 ;;
   esac
 fi
 
