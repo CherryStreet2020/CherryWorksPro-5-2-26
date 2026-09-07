@@ -2554,6 +2554,23 @@ export const platformSettings = pgTable("platform_settings", {
 });
 export type PlatformSetting = typeof platformSettings.$inferSelect;
 
+/** Saved Jira Cloud connection for the Support import (one per workspace). api_token is encryptField()-ed. */
+export const supportJiraConnections = pgTable("support_jira_connections", {
+  orgId: varchar("org_id", { length: 36 }).primaryKey().references(() => orgs.id, { onDelete: "cascade" }),
+  baseUrl: text("base_url").notNull(),
+  projectKey: varchar("project_key", { length: 10 }).notNull(),
+  email: text("email").notNull(),
+  apiTokenEnc: text("api_token_enc").notNull(),
+  clientId: varchar("client_id", { length: 36 }),
+  projectId: varchar("project_id", { length: 36 }),
+  connectedAs: text("connected_as"),
+  connectedAt: timestamp("connected_at").defaultNow().notNull(),
+  lastImportAt: timestamp("last_import_at"),
+  lastImportSummary: jsonb("last_import_summary"),
+  updatedByUserId: varchar("updated_by_user_id", { length: 36 }),
+});
+export type SupportJiraConnection = typeof supportJiraConnections.$inferSelect;
+
 export const insertInboundEmailSchema = createInsertSchema(inboundEmails).omit({
   id: true,
   createdAt: true,
