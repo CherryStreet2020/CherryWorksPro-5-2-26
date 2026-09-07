@@ -38,6 +38,15 @@ export function getLastMigrationFailures(): string[] {
   return [...lastMigrationFailures];
 }
 
+// The data-migration phase below logs and swallows its error so a boot can
+// continue; record it so a CLI caller (scripts/run-migrations.ts) can still
+// fail on it. Recording only — boot behaviour is unchanged.
+let lastDataMigrationError: string | null = null;
+
+export function getLastDataMigrationError(): string | null {
+  return lastDataMigrationError;
+}
+
 async function runPhase0SqlReplay(): Promise<void> {
   lastMigrationFailures = [];
   const migrationsDir = path.resolve(process.cwd(), "migrations");
@@ -102,6 +111,7 @@ async function runPhase0SqlReplay(): Promise<void> {
 }
 
 export async function runProductionMigrations(): Promise<void> {
+  lastDataMigrationError = null;
   await runPhase0SqlReplay();
 
   const client = await pool.connect();
@@ -1254,6 +1264,7 @@ export async function runProductionMigrations(): Promise<void> {
     }
 
   } catch (err: any) {
+    lastDataMigrationError = err?.message ?? String(err);
     console.error("[migration] Error during production migrations:", err.message);
   } finally {
     client.release();

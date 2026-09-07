@@ -12,7 +12,7 @@
 // migration failure, so a broken migration stops the suite instead of leaving
 // a half-migrated database. Not imported by the server; never bundled.
 import { pool } from "../server/db";
-import { runProductionMigrations, getLastMigrationFailures } from "../server/migrate-production";
+import { runProductionMigrations, getLastMigrationFailures, getLastDataMigrationError } from "../server/migrate-production";
 
 async function main(): Promise<number> {
   try {
@@ -26,6 +26,13 @@ async function main(): Promise<number> {
   const failures = getLastMigrationFailures();
   if (failures.length > 0) {
     console.error(`[run-migrations] ${failures.length} migration(s) failed: ${failures.join(", ")}`);
+    return 1;
+  }
+  // The data-migration phase logs and swallows its own error (a boot must go
+  // on); a database prepared by this CLI must not.
+  const dataError = getLastDataMigrationError();
+  if (dataError) {
+    console.error(`[run-migrations] data migrations failed: ${dataError}`);
     return 1;
   }
   console.log("[run-migrations] migrations/*.sql replayed and data migrations applied");

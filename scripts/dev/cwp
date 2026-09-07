@@ -23,7 +23,7 @@
 #   cwp validate                           migcheck + lint + typecheck + vitest (the pre-push gate)
 #   cwp codex [--deep|--commit <sha>|--base <b>|--uncommitted|--plan PLAN.md]
 #                                          LOCAL Codex red-team leg (scripts/redteam-codex.sh) — RUN ON EVERY PR
-#   cwp psql [db]                          psql into cwp_dev (or named db)
+#   cwp psql [db] [psql args…]             psql into cwp_dev (or named db) as the app's role
 # ─────────────────────────────────────────────────────────────────────────────
 # No `set -e` on purpose: this is a case-dispatcher whose branches run functions
 # in conditions (app_ready, wait_health) and `exec` chains, where -e is either
@@ -39,6 +39,13 @@ REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 if [ -f "$HOME/.local/pgsql/cwp-pg-env.sh" ]; then source "$HOME/.local/pgsql/cwp-pg-env.sh"; else
   echo "[cwp] ~/.local/pgsql/cwp-pg-env.sh not found — copy scripts/dev/cwp-pg-env.example.sh there and fill it in (see the header of scripts/dev/cwp)." >&2; exit 1; fi
 BASH5="$HOME/.local/bin/bash"
+# libpq (psql, check-migrations.sh) and node-postgres fill in whatever a URL leaves
+# unset from the environment, and PGHOSTADDR wins even over an explicit host, so an
+# inherited PG* variable could retarget a validated-local URL at a remote server.
+# The URLs in the env file are the only source of truth: drop the targeting variables
+# here, once, for everything this launcher runs. (PGPORT stays: it is ours, from the
+# env file, and cannot leave the loopback host; PGPASSWORD/PGPASSFILE only supply credentials.)
+unset PGHOST PGHOSTADDR PGDATABASE PGUSER PGSERVICE PGSERVICEFILE PGSYSCONFDIR
 # Same cluster/role as the env file (CWP_DATABASE_URL points at cwp_dev); swap the db name.
 TEST_DB_URL="${CWP_TEST_DATABASE_URL:-$(printf '%s' "$CWP_DATABASE_URL" | sed 's#/cwp_dev\([?].*\)\{0,1\}$#/cwp_test\1#')}"
 # The reset below always recreates the database named cwp_test, so the URL must point at exactly that.
@@ -62,8 +69,9 @@ assert_disposable_local_db() { # $1 = url, $2 = the database name it MUST addres
     *) echo "[cwp] refusing to reset $want: host '$host' is not loopback" >&2; return 1 ;; esac
   [ "$name" = "$want" ] || { echo "[cwp] refusing to reset $want: URL names database '$name'" >&2; return 1; }
 }
-# Administrative connection = the same role/host/port as a (validated, query-free) URL, pointed at the maintenance db.
-admin_url() { printf '%s' "$1" | sed 's#/[^/]*$#/postgres#'; }
+# Same role/host/port as a (query-free) URL, pointed at another database on that cluster.
+with_db() { printf '%s' "$1" | sed "s#/[^/]*\$#/$2#"; }   # $1 = url, $2 = database name
+admin_url() { with_db "$1" postgres; }                     # the maintenance database, for DROP/CREATE
 recreate_db() { # $1 = url of the db to recreate, $2 = the name it must address (guard lives HERE so no caller can skip it)
   local url="$1" name="$2"
   assert_disposable_local_db "$url" "$name" || return 1
@@ -162,7 +170,10 @@ case "$cmd" in
     echo "== [4/4] vitest ==";            "$SELF" vitest
     echo "[cwp] validate: all gates ran (review vitest summary for known pre-existing failures)" ;;
 
-  psql) exec psql -p "$PGPORT" -d "${1:-cwp_dev}" ;;
+  psql) # same role/host/port/password as the app (cwp psql [db] [psql args…])
+    name="${1:-cwp_dev}"; shift 2>/dev/null || true
+    case "$name" in *[!A-Za-z0-9_]*|"") echo "[cwp] psql: database name must be a simple identifier (got '$name')" >&2; exit 1 ;; esac
+    exec psql "$(with_db "$CWP_DATABASE_URL" "$name")" "$@" ;;
 
   codex) exec "$REPO/scripts/redteam-codex.sh" "$@" ;;
 

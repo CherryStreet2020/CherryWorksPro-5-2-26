@@ -27,11 +27,23 @@ while time.time() < deadline:
     else:
         try:
             wpid, _st = os.waitpid(pid, os.WNOHANG)
-            if wpid:
-                # child exited: drain what is left, then fall through to the final reap (already reaped here)
-                exited_status = _st
-                break
-        except ChildProcessError: break
+        except ChildProcessError:
+            break
+        if wpid:
+            # The child exited (already reaped here). Output it wrote between the
+            # last read and its exit is still in the pty buffer: drain until EOF
+            # or a quiet 200 ms, otherwise the tail of the output is lost.
+            exited_status = _st
+            while True:
+                r, _, _ = select.select([fd], [], [], 0.2)
+                if fd not in r: break
+                try:
+                    data = os.read(fd, 65536)
+                except OSError:
+                    break
+                if not data: break
+                out += data
+            break
 timed_out = time.time() >= deadline and "exited_status" not in dir()
 if timed_out:
     # Enforce the deadline: stop the child so a still-writing process cannot wedge the PTY.
