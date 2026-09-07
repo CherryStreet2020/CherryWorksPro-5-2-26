@@ -36,7 +36,8 @@ if [ -f "$HOME/.local/pgsql/cwp-pg-env.sh" ]; then source "$HOME/.local/pgsql/cw
 BASH5="$HOME/.local/bin/bash"
 # Same cluster/role as the env file (CWP_DATABASE_URL points at cwp_dev); swap the db name.
 TEST_DB_URL="${CWP_TEST_DATABASE_URL:-$(printf '%s' "$CWP_DATABASE_URL" | sed 's#/cwp_dev\([?].*\)\{0,1\}$#/cwp_test\1#')}"
-case "$TEST_DB_URL" in *cwp_test*) ;; *) echo "[cwp] could not derive the test DB URL from CWP_DATABASE_URL; set CWP_TEST_DATABASE_URL" >&2; exit 1 ;; esac
+# The reset below always recreates the database named cwp_test, so the URL must point at exactly that.
+case "$TEST_DB_URL" in */cwp_test|*/cwp_test\?*) ;; *) echo "[cwp] the test DB URL must end in /cwp_test (got: ${TEST_DB_URL%%\?*}); set CWP_TEST_DATABASE_URL accordingly" >&2; exit 1 ;; esac
 
 # Full env the dev/test server boots with (NODE_ENV=test → Vite serving +
 # relaxed rate limits + marketing/email flags on, matching vitest globalSetup).

@@ -48,10 +48,24 @@ if timed_out:
 try:
     status = exited_status
 except NameError:
-    try:
-        _, status = os.waitpid(pid, 0)
-    except ChildProcessError:
-        status = 0
+    # PTY hit EOF before the deadline (child closed its terminal but may still run):
+    # keep polling with the same deadline instead of blocking forever.
+    status = None
+    while time.time() < deadline:
+        try:
+            w, st = os.waitpid(pid, os.WNOHANG)
+        except ChildProcessError:
+            w, st = pid, 0
+        if w: status = st; break
+        time.sleep(0.25)
+    if status is None:
+        import signal
+        try: os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError: pass
+        try: _, status = os.waitpid(pid, 0)
+        except ChildProcessError: status = 0
+        sys.stderr.write("exec-pty: deadline reached after PTY EOF; child killed\n")
+        sys.exit(124)
 if os.WIFEXITED(status):
     sys.exit(os.WEXITSTATUS(status))
 sys.exit(128 + os.WTERMSIG(status) if os.WIFSIGNALED(status) else 1)
