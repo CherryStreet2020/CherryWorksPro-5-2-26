@@ -28,7 +28,7 @@ import { resolvePolicy, upsertPolicy, deleteClientPolicy, getPolicyRow, DEFAULT_
 import { slaPolicySchema, supportSettingsSchema } from "@shared/schema";
 import { db } from "../db";
 import { orgs } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 // Validation and business-rule messages are meant for the user; everything
 // else goes through the production sanitizer.
@@ -466,11 +466,15 @@ export function registerSupportCaseRoutes(app: Express) {
           details: { source: "jira-fetch", projectKey: conn.projectKey, pulled: items.length, imported: report.imported, skipped: report.skipped.length, contactsCreated: report.contactsCreated, timeEntriesLinked: report.timeEntriesLinked, errors: report.errors.length },
         });
       }
-      if (!body.dryRun && saved) {
+      // Remember destination + history only for an import that used THIS saved
+      // connection (same site + project, saved token) — a one-off import with
+      // explicit credentials must not rewrite the saved connection's defaults.
+      const usedSaved = !!saved && !body.apiToken && conn.baseUrl === saved.baseUrl && conn.projectKey === saved.projectKey;
+      if (!body.dryRun && saved && usedSaved) {
         await db.update(supportJiraConnections).set({
           clientId: String(body.clientId), projectId: body.projectId ? String(body.projectId) : null, lastImportAt: new Date(),
           lastImportSummary: { pulled: items.length, imported: report.imported, skipped: report.skipped.length, attachmentsImported: (report as any).attachmentsImported ?? 0, errors: report.errors.length },
-        }).where(eq(supportJiraConnections.orgId, req.session.orgId!)).catch(() => {});
+        }).where(and(eq(supportJiraConnections.orgId, req.session.orgId!), eq(supportJiraConnections.connectedAt, saved.connectedAt))).catch(() => {}); // no-op if the connection changed meanwhile
       }
       return res.json({ pulled: items.length, ...report });
     } catch (err: any) {

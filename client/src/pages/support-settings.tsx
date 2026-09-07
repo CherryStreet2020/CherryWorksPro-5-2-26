@@ -186,12 +186,12 @@ function JiraImportCard({ card, muted, fieldStyle }: { card: React.CSSProperties
     onSuccess: () => { queryClient.setQueryData(["/api/support/import/jira-connection"], { connected: false }); setTest(null); setReport(null); setEditing(false); toast({ title: "Jira disconnected" }); },
   });
   const testConn = useMutation({
-    mutationFn: async () => (await apiRequest("POST", "/api/support/import/jira-test", conn.apiToken ? conn : {})).json(),
+    mutationFn: async () => (await apiRequest("POST", "/api/support/import/jira-test", { ...conn, apiToken: conn.apiToken || undefined })).json(),
     onSuccess: (r: JiraTest) => { setTest(r); setReport(null); },
     onError: (err: Error) => { setTest(null); toast({ title: "Could not connect to Jira", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }); },
   });
   const run = useMutation({
-    mutationFn: async (dryRun: boolean) => (await apiRequest("POST", "/api/support/import/jira-fetch", { ...(conn.apiToken ? conn : {}), clientId, projectId: projectId || null, dryRun, relinkTime: true })).json(),
+    mutationFn: async (dryRun: boolean) => (await apiRequest("POST", "/api/support/import/jira-fetch", { ...conn, apiToken: conn.apiToken || undefined, clientId, projectId: projectId || null, dryRun, relinkTime: true })).json(),
     onSuccess: (r: ImportReport, dryRun) => {
       setReport(r);
       if (!dryRun) { queryClient.invalidateQueries({ queryKey: ["/api/support/cases"] }); queryClient.invalidateQueries({ queryKey: ["/api/support/summary"] }); queryClient.invalidateQueries({ queryKey: ["/api/support/import/jira-connection"] }); toast({ title: `Imported ${r.imported} cases` }); }
