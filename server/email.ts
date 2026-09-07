@@ -1221,7 +1221,8 @@ export async function sendTrialEndingEmail(
   /** true = a plan and card are on file with Stripe: the subscription simply starts billing. */
   cardOnFile = false,
 ): Promise<{ messageId: string; previewUrl?: string }> {
-  const transport = await pickTransport(org, null);
+  // Platform notice to the workspace's admins: the platform mailbox, never the tenant's (usually absent) transport.
+  const transport = await pickTransport(null, null); void org;
   const safeName = escapeHtml(recipientName || "there");
   const safeFirm = escapeHtml(firmName);
   const when = daysLeft <= 1 ? "tomorrow" : `in ${daysLeft} days`;
@@ -1254,7 +1255,8 @@ export async function sendTrialEndedEmail(
   billingUrl: string,
   org?: OrgForTransport | null,
 ): Promise<{ messageId: string; previewUrl?: string }> {
-  const transport = await pickTransport(org, null);
+  // Platform notice to the workspace's admins: the platform mailbox, never the tenant's (usually absent) transport.
+  const transport = await pickTransport(null, null); void org;
   const safeName = escapeHtml(recipientName || "there");
   const safeFirm = escapeHtml(firmName);
   const innerHtml = `
