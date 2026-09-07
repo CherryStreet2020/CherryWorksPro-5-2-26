@@ -1,5 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
-import { requireVerifiedEmail, unverifiedFields } from "../email-verification";
+import { requireVerifiedEmail, unverifiedFields, noteTempCredential } from "../email-verification";
 import { appBaseUrl } from "../lib/app-url";
 import { storage } from "../storage";
 import { paramId } from "../lib/req-params";
@@ -176,6 +176,7 @@ app.post("/api/team/invite", userCreationLimiter, requireAdmin, requireVerifiedE
             costRateHourly: "0",
             role: "member",
           });
+    await noteTempCredential(user.id, user.email);
         }
       }
     }
@@ -241,6 +242,7 @@ app.post("/api/team/:id/resend-invite", requireAdmin, requireVerifiedEmail, asyn
     const tempPwd = randomBytes(6).toString("base64url").slice(0, 12);
     const hashed = await hashPassword(tempPwd);
     await storage.updateUser(targetUser.id, targetUser.orgId, { password: hashed, tempPassword: true } as any);
+    await noteTempCredential(targetUser.id, targetUser.email);
 
     const org = await storage.getOrg(req.session.orgId!);
     const orgName = org?.name || "CherryWorks Pro";
@@ -325,6 +327,7 @@ app.post("/api/team/invites/:id/resend", requireAdmin, requireVerifiedEmail, asy
     if (targetUser) {
       const hashed = await hashPassword(tempPwd);
       await storage.updateUser(targetUser.id, targetUser.orgId, { password: hashed, tempPassword: true } as any);
+      await noteTempCredential(targetUser.id, invite.email);
     }
 
     let emailSent = false;
@@ -460,6 +463,7 @@ app.post("/api/team/:id/reset-password", resetPasswordLimiter, requireAdmin, asy
     const tempPwd = randomBytes(6).toString("base64url").slice(0, 12);
     const hashed = await hashPassword(tempPwd);
     const updated = await storage.updateUser(paramId(req), req.session.orgId!, { password: hashed, tempPassword: true });
+    await noteTempCredential(updated.id, updated.email); // the emailed temp password proves THIS address
     if (!updated) return res.status(404).json({ message: "User not found" });
 
     console.log(`[reset-password] Temp password generated for user ${updated.id} (${maskEmail(updated.email)})`);
