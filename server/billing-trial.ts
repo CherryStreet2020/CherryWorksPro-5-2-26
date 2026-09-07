@@ -8,6 +8,8 @@
  * less than that left is extended to the minimum rather than dropped.
  */
 export const STRIPE_MIN_TRIAL_MS = 48 * 60 * 60 * 1000;
+/** Clock skew + request latency + second rounding: never hand Stripe exactly 48h. */
+export const TRIAL_SAFETY_MARGIN_MS = 10 * 60 * 1000;
 
 export type CheckoutTrial = { trial_end: number } | null;
 
@@ -16,6 +18,6 @@ export function checkoutTrialFor(org: { subscriptionStatus?: string | null; stri
   if (!org.trialEndsAt) return null;
   const remaining = org.trialEndsAt.getTime() - now.getTime();
   if (remaining <= 0) return null;
-  const end = Math.max(org.trialEndsAt.getTime(), now.getTime() + STRIPE_MIN_TRIAL_MS);
-  return { trial_end: Math.floor(end / 1000) };
+  const end = Math.max(org.trialEndsAt.getTime(), now.getTime() + STRIPE_MIN_TRIAL_MS + TRIAL_SAFETY_MARGIN_MS);
+  return { trial_end: Math.ceil(end / 1000) };
 }
