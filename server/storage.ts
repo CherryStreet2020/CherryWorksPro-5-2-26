@@ -1360,7 +1360,7 @@ export class DatabaseStorage {
       .innerJoin(projects, eq(timeEntries.projectId, projects.id))
       .innerJoin(users, eq(timeEntries.userId, users.id))
       .leftJoin(services, eq(timeEntries.serviceId, services.id))
-      .leftJoin(supportCases, eq(timeEntries.supportCaseId, supportCases.id))
+      .leftJoin(supportCases, and(eq(timeEntries.supportCaseId, supportCases.id), eq(supportCases.orgId, orgId)))
       .where(
         and(
           eq(timeEntries.orgId, orgId),
@@ -2728,7 +2728,7 @@ export class DatabaseStorage {
       .innerJoin(projects, eq(timeEntries.projectId, projects.id))
       .innerJoin(users, eq(timeEntries.userId, users.id))
       .leftJoin(services, eq(timeEntries.serviceId, services.id))
-      .leftJoin(supportCases, eq(timeEntries.supportCaseId, supportCases.id))
+      .leftJoin(supportCases, and(eq(timeEntries.supportCaseId, supportCases.id), eq(supportCases.orgId, orgId)))
       .where(
         and(
           eq(timeEntries.orgId, orgId),

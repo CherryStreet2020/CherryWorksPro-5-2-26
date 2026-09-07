@@ -261,7 +261,7 @@ export function buildDetailItems(entries: JoinedEntry[]): DetailItem[] {
     // stays as the fallback for entries logged before cases existed.
     const parsed = extractTicketRef(e.notes);
     const ticket = e.caseKey ?? parsed.ticket;
-    const description = e.caseKey && parsed.ticket === e.caseKey ? parsed.description : (e.caseKey ? (e.notes ?? "").trim() : parsed.description);
+    const description = parsed.description;
     items.push({
       kind: "entry",
       id: e.id,

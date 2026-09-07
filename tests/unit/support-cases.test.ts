@@ -81,6 +81,21 @@ describe("support cases: keys, lifecycle, messages, and hours", () => {
     expect((await res2.json()).caseKey).toBe("ABS-2");
   });
 
+  it("gives a second client with the same derived prefix a distinct one", async () => {
+    const c3 = await api("POST", "/api/clients", admin, { name: `ABS Tooling ${Date.now()}` });
+    expect(c3.ok).toBe(true);
+    const thirdId = (await c3.json()).id;
+    const res = await api("POST", "/api/support/cases", admin, { clientId: thirdId, subject: "Same initials, different client" });
+    expect(res.status).toBe(201);
+    const row = await res.json();
+    expect(row.caseKey).toBe("ABS2-1");
+    const clash = await api("PATCH", `/api/support/clients/${thirdId}/settings`, admin, { caseKeyPrefix: "ABS" });
+    expect(clash.status).toBe(400);
+    expect((await clash.json()).message).toMatch(/already used/i);
+    await api("DELETE", `/api/support/cases/${row.id}`, admin);
+    await api("DELETE", `/api/clients/${thirdId}`, admin);
+  });
+
   it("respects an explicit prefix and next number (Jira continuation)", async () => {
     const set = await api("PATCH", `/api/support/clients/${clientId}/settings`, admin, { caseKeyPrefix: "ABS", nextCaseNumber: 158 });
     expect(set.ok).toBe(true);

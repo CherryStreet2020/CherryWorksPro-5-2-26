@@ -6,7 +6,7 @@
  * body. Keys are per client ("ABS-158") and minted atomically from
  * clients.next_case_number so two agents creating cases at once never collide.
  */
-import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { db } from "./db";
 import {
   clientActivities,
@@ -42,7 +42,15 @@ export interface Actor {
   name: string;
 }
 
-/** "ABS Machining, Inc" → "ABS"; "Cherry Street Consulting" → "CSC"; "Acme" → "ACM". */
+export const CASE_KEY_PREFIX_RE = /^[A-Z][A-Z0-9]{1,9}$/;
+
+/** Uppercase, alphanumeric, starts with a letter, 2–10 chars; "CASE" when nothing usable remains. */
+function normalizePrefix(raw: string): string {
+  const cleaned = raw.toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^[0-9]+/, "").slice(0, 10);
+  return CASE_KEY_PREFIX_RE.test(cleaned) ? cleaned : "CASE";
+}
+
+/** "ABS Machining, Inc" → "ABS"; "Cherry Street Consulting" → "CSC"; "Acme" → "ACM"; "7-Eleven" → "ELE"; "X" → "CASE". */
 export function deriveCaseKeyPrefix(clientName: string): string {
   const words = clientName
     .replace(/[^A-Za-z0-9 ]+/g, " ")
@@ -50,12 +58,33 @@ export function deriveCaseKeyPrefix(clientName: string): string {
     .filter(Boolean);
   if (words.length === 0) return "CASE";
   const first = words[0];
-  if (/^[A-Z0-9]{2,6}$/.test(first) && /[A-Z]/.test(first)) return first;
+  if (/^[A-Z0-9]{2,6}$/.test(first) && /^[A-Z]/.test(first)) return normalizePrefix(first);
   if (words.length >= 2) {
-    const initials = words.slice(0, 4).map(w => w[0].toUpperCase()).join("");
-    if (initials.length >= 2) return initials.replace(/[^A-Z0-9]/g, "") || "CASE";
+    const initials = words.slice(0, 4).map(w => w[0]).join("");
+    const norm = normalizePrefix(initials);
+    if (norm !== "CASE") return norm;
   }
-  return first.slice(0, 3).toUpperCase();
+  return normalizePrefix(first.replace(/^[0-9]+/, "").slice(0, 3) || first.slice(0, 3));
+}
+
+/**
+ * Keys are unique per ORG (so "ABS-158" means one thing everywhere in the
+ * firm), which means prefixes must be unique per org too. A derived prefix
+ * that another client already uses gets a numeric suffix: ACM, ACM2, ACM3…
+ */
+export async function ensureUniquePrefix(orgId: string, clientId: string, candidate: string): Promise<string> {
+  const taken = new Set(
+    (await db.select({ prefix: clients.caseKeyPrefix }).from(clients)
+      .where(and(eq(clients.orgId, orgId), ne(clients.id, clientId), isNotNull(clients.caseKeyPrefix))))
+      .map(r => r.prefix!),
+  );
+  if (!taken.has(candidate)) return candidate;
+  const base = candidate.slice(0, 8);
+  for (let n = 2; n < 100; n++) {
+    const next = `${base}${n}`;
+    if (!taken.has(next)) return next;
+  }
+  throw new Error("Could not allocate a unique case key prefix");
 }
 
 /**
@@ -73,7 +102,7 @@ export async function mintCaseKey(orgId: string, clientId: string): Promise<{ ca
   const caseNumber = row.next - 1;
   let prefix = row.prefix;
   if (!prefix) {
-    prefix = deriveCaseKeyPrefix(row.name);
+    prefix = await ensureUniquePrefix(orgId, clientId, deriveCaseKeyPrefix(row.name));
     await db.update(clients).set({ caseKeyPrefix: prefix }).where(eq(clients.id, clientId));
   }
   return { caseKey: `${prefix}-${caseNumber}`, caseNumber };
@@ -139,10 +168,10 @@ export async function listCases(orgId: string, f: ListCasesFilter) {
   return db
     .select(caseListSelect)
     .from(supportCases)
-    .innerJoin(clients, eq(supportCases.clientId, clients.id))
-    .leftJoin(projects, eq(supportCases.projectId, projects.id))
-    .leftJoin(supportCaseTypes, eq(supportCases.typeId, supportCaseTypes.id))
-    .leftJoin(users, eq(supportCases.assigneeUserId, users.id))
+    .innerJoin(clients, and(eq(supportCases.clientId, clients.id), eq(clients.orgId, orgId)))
+    .leftJoin(projects, and(eq(supportCases.projectId, projects.id), eq(projects.orgId, orgId)))
+    .leftJoin(supportCaseTypes, and(eq(supportCases.typeId, supportCaseTypes.id), eq(supportCaseTypes.orgId, orgId)))
+    .leftJoin(users, and(eq(supportCases.assigneeUserId, users.id), eq(users.orgId, orgId)))
     .where(and(...where))
     .orderBy(desc(supportCases.updatedAt))
     .limit(Math.min(Math.max(f.limit ?? 200, 1), 500));
@@ -174,10 +203,10 @@ export async function getCase(orgId: string, id: string) {
   const [row] = await db
     .select({ ...caseListSelect, description: supportCases.description, requesterContactId: supportCases.requesterContactId, createdByUserId: supportCases.createdByUserId, externalRef: supportCases.externalRef })
     .from(supportCases)
-    .innerJoin(clients, eq(supportCases.clientId, clients.id))
-    .leftJoin(projects, eq(supportCases.projectId, projects.id))
-    .leftJoin(supportCaseTypes, eq(supportCases.typeId, supportCaseTypes.id))
-    .leftJoin(users, eq(supportCases.assigneeUserId, users.id))
+    .innerJoin(clients, and(eq(supportCases.clientId, clients.id), eq(clients.orgId, orgId)))
+    .leftJoin(projects, and(eq(supportCases.projectId, projects.id), eq(projects.orgId, orgId)))
+    .leftJoin(supportCaseTypes, and(eq(supportCases.typeId, supportCaseTypes.id), eq(supportCaseTypes.orgId, orgId)))
+    .leftJoin(users, and(eq(supportCases.assigneeUserId, users.id), eq(users.orgId, orgId)))
     .where(and(eq(supportCases.id, id), eq(supportCases.orgId, orgId)));
   return row;
 }
@@ -220,9 +249,9 @@ export async function listCaseTime(orgId: string, caseId: string) {
       serviceName: services.name,
     })
     .from(timeEntries)
-    .innerJoin(users, eq(timeEntries.userId, users.id))
-    .innerJoin(projects, eq(timeEntries.projectId, projects.id))
-    .leftJoin(services, eq(timeEntries.serviceId, services.id))
+    .innerJoin(users, and(eq(timeEntries.userId, users.id), eq(users.orgId, orgId)))
+    .innerJoin(projects, and(eq(timeEntries.projectId, projects.id), eq(projects.orgId, orgId)))
+    .leftJoin(services, and(eq(timeEntries.serviceId, services.id), eq(services.orgId, orgId)))
     .where(and(eq(timeEntries.orgId, orgId), eq(timeEntries.supportCaseId, caseId)))
     .orderBy(desc(timeEntries.date), desc(timeEntries.startTime));
   const totals = rows.reduce(
@@ -515,7 +544,11 @@ export async function getClientCaseSettings(orgId: string, clientId: string) {
 
 export async function updateClientCaseSettings(orgId: string, clientId: string, input: { caseKeyPrefix?: string; nextCaseNumber?: number }) {
   const patch: Record<string, unknown> = {};
-  if (input.caseKeyPrefix !== undefined) patch.caseKeyPrefix = input.caseKeyPrefix;
+  if (input.caseKeyPrefix !== undefined) {
+    const unique = await ensureUniquePrefix(orgId, clientId, input.caseKeyPrefix);
+    if (unique !== input.caseKeyPrefix) throw new Error(`Prefix ${input.caseKeyPrefix} is already used by another client`);
+    patch.caseKeyPrefix = input.caseKeyPrefix;
+  }
   if (input.nextCaseNumber !== undefined) patch.nextCaseNumber = input.nextCaseNumber;
   if (Object.keys(patch).length === 0) return getClientCaseSettings(orgId, clientId);
   await db.update(clients).set(patch).where(and(eq(clients.id, clientId), eq(clients.orgId, orgId)));

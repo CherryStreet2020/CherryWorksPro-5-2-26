@@ -1229,8 +1229,10 @@ export const insertServiceSchema = createInsertSchema(services).omit({
 });
 // ─── Support Cases ────────────────────────────────────────────────────────
 // A "Support Case" (never "ticket") is a client request handled by the team.
-// Keys are per client: <prefix>-<number> ("ABS-158"), continuing whatever
-// numbering the client used before (Jira import sets clients.next_case_number).
+// Keys are <prefix>-<number> ("ABS-158"): the prefix and counter live on the
+// client, and prefixes are kept unique per org (ensureUniquePrefix) so that
+// (org_id, case_key) is unique and a key means one thing across the firm.
+// Jira import sets clients.next_case_number so the old sequence continues.
 export const SUPPORT_CASE_STATUSES = [
   "NEW",
   "WAITING_ON_SUPPORT",

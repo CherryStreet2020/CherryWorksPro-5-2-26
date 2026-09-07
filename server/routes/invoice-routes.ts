@@ -52,7 +52,7 @@ async function createGroupedInvoiceLines(
       case "team-member": return row.userName;
       case "project": return row.projectName;
       case "service": return row.serviceName || "General";
-      case "case": return row.caseKey ? `${row.caseKey} — ${row.caseSubject || ""}`.trim() : "Not on a support case";
+      case "case": return row.caseKey ? (row.caseSubject ? `${row.caseKey} — ${row.caseSubject}` : row.caseKey) : "Not on a support case";
       case "none": return "";
     }
   };

@@ -15,7 +15,7 @@ import * as cases from "../support-cases";
 
 // Validation and business-rule messages are meant for the user; everything
 // else goes through the production sanitizer.
-const USER_FACING = [/not found/i, /belongs to a different client/i, /does not belong/i, /is required/i, /at most/i, /must be/i, /starting with a letter/i];
+const USER_FACING = [/not found/i, /belongs to a different client/i, /does not belong/i, /is required/i, /at most/i, /must be/i, /starting with a letter/i, /already used by another client/i];
 function friendlyError(err: any): string {
   if (err instanceof z.ZodError) return err.issues[0]?.message || "Invalid input";
   const msg = String(err?.message || "");
