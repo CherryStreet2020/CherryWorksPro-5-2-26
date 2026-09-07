@@ -161,6 +161,7 @@ const sections: NavSection[] = [
     hubUrl: "/system",
     items: [
       { title: "Settings", url: "/settings", icon: Settings },
+      { title: "Support Settings", url: "/support/settings", icon: LifeBuoy, requiredTier: "PROFESSIONAL" },
       { title: "Billing", url: "/settings/billing", icon: CreditCard, adminOnly: true },
       { title: "Import", url: "/import", icon: Upload, requiredTier: "PROFESSIONAL" },
       { title: "API & Integrations", url: "/api-integrations", icon: Plug2, requiredTier: "PROFESSIONAL" },

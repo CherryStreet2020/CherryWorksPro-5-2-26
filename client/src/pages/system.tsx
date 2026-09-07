@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { Settings, Upload, Plug2, CalendarCheck, ArrowRight } from "lucide-react";
+import { Settings, LifeBuoy, Upload, Plug2, CalendarCheck, ArrowRight } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useDocumentTitle } from "@/lib/use-document-title";
 import { PageHelpLink } from "@/components/page-help-link";
@@ -21,6 +21,12 @@ const LINKS: HubLink[] = [
     description: "Configure your firm profile, branding, and workspace preferences.",
     url: "/settings",
     icon: Settings,
+  },
+  {
+    title: "Support Settings",
+    description: "Case prefixes, SLA targets, the Microsoft 365 support mailbox, and the Jira import.",
+    url: "/support/settings",
+    icon: LifeBuoy,
   },
   {
     title: "Import",
