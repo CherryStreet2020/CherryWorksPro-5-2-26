@@ -154,21 +154,27 @@ APPROVED means no unresolved P1/P2. BLOCKED means the plan cannot proceed as wri
   # echoes our own prompt, which contains the word VERDICT, so it is never parsed.
   VERDICT=""
   if [ -s "$MSG" ]; then
-    # `|| true`: an unmatched grep must not trip errexit before the report is written.
-    VERDICT="$( { grep -m1 -E '^[[:space:]]*\**VERDICT:?\**[[:space:]]*\**(APPROVED|REVISE|BLOCKED)\**[[:space:]]*$' "$MSG" || true; } | { grep -o -E 'APPROVED|REVISE|BLOCKED' || true; } | head -1)"
+    # Every VERDICT line counts; more than one distinct value is a contradiction
+    # and fails closed. `|| true`: an unmatched grep must not trip errexit.
+    VERDICTS="$( { grep -E '^[[:space:]]*\**VERDICT:?\**[[:space:]]*\**(APPROVED|REVISE|BLOCKED)\**[[:space:]]*$' "$MSG" || true; } | { grep -o -E 'APPROVED|REVISE|BLOCKED' || true; } | sort -u)"
+    if [ "$(printf '%s\n' "$VERDICTS" | grep -c .)" -eq 1 ]; then VERDICT="$VERDICTS"; fi
   fi
+  # The source must be the bytes that were reviewed; otherwise no verdict stands.
+  NOW_SHA="$(shasum -a 256 "$PLAN_ABS" | cut -c1-64)"
+  SOURCE_CHANGED=0; [ "$NOW_SHA" != "$PLAN_SHA" ] && SOURCE_CHANGED=1
   {
     echo "# Plan review — $(basename -- "$PLAN_FILE")"
     echo "- plan: $PLAN_ABS"
-    echo "- sha256: $PLAN_SHA (of the reviewed snapshot; source hashed identically unless warned below)"
+    echo "- sha256: $PLAN_SHA (of the reviewed snapshot)"
+    if [ "$SOURCE_CHANGED" -eq 1 ]; then echo "- ⚠️ SOURCE CHANGED DURING REVIEW: $PLAN_ABS is now ${NOW_SHA:0:12}… — this verdict does NOT cover the current file. Review again."; fi
     echo "- model: $MODEL @ $EFFORT · $(date -u +%Y-%m-%dT%H:%M:%SZ) · codex exit $rc"
     echo
     if [ -s "$MSG" ]; then cat "$MSG"; else echo "(no final message from Codex — NOT a verdict; transcript follows)"; echo; cat "$RAW"; fi
   } > "$OUT.$$" && mv -f "$OUT.$$" "$OUT"   # publish atomically
   if [ $rc -ne 0 ]; then echo "redteam-codex: codex exited $rc — see $OUT" >&2; tail -20 "$OUT" >&2; exit 2; fi
-  NOW_SHA="$(shasum -a 256 "$PLAN_ABS" | cut -c1-64)"
-  if [ "$NOW_SHA" != "$PLAN_SHA" ]; then
-    echo "redteam-codex: WARNING — $PLAN_FILE changed during the review; this verdict covers sha ${PLAN_SHA:0:12}, not the file as it is now (${NOW_SHA:0:12}). Review again." >&2
+  if [ "$SOURCE_CHANGED" -eq 1 ]; then
+    echo "redteam-codex: $PLAN_FILE changed during the review (reviewed ${PLAN_SHA:0:12}, now ${NOW_SHA:0:12}) — no verdict stands; review again." >&2
+    exit 2
   fi
   echo "---------------------------------------------------------------"
   cat "$OUT"
