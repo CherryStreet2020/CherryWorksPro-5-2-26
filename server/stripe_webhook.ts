@@ -530,7 +530,10 @@ async function handleSubscriptionCheckout(
       const sub = await new Stripe(process.env.STRIPE_SECRET_KEY).subscriptions.retrieve(subscriptionId);
       if (sub?.status) subscriptionStatusAtCheckout = sub.status;
     } catch (err) {
-      console.warn(`[stripe-webhook] could not read subscription ${subscriptionId} at checkout; assuming trialing:`, (err as Error).message);
+      // The status is authoritative for billing: without it, let Stripe retry
+      // the event rather than record a guess and mark it processed.
+      console.warn(`[stripe-webhook] could not read subscription ${subscriptionId} at checkout; asking Stripe to retry:`, (err as Error).message);
+      return res.status(503).json({ received: false, error: "Subscription lookup failed; retry" });
     }
   }
 
