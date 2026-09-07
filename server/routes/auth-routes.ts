@@ -1,5 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
-import { issueVerificationToken, verifyToken, markVerified } from "../email-verification";
+import { issueVerificationToken, verifyToken, markVerified, tempCredentialProves } from "../email-verification";
 import { signupState } from "../platform-settings";
 import { appBaseUrl, trustedBaseUrl } from "../lib/app-url";
 
@@ -558,7 +558,9 @@ app.patch("/api/auth/change-password", passwordChangeLimiter, requireAuth, await
     }
     const hashed = await hashPassword(newPassword);
     await storage.updateUser(user.id, req.session.orgId!, { password: hashed, tempPassword: false });
-    if (user.tempPassword) await markVerified(user.id).catch(() => {}); // the temporary password was emailed to them
+    // The temporary password proves the address it was emailed to — and only
+    // that one (an address changed in the meantime clears the marker).
+    if (user.tempPassword && tempCredentialProves(user)) await markVerified(user.id).catch(() => {});
 
     const allAccounts = await storage.getActiveUsersByEmail(user.email);
     const allUserIds = allAccounts.map((u) => u.id);

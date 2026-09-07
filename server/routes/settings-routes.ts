@@ -369,6 +369,10 @@ app.post("/api/billing/checkout", requireAuth, async (req, res) => {
     const org = await storage.getOrg(orgId);
     if (!org) return res.status(404).json({ message: "Organization not found" });
 
+    if (org.stripeSubscriptionId && ["active", "trialing", "past_due"].includes(org.subscriptionStatus || "")) {
+      return res.status(409).json({ code: "ALREADY_SUBSCRIBED", message: "This workspace already has a subscription. Change plans or cards from Billing." });
+    }
+
     const { plan, annual } = req.body;
     const validPlans = ["STARTER", "PROFESSIONAL", "BUSINESS"] as const;
     const planKey = validPlans.includes(plan) ? plan : "PROFESSIONAL";

@@ -3,7 +3,7 @@
  * without a card, or subscription gone). Admins pick a plan and go to Stripe
  * Checkout; everyone else is told whom to ask. Data is untouched.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CreditCard, LogOut, ShieldCheck } from "lucide-react";
 import { BrandLockup } from "@/components/shared/brand-lockup";
 import { useAuth } from "@/lib/auth";
@@ -18,10 +18,29 @@ const PLANS = [
   { id: "BUSINESS", name: "Business", blurb: "Period closes · Dunning · Multi-entity", monthly: 159, annual: 1499 },
 ];
 
+/** Back from Stripe with a session_id: the webhook usually lands within seconds; poll before offering anything. */
+function useCheckoutSettling() {
+  const [settling, setSettling] = useState(() => new URLSearchParams(window.location.search).has("session_id"));
+  const { refetch } = useBillingStatus();
+  useEffect(() => {
+    if (!settling) return;
+    let tries = 0;
+    const id = setInterval(async () => {
+      tries++;
+      const r = await refetch();
+      if (r.data && !r.data.planInactive) { clearInterval(id); window.location.replace("/getting-started?welcome=true"); return; }
+      if (tries >= 20) { clearInterval(id); setSettling(false); } // ~60s, then fall back to the picker
+    }, 3000);
+    return () => clearInterval(id);
+  }, [settling, refetch]);
+  return settling;
+}
+
 export default function TrialEndedPage() {
   useDocumentTitle("Choose a plan");
   const { user, logout } = useAuth();
   const { data: billing } = useBillingStatus();
+  const settling = useCheckoutSettling();
   const [plan, setPlan] = useState("PROFESSIONAL");
   const [annual, setAnnual] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -45,6 +64,12 @@ export default function TrialEndedPage() {
     <div className="min-h-screen flex items-center justify-center px-4 py-10" style={{ background: "var(--gradient-hero)" }}>
       <div className="w-full max-w-lg rounded-2xl p-8" style={{ background: "var(--lux-surface)", border: "1px solid var(--lux-border)" }} data-testid="trial-ended-card">
         <div className="flex justify-center mb-6"><BrandLockup /></div>
+        {settling ? (
+          <div className="text-center py-8" data-testid="checkout-settling">
+            <h1 className="text-2xl font-bold" style={{ color: "var(--lux-text)" }}>Confirming your subscription…</h1>
+            <p className="mt-2 text-sm" style={{ color: "var(--lux-text-muted)" }}>Stripe is telling us about your plan. This usually takes a few seconds.</p>
+          </div>
+        ) : (<>
         <h1 className="text-2xl font-bold text-center" style={{ color: "var(--lux-text)" }}>{ended}</h1>
         <p className="mt-2 text-sm text-center" style={{ color: "var(--lux-text-muted)" }}>
           <ShieldCheck className="inline w-4 h-4 mr-1 align-text-bottom" />Everything is exactly as you left it — clients, projects, time, invoices and your books. Choose a plan to pick up where you left off.
@@ -79,6 +104,7 @@ export default function TrialEndedPage() {
           </p>
         )}
         <button onClick={() => logout()} className="mt-6 mx-auto flex items-center gap-1.5 text-xs underline" style={{ color: "var(--lux-text-muted)" }} data-testid="button-trial-ended-signout"><LogOut className="w-3.5 h-3.5" />Sign out</button>
+        </>)}
       </div>
     </div>
   );

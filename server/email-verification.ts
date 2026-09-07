@@ -50,11 +50,37 @@ export async function markVerified(userId: string): Promise<void> {
     .where(and(eq(users.id, userId)));
 }
 
-/** Accounts created before verification existed count as verified. Idempotent; runs at boot. */
+export const LEGACY_BACKFILL_KEY = "legacy_email_verification_backfill_done";
+
+/**
+ * Accounts created before verification existed count as verified. Runs ONCE
+ * per database (marker row in platform_settings): a later deliberate reset —
+ * an admin changing a legacy account's address — must not be undone by the
+ * next restart.
+ */
 export async function backfillLegacyVerified(cutoff = new Date("2026-09-08T00:00:00Z")): Promise<number> {
   const { sql } = await import("drizzle-orm");
+  const { platformSettings } = await import("@shared/schema");
+  const [done] = await db.select({ key: platformSettings.key }).from(platformSettings).where(eq(platformSettings.key, LEGACY_BACKFILL_KEY));
+  if (done) return 0;
   const result = await db.execute(sql`UPDATE users SET email_verified_at = COALESCE(created_at, now()) WHERE email_verified_at IS NULL AND created_at < ${cutoff}`);
+  await db.insert(platformSettings).values({ key: LEGACY_BACKFILL_KEY, value: { at: new Date().toISOString(), cutoff: cutoff.toISOString() } }).onConflictDoNothing();
   return (result as any).rowCount ?? 0;
+}
+
+/** Marker stored in the token-hash column while a temporary password is outstanding: "temp:" + sha256(address). A raw token can never hash to it (hex only). */
+export function tempCredentialMarker(email: string): string {
+  return `temp:${createHash("sha256").update(email.trim().toLowerCase()).digest("hex")}`;
+}
+
+/** Record which address an emailed temporary password proves. */
+export async function noteTempCredential(userId: string, email: string): Promise<void> {
+  await db.update(users).set({ emailVerificationTokenHash: tempCredentialMarker(email), emailVerificationExpiresAt: null }).where(eq(users.id, userId));
+}
+
+/** True when the user's outstanding temporary password was emailed to their CURRENT address. */
+export function tempCredentialProves(user: { email: string; emailVerificationTokenHash: string | null }): boolean {
+  return !!user.emailVerificationTokenHash && user.emailVerificationTokenHash === tempCredentialMarker(user.email);
 }
 
 /** Route guard for features that send mail on the workspace's behalf. */

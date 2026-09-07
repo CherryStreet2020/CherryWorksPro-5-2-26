@@ -64,6 +64,18 @@ function billingUrl(): string {
   return `${base}/settings/billing`;
 }
 
+/** Sends the "trial has ended" email; stamps trial_expired_at only when at least one admin got it. */
+async function deliverEndedEmail(org: Org, recipients: { email: string; name: string }[], now: Date): Promise<void> {
+  let delivered = 0;
+  for (const r of recipients) {
+    try { await sendTrialEndedEmail(r.email, r.name, org.name, billingUrl(), org); delivered++; }
+    catch (err) { console.warn("[trial-lifecycle] ended email failed", org.slug, (err as Error).message); }
+  }
+  if (recipients.length === 0 || delivered > 0) {
+    await db.update(orgs).set({ trialExpiredAt: now }).where(and(eq(orgs.id, org.id), isNull(orgs.trialExpiredAt)));
+  }
+}
+
 export interface TrialTickResult { reminded7: number; reminded1: number; expired: number; errors: number }
 
 export async function runTrialLifecycleTick(now = new Date()): Promise<TrialTickResult> {
@@ -84,27 +96,46 @@ export async function runTrialLifecycleTick(now = new Date()): Promise<TrialTick
       // side effects (audit row, emails) only follow a write that landed —
       // so two overlapping ticks, or two instances, send each email once.
       if (action === "expire") {
-        const changed = await db.update(orgs).set({ subscriptionStatus: TRIAL_EXPIRED_STATUS, trialExpiredAt: now })
+        // The status flips now; trial_expired_at is set only once the "ended"
+        // email has gone out, so a delivery failure is retried by later ticks.
+        const changed = await db.update(orgs).set({ subscriptionStatus: TRIAL_EXPIRED_STATUS })
           .where(and(eq(orgs.id, org.id), eq(orgs.subscriptionStatus, "trialing"), isNull(orgs.stripeSubscriptionId))).returning({ id: orgs.id });
         if (changed.length === 0) continue;
         resetPlanGateCache(org.id);
         await storage.createAuditLog({ orgId: org.id, userId: null, action: "TRIAL_EXPIRED", entityType: "org", entityId: org.id, details: { trialEndsAt: org.trialEndsAt, recipients: recipients.map(r => r.email) } });
-        for (const r of recipients) await sendTrialEndedEmail(r.email, r.name, org.name, billingUrl(), org).catch(err => console.warn("[trial-lifecycle] ended email failed", org.slug, (err as Error).message));
+        await deliverEndedEmail(org, recipients, now);
         result.expired++;
       } else {
         const stampCol = action === "remind_7d" ? orgs.trialReminder7SentAt : orgs.trialReminder1SentAt;
         const stamp = action === "remind_7d" ? { trialReminder7SentAt: now } : { trialReminder1SentAt: now };
         const changed = await db.update(orgs).set(stamp)
           .where(and(eq(orgs.id, org.id), isNull(stampCol), eq(orgs.subscriptionStatus, "trialing"))).returning({ id: orgs.id });
-        if (changed.length === 0) continue;
-        await storage.createAuditLog({ orgId: org.id, userId: null, action: "TRIAL_ENDING_SOON", entityType: "org", entityId: org.id, details: { daysRemaining: daysLeft, source: "trial-lifecycle", recipients: recipients.map(r => r.email) } });
-        for (const r of recipients) await sendTrialEndingEmail(r.email, r.name, org.name, daysLeft, billingUrl(), org).catch(err => console.warn("[trial-lifecycle] reminder email failed", org.slug, (err as Error).message));
+        if (changed.length === 0) continue; // another tick/instance holds the claim
+        let delivered = 0;
+        for (const r of recipients) {
+          try { await sendTrialEndingEmail(r.email, r.name, org.name, daysLeft, billingUrl(), org); delivered++; }
+          catch (err) { console.warn("[trial-lifecycle] reminder email failed", org.slug, (err as Error).message); }
+        }
+        if (recipients.length > 0 && delivered === 0) {
+          // Nothing reached anyone (transient outage): release the claim so the next tick retries.
+          const release = action === "remind_7d" ? { trialReminder7SentAt: null } : { trialReminder1SentAt: null };
+          await db.update(orgs).set(release).where(eq(orgs.id, org.id));
+          result.errors++;
+          continue;
+        }
+        await storage.createAuditLog({ orgId: org.id, userId: null, action: "TRIAL_ENDING_SOON", entityType: "org", entityId: org.id, details: { daysRemaining: daysLeft, source: "trial-lifecycle", recipients: recipients.map(r => r.email), delivered } });
         if (action === "remind_7d") result.reminded7++; else result.reminded1++;
       }
     } catch (err) {
       result.errors++;
       console.error("[trial-lifecycle] org failed", org.slug, (err as Error).message);
     }
+  }
+  // Expired workspaces whose "ended" email never went out: retry delivery.
+  const unmailed = await db.select().from(orgs).where(and(eq(orgs.subscriptionStatus, TRIAL_EXPIRED_STATUS), isNull(orgs.trialExpiredAt)));
+  for (const org of unmailed) {
+    try { await deliverEndedEmail(org, await adminRecipients(org.id), now); }
+    catch (err) { result.errors++; console.error("[trial-lifecycle] ended-email retry failed", org.slug, (err as Error).message); }
   }
   if (result.reminded7 || result.reminded1 || result.expired || result.errors) {
     console.log(JSON.stringify({ ts: now.toISOString(), level: "info", event: "TRIAL_LIFECYCLE_TICK", ...result }));
@@ -165,6 +196,6 @@ export async function planGate(req: Request, res: Response, next: NextFunction) 
 
 /** For tests and admin tooling: expire an org immediately. */
 export async function expireOrgNow(orgId: string): Promise<void> {
-  await db.update(orgs).set({ subscriptionStatus: TRIAL_EXPIRED_STATUS, trialExpiredAt: new Date(), trialEndsAt: sql`LEAST(trial_ends_at, now())` }).where(eq(orgs.id, orgId));
+  await db.update(orgs).set({ subscriptionStatus: TRIAL_EXPIRED_STATUS, trialEndsAt: sql`LEAST(trial_ends_at, now())` }).where(eq(orgs.id, orgId));
   resetPlanGateCache(orgId);
 }

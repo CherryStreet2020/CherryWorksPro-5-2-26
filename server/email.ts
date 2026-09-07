@@ -635,7 +635,9 @@ export async function sendWelcomeEmail(
   org?: OrgForTransport | null,
   verifyUrl?: string | null,
 ): Promise<{ messageId: string; previewUrl?: string }> {
-  const transport = await pickTransport(org, smtpConfig);
+  // A verification link is a credential: it goes through the platform's own
+  // mail transport, never a mailbox the (unverified) tenant configured.
+  const transport = verifyUrl ? await pickTransport(null, null) : await pickTransport(org, smtpConfig);
   const subject = verifyUrl ? `Verify your email for ${firmName} on CherryWorks Pro` : `Welcome to CherryWorks Pro, ${firmName}`;
 
   const safeName = escapeHtml(recipientName || "there");
@@ -1144,9 +1146,11 @@ export async function sendVerificationEmail(
   to: string,
   recipientName: string,
   verifyUrl: string,
-  org?: OrgForTransport | null,
+  _org?: OrgForTransport | null,
 ): Promise<{ messageId: string; previewUrl?: string }> {
-  const transport = await pickTransport(org, null);
+  // Platform transport only (see sendWelcomeEmail): the tenant's SMTP could
+  // be a server the unverified admin controls.
+  const transport = await pickTransport(null, null);
   const safeName = escapeHtml(recipientName || "there");
   const innerHtml = `
     <p style="font-size:20px;font-weight:700;color:${TEXT_PRIMARY};margin:0 0 4px;">Confirm your email</p>

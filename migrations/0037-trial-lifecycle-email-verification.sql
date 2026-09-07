@@ -13,6 +13,11 @@ CREATE TABLE IF NOT EXISTS platform_settings (
   updated_at timestamp NOT NULL DEFAULT now(),
   updated_by_user_id varchar(36)
 );
--- Accounts that existed before verification shipped are treated as verified.
+-- Accounts that existed before verification shipped are treated as verified —
+-- exactly once (marker row), so a later deliberate reset is never undone.
 UPDATE users SET email_verified_at = COALESCE(created_at, now())
-  WHERE email_verified_at IS NULL AND created_at < '2026-09-08';
+  WHERE email_verified_at IS NULL AND created_at < '2026-09-08'
+    AND NOT EXISTS (SELECT 1 FROM platform_settings WHERE key = 'legacy_email_verification_backfill_done');
+INSERT INTO platform_settings (key, value)
+  VALUES ('legacy_email_verification_backfill_done', '{"source":"migration-0037"}')
+  ON CONFLICT (key) DO NOTHING;
