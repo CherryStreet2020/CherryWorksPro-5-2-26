@@ -69,13 +69,18 @@ export function htmlToText(html: string): string {
     .replace(/[ \t]+/g, " ").replace(/ ?\n ?/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-/** Messages the poller should pick up: addressed to the support address, or carrying one of the org's case keys. */
-export function isRelevant(msg: GraphMessage, supportAddress: string, orgPrefixes: Set<string>): boolean {
+/**
+ * Messages the poller should pick up: addressed to the support address, or
+ * carrying the EXACT key of one of the org's existing cases. A merely
+ * prefix-shaped subject on ordinary mailbox traffic is not enough: it would
+ * otherwise reach the "open a new case" path (Codex P2 on #52).
+ */
+export function isRelevant(msg: GraphMessage, supportAddress: string, orgCaseKeys: Set<string>): boolean {
   const addr = supportAddress.toLowerCase();
   const rcpts = [...(msg.toRecipients || []), ...(msg.ccRecipients || [])].map(r => (r.emailAddress?.address || "").toLowerCase());
   if (rcpts.includes(addr)) return true;
   const key = extractCaseKey(msg.subject);
-  return !!key && orgPrefixes.has(key.split("-")[0]);
+  return !!key && orgCaseKeys.has(key);
 }
 
 export interface GraphPollResult { orgId: string; scanned: number; processed: number; skipped: number; outcomes: Record<string, number>; error?: string }
@@ -84,7 +89,7 @@ export async function pollOrg(org: { id: string; supportInboundAddress: string; 
   const result: GraphPollResult = { orgId: org.id, scanned: 0, processed: 0, skipped: 0, outcomes: {} };
   if (!hasReadScope(org.emailOauthScopes)) { result.error = `mailbox needs reconnect for ${INBOUND_REQUIRED_SCOPE}`; return result; }
   const token = await refreshGraphAccessToken(org as any);
-  const prefixes = new Set((await db.select({ k: supportCases.caseKey }).from(supportCases).where(eq(supportCases.orgId, org.id))).map(r => r.k.split("-")[0]));
+  const caseKeys = new Set((await db.select({ k: supportCases.caseKey }).from(supportCases).where(eq(supportCases.orgId, org.id))).map(r => r.k));
 
   // Unrelated unread mail stays unread, so a fixed first page would show the
   // same old messages every pass and never reach newer support mail. Walk the
@@ -95,7 +100,7 @@ export async function pollOrg(org: { id: string; supportInboundAddress: string; 
     const page: { value?: GraphMessage[]; "@odata.nextLink"?: string } = await graphGet(token, next);
     for (const msg of page.value || []) {
       result.scanned++;
-      if (isRelevant(msg, org.supportInboundAddress, prefixes)) relevant.push(msg); else result.skipped++;
+      if (isRelevant(msg, org.supportInboundAddress, caseKeys)) relevant.push(msg); else result.skipped++;
     }
     const link = page["@odata.nextLink"];
     next = link ? link.replace(GRAPH, "") : null;
