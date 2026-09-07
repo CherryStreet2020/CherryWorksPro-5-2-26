@@ -12,6 +12,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isValidStripeUrl } from "@/lib/url-validation";
 import { useDocumentTitle } from "@/lib/use-document-title";
 import { DeletionBanner } from "@/components/deletion-banner";
+import { VerifyEmailBanner } from "@/components/account-banners";
 
 const PLANS = [
   { id: "STARTER", name: "Starter", blurb: "5 clients · 3 projects · Full GL", monthly: 39, annual: 379 },
@@ -67,6 +68,7 @@ export default function TrialEndedPage() {
     <div className="min-h-screen flex items-center justify-center px-4 py-10" style={{ background: "var(--gradient-hero)" }}>
       <div className="w-full max-w-lg rounded-2xl overflow-hidden" style={{ background: "var(--lux-surface)", border: "1px solid var(--lux-border)" }} data-testid="trial-ended-card">
         <DeletionBanner />
+        <VerifyEmailBanner />
         <div className="p-8">
         <div className="flex justify-center mb-6"><BrandLockup /></div>
         {settling ? (
@@ -113,7 +115,7 @@ export default function TrialEndedPage() {
         ) : (
           <div className="mt-6 flex items-center justify-center gap-4 text-xs" style={{ color: "var(--lux-text-muted)" }}>
             <button onClick={() => logout()} className="flex items-center gap-1.5 underline" data-testid="button-trial-ended-signout"><LogOut className="w-3.5 h-3.5" />Sign out</button>
-            {isAdmin && <DeleteWorkspaceLink />}
+            <DeleteWorkspaceLink />
           </div>
         )}
         </>)}

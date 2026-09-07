@@ -278,7 +278,10 @@ export function registerStripeWebhook(app: Express): void {
 
     if (resolvedOrgId) {
       const existing = await storage.getStripeEventByEventId(stripeEventId, resolvedOrgId);
-      if (existing) {
+      // A pre-delivery claim (trial_will_end) is not a completed event: let a
+      // retry reach the handler, which releases stale claims and re-sends.
+      const undelivered = existing?.status === "FAILED" && existing.failureCode === "PENDING_DELIVERY";
+      if (existing && !undelivered) {
         return res.json({ received: true, duplicate: true });
       }
     }
