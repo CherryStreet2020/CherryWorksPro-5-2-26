@@ -60,7 +60,7 @@ export function TrialCountdownBanner() {
         <span className="text-blue-900">Your free trial ends <strong>{when}</strong>. Nothing is deleted — the workspace pauses until a plan is chosen.</span>
       </div>
       {user?.role === "ADMIN" && (
-        <Link href="/settings/billing" className="text-blue-800 underline font-medium whitespace-nowrap" data-testid="link-trial-choose-plan">Choose a plan</Link>
+        <Link href="/choose-plan" className="text-blue-800 underline font-medium whitespace-nowrap" data-testid="link-trial-choose-plan">Choose a plan</Link>
       )}
     </div>
   );

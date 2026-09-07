@@ -46,7 +46,9 @@ export default function TrialEndedPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const isAdmin = user?.role === "ADMIN";
-  const ended = billing?.planTier === "EXPIRED" ? "Your subscription has ended" : "Your free trial has ended";
+  // Also reachable at /choose-plan during a live trial (banner + reminder emails).
+  const stillActive = billing ? !billing.planInactive : false;
+  const ended = stillActive ? "Choose your plan" : billing?.planTier === "EXPIRED" ? "Your subscription has ended" : "Your free trial has ended";
 
   const checkout = async () => {
     setLoading(true); setError("");
@@ -72,7 +74,7 @@ export default function TrialEndedPage() {
         ) : (<>
         <h1 className="text-2xl font-bold text-center" style={{ color: "var(--lux-text)" }}>{ended}</h1>
         <p className="mt-2 text-sm text-center" style={{ color: "var(--lux-text-muted)" }}>
-          <ShieldCheck className="inline w-4 h-4 mr-1 align-text-bottom" />Everything is exactly as you left it — clients, projects, time, invoices and your books. Choose a plan to pick up where you left off.
+          <ShieldCheck className="inline w-4 h-4 mr-1 align-text-bottom" />{stillActive ? "Pick the plan that fits and add a card. Your trial keeps running; billing starts when it ends, and you can change or cancel any time." : "Everything is exactly as you left it — clients, projects, time, invoices and your books. Choose a plan to pick up where you left off."}
         </p>
 
         {isAdmin ? (
@@ -103,7 +105,11 @@ export default function TrialEndedPage() {
             Ask a workspace admin to choose a plan. You'll be able to sign back in as soon as they do.
           </p>
         )}
-        <button onClick={() => logout()} className="mt-6 mx-auto flex items-center gap-1.5 text-xs underline" style={{ color: "var(--lux-text-muted)" }} data-testid="button-trial-ended-signout"><LogOut className="w-3.5 h-3.5" />Sign out</button>
+        {stillActive ? (
+          <a href="/" className="mt-6 mx-auto block text-center text-xs underline" style={{ color: "var(--lux-text-muted)" }} data-testid="link-choose-plan-back">Back to dashboard</a>
+        ) : (
+          <button onClick={() => logout()} className="mt-6 mx-auto flex items-center gap-1.5 text-xs underline" style={{ color: "var(--lux-text-muted)" }} data-testid="button-trial-ended-signout"><LogOut className="w-3.5 h-3.5" />Sign out</button>
+        )}
         </>)}
       </div>
     </div>

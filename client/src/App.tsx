@@ -320,6 +320,7 @@ function Router() {
       <Route path="/invoices">{() => <ManagerRoute component={InvoicesPage} />}</Route>
       <Route path="/payments">{() => <ManagerRoute component={PaymentsPage} />}</Route>
       <Route path="/payouts">{() => <AdminRoute component={PayoutsPage} />}</Route>
+      <Route path="/choose-plan">{() => <AdminRoute component={TrialEndedPage} />}</Route>
       <Route path="/reports">{() => <ManagerRoute component={ReportsPage} />}</Route>
       <Route path="/expenses">{() => <LazyRoute component={ExpensesPage} />}</Route>
       <Route path="/expense-reports">{() => <LazyRoute component={ExpenseReportsPage} />}</Route>

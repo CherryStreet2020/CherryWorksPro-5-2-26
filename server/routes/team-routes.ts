@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import { passwordResetTokens } from "@shared/schema";
 import { requireVerifiedEmail, unverifiedFields, noteTempCredential } from "../email-verification";
 import { appBaseUrl } from "../lib/app-url";
 import { storage } from "../storage";
@@ -165,6 +166,7 @@ app.post("/api/team/invite", userCreationLimiter, requireAdmin, requireVerifiedE
       workerType: resolvedWorkerType,
       ...extraFields,
     } as any);
+    await noteTempCredential(user.id, user.email); // the emailed temp password proves THIS address
     if (projectAssignments && Array.isArray(projectAssignments)) {
       for (const pa of projectAssignments) {
         if (pa.projectId && pa.hourlyRate) {
@@ -176,7 +178,6 @@ app.post("/api/team/invite", userCreationLimiter, requireAdmin, requireVerifiedE
             costRateHourly: "0",
             role: "member",
           });
-    await noteTempCredential(user.id, user.email);
         }
       }
     }
@@ -398,7 +399,11 @@ app.patch("/api/team/:id", requireAdmin, async (req, res) => {
     if (email !== undefined) {
       updates.email = email;
       const current = await storage.getUserById(paramId(req));
-      if (current && current.email.toLowerCase() !== String(email).toLowerCase()) Object.assign(updates, unverifiedFields());
+      if (current && current.email.toLowerCase() !== String(email).toLowerCase()) {
+        Object.assign(updates, unverifiedFields());
+        // A reset link sent to the old address must not be redeemable for the new one.
+        await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, current.id));
+      }
     }
     if (role !== undefined) {
       const validRoles = ["ADMIN", "MANAGER", "TEAM_MEMBER"];

@@ -691,7 +691,8 @@ export async function sendPasswordResetEmail(
   smtpConfig?: SmtpConfig | null,
   org?: OrgForTransport | null,
 ): Promise<{ messageId: string; previewUrl?: string }> {
-  const transport = await pickTransport(org, smtpConfig);
+  // A reset link is a credential (and now proves the address): platform transport only.
+  const transport = await pickTransport(null, null); void org; void smtpConfig;
   const subject = "Reset your CherryWorks Pro password";
 
   const innerHtml = `

@@ -61,18 +61,25 @@ async function adminRecipients(orgId: string): Promise<{ email: string; name: st
 function billingUrl(): string {
   let base = "http://localhost:5000";
   try { base = trustedBaseUrl(); } catch { /* unconfigured non-production: local link */ }
-  return `${base}/settings/billing`;
+  return `${base}/choose-plan`;
 }
 
-/** Sends the "trial has ended" email; stamps trial_expired_at only when at least one admin got it. */
+/**
+ * Sends the "trial has ended" email. trial_expired_at doubles as the delivery
+ * claim: it is taken atomically first (so overlapping ticks / instances send
+ * once) and released again if nobody could be reached, so a later tick retries.
+ */
 async function deliverEndedEmail(org: Org, recipients: { email: string; name: string }[], now: Date): Promise<void> {
+  const claimed = await db.update(orgs).set({ trialExpiredAt: now })
+    .where(and(eq(orgs.id, org.id), eq(orgs.subscriptionStatus, TRIAL_EXPIRED_STATUS), isNull(orgs.trialExpiredAt))).returning({ id: orgs.id });
+  if (claimed.length === 0) return;
   let delivered = 0;
   for (const r of recipients) {
     try { await sendTrialEndedEmail(r.email, r.name, org.name, billingUrl(), org); delivered++; }
     catch (err) { console.warn("[trial-lifecycle] ended email failed", org.slug, (err as Error).message); }
   }
-  if (recipients.length === 0 || delivered > 0) {
-    await db.update(orgs).set({ trialExpiredAt: now }).where(and(eq(orgs.id, org.id), isNull(orgs.trialExpiredAt)));
+  if (recipients.length > 0 && delivered === 0) {
+    await db.update(orgs).set({ trialExpiredAt: null }).where(eq(orgs.id, org.id));
   }
 }
 
