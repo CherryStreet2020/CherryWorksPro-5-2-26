@@ -70,7 +70,7 @@ export default function SignupPage() {
   // Stripe's cancel_url brings a signed-in owner back here. Their workspace
   // already exists, so the form collapses to "finish billing" instead of
   // inviting a second signup (which used to create a duplicate "firm-1" org).
-  const [resume, setResume] = useState<{ name: string } | null>(null);
+  const [resume, setResume] = useState<{ name: string; chargeNote: string } | null>(null);
   const [closed, setClosed] = useState<string | null>(null);
 
   const generatedSlug = firmName.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50);
@@ -95,7 +95,23 @@ export default function SignupPage() {
     if (params.get("checkout") === "canceled") {
       fetch("/api/auth/me", { credentials: "include" })
         .then(r => (r.ok ? r.json() : null))
-        .then(me => { if (me?.id) setResume({ name: me.name || me.firstName || me.email || "there" }); })
+        .then(me => {
+          if (!me?.id) return;
+          // Recognise the signed-in owner IMMEDIATELY (the form must never invite a
+          // second signup); the charge note refines itself once billing status arrives.
+          const name = me.name || me.firstName || me.email || "there";
+          setResume({ name, chargeNote: "Billing starts as soon as you complete checkout." });
+          fetch("/api/billing/status", { credentials: "include" })
+            .then(r => (r.ok ? r.json() : null))
+            .then(b => {
+              // The server's own effective checkout policy, not the raw signup date.
+              const ends = b?.checkoutTrialEnd ? new Date(b.checkoutTrialEnd) : null;
+              if (ends && ends.getTime() > Date.now()) {
+                setResume({ name, chargeNote: `Your card won't be charged until ${ends.toLocaleDateString("en-US", { month: "long", day: "numeric" })}. Cancel any time before then.` });
+              }
+            })
+            .catch(() => {});
+        })
         .catch(() => {});
     }
   }, []);
@@ -307,7 +323,7 @@ export default function SignupPage() {
               data-testid="signup-form-card"
             >
               <h2 className="text-xl font-bold mb-1 hidden lg:block" style={{ color: "var(--lux-text)" }}>{resume ? "Finish setting up billing" : "Start your free trial"}</h2>
-              <p className="text-sm mb-6 hidden lg:block" style={{ color: "var(--lux-text-muted)" }}>{resume ? `Welcome back, ${resume.name}. Your workspace is ready — pick a plan to start your 14-day trial.` : "No commitment. Full access. Live in 5 minutes."}</p>
+              <p className="text-sm mb-6 hidden lg:block" style={{ color: "var(--lux-text-muted)" }}>{resume ? `Welcome back, ${resume.name}. Your workspace is ready — pick a plan to continue.` : "No commitment. Full access. Live in 5 minutes."}</p>
               {closed && !resume && (
                 <div className="mb-4 px-4 py-3 rounded-lg text-sm" style={{ background: "var(--lux-surface-alt)", color: "var(--lux-text)" }} data-testid="signup-closed-notice">
                   <strong>Signups are closed for the moment.</strong> {closed} Want a heads-up when they reopen? <a href="/contact" className="underline">Get in touch</a>.
@@ -413,7 +429,7 @@ export default function SignupPage() {
               </form>
 
               <p className="text-xs text-center mt-4" style={{ color: "var(--lux-text-muted)" }}>
-                Your card won't be charged for 14 days. Cancel anytime during trial.
+                {resume ? resume.chargeNote : "Your card won't be charged for 14 days. Cancel anytime during trial."}
               </p>
 
               <div className="mt-6 pt-4 text-center" style={{ borderTop: "1px solid var(--lux-border)" }}>

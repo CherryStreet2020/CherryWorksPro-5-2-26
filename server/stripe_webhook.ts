@@ -521,13 +521,28 @@ async function handleSubscriptionCheckout(
   const customerId = session.customer;
 
   const planLimits: Record<string, number> = { STARTER: 999999, PROFESSIONAL: 999999, BUSINESS: 999999, ENTERPRISE: 999999 };
+  // Checkout may now start billing immediately (no trial once the signup
+  // deadline passed): record the subscription's real status, not "trialing".
+  let subscriptionStatusAtCheckout = "trialing";
+  if (subscriptionId && process.env.STRIPE_SECRET_KEY) {
+    try {
+      const Stripe = (await import("stripe")).default;
+      const sub = await new Stripe(process.env.STRIPE_SECRET_KEY).subscriptions.retrieve(subscriptionId);
+      if (sub?.status) subscriptionStatusAtCheckout = sub.status;
+    } catch (err) {
+      // The status is authoritative for billing: without it, let Stripe retry
+      // the event rather than record a guess and mark it processed.
+      console.warn(`[stripe-webhook] could not read subscription ${subscriptionId} at checkout; asking Stripe to retry:`, (err as Error).message);
+      return res.status(503).json({ received: false, error: "Subscription lookup failed; retry" });
+    }
+  }
 
   try {
     await storage.updateOrg(orgId, {
       stripeSubscriptionId: subscriptionId,
       stripeCustomerId: customerId,
       planTier: planTier,
-      subscriptionStatus: "trialing",
+      subscriptionStatus: subscriptionStatusAtCheckout,
       maxTeamMembers: planLimits[planTier] || 999999,
     });
     resetPlanGateCache(orgId); // after the write: a request racing us must not re-cache the old status
@@ -536,7 +551,7 @@ async function handleSubscriptionCheckout(
     // checkout must light up the entitlement row in lockstep with the org
     // update so admin tooling and the JSON endpoint agree without waiting
     // for the read-path overlay to backfill.
-    await syncMarketingOsTierEntitlement(orgId, planTier, "trialing");
+    await syncMarketingOsTierEntitlement(orgId, planTier, subscriptionStatusAtCheckout);
 
     await storage.createStripeEvent({
       orgId,
