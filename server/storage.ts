@@ -575,6 +575,17 @@ export class DatabaseStorage {
       .from(clients)
       .where(eq(clients.portalToken, token));
     if (!client) return undefined;
+    return this.buildClientPortalData(client);
+  }
+
+  /** Same payload as the token portal, keyed by client id (used by the signed-in portal). */
+  async getClientPortalDataByClientId(clientId: string) {
+    const [client] = await db.select().from(clients).where(eq(clients.id, clientId));
+    if (!client) return undefined;
+    return this.buildClientPortalData(client);
+  }
+
+  private async buildClientPortalData(client: typeof clients.$inferSelect) {
 
     const orgData = await this.getOrg(client.orgId);
 

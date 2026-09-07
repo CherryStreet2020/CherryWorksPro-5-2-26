@@ -168,6 +168,7 @@ const OnboardingPage = lazy(() => lazyRetry(() => import("@/pages/onboarding")))
 const PublicInvoicePage = lazy(() => lazyRetry(() => import("@/pages/public-invoice")));
 const PublicEstimatePage = lazy(() => lazyRetry(() => import("@/pages/public-estimate")));
 const ClientPortalPage = lazy(() => lazyRetry(() => import("@/pages/client-portal")));
+const PortalApp = lazy(() => lazyRetry(() => import("@/pages/portal/portal-app")));
 const SupportCasesPage = lazy(() => lazyRetry(() => import("@/pages/support-cases")));
 const SupportCaseDetailPage = lazy(() => lazyRetry(() => import("@/pages/support-case-detail")));
 const MarketingHomePage = lazy(() => lazyRetry(() => import("@/pages/marketing/home")));
@@ -250,9 +251,17 @@ function PublicEstimateWrapper() {
   return <Suspense fallback={<LazyFallback />}><PublicEstimatePage token={params.token || ""} /></Suspense>;
 }
 
+// /portal/<64-hex> is the legacy shared-link portal; anything else under
+// /portal/<slug>/… is the signed-in customer portal keyed by org slug.
+// NOTE: wouter's `:rest*` matches exactly one extra segment in this version,
+// so the route uses `/*?` (any depth) and this wrapper does the split.
 function ClientPortalWrapper() {
-  const params = useParams<{ token: string }>();
-  return <Suspense fallback={<LazyFallback />}><ClientPortalPage token={params.token || ""} /></Suspense>;
+  const params = useParams<{ slug: string }>();
+  const first = params.slug || "";
+  if (/^[0-9a-f]{64}$/i.test(first)) {
+    return <Suspense fallback={<LazyFallback />}><ClientPortalPage token={first} /></Suspense>;
+  }
+  return <Suspense fallback={<LazyFallback />}><PortalApp /></Suspense>;
 }
 
 function ProjectDetailWrapper() {
@@ -634,7 +643,7 @@ function App() {
           <Switch>
             <Route path="/i/:token" component={PublicInvoiceWrapper} />
             <Route path="/e/:token" component={PublicEstimateWrapper} />
-            <Route path="/portal/:token" component={ClientPortalWrapper} />
+            <Route path="/portal/:slug/*?" component={ClientPortalWrapper} />
             <Route path="/features">{() => <LazyRoute component={FeaturesPage} />}</Route>
             <Route path="/pricing">{() => <LazyRoute component={PricingPage} />}</Route>
             <Route path="/marketing">{() => <LazyRoute component={MarketingLandingPage} />}</Route>

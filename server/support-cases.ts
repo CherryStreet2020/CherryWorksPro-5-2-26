@@ -536,14 +536,15 @@ export async function ensureDefaultTypes(orgId: string) {
 
 // ── Client key settings ─────────────────────────────────────────────────────
 export async function getClientCaseSettings(orgId: string, clientId: string) {
-  const [row] = await db.select({ id: clients.id, name: clients.name, caseKeyPrefix: clients.caseKeyPrefix, nextCaseNumber: clients.nextCaseNumber })
+  const [row] = await db.select({ id: clients.id, name: clients.name, caseKeyPrefix: clients.caseKeyPrefix, nextCaseNumber: clients.nextCaseNumber, portalShowHours: clients.portalShowHours })
     .from(clients).where(and(eq(clients.id, clientId), eq(clients.orgId, orgId)));
   if (!row) return undefined;
   return { ...row, effectivePrefix: row.caseKeyPrefix ?? deriveCaseKeyPrefix(row.name) };
 }
 
-export async function updateClientCaseSettings(orgId: string, clientId: string, input: { caseKeyPrefix?: string; nextCaseNumber?: number }) {
+export async function updateClientCaseSettings(orgId: string, clientId: string, input: { caseKeyPrefix?: string; nextCaseNumber?: number; portalShowHours?: boolean }) {
   const patch: Record<string, unknown> = {};
+  if (input.portalShowHours !== undefined) patch.portalShowHours = input.portalShowHours;
   if (input.caseKeyPrefix !== undefined) {
     const unique = await ensureUniquePrefix(orgId, clientId, input.caseKeyPrefix);
     if (unique !== input.caseKeyPrefix) throw new Error(`Prefix ${input.caseKeyPrefix} is already used by another client`);

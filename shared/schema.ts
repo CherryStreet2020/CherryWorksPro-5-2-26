@@ -270,6 +270,8 @@ export const clients = pgTable("clients", {
   // ── Support Cases: per-client key prefix + counter ("ABS-158") ─────────
   caseKeyPrefix: varchar("case_key_prefix", { length: 10 }),
   nextCaseNumber: integer("next_case_number").notNull().default(1),
+  // Customer portal: may this client's contacts see hours logged on their cases?
+  portalShowHours: boolean("portal_show_hours").notNull().default(false),
   // ── Marketing OS Sprint 2a extension columns (all nullable) ──────────
   brandId: varchar("brand_id", { length: 36 }).references((): AnyPgColumn => brands.id),
   lifecycleStage: text("lifecycle_stage").default("lead"),
@@ -1327,6 +1329,40 @@ export const supportCaseEvents = pgTable("support_case_events", {
   caseCreatedIdx: index("idx_support_case_events_case_created").on(table.caseId, table.createdAt),
 }));
 
+// ─── Customer portal identity ───────────────────────────────────────────────
+// A contact signs in with a one-time link emailed to them (no passwords).
+// Only hashes of tokens are stored. Sessions are per contact, revocable.
+export const portalLoginLinks = pgTable("portal_login_links", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id", { length: 36 }).notNull().references(() => orgs.id),
+  contactId: varchar("contact_id", { length: 36 }).notNull().references(() => clientContacts.id, { onDelete: "cascade" }),
+  tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  consumedAt: timestamp("consumed_at"),
+  requestedIp: text("requested_ip"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  tokenIdx: uniqueIndex("portal_login_links_token_unique").on(table.tokenHash),
+  contactIdx: index("idx_portal_login_links_contact").on(table.contactId),
+}));
+
+export const portalSessions = pgTable("portal_sessions", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id", { length: 36 }).notNull().references(() => orgs.id),
+  contactId: varchar("contact_id", { length: 36 }).notNull().references(() => clientContacts.id, { onDelete: "cascade" }),
+  tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+  revokedAt: timestamp("revoked_at"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  tokenIdx: uniqueIndex("portal_sessions_token_unique").on(table.tokenHash),
+  contactIdx: index("idx_portal_sessions_contact").on(table.contactId),
+}));
+
+export type PortalSession = typeof portalSessions.$inferSelect;
+
 export type SupportCaseType = typeof supportCaseTypes.$inferSelect;
 export type SupportCase = typeof supportCases.$inferSelect;
 export type SupportCaseMessage = typeof supportCaseMessages.$inferSelect;
@@ -1573,9 +1609,26 @@ export const upsertSupportCaseTypeSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+export const portalRequestLinkSchema = z.object({
+  email: z.string().trim().email("Enter a valid email").max(320),
+});
+export const portalVerifySchema = z.object({
+  token: z.string().min(20).max(200),
+});
+export const portalCreateCaseSchema = z.object({
+  typeId: z.string().nullable().optional(),
+  subject: z.string().trim().min(1, "Tell us what you need help with").max(300, "Must be at most 300 characters"),
+  description: z.string().trim().max(20000, "Must be at most 20000 characters").optional().or(z.literal("")),
+  priority: z.enum(SUPPORT_CASE_PRIORITIES).optional(),
+});
+export const portalMessageSchema = z.object({
+  body: z.string().trim().min(1, "Write a message first").max(20000, "Must be at most 20000 characters"),
+});
+
 export const updateClientCaseSettingsSchema = z.object({
   caseKeyPrefix: z.string().trim().regex(/^[A-Z][A-Z0-9]{1,9}$/, "2–10 uppercase letters or digits, starting with a letter").optional(),
   nextCaseNumber: z.coerce.number().int().min(1).max(9_999_999).optional(),
+  portalShowHours: z.boolean().optional(),
 });
 
 export const createPaymentSchema = z.object({

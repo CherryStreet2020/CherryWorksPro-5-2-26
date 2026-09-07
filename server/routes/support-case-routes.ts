@@ -50,6 +50,15 @@ export function registerSupportCaseRoutes(app: Express) {
     return res.json(await cases.summary(req.session.orgId!, req.session.userId!));
   });
 
+  // Where this org's customer portal lives (agents paste this into emails and the case page shows it).
+  app.get("/api/support/portal-info", ...gate, async (req, res) => {
+    const org = await storage.getOrg(req.session.orgId!);
+    if (!org) return res.status(404).json({ message: "Organization not found" });
+    const configured = (process.env.APP_BASE_URL || process.env.BASE_URL || "").trim().replace(/\/$/, "");
+    const base = /^https?:\/\//i.test(configured) ? configured : `${req.protocol}://${req.get("host")}`;
+    return res.json({ orgSlug: org.slug, portalUrl: `${base}/portal/${org.slug}` });
+  });
+
   app.get("/api/support/agents", ...gate, async (req, res) => {
     return res.json(await cases.listAgents(req.session.orgId!));
   });
