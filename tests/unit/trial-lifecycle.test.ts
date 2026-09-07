@@ -21,8 +21,10 @@ describe("trial lifecycle decisions", () => {
     expect(trialActionFor({ ...at1, trialReminder1SentAt: now }, now)).toBeNull();
     expect(trialActionFor(org({ trialEndsAt: new Date(now.getTime() - 1) }), now)).toBe("expire");
   });
-  it("a 1-day reminder is not skipped just because the 7-day one never went out", () => {
-    expect(trialActionFor(org({ trialEndsAt: new Date(now.getTime() + 6 * 60 * 60 * 1000) }), now)).toBe("remind_1d");
+  it("inside the last day only the 1-day reminder exists: a missed 7-day reminder is never sent late", () => {
+    const lastDay = org({ trialEndsAt: new Date(now.getTime() + 6 * 60 * 60 * 1000) });
+    expect(trialActionFor(lastDay, now)).toBe("remind_1d");
+    expect(trialActionFor({ ...lastDay, trialReminder1SentAt: now }, now)).toBeNull();
   });
   it("leaves Stripe-managed, comped, and already-closed workspaces alone", () => {
     expect(trialActionFor(org({ stripeSubscriptionId: "sub_1", trialEndsAt: new Date(now.getTime() - DAY) }), now)).toBeNull();
