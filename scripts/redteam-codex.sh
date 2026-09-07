@@ -115,13 +115,17 @@ mkdir -p "$OUT_DIR"
 if [ "$TARGET_KIND" = "plan" ]; then
   [ -f "$PLAN_FILE" ] || { echo "redteam-codex: plan file not found: $PLAN_FILE" >&2; exit 4; }
   PLAN_ABS="$(cd -- "$(dirname -- "$PLAN_FILE")" && pwd)/$(basename -- "$PLAN_FILE")"
-  PLAN_SHA="$(shasum -a 256 "$PLAN_ABS" | cut -c1-64)"
   PLAN_LABEL="$(basename -- "$PLAN_FILE" | tr -c 'A-Za-z0-9._-' '_')"
-  OUT="${OUT_DIR}/codex-plan-${PLAN_LABEL%.*}-${PLAN_SHA:0:12}.md"
-  # Review an immutable SNAPSHOT of exactly the bytes that were hashed, so an
-  # edit racing the review cannot be certified under the recorded sha.
-  SNAP="${OUT_DIR}/.plan-snapshot-${PLAN_SHA:0:12}.md"
+  # Per-invocation private workspace: snapshot FIRST, then hash THE SNAPSHOT —
+  # the report certifies exactly the bytes Codex read, and concurrent reviews
+  # of the same plan cannot touch each other's files.
+  TMP="$(mktemp -d "${TMPDIR:-/tmp}/redteam-plan.XXXXXX")"
+  trap 'rm -rf "$TMP"' EXIT
+  SNAP="$TMP/plan.md"
   cp -- "$PLAN_ABS" "$SNAP"
+  PLAN_SHA="$(shasum -a 256 "$SNAP" | cut -c1-64)"
+  OUT="${OUT_DIR}/codex-plan-${PLAN_LABEL%.*}-${PLAN_SHA:0:12}.md"
+  MSG="$TMP/final.md"; RAW="$TMP/transcript.txt"
   echo "redteam-codex: model=$MODEL effort=$EFFORT target=plan file=$PLAN_FILE sha256=${PLAN_SHA:0:12}…"
   echo "redteam-codex: writing → $OUT"
   PROMPT="You are the independent PLAN REVIEWER for this repository (CherryWorks Pro: Express + Drizzle/Postgres server in server/, React client in client/src, shared schema in shared/). You have a READ-ONLY sandbox: read the plan and any code it touches; do not modify anything.
@@ -142,25 +146,25 @@ APPROVED means no unresolved P1/P2. BLOCKED means the plan cannot proceed as wri
       -c model="$MODEL" \
       -c model_reasoning_effort="$EFFORT" \
       -c 'mcp_servers={}' \
-      -o "$OUT.msg" \
-      "$PROMPT" < /dev/null ) > "$OUT.raw" 2>&1   # </dev/null: exec otherwise waits on stdin when not a TTY
+      -o "$MSG" \
+      "$PROMPT" < /dev/null ) > "$RAW" 2>&1   # </dev/null: exec otherwise waits on stdin when not a TTY
   rc=$?
   set -e
   # The verdict comes ONLY from Codex's final message (-o). The transcript
   # echoes our own prompt, which contains the word VERDICT, so it is never parsed.
   VERDICT=""
-  if [ -s "$OUT.msg" ]; then
-    VERDICT="$(grep -m1 -E '^[[:space:]]*\**VERDICT:?\**[[:space:]]*\**(APPROVED|REVISE|BLOCKED)\**[[:space:]]*$' "$OUT.msg" | grep -o -E 'APPROVED|REVISE|BLOCKED' | head -1)"
+  if [ -s "$MSG" ]; then
+    # `|| true`: an unmatched grep must not trip errexit before the report is written.
+    VERDICT="$( { grep -m1 -E '^[[:space:]]*\**VERDICT:?\**[[:space:]]*\**(APPROVED|REVISE|BLOCKED)\**[[:space:]]*$' "$MSG" || true; } | { grep -o -E 'APPROVED|REVISE|BLOCKED' || true; } | head -1)"
   fi
   {
     echo "# Plan review — $(basename -- "$PLAN_FILE")"
     echo "- plan: $PLAN_ABS"
-    echo "- sha256: $PLAN_SHA (reviewed from snapshot $SNAP)"
+    echo "- sha256: $PLAN_SHA (of the reviewed snapshot; source hashed identically unless warned below)"
     echo "- model: $MODEL @ $EFFORT · $(date -u +%Y-%m-%dT%H:%M:%SZ) · codex exit $rc"
     echo
-    if [ -s "$OUT.msg" ]; then cat "$OUT.msg"; else echo "(no final message from Codex — NOT a verdict; transcript follows)"; echo; cat "$OUT.raw"; fi
-  } > "$OUT"
-  rm -f "$OUT.raw" "$OUT.msg" "$SNAP"
+    if [ -s "$MSG" ]; then cat "$MSG"; else echo "(no final message from Codex — NOT a verdict; transcript follows)"; echo; cat "$RAW"; fi
+  } > "$OUT.$$" && mv -f "$OUT.$$" "$OUT"   # publish atomically
   if [ $rc -ne 0 ]; then echo "redteam-codex: codex exited $rc — see $OUT" >&2; tail -20 "$OUT" >&2; exit 2; fi
   NOW_SHA="$(shasum -a 256 "$PLAN_ABS" | cut -c1-64)"
   if [ "$NOW_SHA" != "$PLAN_SHA" ]; then
