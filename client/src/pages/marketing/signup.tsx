@@ -104,9 +104,10 @@ export default function SignupPage() {
           fetch("/api/billing/status", { credentials: "include" })
             .then(r => (r.ok ? r.json() : null))
             .then(b => {
-              const ends = b?.trialEndsAt ? new Date(b.trialEndsAt) : null;
-              if (b?.subscriptionStatus === "trialing" && !b?.hasSubscription && ends && ends.getTime() > Date.now()) {
-                setResume({ name, chargeNote: `Your card won't be charged until your trial ends on ${ends.toLocaleDateString("en-US", { month: "long", day: "numeric" })}. Cancel any time before then.` });
+              // The server's own effective checkout policy, not the raw signup date.
+              const ends = b?.checkoutTrialEnd ? new Date(b.checkoutTrialEnd) : null;
+              if (ends && ends.getTime() > Date.now()) {
+                setResume({ name, chargeNote: `Your card won't be charged until ${ends.toLocaleDateString("en-US", { month: "long", day: "numeric" })}. Cancel any time before then.` });
               }
             })
             .catch(() => {});

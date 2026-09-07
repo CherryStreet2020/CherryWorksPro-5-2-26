@@ -495,6 +495,8 @@ app.get("/api/billing/status", requireAuth, async (req, res) => {
       trialEndsAt: org.trialEndsAt,
       hasSubscription: !!org.stripeSubscriptionId,
       planInactive: planInactive(org),
+      // What a base-plan checkout started now would carry (null = bills immediately).
+      checkoutTrialEnd: (() => { const t = checkoutTrialFor(org); return t ? new Date(t.trial_end * 1000).toISOString() : null; })(),
       stripeCustomerId: org.stripeCustomerId ? "configured" : null,
       hasPaymentMethod,
       deletionScheduledFor: (org as any).deletionScheduledFor || null,
