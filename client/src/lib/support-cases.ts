@@ -108,7 +108,27 @@ export interface CaseTimeEntry {
   serviceName: string | null;
 }
 
+export interface CaseAttachment {
+  id: string;
+  caseId: string;
+  messageId: string | null;
+  filename: string;
+  mimeType: string;
+  size: number;
+  isImage: boolean;
+  source: string;
+  createdAt: string;
+  url: string;
+}
+
+export function fileSizeLabel(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export interface CaseDetail extends CaseListRow {
+  attachments: CaseAttachment[];
   description: string | null;
   requesterContactId: string | null;
   externalRef: string | null;

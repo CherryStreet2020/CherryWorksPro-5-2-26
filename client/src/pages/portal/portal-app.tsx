@@ -66,7 +66,8 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 interface Me { orgSlug: string; orgName: string; orgLogoUrl: string | null; contact: { id: string; firstName: string; lastName: string; email: string; isPrimary: boolean }; client: { id: string; name: string; showHours: boolean }; org: { name: string; logoUrl: string | null; email: string | null; phone: string | null; website: string | null } | null }
 interface PortalCaseRow { id: string; caseKey: string; subject: string; status: CaseStatus; priority: CasePriority; typeName: string | null; requesterName: string | null; createdAt: string; updatedAt: string; awaitingYou: boolean; hasNewReply: boolean; resolvedAt: string | null }
-interface PortalCaseDetail { id: string; caseKey: string; subject: string; description: string | null; status: CaseStatus; priority: CasePriority; typeName: string | null; requesterName: string | null; assigneeName: string | null; createdAt: string; firstResponseAt: string | null; resolvedAt: string | null; messages: { id: string; authorName: string; fromTeam: boolean; body: string; createdAt: string }[]; events: { id: string; kind: string; toValue: string | null; createdAt: string }[]; hours: { minutes: number; billableMinutes: number } | null }
+interface PortalAttachment { id: string; filename: string; mimeType: string; size: number; isImage: boolean; url: string; createdAt: string }
+interface PortalCaseDetail { id: string; caseKey: string; subject: string; description: string | null; status: CaseStatus; priority: CasePriority; typeName: string | null; requesterName: string | null; assigneeName: string | null; createdAt: string; firstResponseAt: string | null; resolvedAt: string | null; attachments: PortalAttachment[]; messages: { id: string; authorName: string; fromTeam: boolean; body: string; createdAt: string }[]; events: { id: string; kind: string; toValue: string | null; createdAt: string }[]; hours: { minutes: number; billableMinutes: number } | null }
 interface PortalType { id: string; name: string; description: string | null }
 
 function useMe(slug: string) {
@@ -329,6 +330,17 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
     mutationFn: () => api("POST", `/api/portal/${slug}/cases/${id}/messages`, { body }),
     onSuccess: () => { setBody(""); qc.invalidateQueries({ queryKey: ["portal-case", slug, id] }); qc.invalidateQueries({ queryKey: ["portal-cases", slug] }); },
   });
+  const upload = useMutation({
+    mutationFn: async (files: FileList) => {
+      const fd = new FormData();
+      Array.from(files).forEach(f => fd.append("files", f));
+      const res = await fetch(`/api/portal/${slug}/cases/${id}/attachments`, { method: "POST", credentials: "include", headers: { "X-Requested-With": "cwp-portal" }, body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || `${res.status}`);
+      return data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["portal-case", slug, id] }),
+  });
   if (isLoading) return <Shell slug={slug} me={me} active="support"><p style={{ color: T.muted }}>Loading…</p></Shell>;
   if (isError || !c) return <Shell slug={slug} me={me} active="support"><p>That case isn't available.</p><Link href={`/portal/${slug}`} style={{ color: T.accent }}>Back to your cases</Link></Shell>;
   const thread = [
@@ -353,9 +365,37 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
         {c.description && (
           <section style={card}>
             <p style={{ margin: "0 0 6px", fontSize: 11, color: T.muted, letterSpacing: ".1em", textTransform: "uppercase", fontWeight: 600 }}>What you told us</p>
-            <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.65, color: T.text2 }}>{c.description}</p>
+            <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.65, color: T.text2 }}>{withInlineFiles(c.description, c.attachments)}</p>
           </section>
         )}
+
+        <section style={card} data-testid="portal-attachments">
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+            <p style={{ margin: 0, fontSize: 11, color: T.muted, letterSpacing: ".1em", textTransform: "uppercase", fontWeight: 600 }}>Files{c.attachments.length ? ` (${c.attachments.length})` : ""}</p>
+            {c.status !== "CLOSED" && (
+              <label style={{ ...btnGhost, padding: "7px 12px", fontSize: 13, cursor: upload.isPending ? "wait" : "pointer" }}>
+                {upload.isPending ? "Uploading…" : "Add files"}
+                <input type="file" multiple style={{ display: "none" }} onChange={e => { if (e.target.files?.length) upload.mutate(e.target.files); e.currentTarget.value = ""; }} data-testid="portal-file-input" />
+              </label>
+            )}
+          </div>
+          {upload.isError && <p style={{ color: T.warn, fontSize: 13, margin: "0 0 10px" }}>{(upload.error as Error).message}</p>}
+          {c.attachments.length === 0 ? (
+            <p style={{ margin: 0, color: T.text2, fontSize: 14 }}>No files yet. Screenshots help us fix things faster.</p>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
+              {c.attachments.map(a => (
+                <a key={a.id} href={a.url} target="_blank" rel="noopener" style={{ textDecoration: "none", color: "inherit", background: T.surface2, border: `1px solid ${T.line}`, borderRadius: 10, overflow: "hidden" }} data-testid={`portal-attachment-${a.id}`}>
+                  {a.isImage ? <img src={a.url} alt={a.filename} style={{ width: "100%", height: 110, objectFit: "cover", display: "block" }} loading="lazy" /> : <div style={{ height: 110, display: "flex", alignItems: "center", justifyContent: "center", color: T.muted, fontSize: 12 }}>{a.mimeType.split("/")[1]?.toUpperCase() || "FILE"}</div>}
+                  <div style={{ padding: "6px 8px", fontSize: 11, display: "flex", justifyContent: "space-between", gap: 6 }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={a.filename}>{a.filename}</span>
+                    <span style={{ color: T.muted, whiteSpace: "nowrap" }}>{a.size < 1048576 ? `${Math.round(a.size / 1024)} KB` : `${(a.size / 1048576).toFixed(1)} MB`}</span>
+                  </div>
+                </a>
+              ))}
+            </div>
+          )}
+        </section>
 
         <section style={card}>
           <p style={{ margin: "0 0 14px", fontSize: 11, color: T.muted, letterSpacing: ".1em", textTransform: "uppercase", fontWeight: 600 }}>Conversation</p>
@@ -371,7 +411,7 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
               ) : (
                 <li key={item.m.id} style={{ ...card, padding: 14, background: item.m.fromTeam ? T.surface2 : T.accentSoft, borderColor: item.m.fromTeam ? T.line : "rgba(207,51,57,0.35)" }} data-testid={item.m.fromTeam ? "portal-message-team" : "portal-message-you"}>
                   <p style={{ margin: "0 0 6px", fontSize: 12, color: T.muted }}><strong style={{ color: T.text }}>{item.m.fromTeam ? item.m.authorName : "You"}</strong>{item.m.fromTeam ? ` · ${me.orgName}` : ""} · {new Date(item.m.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</p>
-                  <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.65 }}>{item.m.body}</p>
+                  <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.65 }}>{withInlineFiles(item.m.body, c.attachments)}</p>
                 </li>
               ))}
             </ol>
@@ -389,6 +429,26 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
       </div>
     </Shell>
   );
+}
+
+/** "[attachment: name]" markers from imported mail/Jira become the file itself when it is on the case. */
+function withInlineFiles(text: string, attachments: PortalAttachment[]): React.ReactNode {
+  const re = /\[attachment(?::\s*([^\]]+))?\]/g;
+  if (!re.test(text)) return text;
+  re.lastIndex = 0;
+  const out: React.ReactNode[] = [];
+  let last = 0; let i = 0; let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    const name = m[1]?.trim();
+    const att = name ? attachments.find(a => a.filename === name) : undefined;
+    if (att && att.isImage) out.push(<a key={`a${i++}`} href={att.url} target="_blank" rel="noopener" style={{ display: "block", margin: "8px 0" }}><img src={att.url} alt={att.filename} style={{ maxHeight: 280, maxWidth: "100%", borderRadius: 8, border: `1px solid ${T.line}` }} loading="lazy" /></a>);
+    else if (att) out.push(<a key={`a${i++}`} href={att.url} target="_blank" rel="noopener" style={{ color: T.accent }}>{att.filename}</a>);
+    else out.push(<span key={`m${i++}`} style={{ color: T.muted, fontSize: 12 }}>[{name ? `file: ${name}` : "see files above"}]</span>);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
 }
 
 // ─── Billing ──────────────────────────────────────────────────────────────

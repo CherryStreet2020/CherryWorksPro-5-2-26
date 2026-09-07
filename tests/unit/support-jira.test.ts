@@ -21,6 +21,7 @@ const issue = (n: number, extra: any = {}) => ({
     reporter: { displayName: "Shadi Mohaisen", emailAddress: `shadi.${stamp}@abs.example`, accountType: "customer" },
     assignee: { displayName: "Ada Adminson", emailAddress: "admin.test@cwpro.dev", accountType: "atlassian" },
     priority: { name: "High" }, issuetype: { name: "Support" }, customfield_10010: { requestType: { name: "ERP Support Requests" } }, components: [],
+    attachment: n === 1 ? [{ id: "9001", filename: "shot.png", mimeType: "image/png", size: 4, content: `${fakeUrl}/rest/api/3/attachment/content/9001` }] : [],
     ...extra,
   },
   changelog: { histories: [{ created: "2026-08-11T09:00:00.000-0400", author: { displayName: "Ada Adminson" }, items: [{ field: "status", fromString: "Open", toString: "Waiting for support" }] }] },
@@ -38,6 +39,7 @@ describe("Jira fetcher", () => {
         if (!token) return json({ issues: [issue(1), issue(2)], isLast: false, nextPageToken: "p2" });
         return json({ issues: [issue(3)], isLast: true });
       }
+      if (url.pathname === "/rest/api/3/attachment/content/9001") { res.setHeader("Content-Type", "image/png"); res.end(Buffer.from("PNG!")); return; }
       const m = url.pathname.match(/^\/rest\/api\/3\/issue\/([^/]+)\/comment$/);
       if (m) {
         return json({ total: 2, comments: [
@@ -54,8 +56,9 @@ describe("Jira fetcher", () => {
     clientId = (await c.json()).id;
   });
 
-  it("flattens ADF", () => {
+  it("flattens ADF and keeps inline media filenames", () => {
     expect(adfToText({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Hello " }, { type: "mention", attrs: { text: "@Dean" } }] }, { type: "mediaSingle" }] }).trim()).toBe("Hello @Dean\n[attachment]");
+    expect(adfToText({ type: "mediaSingle", content: [{ type: "media", attrs: { id: "x", alt: "shot.png" } }] }).trim()).toBe("[attachment: shot.png]");
   });
 
   it("shapes an issue with comments and transitions", () => {
@@ -85,12 +88,25 @@ describe("Jira fetcher", () => {
     const real = await (await api("POST", "/api/support/import/jira-fetch", admin, { baseUrl: fakeUrl, email: "dean@example.com", apiToken: "tok_12345678", projectKey: "ZJR", clientId })).json();
     expect(real.imported).toBe(3);
     expect(real.nextCaseNumber).toBe(4);
+    expect(real.attachmentsImported).toBe(1);
+    expect(real.attachmentErrors).toEqual([]);
     const list = await (await api("GET", `/api/support/cases?view=all&clientId=${clientId}`, admin)).json();
     expect(list.map((r: any) => r.caseKey).sort()).toEqual(["ZJR-1", "ZJR-2", "ZJR-3"]);
     const d = await (await api("GET", `/api/support/cases/${list.find((r: any) => r.caseKey === "ZJR-2").id}`, admin)).json();
     expect(d.status).toBe("RESOLVED");
     expect(d.messages.map((m: any) => m.visibility)).toEqual(["CUSTOMER", "INTERNAL"]);
     expect(d.typeName).toBe("ERP Support Request");
+    const one = await (await api("GET", `/api/support/cases/${list.find((r: any) => r.caseKey === "ZJR-1").id}`, admin)).json();
+    expect(one.attachments.length).toBe(1);
+    expect(one.attachments[0].filename).toBe("shot.png");
+    expect(one.attachments[0].source).toBe("IMPORT");
+    const bytes = await fetch(`${BASE}${one.attachments[0].url}`, { headers: { Cookie: admin.cookie } });
+    expect(await bytes.text()).toBe("PNG!");
+
+    // Re-running with attachments for existing open cases adds nothing new (dedup by Jira attachment id).
+    const again = await (await api("POST", "/api/support/import/jira-fetch", admin, { baseUrl: fakeUrl, email: "dean@example.com", apiToken: "tok_12345678", projectKey: "ZJR", clientId, attachmentsForExisting: "open" })).json();
+    expect(again.imported).toBe(0);
+    expect(again.attachmentsImported).toBe(0);
   });
 
   it("refuses bad credentials cleanly", async () => {

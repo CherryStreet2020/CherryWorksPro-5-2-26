@@ -17,9 +17,11 @@ import {
   clientContacts, clients, projects, supportCaseEvents, supportCaseMessages, supportCaseTypes, supportCases, timeEntries, users,
 } from "@shared/schema";
 import { ensureDefaultTypes, ensureUniquePrefix } from "./support-cases";
+import { createAttachment, existingExternalRefs, MAX_ATTACHMENT_BYTES } from "./support-attachments";
 
 export interface JiraExportComment { author: string | null; email?: string | null; agent?: boolean; public: boolean; created: string; body: string }
 export interface JiraExportTransition { from?: string | null; to: string | null; at: string; by?: string | null }
+export interface JiraExportAttachment { id: string; filename: string; mimeType?: string | null; size?: number | null; contentUrl: string; created?: string | null }
 export interface JiraExportIssue {
   key: string;
   summary: string;
@@ -40,6 +42,7 @@ export interface JiraExportIssue {
   resolved?: string | null;
   comments?: JiraExportComment[];
   transitions?: JiraExportTransition[];
+  attachments?: JiraExportAttachment[];
 }
 
 export interface ImportOptions {
@@ -49,6 +52,10 @@ export interface ImportOptions {
   items: JiraExportIssue[];
   relinkTime?: boolean;
   dryRun?: boolean;
+  /** Fetches attachment bytes (Basic-auth Jira download). Absent → attachments are skipped. */
+  downloadAttachment?: (att: JiraExportAttachment) => Promise<Buffer>;
+  /** Also pull attachments onto cases that already exist: open ones, all, or none (default open). */
+  attachmentsForExisting?: "open" | "all" | "none";
 }
 
 export interface ImportReport {
@@ -58,6 +65,8 @@ export interface ImportReport {
   unmatchedAssignees: string[];
   unmatchedTypes: string[];
   timeEntriesLinked: number;
+  attachmentsImported: number;
+  attachmentErrors: { key: string; filename: string; error: string }[];
   nextCaseNumber: number;
   errors: { key: string; error: string }[];
 }
@@ -92,7 +101,7 @@ function parseKey(key: string): { prefix: string; number: number } | null {
 }
 
 export async function importJiraIssues(opts: ImportOptions): Promise<ImportReport> {
-  const report: ImportReport = { imported: 0, skipped: [], contactsCreated: 0, unmatchedAssignees: [], unmatchedTypes: [], timeEntriesLinked: 0, nextCaseNumber: 0, errors: [] };
+  const report: ImportReport = { imported: 0, skipped: [], contactsCreated: 0, unmatchedAssignees: [], unmatchedTypes: [], timeEntriesLinked: 0, attachmentsImported: 0, attachmentErrors: [], nextCaseNumber: 0, errors: [] };
   const [client] = await db.select().from(clients).where(and(eq(clients.id, opts.clientId), eq(clients.orgId, opts.orgId)));
   if (!client) throw new Error("Client not found");
   if (opts.projectId) {
@@ -109,7 +118,46 @@ export async function importJiraIssues(opts: ImportOptions): Promise<ImportRepor
     .from(clientContacts).where(and(eq(clientContacts.orgId, opts.orgId), eq(clientContacts.clientId, opts.clientId)));
   const contactByEmail = new Map(existingContacts.filter(c => c.email).map(c => [c.email!.toLowerCase(), c.id]));
 
-  const existingKeys = new Set((await db.select({ k: supportCases.caseKey }).from(supportCases).where(eq(supportCases.orgId, opts.orgId))).map(r => r.k));
+  const existingRows = await db.select({ id: supportCases.id, k: supportCases.caseKey, status: supportCases.status }).from(supportCases).where(eq(supportCases.orgId, opts.orgId));
+  const existingKeys = new Set(existingRows.map(r => r.k));
+  const existingByKey = new Map(existingRows.map(r => [r.k, r]));
+  const attachmentsMode = opts.attachmentsForExisting ?? "open";
+  const touchedIds = opts.items.map(it => existingByKey.get(it.key)?.id).filter((x): x is string => !!x);
+  const knownRefs = opts.downloadAttachment ? await existingExternalRefs(opts.orgId, touchedIds) : new Set<string>();
+
+  /** On re-run, bring existing imported cases' text up to date (e.g. media markers that now carry filenames). */
+  const refreshImportedText = async (caseId: string, item: JiraExportIssue) => {
+    if (opts.dryRun) return;
+    const [row] = await db.select({ description: supportCases.description, source: supportCases.source }).from(supportCases).where(eq(supportCases.id, caseId));
+    if (!row || row.source !== "IMPORT") return;
+    const desc = item.description || null;
+    if (desc !== row.description) await db.update(supportCases).set({ description: desc }).where(eq(supportCases.id, caseId));
+    const msgs = await db.select({ id: supportCaseMessages.id, authorName: supportCaseMessages.authorName, body: supportCaseMessages.body, createdAt: supportCaseMessages.createdAt })
+      .from(supportCaseMessages).where(eq(supportCaseMessages.caseId, caseId));
+    for (const c of item.comments || []) {
+      const at = new Date(c.created).getTime();
+      const match = msgs.find(m => Math.abs(m.createdAt.getTime() - at) < 2000 && m.authorName === (c.author || (c.agent ? "Team" : "Customer")));
+      const body = c.body || "(empty)";
+      if (match && match.body !== body) await db.update(supportCaseMessages).set({ body }).where(eq(supportCaseMessages.id, match.id));
+    }
+  };
+
+  const importAttachments = async (caseId: string, item: JiraExportIssue) => {
+    if (!opts.downloadAttachment || opts.dryRun) return;
+    for (const att of item.attachments || []) {
+      const ref = `JIRA:${att.id}`;
+      if (knownRefs.has(ref)) continue;
+      if ((att.size ?? 0) > MAX_ATTACHMENT_BYTES) { report.attachmentErrors.push({ key: item.key, filename: att.filename, error: "larger than 15 MB" }); continue; }
+      try {
+        const bytes = await opts.downloadAttachment(att);
+        await createAttachment({ orgId: opts.orgId, caseId, filename: att.filename, mimeType: att.mimeType || "application/octet-stream", bytes, source: "IMPORT", externalRef: ref });
+        knownRefs.add(ref);
+        report.attachmentsImported++;
+      } catch (err) {
+        report.attachmentErrors.push({ key: item.key, filename: att.filename, error: (err as Error).message });
+      }
+    }
+  };
 
   // Prefix: take it from the export keys; make sure this client owns it.
   const prefixes = new Set(opts.items.map(i => parseKey(i.key)?.prefix).filter(Boolean) as string[]);
@@ -125,7 +173,14 @@ export async function importJiraIssues(opts: ImportOptions): Promise<ImportRepor
     const parsed = parseKey(item.key);
     if (!parsed) { report.errors.push({ key: item.key, error: "Unrecognised key" }); continue; }
     maxNumber = Math.max(maxNumber, parsed.number);
-    if (existingKeys.has(item.key)) { report.skipped.push(item.key); continue; }
+    if (existingKeys.has(item.key)) {
+      report.skipped.push(item.key);
+      const ex = existingByKey.get(item.key)!;
+      const isOpen = ["NEW", "WAITING_ON_SUPPORT", "IN_PROGRESS", "WAITING_ON_CUSTOMER"].includes(ex.status);
+      await refreshImportedText(ex.id, item);
+      if (attachmentsMode === "all" || (attachmentsMode === "open" && isOpen)) await importAttachments(ex.id, item);
+      continue;
+    }
 
     try {
       const typeId = item.requestType ? typeByNorm.get(norm(item.requestType)) ?? null : null;
@@ -183,6 +238,7 @@ export async function importJiraIssues(opts: ImportOptions): Promise<ImportRepor
         createdAt, updatedAt,
       }).returning({ id: supportCases.id });
       keyToId.set(item.key, row.id);
+      await importAttachments(row.id, item);
 
       await db.insert(supportCaseEvents).values({ orgId: opts.orgId, caseId: row.id, kind: "created", fromValue: null, toValue: "NEW", actorName: item.reporterName || null, createdAt });
       for (const t of item.transitions || []) {

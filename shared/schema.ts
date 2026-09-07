@@ -1406,6 +1406,28 @@ export const userNotifications = pgTable("user_notifications", {
 export type SupportSlaPolicy = typeof supportSlaPolicies.$inferSelect;
 export type UserNotification = typeof userNotifications.$inferSelect;
 
+/** Files on a case (or on one of its messages). Bytes live in object storage under `storageKey`. */
+export const supportCaseAttachments = pgTable("support_case_attachments", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id", { length: 36 }).notNull().references(() => orgs.id),
+  caseId: varchar("case_id", { length: 36 }).notNull().references(() => supportCases.id, { onDelete: "cascade" }),
+  messageId: varchar("message_id", { length: 36 }),
+  filename: text("filename").notNull(),
+  mimeType: text("mime_type").notNull(),
+  size: integer("size").notNull(),
+  storageKey: text("storage_key").notNull(),
+  uploadedByUserId: varchar("uploaded_by_user_id", { length: 36 }),
+  uploadedByContactId: varchar("uploaded_by_contact_id", { length: 36 }),
+  source: text("source").notNull().default("AGENT"),
+  externalRef: text("external_ref"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  caseIdx: index("idx_support_case_attachments_case").on(table.caseId),
+  externalIdx: index("idx_support_case_attachments_external").on(table.orgId, table.externalRef),
+}));
+
+export type SupportCaseAttachment = typeof supportCaseAttachments.$inferSelect;
+
 export type SupportCaseType = typeof supportCaseTypes.$inferSelect;
 export type SupportCase = typeof supportCases.$inferSelect;
 export type SupportCaseMessage = typeof supportCaseMessages.$inferSelect;

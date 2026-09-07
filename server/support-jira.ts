@@ -4,7 +4,7 @@
  * support-import.ts. Nothing here is stored; the token lives only for the
  * duration of the request that carries it.
  */
-import type { JiraExportIssue, JiraExportComment, JiraExportTransition } from "./support-import";
+import type { JiraExportIssue, JiraExportComment, JiraExportTransition, JiraExportAttachment } from "./support-import";
 
 /** Flattens Atlassian Document Format to plain text. */
 export function adfToText(node: any): string {
@@ -15,7 +15,14 @@ export function adfToText(node: any): string {
   if (node.type === "mention") return node.attrs?.text || "";
   if (node.type === "emoji") return node.attrs?.text || "";
   if (node.type === "inlineCard") return node.attrs?.url || "";
-  if (node.type === "media" || node.type === "mediaSingle" || node.type === "mediaGroup") return "[attachment]\n";
+  if (node.type === "media") {
+    const name = node.attrs?.alt || node.attrs?.__fileName || node.attrs?.name;
+    return name ? `[attachment: ${String(name).trim()}]\n` : "[attachment]\n";
+  }
+  if (node.type === "mediaSingle" || node.type === "mediaGroup") {
+    const inner = (node.content || []).map(adfToText).join("");
+    return inner || "[attachment]\n";
+  }
   const inner = (node.content || []).map(adfToText).join("");
   if (["paragraph", "heading", "blockquote", "codeBlock", "listItem", "tableRow"].includes(node.type)) return inner + "\n";
   if (node.type === "tableCell" || node.type === "tableHeader") return inner + "\t";
@@ -54,13 +61,35 @@ export class JiraClient {
     return res.json() as Promise<T>;
   }
 
+  /** Downloads an attachment's bytes (same Basic auth). */
+  async getBytes(url: string, maxBytes: number): Promise<Buffer> {
+    const target = new URL(url, this.base);
+    if (target.origin !== new URL(this.base).origin) throw new Error("Attachment is not on the Jira site");
+    const res = await this.fetchImpl(target.toString(), { headers: { Authorization: this.auth }, redirect: "follow" });
+    if (!res.ok) throw new JiraHttpError(res.status, target.pathname);
+    const declared = Number(res.headers.get("content-length") || 0);
+    if (declared > maxBytes) { await res.body?.cancel().catch(() => {}); throw new Error("Attachment larger than the limit"); }
+    if (!res.body) return Buffer.from(await res.arrayBuffer());
+    const chunks: Buffer[] = [];
+    let total = 0;
+    const reader = res.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) { await reader.cancel().catch(() => {}); throw new Error("Attachment larger than the limit"); }
+      chunks.push(Buffer.from(value));
+    }
+    return Buffer.concat(chunks);
+  }
+
   /** Verifies the credentials and returns the caller's display name. */
   async whoAmI(): Promise<{ displayName: string; emailAddress?: string }> {
     return this.get("/rest/api/3/myself");
   }
 
   async listIssues(projectKey: string, onPage?: (n: number) => void): Promise<any[]> {
-    const fields = "summary,description,status,created,updated,resolutiondate,reporter,assignee,priority,issuetype,customfield_10010,components";
+    const fields = "summary,description,status,created,updated,resolutiondate,reporter,assignee,priority,issuetype,customfield_10010,components,attachment";
     const jql = encodeURIComponent(`project=${projectKey} ORDER BY created ASC`);
     const issues: any[] = [];
     let token: string | null = null;
@@ -103,8 +132,12 @@ export function shapeIssue(it: any, comments: any[]): JiraExportIssue {
   const transitions: JiraExportTransition[] = (it.changelog?.histories || []).flatMap((h: any) =>
     (h.items || []).filter((x: any) => x.field === "status").map((x: any) => ({ from: x.fromString ?? null, to: x.toString ?? null, at: h.created, by: h.author?.displayName ?? null })),
   );
+  const attachments: JiraExportAttachment[] = (f.attachment || []).map((a: any) => ({
+    id: String(a.id), filename: a.filename || `attachment-${a.id}`, mimeType: a.mimeType ?? null, size: a.size ?? null, contentUrl: a.content, created: a.created ?? null,
+  }));
   return {
     key: it.key,
+    attachments,
     summary: f.summary || "(no subject)",
     description: adfToText(f.description).trim().slice(0, 20000) || null,
     status: f.status?.name || "",

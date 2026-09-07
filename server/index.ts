@@ -35,6 +35,7 @@ import { pool } from "./db";
 import { canonicalHostRedirect, resolveCanonicalOrigin } from "./lib/canonical-host";
 import { startSupportSlaProcessor, stopSupportSlaProcessor } from "./support-sla";
 import { runSlaAlertPass } from "./support-notifications";
+import { startInboundGraphProcessor, stopInboundGraphProcessor } from "./support-inbound-graph";
 
 const app = express();
 const httpServer = createServer(app);
@@ -327,6 +328,7 @@ app.use((req, res, next) => {
       // Task #303 — Drain admin failure emails buffered during quiet hours.
       startPendingAdminNotificationProcessor();
       startSupportSlaProcessor(() => runSlaAlertPass().then(() => undefined));
+      startInboundGraphProcessor();
 
       const { cleanupStaleImportRuns } = await import("./routes/import-routes");
       cleanupStaleImportRuns().catch(e => console.error("[import-cleanup] Boot backfill failed:", e));
@@ -558,6 +560,7 @@ app.use((req, res, next) => {
     stopWebhookHealthCheckProcessor();
     stopPendingAdminNotificationProcessor();
     stopSupportSlaProcessor();
+    stopInboundGraphProcessor();
     void import("./routes/marketing-os-telemetry-routes").then((m) =>
       m.stopMarketingOsTelemetryCleanupScheduler(),
     );

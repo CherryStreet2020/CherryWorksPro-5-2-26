@@ -14,6 +14,17 @@ import {
 import * as cases from "../support-cases";
 import { importJiraIssues } from "../support-import";
 import { JiraClient, JiraHttpError, pullProject, MAX_ISSUES } from "../support-jira";
+import multer from "multer";
+import { MAX_ATTACHMENT_BYTES, createAttachment, listAttachments, getAttachment, deleteAttachment, streamBytes, attachmentView, isAllowedAttachment } from "../support-attachments";
+
+const attachmentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_ATTACHMENT_BYTES, files: 10 },
+  fileFilter: (_req, file, cb) => {
+    if (!isAllowedAttachment(file.originalname)) return cb(new Error("That file type is not allowed"));
+    cb(null, true);
+  },
+});
 import { resolvePolicy, upsertPolicy, deleteClientPolicy, getPolicyRow, DEFAULT_POLICY } from "../support-sla";
 import { slaPolicySchema, supportSettingsSchema } from "@shared/schema";
 import { db } from "../db";
@@ -22,7 +33,7 @@ import { eq } from "drizzle-orm";
 
 // Validation and business-rule messages are meant for the user; everything
 // else goes through the production sanitizer.
-const USER_FACING = [/not found/i, /belongs to a different client/i, /does not belong/i, /is required/i, /at most/i, /must be/i, /starting with a letter/i, /already used by another client/i, /exactly one key prefix/i];
+const USER_FACING = [/not found/i, /belongs to a different client/i, /does not belong/i, /is required/i, /at most/i, /must be/i, /starting with a letter/i, /already used by another client/i, /exactly one key prefix/i, /not allowed/i, /15 MB/i, /is empty/i, /No files/i];
 function friendlyError(err: any): string {
   if (err instanceof z.ZodError) return err.issues[0]?.message || "Invalid input";
   const msg = String(err?.message || "");
@@ -130,12 +141,13 @@ export function registerSupportCaseRoutes(app: Express) {
     const id = req.params.id as string;
     const row = await cases.getCase(orgId, id);
     if (!row) return res.status(404).json({ message: "Support case not found" });
-    const [messages, events, time] = await Promise.all([
+    const [messages, events, time, attachments] = await Promise.all([
       cases.listMessages(orgId, id, true),
       cases.listEvents(orgId, id),
       cases.listCaseTime(orgId, id),
+      listAttachments(orgId, id),
     ]);
-    return res.json({ ...cases.withSla({ ...row, minutesLogged: Number(row.minutesLogged) }), messages, events, time });
+    return res.json({ ...cases.withSla({ ...row, minutesLogged: Number(row.minutesLogged) }), messages, events, time, attachments: attachments.map(a => attachmentView(a, "/api/support/attachments")) });
   });
 
   app.patch("/api/support/cases/:id", ...gate, async (req, res) => {
@@ -171,6 +183,47 @@ export function registerSupportCaseRoutes(app: Express) {
     }
   });
 
+  // ── Attachments ───────────────────────────────────────────────────────
+  app.post("/api/support/cases/:id/attachments", ...gate, (req, res, next) => {
+    attachmentUpload.array("files", 10)(req, res, (err: any) => {
+      if (err) return res.status(400).json({ message: err?.code === "LIMIT_FILE_SIZE" ? "Files must be 15 MB or smaller" : (err?.message || "Upload failed") });
+      next();
+    });
+  }, async (req, res) => {
+    try {
+      const orgId = req.session.orgId!;
+      const row = await cases.getCaseRaw(orgId, req.params.id as string);
+      if (!row) return res.status(404).json({ message: "Support case not found" });
+      const files = ((req as any).files as Express.Multer.File[] | undefined) ?? [];
+      if (files.length === 0) return res.status(400).json({ message: "No files were uploaded" });
+      const messageId = typeof req.body?.messageId === "string" && req.body.messageId ? req.body.messageId : null;
+      const created = [];
+      for (const f of files) {
+        created.push(await createAttachment({ orgId, caseId: row.id, messageId, filename: f.originalname, mimeType: f.mimetype, bytes: f.buffer, uploadedByUserId: req.session.userId!, source: "AGENT" }));
+      }
+      return res.status(201).json(created.map(a => attachmentView(a, "/api/support/attachments")));
+    } catch (err: any) {
+      return res.status(400).json({ message: friendlyError(err) });
+    }
+  });
+
+  app.get("/api/support/attachments/:id", ...gate, async (req, res) => {
+    const a = await getAttachment(req.session.orgId!, req.params.id as string);
+    if (!a) return res.status(404).json({ message: "Attachment not found" });
+    const inline = a.mimeType.startsWith("image/") || a.mimeType === "application/pdf";
+    await streamBytes(a.storageKey, a.mimeType, a.filename, res, inline && req.query.download !== "1");
+  });
+
+  app.delete("/api/support/attachments/:id", ...gate, async (req, res) => {
+    const a = await getAttachment(req.session.orgId!, req.params.id as string);
+    if (!a) return res.status(404).json({ message: "Attachment not found" });
+    const u = await storage.getUserById(req.session.userId!);
+    const isManager = u?.role === "ADMIN" || u?.role === "MANAGER";
+    if (!isManager && a.uploadedByUserId !== req.session.userId) return res.status(403).json({ message: "Only the uploader or a manager can remove this file" });
+    await deleteAttachment(req.session.orgId!, a.id);
+    return res.json({ ok: true });
+  });
+
   app.get("/api/support/cases/:id/time", ...gate, async (req, res) => {
     const row = await cases.getCaseRaw(req.session.orgId!, req.params.id as string);
     if (!row) return res.status(404).json({ message: "Support case not found" });
@@ -182,10 +235,19 @@ export function registerSupportCaseRoutes(app: Express) {
     const orgId = req.session.orgId!;
     const row = await getPolicyRow(orgId, null);
     const org = await storage.getOrg(orgId);
+    const { hasReadScope, INBOUND_REQUIRED_SCOPE } = await import("../support-inbound-graph");
+    const mailbox = {
+      provider: org?.emailProviderType ?? "smtp",
+      connected: !!org?.emailOauthRefreshToken,
+      status: org?.emailOauthStatus ?? "ok",
+      canReadInbox: org?.emailProviderType === "m365" && !!org?.emailOauthRefreshToken && hasReadScope(org?.emailOauthScopes),
+      requiredScope: INBOUND_REQUIRED_SCOPE,
+      senderAddress: (org as any)?.emailSenderAddress ?? null,
+    };
     return res.json({ policy: row ? {
       firstResponseHours: Number(row.firstResponseHours), resolutionHours: Number(row.resolutionHours),
       businessHoursOnly: row.businessHoursOnly, businessStartHour: row.businessStartHour, businessEndHour: row.businessEndHour, timezone: row.timezone,
-    } : DEFAULT_POLICY, isDefault: !row, supportInboundAddress: org?.supportInboundAddress ?? null });
+    } : DEFAULT_POLICY, isDefault: !row, supportInboundAddress: org?.supportInboundAddress ?? null, mailbox });
   });
 
   app.put("/api/support/sla", requireAuth, requireManagerOrAbove, requireTier("PROFESSIONAL"), async (req, res) => {
@@ -216,6 +278,19 @@ export function registerSupportCaseRoutes(app: Express) {
   app.delete("/api/support/clients/:clientId/sla", requireAuth, requireManagerOrAbove, requireTier("PROFESSIONAL"), async (req, res) => {
     const ok = await deleteClientPolicy(req.session.orgId!, req.params.clientId as string);
     return res.json({ ok });
+  });
+
+  app.post("/api/support/inbound/check-now", requireAuth, requireManagerOrAbove, requireTier("PROFESSIONAL"), async (req, res) => {
+    try {
+      const org = await storage.getOrg(req.session.orgId!);
+      if (!org?.supportInboundAddress) return res.status(400).json({ message: "Set the support address first" });
+      if (org.emailProviderType !== "m365" || !org.emailOauthRefreshToken) return res.status(400).json({ message: "Connect a Microsoft 365 mailbox in Settings → Email first" });
+      const { pollOrg } = await import("../support-inbound-graph");
+      const r = await pollOrg({ id: org.id, supportInboundAddress: org.supportInboundAddress, emailOauthScopes: org.emailOauthScopes, emailOauthRefreshToken: org.emailOauthRefreshToken, emailProviderType: org.emailProviderType, emailOauthStatus: org.emailOauthStatus });
+      return res.json(r);
+    } catch (err: any) {
+      return res.status(400).json({ message: String(err?.message || "Inbox check failed").slice(0, 200) });
+    }
   });
 
   app.patch("/api/support/settings", requireAuth, requireManagerOrAbove, requireTier("PROFESSIONAL"), async (req, res) => {
@@ -298,9 +373,12 @@ export function registerSupportCaseRoutes(app: Express) {
       if (!body.clientId) return res.status(400).json({ message: "clientId is required" });
       const items = await pullProject(conn, conn.projectKey);
       if (items.length > MAX_ISSUES) return res.status(400).json({ message: `Import at most ${MAX_ISSUES} issues per request` });
+      const jira = new JiraClient(conn);
       const report = await importJiraIssues({
         orgId: req.session.orgId!, clientId: String(body.clientId), projectId: body.projectId ? String(body.projectId) : null,
         items, relinkTime: body.relinkTime !== false, dryRun: body.dryRun === true,
+        downloadAttachment: body.attachments === false ? undefined : (att) => jira.getBytes(att.contentUrl, MAX_ATTACHMENT_BYTES),
+        attachmentsForExisting: body.attachmentsForExisting === "all" || body.attachmentsForExisting === "none" ? body.attachmentsForExisting : "open",
       });
       if (!body.dryRun) {
         await storage.createAuditLog({
