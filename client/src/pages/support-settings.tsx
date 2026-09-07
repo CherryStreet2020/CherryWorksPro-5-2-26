@@ -13,6 +13,10 @@ import { Settings2, Copy, Check } from "lucide-react";
 interface Policy { firstResponseHours: number; resolutionHours: number; businessHoursOnly: boolean; businessStartHour: number; businessEndHour: number; timezone: string }
 interface SlaResponse { policy: Policy; isDefault: boolean; supportInboundAddress: string | null }
 interface PortalInfo { orgSlug: string; portalUrl: string }
+interface PickerClient { id: string; name: string }
+interface PickerProject { id: string; name: string }
+interface JiraTest { ok: boolean; connectedAs: string; issues: number; firstKey: string | null; lastKey: string | null; statuses: Record<string, number> }
+interface ImportReport { pulled?: number; imported: number; skipped: string[]; contactsCreated: number; unmatchedAssignees: string[]; unmatchedTypes: string[]; timeEntriesLinked: number; nextCaseNumber: number; errors: { key: string; error: string }[] }
 
 export default function SupportSettingsPage() {
   useDocumentTitle("Support settings");
@@ -107,6 +111,8 @@ export default function SupportSettingsPage() {
         )}
       </section>
 
+      <JiraImportCard card={card} muted={muted} fieldStyle={fieldStyle} />
+
       <section className="rounded-2xl p-5 border-0 space-y-3" style={card}>
         <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Email to case</h2>
         <p className="text-sm" style={{ color: "var(--lux-text-secondary)" }}>
@@ -118,5 +124,91 @@ export default function SupportSettingsPage() {
         </form>
       </section>
     </div>
+  );
+}
+
+
+function JiraImportCard({ card, muted, fieldStyle }: { card: React.CSSProperties; muted: React.CSSProperties; fieldStyle: React.CSSProperties }) {
+  const { toast } = useToast();
+  const [baseUrl, setBaseUrl] = useState("https://cherrystreet.atlassian.net");
+  const [email, setEmail] = useState("");
+  const [apiToken, setApiToken] = useState("");
+  const [projectKey, setProjectKey] = useState("ABS");
+  const [clientId, setClientId] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [test, setTest] = useState<JiraTest | null>(null);
+  const [report, setReport] = useState<ImportReport | null>(null);
+  const { data: clients } = useQuery<PickerClient[]>({ queryKey: ["/api/support/clients"] });
+  const { data: projects } = useQuery<PickerProject[]>({
+    queryKey: ["/api/support/clients", clientId, "projects"],
+    queryFn: async () => { const r = await fetch(`/api/support/clients/${clientId}/projects`, { credentials: "include" }); if (!r.ok) throw new Error(`${r.status}`); return r.json(); },
+    enabled: !!clientId,
+  });
+  const conn = { baseUrl: baseUrl.trim(), email: email.trim(), apiToken: apiToken.trim(), projectKey: projectKey.trim().toUpperCase() };
+  const ready = !!conn.baseUrl && !!conn.email && !!conn.apiToken && !!conn.projectKey;
+
+  const testConn = useMutation({
+    mutationFn: async () => (await apiRequest("POST", "/api/support/import/jira-test", conn)).json(),
+    onSuccess: (r: JiraTest) => { setTest(r); setReport(null); },
+    onError: (err: Error) => { setTest(null); toast({ title: "Could not connect to Jira", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }); },
+  });
+  const run = useMutation({
+    mutationFn: async (dryRun: boolean) => (await apiRequest("POST", "/api/support/import/jira-fetch", { ...conn, clientId, projectId: projectId || null, dryRun, relinkTime: true })).json(),
+    onSuccess: (r: ImportReport, dryRun) => {
+      setReport(r);
+      if (!dryRun) { queryClient.invalidateQueries({ queryKey: ["/api/support/cases"] }); queryClient.invalidateQueries({ queryKey: ["/api/support/summary"] }); toast({ title: `Imported ${r.imported} cases` }); }
+    },
+    onError: (err: Error) => toast({ title: "Import failed", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }),
+  });
+
+  return (
+    <section className="rounded-2xl p-5 border-0 space-y-3" style={card} data-testid="card-jira-import">
+      <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Import from Jira Service Management</h2>
+      <p className="text-sm" style={{ color: "var(--lux-text-secondary)" }}>
+        Pulls every issue in a Jira project with its comments and status history, keeps the keys and dates, and continues the numbering here. The API token is used for this import only and is not stored. Create one at id.atlassian.com → Security → API tokens.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div><Label className="text-xs" style={muted}>Jira URL</Label><Input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} style={fieldStyle} data-testid="input-jira-url" /></div>
+        <div><Label className="text-xs" style={muted}>Project key</Label><Input value={projectKey} onChange={e => setProjectKey(e.target.value)} style={fieldStyle} data-testid="input-jira-project" /></div>
+        <div><Label className="text-xs" style={muted}>Atlassian account email</Label><Input type="email" value={email} onChange={e => setEmail(e.target.value)} style={fieldStyle} data-testid="input-jira-email" /></div>
+        <div><Label className="text-xs" style={muted}>API token</Label><Input type="password" value={apiToken} onChange={e => setApiToken(e.target.value)} style={fieldStyle} data-testid="input-jira-token" autoComplete="off" /></div>
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button variant="outline" onClick={() => testConn.mutate()} disabled={!ready || testConn.isPending} data-testid="button-jira-test">{testConn.isPending ? "Connecting…" : "Test connection"}</Button>
+        {test && <span className="text-xs" style={{ color: "var(--lux-text)" }} data-testid="text-jira-test">Connected as {test.connectedAs} · {test.issues} issues ({test.firstKey} → {test.lastKey})</span>}
+      </div>
+      {test && (
+        <div className="space-y-3 pt-2 border-t" style={{ borderColor: "var(--lux-border)" }}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs" style={muted}>Import into client</Label>
+              <select value={clientId} onChange={e => { setClientId(e.target.value); setProjectId(""); }} className="w-full h-9 rounded-md border px-3 text-sm" style={{ background: "var(--lux-surface)", ...fieldStyle }} data-testid="select-jira-client">
+                <option value="">Select client</option>
+                {clients?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <Label className="text-xs" style={muted}>Default project for the cases (optional)</Label>
+              <select value={projectId} onChange={e => setProjectId(e.target.value)} disabled={!clientId} className="w-full h-9 rounded-md border px-3 text-sm" style={{ background: "var(--lux-surface)", ...fieldStyle }} data-testid="select-jira-project">
+                <option value="">None</option>
+                {projects?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => run.mutate(true)} disabled={!clientId || run.isPending} data-testid="button-jira-dry-run">Preview (dry run)</Button>
+            <Button className="text-white" onClick={() => run.mutate(false)} disabled={!clientId || run.isPending} style={{ background: "var(--gradient-brand)" }} data-testid="button-jira-import">{run.isPending ? "Importing…" : "Import now"}</Button>
+          </div>
+        </div>
+      )}
+      {report && (
+        <div className="rounded-lg p-3 text-xs space-y-1" style={{ background: "var(--lux-surface-alt)", border: "1px solid var(--lux-border)", color: "var(--lux-text)" }} data-testid="text-jira-report">
+          <p><strong>{report.imported}</strong> imported{report.pulled !== undefined ? ` of ${report.pulled} pulled` : ""} · {report.skipped.length} already existed · {report.contactsCreated} contacts created · {report.timeEntriesLinked} time entries linked · next key number {report.nextCaseNumber}</p>
+          {report.unmatchedAssignees.length > 0 && <p style={muted}>Assignees left unassigned (no matching team member): {report.unmatchedAssignees.join(", ")}</p>}
+          {report.unmatchedTypes.length > 0 && <p style={muted}>Request types with no matching case type (left blank): {report.unmatchedTypes.join(", ")}</p>}
+          {report.errors.length > 0 && <p style={{ color: "#b91c1c" }}>{report.errors.length} errors: {report.errors.slice(0, 5).map(e => `${e.key}: ${e.error}`).join("; ")}</p>}
+        </div>
+      )}
+    </section>
   );
 }
