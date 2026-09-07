@@ -227,7 +227,7 @@ function JiraImportCard({ card, muted, fieldStyle }: { card: React.CSSProperties
       )}
       <div className="flex items-center gap-2 flex-wrap">
         {showForm && <Button className="text-white" onClick={() => connect.mutate()} disabled={!ready || connect.isPending} style={{ background: "var(--gradient-brand)" }} data-testid="button-jira-connect">{connect.isPending ? "Connecting…" : saved?.connected ? "Save connection" : "Connect"}</Button>}
-        {showForm && saved?.connected && <Button variant="outline" onClick={() => { setEditing(false); setApiToken(""); }} data-testid="button-jira-cancel">Cancel</Button>}
+        {showForm && saved?.connected && <Button variant="outline" onClick={() => { setEditing(false); setApiToken(""); setBaseUrl(saved.baseUrl || ""); setProjectKey(saved.projectKey || ""); setEmail(saved.email || ""); }} data-testid="button-jira-cancel">Cancel</Button>}
         <Button variant="outline" onClick={() => testConn.mutate()} disabled={!usable || testConn.isPending} data-testid="button-jira-test">{testConn.isPending ? "Checking…" : "Check project"}</Button>
         {test && <span className="text-xs" style={{ color: "var(--lux-text)" }} data-testid="text-jira-test">Connected as {test.connectedAs} · {test.issues} issues ({test.firstKey} → {test.lastKey})</span>}
       </div>

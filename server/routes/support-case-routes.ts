@@ -446,10 +446,12 @@ export function registerSupportCaseRoutes(app: Express) {
       const conn = await resolveJiraConn(req.session.orgId!, req.body);
       const body = req.body ?? {};
       const [saved] = await db.select().from(supportJiraConnections).where(eq(supportJiraConnections.orgId, req.session.orgId!));
-      // Saved choices apply only when the request OMITS them ("None" arrives as
-      // null and must stay None), and the saved project only for the saved client.
-      if (!("clientId" in body) && saved?.clientId) body.clientId = saved.clientId;
-      if (!("projectId" in body) && saved?.projectId && saved.clientId && String(body.clientId) === saved.clientId) body.projectId = saved.projectId;
+      // "Used the saved connection" = saved token, same site and project.
+      const usedSaved = !!saved && !body.apiToken && conn.baseUrl === saved.baseUrl && conn.projectKey === saved.projectKey;
+      // Saved destination applies only to that connection, and only when the
+      // request OMITS the field ("None" arrives as null and must stay None).
+      if (usedSaved && !("clientId" in body) && saved?.clientId) body.clientId = saved.clientId;
+      if (usedSaved && !("projectId" in body) && saved?.projectId && saved.clientId && String(body.clientId) === saved.clientId) body.projectId = saved.projectId;
       if (!body.clientId) return res.status(400).json({ message: "clientId is required" });
       const items = await pullProject(conn, conn.projectKey);
       if (items.length > MAX_ISSUES) return res.status(400).json({ message: `Import at most ${MAX_ISSUES} issues per request` });
@@ -466,10 +468,9 @@ export function registerSupportCaseRoutes(app: Express) {
           details: { source: "jira-fetch", projectKey: conn.projectKey, pulled: items.length, imported: report.imported, skipped: report.skipped.length, contactsCreated: report.contactsCreated, timeEntriesLinked: report.timeEntriesLinked, errors: report.errors.length },
         });
       }
-      // Remember destination + history only for an import that used THIS saved
-      // connection (same site + project, saved token) — a one-off import with
-      // explicit credentials must not rewrite the saved connection's defaults.
-      const usedSaved = !!saved && !body.apiToken && conn.baseUrl === saved.baseUrl && conn.projectKey === saved.projectKey;
+      // Remember destination + history only for an import that used the saved
+      // connection — a one-off import with explicit credentials must not
+      // rewrite the saved connection's defaults.
       if (!body.dryRun && saved && usedSaved) {
         await db.update(supportJiraConnections).set({
           clientId: String(body.clientId), projectId: body.projectId ? String(body.projectId) : null, lastImportAt: new Date(),
