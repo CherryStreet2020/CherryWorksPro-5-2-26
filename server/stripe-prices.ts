@@ -80,7 +80,7 @@ export function planFromPrice(price: PriceLike | null | undefined): PlanTier | n
   return planFromPriceLabels(price);
 }
 
-interface PriceLister { prices: { list(params: Record<string, unknown>): Promise<{ data: PriceLike[] }> } }
+interface PriceLister { prices: { list(params: Record<string, unknown>): Promise<{ data: PriceLike[]; has_more?: boolean }> } }
 
 let cache: { at: number; mode: string; prices: PriceLike[] } | null = null;
 const CACHE_MS = 10 * 60 * 1000;
@@ -88,9 +88,18 @@ const CACHE_MS = 10 * 60 * 1000;
 async function listBasePrices(stripe: PriceLister): Promise<PriceLike[]> {
   const mode = stripeMode();
   if (cache && cache.mode === mode && Date.now() - cache.at < CACHE_MS) return cache.prices;
-  const page = await stripe.prices.list({ active: true, type: "recurring", limit: 100, expand: ["data.product"] });
-  cache = { at: Date.now(), mode, prices: page.data };
-  return page.data;
+  // Stripe caps a page at 100; walk the catalogue (bounded) so a plan price
+  // past the first page is still found.
+  const prices: PriceLike[] = [];
+  let startingAfter: string | undefined;
+  for (let pages = 0; pages < 10; pages++) {
+    const page = await stripe.prices.list({ active: true, type: "recurring", limit: 100, expand: ["data.product"], ...(startingAfter ? { starting_after: startingAfter } : {}) });
+    prices.push(...page.data);
+    if (!page.has_more || page.data.length === 0) break;
+    startingAfter = page.data[page.data.length - 1].id;
+  }
+  cache = { at: Date.now(), mode, prices };
+  return prices;
 }
 
 /** Test hook. */

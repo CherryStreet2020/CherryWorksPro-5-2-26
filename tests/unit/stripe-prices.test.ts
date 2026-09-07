@@ -40,6 +40,14 @@ describe("stripe base-plan price resolution", () => {
     expect(calls.n).toBe(1);
   });
 
+  it("walks past the first page of the catalogue", async () => {
+    process.env.STRIPE_SECRET_KEY = "sk_live_x";
+    const seen: any[] = [];
+    const paged = { prices: { list: async (params: any) => { seen.push(params.starting_after); return params.starting_after ? { data: LIVE_PRICES.slice(2), has_more: false } : { data: LIVE_PRICES.slice(0, 2), has_more: true }; } } };
+    expect(await resolvePriceId(paged, "BUSINESS", false)).toBe("price_biz_m");
+    expect(seen).toEqual([undefined, "price_addon"]);
+  });
+
   it("never picks the add-on and throws when nothing matches", async () => {
     process.env.STRIPE_SECRET_KEY = "sk_live_x";
     const empty = { prices: { list: async () => ({ data: LIVE_PRICES.filter(p => /Add-On/.test(p.product.name)) }) } };
