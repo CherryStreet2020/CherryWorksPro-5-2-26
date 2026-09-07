@@ -49,8 +49,11 @@ interface GraphMessage {
   bodyPreview?: string;
 }
 
+/** `path` is relative to GRAPH, or an absolute Graph URL (e.g. an @odata.nextLink). */
 async function graphGet<T>(token: string, path: string, extraHeaders: Record<string, string> = {}): Promise<T> {
-  const res = await fetch(`${GRAPH}${path}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json", ...extraHeaders } });
+  const url = path.startsWith("https://") ? path : `${GRAPH}${path}`;
+  if (!url.startsWith(GRAPH)) throw new Error("Refusing non-Graph URL");
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json", ...extraHeaders } });
   if (!res.ok) throw new Error(`Graph ${res.status} on ${path.split("?")[0]}`);
   return res.json() as Promise<T>;
 }
@@ -106,7 +109,7 @@ export async function pollOrg(org: { id: string; supportInboundAddress: string; 
       if (isRelevant(msg, org.supportInboundAddress, caseKeys)) relevant.push(msg); else result.skipped++;
     }
     const link = page["@odata.nextLink"];
-    next = link ? link.replace(GRAPH, "") : null;
+    next = link || null;
   }
   // Beyond the page cap a large unread backlog could hide older support mail
   // forever (no cursor is kept, unrelated mail stays unread). A second,
@@ -125,7 +128,7 @@ export async function pollOrg(org: { id: string; supportInboundAddress: string; 
         if (isRelevant(msg, org.supportInboundAddress, caseKeys)) { relevant.push(msg); seen.add(msg.id); }
       }
       const link = targeted["@odata.nextLink"];
-      next = link ? link.replace(GRAPH, "") : null;
+      next = link || null;
     }
   } catch (err) {
     console.warn("[support-inbound-graph] targeted search failed", (err as Error).message);
