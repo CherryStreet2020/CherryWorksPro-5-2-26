@@ -11,7 +11,7 @@
  */
 import { createHash, randomBytes } from "crypto";
 import type { NextFunction, Request, Response } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import { db } from "./db";
 import { users } from "@shared/schema";
 
@@ -40,7 +40,13 @@ export async function verifyToken(raw: string): Promise<VerifyOutcome> {
     return { ok: true, userId: user.id, orgId: user.orgId, alreadyVerified: true };
   }
   if (!user.expiresAt || user.expiresAt.getTime() < Date.now()) return { ok: false, reason: "expired" };
-  await markVerified(user.id);
+  // Consume the token only if it is still the outstanding one for this user
+  // (an address change in between clears it) — one winner under concurrency.
+  const consumed = await db.update(users)
+    .set({ emailVerifiedAt: new Date(), emailVerificationTokenHash: null, emailVerificationExpiresAt: null })
+    .where(and(eq(users.id, user.id), eq(users.emailVerificationTokenHash, hashToken(raw)), gt(users.emailVerificationExpiresAt, new Date())))
+    .returning({ id: users.id });
+  if (consumed.length === 0) return { ok: false, reason: "invalid" };
   return { ok: true, userId: user.id, orgId: user.orgId, alreadyVerified: false };
 }
 

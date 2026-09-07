@@ -570,7 +570,8 @@ export async function sendInviteEmail(
   smtpConfig?: SmtpConfig | null,
   org?: OrgForTransport | null,
 ): Promise<{ messageId: string; previewUrl?: string }> {
-  const transport = await pickTransport(org, smtpConfig);
+  // The temporary password is a credential that now proves the address: platform transport only.
+  const transport = await pickTransport(null, null); void org; void smtpConfig;
   const subject = `You've been invited to ${orgName} on CherryWorks Pro`;
 
   const innerHtml = `

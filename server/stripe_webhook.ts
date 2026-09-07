@@ -1011,10 +1011,11 @@ async function handleSubscriptionTrialWillEnd(
     // is still emailing must not send the reminder a second time.
     const already = await storage.getStripeEventByEventId(stripeEventId, org.id);
     if (already) return res.json({ received: true, duplicate: true });
+    let claim: { id: string };
     try {
-      await storage.createStripeEvent({
+      claim = await storage.createStripeEvent({
         orgId: org.id, stripeEventId, type: eventType, livemode, created,
-        status: "PROCESSED", failureCode: null, failureDetail: null,
+        status: "PROCESSING", failureCode: null, failureDetail: null,
       });
     } catch {
       return res.json({ received: true, duplicate: true }); // lost the race to a concurrent delivery
@@ -1023,11 +1024,18 @@ async function handleSubscriptionTrialWillEnd(
     const adminEmail = adminUsers[0]?.email || "unknown";
     let billingLink = "http://localhost:5000/settings/billing";
     try { billingLink = `${trustedBaseUrl()}/settings/billing`; } catch { /* unconfigured non-production */ }
+    let delivered = 0;
     for (const admin of adminUsers) {
       if (!admin.email) continue;
-      await sendTrialEndingEmail(admin.email, admin.name || "", org.name, 3, billingLink, org, true)
-        .catch(err => console.warn(`[stripe-webhook] trial-ending email failed for ${org.slug}:`, (err as Error).message));
+      try { await sendTrialEndingEmail(admin.email, admin.name || "", org.name, 3, billingLink, org, true); delivered++; }
+      catch (err) { console.warn(`[stripe-webhook] trial-ending email failed for ${org.slug}:`, (err as Error).message); }
     }
+    if (adminUsers.length > 0 && delivered === 0) {
+      // Nobody reached: release the claim and let Stripe retry the event.
+      await db.delete(stripeEvents).where(eq(stripeEvents.id, claim.id)).catch(() => {});
+      return res.status(500).json({ received: false, error: "Reminder email could not be delivered; will retry" });
+    }
+    await db.update(stripeEvents).set({ status: "PROCESSED" }).where(eq(stripeEvents.id, claim.id)).catch(() => {});
 
     await storage.createAuditLog({
       orgId: org.id,

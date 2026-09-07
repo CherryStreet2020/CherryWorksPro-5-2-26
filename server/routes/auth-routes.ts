@@ -139,6 +139,9 @@ app.post("/api/auth/login", loginLimiter, awaitSessionSave, async (req, res) => 
       }
 
       rehashAndUpdate(parsed.password, user.password, user.id, user.orgId).catch(() => {});
+      // Signing in with the temporary password that was emailed to THIS
+      // address demonstrates possession of the inbox.
+      if (user.tempPassword && tempCredentialProves(user)) markVerified(user.id).catch(() => {});
 
       req.session.regenerate((err) => {
         if (err) {
@@ -178,6 +181,7 @@ app.post("/api/auth/login", loginLimiter, awaitSessionSave, async (req, res) => 
       }
       if (!user.isActive) return res.status(403).json({ message: "Your account has been deactivated. Please contact your administrator." });
       const valid = await comparePasswords(parsed.password, user.password);
+      if (valid && user.tempPassword && tempCredentialProves(user)) markVerified(user.id).catch(() => {});
       if (!valid) {
         recordFailedLogin(parsed.email);
         storage.createAuditLog({ orgId: user.orgId, userId: user.id, action: "LOGIN_FAILED", entityType: "user", entityId: user.id, details: { email: parsed.email, ip: clientIp, reason: "wrong_password" } }).catch(() => {});
@@ -195,7 +199,10 @@ app.post("/api/auth/login", loginLimiter, awaitSessionSave, async (req, res) => 
 
     const matches = [];
     for (const c of candidates) {
-      if (await comparePasswords(parsed.password, c.password)) matches.push(c);
+      if (await comparePasswords(parsed.password, c.password)) {
+        matches.push(c);
+        if (c.tempPassword && tempCredentialProves(c)) markVerified(c.id).catch(() => {});
+      }
     }
     if (matches.length === 0) {
       recordFailedLogin(parsed.email);
@@ -558,9 +565,9 @@ app.patch("/api/auth/change-password", passwordChangeLimiter, requireAuth, await
     }
     const hashed = await hashPassword(newPassword);
     await storage.updateUser(user.id, req.session.orgId!, { password: hashed, tempPassword: false });
-    // The temporary password proves the address it was emailed to — and only
-    // that one (an address changed in the meantime clears the marker).
-    if (user.tempPassword && tempCredentialProves(user)) await markVerified(user.id).catch(() => {});
+    // (Verification by temporary password happens at LOGIN, where possession
+    // of the emailed credential is actually demonstrated — not here, where an
+    // already-authenticated session can change the password without it.)
 
     const allAccounts = await storage.getActiveUsersByEmail(user.email);
     const allUserIds = allAccounts.map((u) => u.id);

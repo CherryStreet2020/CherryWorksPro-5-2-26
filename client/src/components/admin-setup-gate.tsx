@@ -1,4 +1,5 @@
 import { Suspense, lazy, type ReactNode } from "react";
+import { VerifyEmailBanner, TrialCountdownBanner } from "@/components/account-banners";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Sparkles, HelpCircle, Search } from "lucide-react";
@@ -66,7 +67,7 @@ export function AdminSetupGate({ children }: { children: ReactNode }) {
   // catch-all has no fixed path so the gate still takes precedence there.
   // Settings is where an admin connects email and billing; locking it behind
   // the firm profile left new workspaces unable to send their first invite.
-  const allowedWhileIncomplete = ["/getting-started", "/profile", "/settings", "/403", "/500"];
+  const allowedWhileIncomplete = ["/getting-started", "/profile", "/settings", "/choose-plan", "/403", "/500"];
   const hasBrands = Array.isArray(brands) && brands.length > 0;
   const marketingOsAllowed =
     location.startsWith("/marketing/") && (marketingOsActive || hasBrands);
@@ -135,6 +136,8 @@ export function AdminSetupGate({ children }: { children: ReactNode }) {
                   <GettingStartedPage />
                 </Suspense>
               </main>
+              <VerifyEmailBanner />
+              <TrialCountdownBanner />
               <div
                 className="flex items-center gap-2 px-4 py-2.5 border-t"
                 style={{

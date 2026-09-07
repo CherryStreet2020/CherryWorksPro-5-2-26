@@ -416,6 +416,9 @@ function AuthenticatedGettingStarted() {
       <div className="flex h-screen w-full" style={{ background: "var(--lux-bg)" }}>
         <AppSidebar />
         <div className="flex flex-col flex-1 min-w-0">
+          <DeletionBanner />
+          <VerifyEmailBanner />
+          <TrialCountdownBanner />
           <header
             className="flex items-center justify-between px-4 py-2 border-b flex-shrink-0"
             style={{ background: "var(--lux-surface)", borderColor: "var(--lux-border)" }}
