@@ -168,6 +168,8 @@ const OnboardingPage = lazy(() => lazyRetry(() => import("@/pages/onboarding")))
 const PublicInvoicePage = lazy(() => lazyRetry(() => import("@/pages/public-invoice")));
 const PublicEstimatePage = lazy(() => lazyRetry(() => import("@/pages/public-estimate")));
 const ClientPortalPage = lazy(() => lazyRetry(() => import("@/pages/client-portal")));
+const SupportCasesPage = lazy(() => lazyRetry(() => import("@/pages/support-cases")));
+const SupportCaseDetailPage = lazy(() => lazyRetry(() => import("@/pages/support-case-detail")));
 const MarketingHomePage = lazy(() => lazyRetry(() => import("@/pages/marketing/home")));
 const FeaturesPage = lazy(() => lazyRetry(() => import("@/pages/marketing/features")));
 const PricingPage = lazy(() => lazyRetry(() => import("@/pages/marketing/pricing")));
@@ -296,6 +298,9 @@ function Router() {
       <Route path="/projects/:id">{() => <LazyRoute component={() => <ProjectDetailWrapper />} />}</Route>
       <Route path="/projects">{() => <LazyRoute component={ProjectsPage} />}</Route>
       <Route path="/time">{() => <LazyRoute component={TimeTrackingPage} />}</Route>
+      <Route path="/support/cases/:id">{() => <LazyRoute component={SupportCaseDetailPage} />}</Route>
+      <Route path="/support/cases">{() => <LazyRoute component={SupportCasesPage} />}</Route>
+      <Route path="/support"><Redirect to="/support/cases" /></Route>
       <Route path="/invoices/recurring">{() => <ManagerRoute component={RecurringTemplatesPage} />}</Route>
       <Route path="/invoices/:id">{() => <ManagerRoute component={() => <InvoiceDetailWrapper />} />}</Route>
       <Route path="/invoices">{() => <ManagerRoute component={InvoicesPage} />}</Route>

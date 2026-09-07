@@ -32,12 +32,16 @@ interface TimeEntryDialogProps {
   defaultEndTime?: string;
   existingEntries?: { endTime: string | null }[];
   editEntry?: TimeEntry | null;
+  /** Support Cases: prefill and link the entry to a case. */
+  defaultServiceId?: string;
+  defaultNotes?: string;
+  supportCase?: { id: string; caseKey: string; subject: string } | null;
 }
 
 export default function TimeEntryDialog({
   open, onOpenChange, myProjects, services, projectServices,
   defaultDate, defaultProjectId, defaultStartTime, defaultEndTime,
-  existingEntries, editEntry,
+  existingEntries, editEntry, defaultServiceId, defaultNotes, supportCase,
 }: TimeEntryDialogProps) {
   const { toast } = useToast();
   const todayStr = new Date().toISOString().split("T")[0];
@@ -113,13 +117,13 @@ export default function TimeEntryDialog({
         setEndTime(smartEndTime);
         setUseManualMinutes(false);
         setManualMinutes("");
-        setServiceId("");
-        setNotes("");
+        setServiceId(defaultServiceId || "");
+        setNotes(defaultNotes || "");
         setBillable(true);
       }
       setSubmitAttempted(false);
     }
-  }, [open, editEntry, defaultDate, defaultProjectId, smartStartTime, smartEndTime, myProjects, todayStr]);
+  }, [open, editEntry, defaultDate, defaultProjectId, defaultServiceId, defaultNotes, smartStartTime, smartEndTime, myProjects, todayStr]);
 
   const computedDuration = useMemo(() => {
     if (!startTime || !endTime) return 0;
@@ -143,7 +147,8 @@ export default function TimeEntryDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets/my-week"] });
-      toast({ title: `Logged ${formatHoursMinutes(durationMinutes)} on ${projectName}` });
+      if (supportCase) queryClient.invalidateQueries({ queryKey: ["/api/support/cases"] });
+      toast({ title: supportCase ? `Logged ${formatHoursMinutes(durationMinutes)} on ${supportCase.caseKey}` : `Logged ${formatHoursMinutes(durationMinutes)} on ${projectName}` });
       onOpenChange(false);
     },
     onError: (err: Error) => {
@@ -179,6 +184,8 @@ export default function TimeEntryDialog({
       notes: notes.trim(),
       billable,
     };
+    // A new entry opened from a case links to it; an edited entry keeps its link.
+    if (!editEntry && supportCase) payload.supportCaseId = supportCase.id;
     if (!useManualMinutes) {
       payload.startTime = startTime;
       payload.endTime = endTime;
@@ -205,6 +212,11 @@ export default function TimeEntryDialog({
           <DialogTitle style={{ color: "var(--lux-text)" }} data-testid="dialog-title-time-entry">
             {editEntry ? "Edit Time Entry" : "Log Time Entry"}
           </DialogTitle>
+          {!editEntry && supportCase && (
+            <p className="text-xs mt-1" style={{ color: "var(--lux-text-muted)" }} data-testid="text-dialog-support-case">
+              On support case <span className="font-mono font-semibold" style={{ color: "var(--lux-accent)" }}>{supportCase.caseKey}</span> · {supportCase.subject}
+            </p>
+          )}
         </DialogHeader>
         {myProjects && myProjects.length === 0 && !editEntry ? (
           <div className="flex flex-col items-center justify-center py-10 px-4 text-center" data-testid="empty-state-no-projects">
