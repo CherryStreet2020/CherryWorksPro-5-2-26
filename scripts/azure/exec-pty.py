@@ -22,7 +22,28 @@ while time.time() < deadline:
                 exited_status = _st
                 break
         except ChildProcessError: break
+timed_out = time.time() >= deadline and "exited_status" not in dir()
+if timed_out:
+    # Enforce the deadline: stop the child so a still-writing process cannot wedge the PTY.
+    import signal
+    try: os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError: pass
+    for _ in range(20):
+        try:
+            w, st = os.waitpid(pid, os.WNOHANG)
+        except ChildProcessError:
+            w, st = pid, 0
+        if w: exited_status = st; break
+        time.sleep(0.25)
+    else:
+        try: os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError: pass
+        try: _, exited_status = os.waitpid(pid, 0)
+        except ChildProcessError: exited_status = 0
 sys.stdout.write(out.decode("utf-8", "replace").replace("\r", ""))
+if timed_out:
+    sys.stderr.write("exec-pty: deadline reached; child terminated\n")
+    sys.exit(124)
 # Reap the child on every path and propagate its status, so a failed command is not reported as success.
 try:
     status = exited_status
