@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { resolvePriceId, planFromPrice, planFromPriceLabels, resetPriceCache, configuredPriceId } from "../../server/stripe-prices";
+import { planTierFromSubscription } from "../../server/stripe_webhook";
 
 // The live account as of 2026-09-07: lookup keys are human labels, not the
 // cherryworks_* keys the webhook once expected; one add-on product exists.
@@ -53,5 +54,20 @@ describe("stripe base-plan price resolution", () => {
     expect(planFromPrice({ id: "x", lookup_key: "cherryworks_starter_monthly" })).toBe("STARTER");
     expect(planFromPriceLabels(LIVE_PRICES[1])).toBeNull();
     expect(planFromPrice({ id: "unknown" })).toBeNull();
+  });
+
+  it("planTierFromSubscription: billed price beats checkout metadata, which beats the legacy lookup key; trialing counts", () => {
+    process.env.STRIPE_SECRET_KEY = "sk_live_x";
+    const sub = (price: any, meta?: string, status = "trialing") => ({ status, metadata: meta ? { planTier: meta } : {}, items: { data: price ? [{ price }] : [] } });
+    // Portal downgrade: metadata still says BUSINESS, the item now bills Starter.
+    expect(planTierFromSubscription(sub(LIVE_PRICES[2], "BUSINESS"), "BUSINESS")).toBe("STARTER");
+    // Unrecognised price → metadata from checkout.
+    expect(planTierFromSubscription(sub({ id: "price_mystery" }, "BUSINESS"), "TRIAL")).toBe("BUSINESS");
+    // Legacy lookup key.
+    expect(planTierFromSubscription(sub({ id: "x", lookup_key: "cherryworks_starter_monthly" }), "TRIAL")).toBe("STARTER");
+    // Nothing recognisable but a live trial on a TRIAL org → PROFESSIONAL; an established org is left alone.
+    expect(planTierFromSubscription(sub({ id: "price_mystery" }), "TRIAL")).toBe("PROFESSIONAL");
+    expect(planTierFromSubscription(sub({ id: "price_mystery" }, undefined, "active"), "BUSINESS")).toBeNull();
+    expect(planTierFromSubscription(sub({ id: "price_mystery" }, undefined, "past_due"), "TRIAL")).toBeNull();
   });
 });

@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import { appBaseUrl } from "../lib/app-url";
 import { storage } from "../storage";
 import { db } from "../db";
 import { eq, and, sql } from "drizzle-orm";
@@ -400,7 +401,7 @@ app.post("/api/billing/checkout", requireAuth, async (req, res) => {
       await db.update(orgs).set({ stripeCustomerId: customerId }).where(eq(orgs.id, orgId));
     }
 
-    const baseUrl = (process.env.BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+    const baseUrl = appBaseUrl(req);
 
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
