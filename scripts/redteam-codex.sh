@@ -14,6 +14,15 @@
 #   scripts/redteam-codex.sh --base develop  # review vs a different base
 #   scripts/redteam-codex.sh --commit <sha>  # review one commit (post-merge squash)
 #   scripts/redteam-codex.sh --uncommitted   # review working-tree changes (pre-commit)
+#   scripts/redteam-codex.sh --plan PLAN.md  # review a PLAN before any code exists (read-only)
+#
+# PLAN REVIEW (added 2026-09-07, borrowed from chaseai-yt/claudex-loop):
+#   Astra reads the plan plus the repo in a READ-ONLY sandbox and answers with a
+#   verdict — APPROVED / REVISE / BLOCKED — evidence-backed findings, coverage
+#   and limitations. The output records the plan's SHA-256; a changed plan
+#   needs a fresh review. REQUIRED before building anything that touches auth,
+#   billing, money movement, or schema (Dean, 2026-09-07). Exit 5 = REVISE,
+#   6 = BLOCKED, so a wrapper can gate on it.
 #
 # MODEL / COST
 #   Default gpt-6-astra at `high` reasoning — Dean's call, 2026-09-07
@@ -28,7 +37,8 @@
 #             1 = codex binary not found
 #             2 = codex run failed
 #             3 = refused: --uncommitted with untracked files present
-#             4 = bad arguments (--commit / --base missing their value)
+#             4 = bad arguments (--commit / --base / --plan missing their value)
+#             5 = plan review verdict REVISE      6 = plan review verdict BLOCKED
 #
 # EGRESS
 #   🔴 CODEX IS PART OF THE SHIP HARNESS. RUN IT ON EVERY PR (Dean, 2026-09-07:
@@ -47,6 +57,7 @@ MODEL="${REDTEAM_CODEX_MODEL:-gpt-6-astra}"
 EFFORT="${REDTEAM_CODEX_EFFORT:-high}"
 
 ARGS=()
+PLAN_FILE=""
 TARGET_COMMIT=""
 TARGET_BASE=""
 TARGET_KIND="branch"
@@ -66,6 +77,12 @@ while [ $# -gt 0 ]; do
       TARGET_BASE="${1#--base=}"; [ -z "$TARGET_BASE" ] && { echo "redteam-codex: --base= requires a branch." >&2; exit 4; }
       ARGS+=("$1") ;;
     --uncommitted) TARGET_KIND="uncommitted"; ARGS+=("$1") ;;
+    --plan)
+      case "${2:-}" in ""|-*) echo "redteam-codex: --plan requires a file (got '${2:-<missing>}')." >&2; exit 4 ;; esac
+      TARGET_KIND="plan"; PLAN_FILE="$2"; shift ;;
+    --plan=*)
+      PLAN_FILE="${1#--plan=}"; [ -z "$PLAN_FILE" ] && { echo "redteam-codex: --plan= requires a file." >&2; exit 4; }
+      TARGET_KIND="plan" ;;
     *) ARGS+=("$1") ;;
   esac
   shift
@@ -93,6 +110,60 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
 OUT_DIR="${REPO_ROOT}/.redteam"
 mkdir -p "$OUT_DIR"
+
+# ── Plan review: a different invocation (codex exec, read-only sandbox) ──────
+if [ "$TARGET_KIND" = "plan" ]; then
+  [ -f "$PLAN_FILE" ] || { echo "redteam-codex: plan file not found: $PLAN_FILE" >&2; exit 4; }
+  PLAN_ABS="$(cd -- "$(dirname -- "$PLAN_FILE")" && pwd)/$(basename -- "$PLAN_FILE")"
+  PLAN_SHA="$(shasum -a 256 "$PLAN_ABS" | cut -c1-64)"
+  PLAN_LABEL="$(basename -- "$PLAN_FILE" | tr -c 'A-Za-z0-9._-' '_')"
+  OUT="${OUT_DIR}/codex-plan-${PLAN_LABEL%.*}-${PLAN_SHA:0:12}.md"
+  echo "redteam-codex: model=$MODEL effort=$EFFORT target=plan file=$PLAN_FILE sha256=${PLAN_SHA:0:12}…"
+  echo "redteam-codex: writing → $OUT"
+  PROMPT="You are the independent PLAN REVIEWER for this repository (CherryWorks Pro: Express + Drizzle/Postgres server in server/, React client in client/src, shared schema in shared/). You have a READ-ONLY sandbox: read the plan and any code it touches; do not modify anything.
+
+Review the plan at: $PLAN_ABS
+
+Judge it against the ACTUAL code, not in the abstract. Hunt for: security and authorization gaps (multi-tenant isolation, CSRF/session, secrets), data-loss or money-movement risk, race conditions and crash windows, missing migrations or schema mismatches (NOTE: Azure provisions schema with drizzle-kit push from shared/schema.ts only; migrations/*.sql never run there), missing tests/proof steps, unclear acceptance criteria, and anything the plan assumes about the codebase that is false.
+
+Answer in exactly this shape:
+VERDICT: APPROVED | REVISE | BLOCKED
+FINDINGS: numbered list, each with severity [P1|P2|P3], the plan section it concerns, the concrete evidence (file:line) and what to change. Zero findings is a valid answer.
+COVERAGE: what you read and verified.
+LIMITATIONS: what you could not verify.
+APPROVED means no unresolved P1/P2. BLOCKED means the plan cannot proceed as written (say exactly what is missing)."
+  set +e
+  ( cd "$REPO_ROOT" && "$CODEX" exec \
+      -s read-only \
+      -c model="$MODEL" \
+      -c model_reasoning_effort="$EFFORT" \
+      -c 'mcp_servers={}' \
+      -o "$OUT.msg" \
+      "$PROMPT" < /dev/null ) > "$OUT.raw" 2>&1   # </dev/null: exec otherwise waits on stdin when not a TTY
+  rc=$?
+  set -e
+  {
+    echo "# Plan review — $(basename -- "$PLAN_FILE")"
+    echo "- plan: $PLAN_ABS"
+    echo "- sha256: $PLAN_SHA"
+    echo "- model: $MODEL @ $EFFORT · $(date -u +%Y-%m-%dT%H:%M:%SZ) · codex exit $rc"
+    echo
+    if [ -s "$OUT.msg" ]; then cat "$OUT.msg"; else echo "(no final message — transcript follows)"; echo; cat "$OUT.raw"; fi
+  } > "$OUT"
+  rm -f "$OUT.raw" "$OUT.msg"
+  if [ $rc -ne 0 ]; then echo "redteam-codex: codex exited $rc — see $OUT" >&2; tail -20 "$OUT" >&2; exit 2; fi
+  VERDICT="$(grep -m1 -o 'VERDICT: *[A-Z]*' "$OUT" | awk '{print $2}')"
+  echo "---------------------------------------------------------------"
+  cat "$OUT"
+  echo "---------------------------------------------------------------"
+  echo "redteam-codex: PLAN VERDICT = ${VERDICT:-unparsed} (sha256 ${PLAN_SHA:0:12}…) → $OUT"
+  case "$VERDICT" in
+    APPROVED) exit 0 ;;
+    REVISE)   echo "redteam-codex: fold the findings, then review the REVISED plan again (the sha changes)." >&2; exit 5 ;;
+    BLOCKED)  exit 6 ;;
+    *)        echo "redteam-codex: could not parse a verdict — read the output." >&2; exit 2 ;;
+  esac
+fi
 
 if [ ${#ARGS[@]} -eq 0 ]; then ARGS=(--base main); TARGET_BASE="main"; fi
 
