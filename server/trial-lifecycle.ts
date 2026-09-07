@@ -105,19 +105,37 @@ async function recoverInterruptedDeliveries(now: Date): Promise<number> {
   const missing = (action: string) => sql`NOT EXISTS (SELECT 1 FROM ${auditLogs} WHERE ${auditLogs.orgId} = ${orgs.id} AND ${auditLogs.action} = ${action})`;
   const r7 = await db.select().from(orgs).where(and(eq(orgs.subscriptionStatus, "trialing"), isNull(orgs.stripeSubscriptionId), isNotNull(orgs.trialReminder7SentAt), lt(orgs.trialReminder7SentAt, cutoff), missing(SENT_7D)));
   const r1 = await db.select().from(orgs).where(and(eq(orgs.subscriptionStatus, "trialing"), isNull(orgs.stripeSubscriptionId), isNotNull(orgs.trialReminder1SentAt), lt(orgs.trialReminder1SentAt, cutoff), missing(SENT_1D)));
-  for (const [rows, days, action] of [[r7, 7, SENT_7D], [r1, 1, SENT_1D]] as const) {
+  for (const [rows, stage, action] of [[r7, 7, SENT_7D], [r1, 1, SENT_1D]] as const) {
     for (const org of rows) {
+      if (!org.trialEndsAt) continue;
+      const msLeft = org.trialEndsAt.getTime() - now.getTime();
+      // The window may have moved on: a stale 7-day reminder inside the last
+      // day is superseded by the 1-day one; nothing is owed once the trial ended.
+      if (msLeft <= 0 || (stage === 7 && msLeft <= DAY)) {
+        await storage.createAuditLog({ orgId: org.id, userId: null, action, entityType: "org", entityId: org.id, details: { recovered: true, skipped: "window passed" } });
+        continue;
+      }
+      // Re-acquire the claim atomically (renew the stamp) so only one instance recovers it.
+      const stampCol = stage === 7 ? orgs.trialReminder7SentAt : orgs.trialReminder1SentAt;
+      const renewed = await db.update(orgs).set(stage === 7 ? { trialReminder7SentAt: now } : { trialReminder1SentAt: now })
+        .where(and(eq(orgs.id, org.id), lt(stampCol, cutoff))).returning({ id: orgs.id });
+      if (renewed.length === 0) continue;
+      const daysLeft = Math.max(1, Math.ceil(msLeft / DAY));
       const recipients = await adminRecipients(org.id);
       let delivered = 0;
-      for (const r of recipients) { try { await sendTrialEndingEmail(r.email, r.name, org.name, days, billingUrl(), org); delivered++; } catch { /* retried next tick */ } }
+      for (const r of recipients) { try { await sendTrialEndingEmail(r.email, r.name, org.name, daysLeft, billingUrl(), org); delivered++; } catch { /* retried next tick */ } }
       if (recipients.length === 0 || delivered > 0) {
-        await storage.createAuditLog({ orgId: org.id, userId: null, action, entityType: "org", entityId: org.id, details: { recovered: true, delivered } });
+        await storage.createAuditLog({ orgId: org.id, userId: null, action, entityType: "org", entityId: org.id, details: { recovered: true, delivered, daysRemaining: daysLeft } });
         recovered++;
       }
     }
   }
   const ended = await db.select().from(orgs).where(and(eq(orgs.subscriptionStatus, TRIAL_EXPIRED_STATUS), isNotNull(orgs.trialExpiredAt), lt(orgs.trialExpiredAt, cutoff), missing(SENT_ENDED)));
-  for (const org of ended) { await sendEndedAndRecord(org, await adminRecipients(org.id)); recovered++; }
+  for (const org of ended) {
+    const renewed = await db.update(orgs).set({ trialExpiredAt: now }).where(and(eq(orgs.id, org.id), lt(orgs.trialExpiredAt, cutoff))).returning({ id: orgs.id });
+    if (renewed.length === 0) continue;
+    await sendEndedAndRecord(org, await adminRecipients(org.id)); recovered++;
+  }
   return recovered;
 }
 
