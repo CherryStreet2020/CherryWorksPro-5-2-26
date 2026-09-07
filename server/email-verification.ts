@@ -21,10 +21,20 @@ export function hashToken(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
 }
 
-/** Stores a fresh token for the user and returns the raw value to email. */
-export async function issueVerificationToken(userId: string): Promise<string> {
+/**
+ * Stores a fresh token for the user and returns the raw value to email.
+ * Conditioned on the address the caller is about to mail: if the address
+ * changed underneath us, nothing is issued (a token mailed to the old
+ * address must never verify the new one).
+ */
+export async function issueVerificationToken(userId: string, forEmail: string): Promise<string> {
+  const { sql } = await import("drizzle-orm");
   const raw = randomBytes(32).toString("hex");
-  await db.update(users).set({ emailVerificationTokenHash: hashToken(raw), emailVerificationExpiresAt: new Date(Date.now() + VERIFICATION_TTL_MS) }).where(eq(users.id, userId));
+  const rows = await db.update(users)
+    .set({ emailVerificationTokenHash: hashToken(raw), emailVerificationExpiresAt: new Date(Date.now() + VERIFICATION_TTL_MS) })
+    .where(and(eq(users.id, userId), sql`lower(${users.email}) = ${forEmail.trim().toLowerCase()}`))
+    .returning({ id: users.id });
+  if (rows.length === 0) throw new Error("The account's email address changed; request a new verification email.");
   return raw;
 }
 
