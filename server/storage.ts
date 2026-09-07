@@ -9,6 +9,7 @@ import {
   clientContacts,
   clientNotes,
   clientActivities,
+  supportCases,
   projects,
   projectMembers,
   timeEntries,
@@ -1352,11 +1353,14 @@ export class DatabaseStorage {
         projectName: projects.name,
         userName: users.name,
         serviceName: services.name,
+        caseKey: supportCases.caseKey,
+        caseSubject: supportCases.subject,
       })
       .from(timeEntries)
       .innerJoin(projects, eq(timeEntries.projectId, projects.id))
       .innerJoin(users, eq(timeEntries.userId, users.id))
       .leftJoin(services, eq(timeEntries.serviceId, services.id))
+      .leftJoin(supportCases, eq(timeEntries.supportCaseId, supportCases.id))
       .where(
         and(
           eq(timeEntries.orgId, orgId),
@@ -2717,11 +2721,14 @@ export class DatabaseStorage {
         projectName: projects.name,
         userName: users.name,
         serviceName: services.name,
+        caseKey: supportCases.caseKey,
+        caseSubject: supportCases.subject,
       })
       .from(timeEntries)
       .innerJoin(projects, eq(timeEntries.projectId, projects.id))
       .innerJoin(users, eq(timeEntries.userId, users.id))
       .leftJoin(services, eq(timeEntries.serviceId, services.id))
+      .leftJoin(supportCases, eq(timeEntries.supportCaseId, supportCases.id))
       .where(
         and(
           eq(timeEntries.orgId, orgId),

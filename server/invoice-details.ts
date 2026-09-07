@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { timeEntries, invoiceLines, invoices, projects, users, services } from "@shared/schema";
+import { timeEntries, invoiceLines, invoices, projects, users, services, supportCases } from "@shared/schema";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 // Display-only: groups a sent invoice's time entries into day/entry/week
@@ -88,6 +88,7 @@ export interface JoinedEntry {
   projectName: string;
   userName: string;
   serviceName: string | null;
+  caseKey?: string | null;
 }
 
 // Returns Map<lineId, DetailItem[]> for this invoice's own lines.
@@ -141,6 +142,7 @@ export async function getInvoiceTimeEntryDetails(
       projectClientId: projects.clientId,
       userName: users.name,
       serviceName: services.name,
+      caseKey: supportCases.caseKey,
     })
     .from(timeEntries)
     // leftJoin so deleted projects/users don't drop entries; fallback labels below.
@@ -157,6 +159,10 @@ export async function getInvoiceTimeEntryDetails(
     .leftJoin(
       services,
       and(eq(timeEntries.serviceId, services.id), eq(services.orgId, orgId)),
+    )
+    .leftJoin(
+      supportCases,
+      and(eq(timeEntries.supportCaseId, supportCases.id), eq(supportCases.orgId, orgId)),
     )
     .where(and(
       eq(timeEntries.orgId, orgId),
@@ -185,6 +191,7 @@ export async function getInvoiceTimeEntryDetails(
       projectName: r.projectName ?? "(deleted project)",
       userName: r.userName ?? "(deleted user)",
       serviceName: r.serviceName,
+      caseKey: r.caseKey ?? null,
     });
     byBucket.set(bucket, list);
   }
@@ -250,7 +257,11 @@ export function buildDetailItems(entries: JoinedEntry[]): DetailItem[] {
       dayHeaderIndex = items.length - 1;
     }
 
-    const { ticket, description } = extractTicketRef(e.notes);
+    // A linked Support Case wins; the note-prefix convention ("ABS-150 …")
+    // stays as the fallback for entries logged before cases existed.
+    const parsed = extractTicketRef(e.notes);
+    const ticket = e.caseKey ?? parsed.ticket;
+    const description = e.caseKey && parsed.ticket === e.caseKey ? parsed.description : (e.caseKey ? (e.notes ?? "").trim() : parsed.description);
     items.push({
       kind: "entry",
       id: e.id,

@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { db, pool } from "../db";
 import { and, eq } from "drizzle-orm";
 import { projects, timesheetWeeks, createTimeEntrySchema, submitTimesheetSchema, rejectTimesheetSchema, unlockTimesheetSchema, round2, getWeekStartDate, getWeekEndDate, computeMinutesFromTimes } from "@shared/schema";
+import { assertCaseUsableForTimeEntry } from "../support-cases";
 import { sanitizeErrorMessage, requireAuth, requireAdmin, requireManagerOrAbove, stripCostFieldsForRole , requirePlanTier } from "./middleware";
 import { fireWebhookEvent } from "../webhooks";
 import { resolveRates } from "../services/rate-resolver";
@@ -103,6 +104,11 @@ app.post("/api/time-entries", requireAuth, async (req, res) => {
       }
     }
 
+    // Support Cases: the case must belong to this org and to the project's client.
+    if (parsed.supportCaseId) {
+      await assertCaseUsableForTimeEntry(req.session.orgId!, parsed.supportCaseId, parsed.projectId);
+    }
+
     const resolved = await resolveRates({
       orgId: req.session.orgId!,
       projectId: parsed.projectId,
@@ -129,6 +135,7 @@ app.post("/api/time-entries", requireAuth, async (req, res) => {
       startTime: parsed.startTime || null,
       endTime: parsed.endTime || null,
       serviceId: parsed.serviceId || null,
+      supportCaseId: parsed.supportCaseId || null,
       billable: parsed.billable,
       rate: resolved.billRate.toFixed(2),
       notes: parsed.notes || null,
@@ -222,7 +229,13 @@ app.patch("/api/time-entries/:id", requireAuth, async (req, res) => {
         return res.status(403).json({ message: "Timesheet for this week is locked" });
       }
     }
-    const { date, minutes, description, billable, serviceId, notes, startTime, endTime } = req.body;
+    const { date, minutes, description, billable, serviceId, notes, startTime, endTime, supportCaseId } = req.body;
+    if (supportCaseId !== undefined && supportCaseId !== null && supportCaseId !== "") {
+      if (typeof supportCaseId !== "string" || supportCaseId.length > 36) {
+        return res.status(400).json({ message: "Invalid support case" });
+      }
+      await assertCaseUsableForTimeEntry(req.session.orgId!, supportCaseId, entry.projectId);
+    }
     let finalMinutes = minutes !== undefined ? Number(minutes) : undefined;
     if (startTime !== undefined && endTime !== undefined && startTime && endTime) {
       finalMinutes = computeMinutesFromTimes(startTime, endTime);
@@ -258,6 +271,7 @@ app.patch("/api/time-entries/:id", requireAuth, async (req, res) => {
       ...(serviceId !== undefined && { serviceId }),
       ...(startTime !== undefined && { startTime: startTime || null }),
       ...(endTime !== undefined && { endTime: endTime || null }),
+      ...(supportCaseId !== undefined && { supportCaseId: supportCaseId || null }),
       rate: updateResolved.billRate.toFixed(2),
       costRateSnapshot: updateResolved.costRate.toFixed(2),
     });

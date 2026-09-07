@@ -43,6 +43,7 @@ import { registerMarketingCampaignRoutes } from "./routes/marketing/campaigns";
 import { registerCompanyRoutes } from "./routes/marketing/companies";
 import { registerProjectRoutes } from "./routes/project-routes";
 import { registerTimeRoutes } from "./routes/time-routes";
+import { registerSupportCaseRoutes } from "./routes/support-case-routes";
 import { registerInvoiceRoutes } from "./routes/invoice-routes";
 import { registerPaymentRoutes } from "./routes/payment-routes";
 import { registerReportRoutes } from "./routes/report-routes";
@@ -644,6 +645,7 @@ export async function registerRoutes(
   registerClientRoutes(app);
   registerProjectRoutes(app);
   registerTimeRoutes(app);
+  registerSupportCaseRoutes(app);
   registerInvoiceRoutes(app);
   registerPaymentRoutes(app);
   registerReportRoutes(app);

@@ -1153,7 +1153,7 @@ function GenerateInvoiceDialog({ open, onOpenChange }: GenerateInvoiceDialogProp
   const [dateTo, setDateTo] = useState("");
   const [selectedTeamMembers, setSelectedTeamMembers] = useState<string[]>([]);
   const [grouping, setGrouping] = useState<"combined" | "per-team-member">("combined");
-  const [lineGroupBy, setLineGroupBy] = useState<"team-member" | "project" | "service" | "none">("team-member");
+  const [lineGroupBy, setLineGroupBy] = useState<"team-member" | "project" | "service" | "case" | "none">("team-member");
   const [includeUnapproved, setIncludeUnapproved] = useState(true);
 
   const { data: clients } = useQuery<Array<{ id: string; name: string }>>({
@@ -1336,6 +1336,7 @@ function GenerateInvoiceDialog({ open, onOpenChange }: GenerateInvoiceDialogProp
                 <option value="team-member">Team Member</option>
                 <option value="project">Project</option>
                 <option value="service">Service</option>
+                <option value="case">Support Case</option>
                 <option value="none">None (flat list)</option>
               </select>
             </div>

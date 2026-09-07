@@ -267,6 +267,9 @@ export const clients = pgTable("clients", {
   portalToken: varchar("portal_token", { length: 64 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  // ── Support Cases: per-client key prefix + counter ("ABS-158") ─────────
+  caseKeyPrefix: varchar("case_key_prefix", { length: 10 }),
+  nextCaseNumber: integer("next_case_number").notNull().default(1),
   // ── Marketing OS Sprint 2a extension columns (all nullable) ──────────
   brandId: varchar("brand_id", { length: 36 }).references((): AnyPgColumn => brands.id),
   lifecycleStage: text("lifecycle_stage").default("lead"),
@@ -504,9 +507,13 @@ export const timeEntries = pgTable("time_entries", {
   serviceId: varchar("service_id", { length: 36 }),
   invoiceLineId: varchar("invoice_line_id", { length: 36 }),
   costRateSnapshot: numeric("cost_rate_snapshot", { precision: 10, scale: 2 }),
+  // Support Cases: the case this time was spent on (nullable; no FK so a case
+  // delete never orphans billed time — same precedent as serviceId).
+  supportCaseId: varchar("support_case_id", { length: 36 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
+  supportCaseIdx: index("idx_time_entries_support_case").on(table.supportCaseId),
   orgStatusIdx: index("time_entries_org_status_idx").on(table.orgId, table.invoiced),
   projectOrgIdx: index("time_entries_project_org_idx").on(table.projectId, table.orgId),
   dateIdx: index("idx_time_entries_date").on(table.date),
@@ -1220,6 +1227,109 @@ export const insertServiceSchema = createInsertSchema(services).omit({
   createdAt: true,
   updatedAt: true,
 });
+// ─── Support Cases ────────────────────────────────────────────────────────
+// A "Support Case" (never "ticket") is a client request handled by the team.
+// Keys are per client: <prefix>-<number> ("ABS-158"), continuing whatever
+// numbering the client used before (Jira import sets clients.next_case_number).
+export const SUPPORT_CASE_STATUSES = [
+  "NEW",
+  "WAITING_ON_SUPPORT",
+  "IN_PROGRESS",
+  "WAITING_ON_CUSTOMER",
+  "RESOLVED",
+  "CLOSED",
+] as const;
+export type SupportCaseStatus = (typeof SUPPORT_CASE_STATUSES)[number];
+export const SUPPORT_CASE_OPEN_STATUSES: readonly SupportCaseStatus[] = ["NEW", "WAITING_ON_SUPPORT", "IN_PROGRESS", "WAITING_ON_CUSTOMER"];
+export const SUPPORT_CASE_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
+export type SupportCasePriority = (typeof SUPPORT_CASE_PRIORITIES)[number];
+export const SUPPORT_CASE_SOURCES = ["AGENT", "PORTAL", "EMAIL", "IMPORT"] as const;
+export const SUPPORT_MESSAGE_VISIBILITIES = ["CUSTOMER", "INTERNAL"] as const;
+
+export const supportCaseTypes = pgTable("support_case_types", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id", { length: 36 }).notNull().references(() => orgs.id),
+  name: text("name").notNull(),
+  description: text("description"),
+  defaultPriority: text("default_priority").notNull().default("MEDIUM"),
+  defaultServiceId: varchar("default_service_id", { length: 36 }),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  orgIdx: index("idx_support_case_types_org").on(table.orgId),
+}));
+
+export const supportCases = pgTable("support_cases", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id", { length: 36 }).notNull().references(() => orgs.id),
+  clientId: varchar("client_id", { length: 36 }).notNull().references(() => clients.id),
+  projectId: varchar("project_id", { length: 36 }).references(() => projects.id),
+  typeId: varchar("type_id", { length: 36 }),
+  caseKey: varchar("case_key", { length: 24 }).notNull(),
+  caseNumber: integer("case_number").notNull(),
+  subject: text("subject").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("NEW"),
+  priority: text("priority").notNull().default("MEDIUM"),
+  source: text("source").notNull().default("AGENT"),
+  requesterContactId: varchar("requester_contact_id", { length: 36 }),
+  requesterName: text("requester_name"),
+  requesterEmail: text("requester_email"),
+  assigneeUserId: varchar("assignee_user_id", { length: 36 }).references(() => users.id),
+  createdByUserId: varchar("created_by_user_id", { length: 36 }).references(() => users.id),
+  firstResponseDueAt: timestamp("first_response_due_at"),
+  resolutionDueAt: timestamp("resolution_due_at"),
+  firstResponseAt: timestamp("first_response_at"),
+  lastCustomerMessageAt: timestamp("last_customer_message_at"),
+  lastAgentMessageAt: timestamp("last_agent_message_at"),
+  resolvedAt: timestamp("resolved_at"),
+  closedAt: timestamp("closed_at"),
+  externalRef: text("external_ref"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  orgKeyUnique: uniqueIndex("support_cases_org_key_unique").on(table.orgId, table.caseKey),
+  orgStatusIdx: index("idx_support_cases_org_status").on(table.orgId, table.status),
+  orgClientIdx: index("idx_support_cases_org_client").on(table.orgId, table.clientId),
+  orgAssigneeIdx: index("idx_support_cases_org_assignee").on(table.orgId, table.assigneeUserId),
+}));
+
+export const supportCaseMessages = pgTable("support_case_messages", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id", { length: 36 }).notNull().references(() => orgs.id),
+  caseId: varchar("case_id", { length: 36 }).notNull().references(() => supportCases.id, { onDelete: "cascade" }),
+  authorUserId: varchar("author_user_id", { length: 36 }).references(() => users.id),
+  authorContactId: varchar("author_contact_id", { length: 36 }),
+  authorName: text("author_name").notNull(),
+  visibility: text("visibility").notNull().default("CUSTOMER"),
+  body: text("body").notNull(),
+  emailMessageId: text("email_message_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  caseCreatedIdx: index("idx_support_case_messages_case_created").on(table.caseId, table.createdAt),
+}));
+
+export const supportCaseEvents = pgTable("support_case_events", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id", { length: 36 }).notNull().references(() => orgs.id),
+  caseId: varchar("case_id", { length: 36 }).notNull().references(() => supportCases.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(),
+  fromValue: text("from_value"),
+  toValue: text("to_value"),
+  actorUserId: varchar("actor_user_id", { length: 36 }).references(() => users.id),
+  actorName: text("actor_name"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  caseCreatedIdx: index("idx_support_case_events_case_created").on(table.caseId, table.createdAt),
+}));
+
+export type SupportCaseType = typeof supportCaseTypes.$inferSelect;
+export type SupportCase = typeof supportCases.$inferSelect;
+export type SupportCaseMessage = typeof supportCaseMessages.$inferSelect;
+export type SupportCaseEvent = typeof supportCaseEvents.$inferSelect;
+
 export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({
   id: true,
   createdAt: true,
@@ -1390,6 +1500,7 @@ export const createTimeEntrySchema = z.object({
   billable: z.boolean().default(true),
   rate: z.coerce.number().nonnegative().optional(),
   serviceId: z.string().nullable().optional(),
+  supportCaseId: z.string().max(36).nullable().optional(),
   notes: z.string().min(1, "Description is required").max(5000, "Must be at most 5000 characters"),
 }).refine(data => {
   if (data.minutes && data.minutes > 0) return true;
@@ -1414,9 +1525,55 @@ export const generateInvoiceSchema = z.object({
   dateTo: z.string().optional(),
   grouping: z.enum(["combined", "per-team-member"]).optional().default("combined"),
   includeUnapproved: z.boolean().optional(),
-  lineGroupBy: z.enum(["team-member", "project", "service", "none"]).optional().default("team-member"),
+  lineGroupBy: z.enum(["team-member", "project", "service", "case", "none"]).optional().default("team-member"),
   currency: z.string().length(3).optional(),
   exchangeRate: z.string().optional(),
+});
+
+export const createSupportCaseSchema = z.object({
+  clientId: z.string().min(1, "Client is required"),
+  projectId: z.string().nullable().optional(),
+  typeId: z.string().nullable().optional(),
+  subject: z.string().trim().min(1, "Subject is required").max(300, "Must be at most 300 characters"),
+  description: z.string().max(20000, "Must be at most 20000 characters").nullable().optional(),
+  priority: z.enum(SUPPORT_CASE_PRIORITIES).optional(),
+  status: z.enum(SUPPORT_CASE_STATUSES).optional(),
+  assigneeUserId: z.string().nullable().optional(),
+  requesterContactId: z.string().nullable().optional(),
+  requesterName: z.string().max(200).nullable().optional(),
+  requesterEmail: z.string().email().max(320).nullable().optional().or(z.literal("").transform(() => null)),
+});
+
+export const updateSupportCaseSchema = z.object({
+  projectId: z.string().nullable().optional(),
+  typeId: z.string().nullable().optional(),
+  subject: z.string().trim().min(1).max(300).optional(),
+  description: z.string().max(20000).nullable().optional(),
+  priority: z.enum(SUPPORT_CASE_PRIORITIES).optional(),
+  status: z.enum(SUPPORT_CASE_STATUSES).optional(),
+  assigneeUserId: z.string().nullable().optional(),
+  requesterContactId: z.string().nullable().optional(),
+  requesterName: z.string().max(200).nullable().optional(),
+  requesterEmail: z.string().email().max(320).nullable().optional().or(z.literal("").transform(() => null)),
+});
+
+export const createSupportCaseMessageSchema = z.object({
+  body: z.string().trim().min(1, "Message is required").max(20000, "Must be at most 20000 characters"),
+  visibility: z.enum(SUPPORT_MESSAGE_VISIBILITIES).default("CUSTOMER"),
+});
+
+export const upsertSupportCaseTypeSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(120),
+  description: z.string().max(1000).nullable().optional(),
+  defaultPriority: z.enum(SUPPORT_CASE_PRIORITIES).optional(),
+  defaultServiceId: z.string().nullable().optional(),
+  sortOrder: z.coerce.number().int().min(0).max(1000).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const updateClientCaseSettingsSchema = z.object({
+  caseKeyPrefix: z.string().trim().regex(/^[A-Z][A-Z0-9]{1,9}$/, "2–10 uppercase letters or digits, starting with a letter").optional(),
+  nextCaseNumber: z.coerce.number().int().min(1).max(9_999_999).optional(),
 });
 
 export const createPaymentSchema = z.object({

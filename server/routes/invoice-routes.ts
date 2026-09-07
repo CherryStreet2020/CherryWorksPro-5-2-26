@@ -32,8 +32,8 @@ app.get("/api/invoices/unpaid", requireManagerOrAbove, async (req, res) => {
 async function createGroupedInvoiceLines(
   invoiceId: string,
   orgId: string,
-  entries: { entry: any; projectName: string; userName: string; serviceName: string | null }[],
-  lineGroupBy: "team-member" | "project" | "service" | "none",
+  entries: { entry: any; projectName: string; userName: string; serviceName: string | null; caseKey?: string | null; caseSubject?: string | null }[],
+  lineGroupBy: "team-member" | "project" | "service" | "case" | "none",
 ) {
   type AggLine = { description: string; minutes: number; rate: number; entryIds: string[]; groupKey: string };
 
@@ -42,6 +42,7 @@ async function createGroupedInvoiceLines(
       case "team-member": return row.entry.userId;
       case "project": return row.entry.projectId;
       case "service": return row.entry.serviceId || "__no_service__";
+      case "case": return row.entry.supportCaseId || "__no_case__";
       case "none": return "__flat__";
     }
   };
@@ -51,6 +52,7 @@ async function createGroupedInvoiceLines(
       case "team-member": return row.userName;
       case "project": return row.projectName;
       case "service": return row.serviceName || "General";
+      case "case": return row.caseKey ? `${row.caseKey} — ${row.caseSubject || ""}`.trim() : "Not on a support case";
       case "none": return "";
     }
   };
@@ -63,6 +65,8 @@ async function createGroupedInvoiceLines(
         return `${row.userName} - ${row.serviceName || "General"} (${hours.toFixed(1)}h)`;
       case "service":
         return `${row.userName} - ${row.projectName} (${hours.toFixed(1)}h)`;
+      case "case":
+        return `${row.userName} - ${row.serviceName || row.projectName} (${hours.toFixed(1)}h)`;
       case "none":
         return `${row.projectName} - ${row.userName} (${hours.toFixed(1)}h)`;
     }
@@ -77,7 +81,9 @@ async function createGroupedInvoiceLines(
 
     const subKey = lineGroupBy === "none"
       ? `${row.entry.projectId}-${row.entry.userId}-${row.entry.rate}`
-      : `${row.entry.projectId}-${row.entry.userId}-${row.entry.serviceId || ""}-${row.entry.rate}`;
+      : lineGroupBy === "case"
+        ? `${row.entry.supportCaseId || ""}-${row.entry.projectId}-${row.entry.userId}-${row.entry.serviceId || ""}-${row.entry.rate}`
+        : `${row.entry.projectId}-${row.entry.userId}-${row.entry.serviceId || ""}-${row.entry.rate}`;
 
     if (!groups[gKey].subGroups[subKey]) {
       groups[gKey].subGroups[subKey] = {
