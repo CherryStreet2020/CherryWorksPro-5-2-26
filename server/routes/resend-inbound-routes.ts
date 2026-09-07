@@ -167,10 +167,17 @@ export function registerResendInboundRoutes(app: Express) {
         return res.status(200).json({ success: true, duplicate: true });
       }
 
-      const result = await processInboundEmail({
-        from: data.from, to: data.to, subject: data.subject ?? null, text: data.text ?? null, html: data.html ?? null,
-        messageId: data.message_id || data.id || null,
-      });
+      let result: Awaited<ReturnType<typeof processInboundEmail>>;
+      try {
+        result = await processInboundEmail({
+          from: data.from, to: data.to, subject: data.subject ?? null, text: data.text ?? null, html: data.html ?? null,
+          messageId: data.message_id || data.id || null,
+        });
+      } catch (err) {
+        // Release the claim so Resend's retry is processed instead of reported as a duplicate.
+        await db.delete(inboundEmails).where(eq(inboundEmails.id, emailId)).catch(() => {});
+        throw err;
+      }
       console.log(`[resend-inbound] ${emailId} → ${result.outcome}${result.caseKey ? ` ${result.caseKey}` : ""}`);
       return res.status(200).json({ success: true, emailId, ...result });
     } catch (err: any) {

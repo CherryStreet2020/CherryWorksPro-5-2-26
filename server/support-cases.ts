@@ -521,8 +521,14 @@ export async function deleteCase(orgId: string, id: string) {
   if (!existing) return false;
   // Time stays on the books; it just loses the case link.
   await db.update(timeEntries).set({ supportCaseId: null }).where(and(eq(timeEntries.orgId, orgId), eq(timeEntries.supportCaseId, id)));
-  // The rows cascade with the case; the bytes in object storage do not.
-  for (const a of await listAttachments(orgId, id)) await deleteBytes(a.storageKey).catch(err => console.warn("[support-cases] attachment blob not removed", a.id, (err as Error).message));
+  // The rows cascade with the case; the bytes in object storage do not. If a
+  // blob cannot be removed, keep the case (and its rows, which hold the storage
+  // keys) so the delete can be retried instead of orphaning the file.
+  const failed: string[] = [];
+  for (const a of await listAttachments(orgId, id)) {
+    try { await deleteBytes(a.storageKey); } catch (err) { failed.push(a.filename); console.warn("[support-cases] attachment blob not removed", a.id, (err as Error).message); }
+  }
+  if (failed.length) throw new Error(`Could not remove ${failed.length} attachment file(s) (${failed.slice(0, 3).join(", ")}); try again`);
   await db.delete(supportCases).where(and(eq(supportCases.id, id), eq(supportCases.orgId, orgId)));
   return true;
 }

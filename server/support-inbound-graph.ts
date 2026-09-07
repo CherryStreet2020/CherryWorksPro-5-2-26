@@ -24,6 +24,8 @@ import { randomUUID } from "crypto";
 const GRAPH = "https://graph.microsoft.com/v1.0";
 /** 50 messages × 20 pages = the newest 1000 unread messages are scanned each pass. */
 const MAX_PAGES = 20;
+/** A claim older than this is not an in-flight pass any more (passes run every 2 min, bounded by page cap). */
+const CLAIM_IN_FLIGHT_MS = 10 * 60 * 1000;
 export const INBOUND_REQUIRED_SCOPE = "Mail.ReadWrite";
 
 export function hasReadScope(scopes: string | null | undefined): boolean {
@@ -116,9 +118,16 @@ export async function pollOrg(org: { id: string; supportInboundAddress: string; 
       bodyHtml: msg.body?.contentType?.toLowerCase() === "html" ? (msg.body.content || null) : null,
       headers: { source: "m365-graph", graphId: msg.id, receivedDateTime: msg.receivedDateTime ?? null }, resendMessageId: messageId,
     }).onConflictDoNothing({ target: inboundEmails.resendMessageId, where: sql`resend_message_id IS NOT NULL` }).returning({ id: inboundEmails.id });
-    // Lost the claim: leave isRead alone. The claiming pass marks it read after
-    // it succeeds; if it fails it drops its ledger row and the mail is retried.
-    if (claimed.length === 0) { result.skipped++; continue; }
+    if (claimed.length === 0) {
+      // Lost the claim. A pass still in flight marks the mail read itself (and
+      // drops its row on failure, so the mail is retried). A row older than the
+      // in-flight window is a finished claim whose isRead PATCH failed: mark it
+      // read now so it stops occupying the unread window.
+      result.skipped++;
+      const [prior] = await db.select({ createdAt: inboundEmails.createdAt }).from(inboundEmails).where(eq(inboundEmails.resendMessageId, messageId)).limit(1);
+      if (prior && Date.now() - prior.createdAt.getTime() > CLAIM_IN_FLIGHT_MS) await graphPatch(token, `/me/messages/${msg.id}`, { isRead: true }).catch(() => {});
+      continue;
+    }
 
     let outcome: Awaited<ReturnType<typeof processInboundEmail>>;
     try {

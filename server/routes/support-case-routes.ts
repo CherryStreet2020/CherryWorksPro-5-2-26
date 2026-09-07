@@ -163,7 +163,9 @@ export function registerSupportCaseRoutes(app: Express) {
   });
 
   app.delete("/api/support/cases/:id", requireAuth, requireManagerOrAbove, requireTier("PROFESSIONAL"), async (req, res) => {
-    const ok = await cases.deleteCase(req.session.orgId!, req.params.id as string);
+    let ok: boolean;
+    try { ok = await cases.deleteCase(req.session.orgId!, req.params.id as string); }
+    catch (err) { return res.status(409).json({ message: (err as Error).message }); }
     if (!ok) return res.status(404).json({ message: "Support case not found" });
     return res.json({ ok: true });
   });
