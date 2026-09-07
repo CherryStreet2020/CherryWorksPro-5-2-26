@@ -24,6 +24,8 @@ import { randomUUID } from "crypto";
 const GRAPH = "https://graph.microsoft.com/v1.0";
 /** 50 messages × 20 pages = the newest 1000 unread messages are scanned each pass. */
 const MAX_PAGES = 20;
+/** Targeted support-address search: 100 × 10 pages of recipient matches (read and unread). */
+const MAX_SEARCH_PAGES = 10;
 /** A claim older than this is not an in-flight pass any more (passes run every 2 min, bounded by page cap). */
 const CLAIM_IN_FLIGHT_MS = 10 * 60 * 1000;
 export const INBOUND_REQUIRED_SCOPE = "Mail.ReadWrite";
@@ -47,8 +49,8 @@ interface GraphMessage {
   bodyPreview?: string;
 }
 
-async function graphGet<T>(token: string, path: string): Promise<T> {
-  const res = await fetch(`${GRAPH}${path}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+async function graphGet<T>(token: string, path: string, extraHeaders: Record<string, string> = {}): Promise<T> {
+  const res = await fetch(`${GRAPH}${path}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json", ...extraHeaders } });
   if (!res.ok) throw new Error(`Graph ${res.status} on ${path.split("?")[0]}`);
   return res.json() as Promise<T>;
 }
@@ -113,11 +115,17 @@ export async function pollOrg(org: { id: string; supportInboundAddress: string; 
   try {
     const seen = new Set(relevant.map(m => m.id));
     const search = encodeURIComponent(`"recipients:${org.supportInboundAddress}"`);
-    const targeted = await graphGet<{ value?: GraphMessage[] }>(token,
-      `/me/messages?$search=${search}&$top=100&$select=id,subject,internetMessageId,receivedDateTime,hasAttachments,isRead,from,toRecipients,ccRecipients,body,bodyPreview`);
-    for (const msg of targeted.value || []) {
-      if (msg.isRead !== false || seen.has(msg.id)) continue;
-      if (isRelevant(msg, org.supportInboundAddress, caseKeys)) { relevant.push(msg); seen.add(msg.id); }
+    // $search needs ConsistencyLevel: eventual, cannot be combined with $filter,
+    // and returns read mail too; so page through it (bounded) and keep the unread.
+    let next: string | null = `/me/messages?$search=${search}&$top=100&$select=id,subject,internetMessageId,receivedDateTime,hasAttachments,isRead,from,toRecipients,ccRecipients,body,bodyPreview`;
+    for (let pages = 0; next && pages < MAX_SEARCH_PAGES; pages++) {
+      const targeted: { value?: GraphMessage[]; "@odata.nextLink"?: string } = await graphGet(token, next, { ConsistencyLevel: "eventual" });
+      for (const msg of targeted.value || []) {
+        if (msg.isRead !== false || seen.has(msg.id)) continue;
+        if (isRelevant(msg, org.supportInboundAddress, caseKeys)) { relevant.push(msg); seen.add(msg.id); }
+      }
+      const link = targeted["@odata.nextLink"];
+      next = link ? link.replace(GRAPH, "") : null;
     }
   } catch (err) {
     console.warn("[support-inbound-graph] targeted search failed", (err as Error).message);
