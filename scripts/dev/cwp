@@ -33,7 +33,9 @@ REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 if [ -f "$HOME/.local/pgsql/cwp-pg-env.sh" ]; then source "$HOME/.local/pgsql/cwp-pg-env.sh"; else
   echo "[cwp] ~/.local/pgsql/cwp-pg-env.sh not found — build the local toolchain first (docs/SHIP.md)." >&2; exit 1; fi
 BASH5="$HOME/.local/bin/bash"
-TEST_DB_URL="postgres://deandunagan@localhost:5432/cwp_test"
+# Same cluster/role as the env file (CWP_DATABASE_URL points at cwp_dev); swap the db name.
+TEST_DB_URL="${CWP_TEST_DATABASE_URL:-$(printf '%s' "$CWP_DATABASE_URL" | sed 's#/cwp_dev\([?].*\)\{0,1\}$#/cwp_test\1#')}"
+case "$TEST_DB_URL" in *cwp_test*) ;; *) echo "[cwp] could not derive the test DB URL from CWP_DATABASE_URL; set CWP_TEST_DATABASE_URL" >&2; exit 1 ;; esac
 
 # Full env the dev/test server boots with (NODE_ENV=test → Vite serving +
 # relaxed rate limits + marketing/email flags on, matching vitest globalSetup).
@@ -50,12 +52,14 @@ kill_5000() {
   [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
 }
 
+# Ready = /api/health answers AND startup is complete (migrations + seeds done).
+app_ready() { curl -fsS --max-time 3 http://localhost:5000/api/health 2>/dev/null | grep -q '"startup":"complete"'; }
 wait_health() {
   local i; for i in $(seq 1 60); do
-    curl -fsS --max-time 3 http://localhost:5000/api/health >/dev/null 2>&1 && { echo "[cwp] app healthy on :5000"; return 0; }
+    app_ready && { echo "[cwp] app healthy on :5000 (startup complete)"; return 0; }
     sleep 2
   done
-  echo "[cwp] app did NOT become healthy on :5000 (see /tmp/cwp-app-5000.log)"; return 1
+  echo "[cwp] app did NOT become ready on :5000 (see /tmp/cwp-app-5000.log)"; return 1
 }
 
 ensure_pg() {
@@ -70,7 +74,7 @@ case "$cmd" in
 
   app)
     ensure_pg; cd "$REPO"; kill_5000; sleep 1
-    exec app_env npx tsx server/index.ts ;;
+    app_env npx tsx server/index.ts ;;   # a shell function cannot be exec'd
 
   app-bg)
     ensure_pg; cd "$REPO"; kill_5000; sleep 1
@@ -82,13 +86,15 @@ case "$cmd" in
   vitest)
     ensure_pg; cd "$REPO"
     echo "[cwp] fresh cwp_test → migrate → vitest"
-    dropdb -p "$PGPORT" --if-exists cwp_test; createdb -p "$PGPORT" cwp_test
-    DATABASE_URL="$TEST_DB_URL" NODE_ENV=development npm run db:migrate:prod
+    # Fail fast: a stale or half-migrated test DB must never run the suite.
+    dropdb -p "$PGPORT" --if-exists cwp_test || { echo "[cwp] dropdb cwp_test failed (another session holding it open?)" >&2; exit 1; }
+    createdb -p "$PGPORT" cwp_test || exit 1
+    DATABASE_URL="$TEST_DB_URL" NODE_ENV=development npm run db:migrate:prod || { echo "[cwp] migration of cwp_test failed" >&2; exit 1; }
     exec env DATABASE_URL="$TEST_DB_URL" npm run test -- "$@" ;;
 
   e2e)
     ensure_pg; cd "$REPO"
-    curl -fsS --max-time 3 http://localhost:5000/api/health >/dev/null 2>&1 || { echo "[cwp] starting app for e2e"; "$0" app-bg || exit 1; }
+    app_ready || { echo "[cwp] starting app for e2e"; "$0" app-bg || exit 1; }
     exec env DATABASE_URL="$CWP_DATABASE_URL" PORT=5000 npx playwright test "$@" ;;
 
   migcheck)

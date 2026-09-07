@@ -16,7 +16,21 @@ while time.time() < deadline:
         out += data
     else:
         try:
-            wpid, status = os.waitpid(pid, os.WNOHANG)
-            if wpid: break
+            wpid, _st = os.waitpid(pid, os.WNOHANG)
+            if wpid:
+                # child exited: drain what is left, then fall through to the final reap (already reaped here)
+                exited_status = _st
+                break
         except ChildProcessError: break
 sys.stdout.write(out.decode("utf-8", "replace").replace("\r", ""))
+# Reap the child on every path and propagate its status, so a failed command is not reported as success.
+try:
+    status = exited_status
+except NameError:
+    try:
+        _, status = os.waitpid(pid, 0)
+    except ChildProcessError:
+        status = 0
+if os.WIFEXITED(status):
+    sys.exit(os.WEXITSTATUS(status))
+sys.exit(128 + os.WTERMSIG(status) if os.WIFSIGNALED(status) else 1)
