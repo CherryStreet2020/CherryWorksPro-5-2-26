@@ -8,6 +8,7 @@
  */
 import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { db } from "./db";
+import { listAttachments, deleteBytes } from "./support-attachments";
 import { dueDatesForNewCase, clockPatchForStatus, slaStateFor } from "./support-sla";
 import { notifyCaseCreated, notifyCaseMessage, notifyCaseUpdated } from "./support-notifications";
 import {
@@ -520,6 +521,8 @@ export async function deleteCase(orgId: string, id: string) {
   if (!existing) return false;
   // Time stays on the books; it just loses the case link.
   await db.update(timeEntries).set({ supportCaseId: null }).where(and(eq(timeEntries.orgId, orgId), eq(timeEntries.supportCaseId, id)));
+  // The rows cascade with the case; the bytes in object storage do not.
+  for (const a of await listAttachments(orgId, id)) await deleteBytes(a.storageKey).catch(err => console.warn("[support-cases] attachment blob not removed", a.id, (err as Error).message));
   await db.delete(supportCases).where(and(eq(supportCases.id, id), eq(supportCases.orgId, orgId)));
   return true;
 }

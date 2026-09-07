@@ -22,6 +22,8 @@ import { createAttachment, MAX_ATTACHMENT_BYTES } from "./support-attachments";
 import { randomUUID } from "crypto";
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
+/** 50 messages × 20 pages = the newest 1000 unread messages are scanned each pass. */
+const MAX_PAGES = 20;
 export const INBOUND_REQUIRED_SCOPE = "Mail.ReadWrite";
 
 export function hasReadScope(scopes: string | null | undefined): boolean {
@@ -82,29 +84,43 @@ export async function pollOrg(org: { id: string; supportInboundAddress: string; 
   const token = await refreshGraphAccessToken(org as any);
   const prefixes = new Set((await db.select({ k: supportCases.caseKey }).from(supportCases).where(eq(supportCases.orgId, org.id))).map(r => r.k.split("-")[0]));
 
-  const page = await graphGet<{ value: GraphMessage[] }>(token,
-    `/me/mailFolders/inbox/messages?$filter=isRead eq false&$top=25&$orderby=receivedDateTime asc&$select=id,subject,internetMessageId,receivedDateTime,hasAttachments,from,toRecipients,ccRecipients,body,bodyPreview`);
-  for (const msg of page.value || []) {
-    result.scanned++;
-    if (!isRelevant(msg, org.supportInboundAddress, prefixes)) { result.skipped++; continue; }
+  // Unrelated unread mail stays unread, so a fixed first page would show the
+  // same old messages every pass and never reach newer support mail. Walk the
+  // unread set newest-first through @odata.nextLink, bounded by MAX_PAGES.
+  const relevant: GraphMessage[] = [];
+  let next: string | null = `/me/mailFolders/inbox/messages?$filter=isRead eq false&$top=50&$orderby=receivedDateTime desc&$select=id,subject,internetMessageId,receivedDateTime,hasAttachments,from,toRecipients,ccRecipients,body,bodyPreview`;
+  for (let pages = 0; next && pages < MAX_PAGES; pages++) {
+    const page: { value?: GraphMessage[]; "@odata.nextLink"?: string } = await graphGet(token, next);
+    for (const msg of page.value || []) {
+      result.scanned++;
+      if (isRelevant(msg, org.supportInboundAddress, prefixes)) relevant.push(msg); else result.skipped++;
+    }
+    const link = page["@odata.nextLink"];
+    next = link ? link.replace(GRAPH, "") : null;
+  }
+  // Oldest first so a thread's replies land in order.
+  relevant.sort((a, b) => (a.receivedDateTime || "").localeCompare(b.receivedDateTime || ""));
+
+  for (const msg of relevant) {
     const messageId = msg.internetMessageId || `graph:${msg.id}`;
-    const [seen] = await db.select({ id: inboundEmails.id }).from(inboundEmails).where(eq(inboundEmails.resendMessageId, messageId)).limit(1);
-    if (seen) { result.skipped++; await graphPatch(token, `/me/messages/${msg.id}`, { isRead: true }).catch(() => {}); continue; }
 
     const text = msg.body?.contentType?.toLowerCase() === "html" ? htmlToText(msg.body.content || "") : (msg.body?.content || msg.bodyPreview || "");
     const from = msg.from?.emailAddress?.address ? `${msg.from.emailAddress.name || ""} <${msg.from.emailAddress.address}>` : "unknown";
     const to = (msg.toRecipients || []).map(r => r.emailAddress?.address || "").filter(Boolean);
 
+    // Claim the message: the unique index on the ledger makes this the single
+    // point where two overlapping passes are serialised. Loser skips.
     const emailId = randomUUID();
-    await db.insert(inboundEmails).values({
+    const claimed = await db.insert(inboundEmails).values({
       id: emailId, from, to: JSON.stringify(to), subject: msg.subject || null, bodyText: text || null,
       bodyHtml: msg.body?.contentType?.toLowerCase() === "html" ? (msg.body.content || null) : null,
       headers: { source: "m365-graph", graphId: msg.id, receivedDateTime: msg.receivedDateTime ?? null }, resendMessageId: messageId,
-    });
+    }).onConflictDoNothing({ target: inboundEmails.resendMessageId, where: sql`resend_message_id IS NOT NULL` }).returning({ id: inboundEmails.id });
+    if (claimed.length === 0) { result.skipped++; await graphPatch(token, `/me/messages/${msg.id}`, { isRead: true }).catch(() => {}); continue; }
 
     let outcome: Awaited<ReturnType<typeof processInboundEmail>>;
     try {
-      outcome = await processInboundEmail({ from, to, subject: msg.subject ?? null, text, html: null, messageId });
+      outcome = await processInboundEmail({ from, to, subject: msg.subject ?? null, text, html: null, messageId, orgId: org.id });
     } catch (err) {
       // Leave the mail unread and drop the ledger row so the next pass can retry it.
       await db.delete(inboundEmails).where(eq(inboundEmails.id, emailId)).catch(() => {});
