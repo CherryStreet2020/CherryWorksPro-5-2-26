@@ -172,11 +172,12 @@ function JiraImportCard({ card, muted, fieldStyle }: { card: React.CSSProperties
 
   const showForm = !saved?.connected || editing;
   const conn = { baseUrl: baseUrl.trim(), email: email.trim(), apiToken: apiToken.trim(), projectKey: projectKey.trim().toUpperCase() };
-  const ready = !!conn.baseUrl && !!conn.email && !!conn.apiToken && !!conn.projectKey;
+  // A saved connection can be edited without re-typing the token (the server keeps it).
+  const ready = !!conn.baseUrl && !!conn.email && !!conn.projectKey && (!!conn.apiToken || !!saved?.connected);
   const usable = saved?.connected || ready;
 
   const connect = useMutation({
-    mutationFn: async () => (await apiRequest("PUT", "/api/support/import/jira-connection", { ...conn, clientId: clientId || null, projectId: projectId || null })).json(),
+    mutationFn: async () => (await apiRequest("PUT", "/api/support/import/jira-connection", { ...conn, apiToken: conn.apiToken || undefined, clientId: clientId || null, projectId: projectId || null })).json(),
     onSuccess: (r: JiraConnection) => { queryClient.setQueryData(["/api/support/import/jira-connection"], r); setApiToken(""); setEditing(false); toast({ title: `Connected to Jira as ${r.connectedAs || r.email}` }); },
     onError: (err: Error) => toast({ title: "Could not connect to Jira", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }),
   });
@@ -185,12 +186,12 @@ function JiraImportCard({ card, muted, fieldStyle }: { card: React.CSSProperties
     onSuccess: () => { queryClient.setQueryData(["/api/support/import/jira-connection"], { connected: false }); setTest(null); setReport(null); setEditing(false); toast({ title: "Jira disconnected" }); },
   });
   const testConn = useMutation({
-    mutationFn: async () => (await apiRequest("POST", "/api/support/import/jira-test", ready ? conn : {})).json(),
+    mutationFn: async () => (await apiRequest("POST", "/api/support/import/jira-test", conn.apiToken ? conn : {})).json(),
     onSuccess: (r: JiraTest) => { setTest(r); setReport(null); },
     onError: (err: Error) => { setTest(null); toast({ title: "Could not connect to Jira", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }); },
   });
   const run = useMutation({
-    mutationFn: async (dryRun: boolean) => (await apiRequest("POST", "/api/support/import/jira-fetch", { ...(ready ? conn : {}), clientId, projectId: projectId || null, dryRun, relinkTime: true })).json(),
+    mutationFn: async (dryRun: boolean) => (await apiRequest("POST", "/api/support/import/jira-fetch", { ...(conn.apiToken ? conn : {}), clientId, projectId: projectId || null, dryRun, relinkTime: true })).json(),
     onSuccess: (r: ImportReport, dryRun) => {
       setReport(r);
       if (!dryRun) { queryClient.invalidateQueries({ queryKey: ["/api/support/cases"] }); queryClient.invalidateQueries({ queryKey: ["/api/support/summary"] }); queryClient.invalidateQueries({ queryKey: ["/api/support/import/jira-connection"] }); toast({ title: `Imported ${r.imported} cases` }); }

@@ -393,8 +393,13 @@ export function registerSupportCaseRoutes(app: Express) {
   });
   app.put("/api/support/import/jira-connection", requireAuth, requireAdmin, requireTier("PROFESSIONAL"), async (req, res) => {
     try {
-      const conn = jiraConnSchema.parse(req.body);
       const body = req.body ?? {};
+      // Editing a saved connection may leave the token blank: keep the stored one.
+      if (!body.apiToken) {
+        const [existing] = await db.select().from(supportJiraConnections).where(eq(supportJiraConnections.orgId, req.session.orgId!));
+        if (existing) body.apiToken = decryptField(existing.apiTokenEnc);
+      }
+      const conn = jiraConnSchema.parse(body);
       const client = new JiraClient(conn);
       const me = await client.whoAmI(); // never store a token that does not work
       const values = {
@@ -441,8 +446,10 @@ export function registerSupportCaseRoutes(app: Express) {
       const conn = await resolveJiraConn(req.session.orgId!, req.body);
       const body = req.body ?? {};
       const [saved] = await db.select().from(supportJiraConnections).where(eq(supportJiraConnections.orgId, req.session.orgId!));
-      if (!body.clientId && saved?.clientId) body.clientId = saved.clientId;
-      if (!body.projectId && saved?.projectId) body.projectId = saved.projectId;
+      // Saved choices apply only when the request OMITS them ("None" arrives as
+      // null and must stay None), and the saved project only for the saved client.
+      if (!("clientId" in body) && saved?.clientId) body.clientId = saved.clientId;
+      if (!("projectId" in body) && saved?.projectId && saved.clientId && String(body.clientId) === saved.clientId) body.projectId = saved.projectId;
       if (!body.clientId) return res.status(400).json({ message: "clientId is required" });
       const items = await pullProject(conn, conn.projectKey);
       if (items.length > MAX_ISSUES) return res.status(400).json({ message: `Import at most ${MAX_ISSUES} issues per request` });
