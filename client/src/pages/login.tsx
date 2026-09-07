@@ -38,6 +38,12 @@ export default function LoginPage() {
       toast({ title: "Please sign in to continue" });
       window.history.replaceState({}, "", "/login");
     }
+    // Invite emails link to /login?email=…; the temporary password is in the email.
+    const invitedEmail = params.get("email");
+    if (invitedEmail) {
+      setEmail(invitedEmail);
+      window.history.replaceState({}, "", "/login");
+    }
   }, [toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {

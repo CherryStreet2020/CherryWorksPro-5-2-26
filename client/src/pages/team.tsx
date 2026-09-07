@@ -215,7 +215,10 @@ function PendingInvitesSection({ members, isAdmin }: { members: TeamMember[]; is
         title: data.emailSent ? "Invite resent!" : "Invite regenerated",
         description: (
           <div className="space-y-2">
-            <p>{data.emailSent ? `Email resent to ${m?.email}` : "Email delivery failed — copy the link below."}</p>
+            <p>{data.emailSent ? `Email resent to ${m?.email}` : "Email delivery failed — copy the link below and pass on the temporary password."}</p>
+            {data.tempPassword && (
+              <p className="font-mono text-xs px-2 py-1 rounded" style={{ background: "var(--lux-surface-alt)" }} data-testid="text-resend-temp-password">Temporary password: {data.tempPassword}</p>
+            )}
             {data.inviteUrl && (
               <button
                 onClick={copyLink}
@@ -776,7 +779,10 @@ function InviteDialog({ open, onOpenChange, allProjects }: {
         title: data.emailSent ? "Invite sent!" : "Team member created",
         description: (
           <div className="space-y-2">
-            <p>{data.emailSent ? `Invitation email sent to ${data.user.email}` : "Email delivery failed — share the invite link manually."}</p>
+            <p>{data.emailSent ? `Invitation email sent to ${data.user.email}` : "Email delivery failed — share the invite link and this temporary password manually."}</p>
+            {data.tempPassword && (
+              <p className="font-mono text-xs px-2 py-1 rounded" style={{ background: "var(--lux-surface-alt)" }} data-testid="text-invite-temp-password">Temporary password: {data.tempPassword}</p>
+            )}
             {data.inviteUrl && (
               <button
                 onClick={copyLink}

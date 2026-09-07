@@ -617,6 +617,12 @@ export async function sendInviteEmail(
   };
 
   const result = await transport.send(message);
+  // The noop transport ("not-sent-no-smtp") resolves without delivering.
+  // Callers record emailSent / WELCOME_EMAIL_SUCCEEDED from this return, so
+  // it must throw, exactly as sendInvoiceEmail does.
+  if (result.ok === false) {
+    throw new Error("Email was not sent — no email provider is configured. Connect email in Settings, then resend.");
+  }
   return { messageId: result.messageId, previewUrl: result.previewUrl };
 }
 
@@ -666,6 +672,12 @@ export async function sendWelcomeEmail(
   };
 
   const result = await transport.send(message);
+  // The noop transport ("not-sent-no-smtp") resolves without delivering.
+  // Callers record emailSent / WELCOME_EMAIL_SUCCEEDED from this return, so
+  // it must throw, exactly as sendInvoiceEmail does.
+  if (result.ok === false) {
+    throw new Error("Email was not sent — no email provider is configured. Connect email in Settings, then resend.");
+  }
   return { messageId: result.messageId, previewUrl: result.previewUrl };
 }
 

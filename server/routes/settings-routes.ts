@@ -137,7 +137,9 @@ app.get("/api/implementation-status", requireAuth, async (req, res) => {
       const clients = await storage.getClientsByOrg(orgId);
       const projects = await storage.getProjectsByOrg(orgId);
       const users = await storage.getTeamMembersByOrg(orgId);
-      const team = users.filter((u: any) => u.role === "TEAM_MEMBER");
+      // "Invite Team" means someone besides you is on the workspace, whatever
+    // their role; requiring a TEAM_MEMBER left admin/manager firms at 4/5 forever.
+    const team = users.filter((u: any) => u.id !== req.session.userId && u.isActive !== false);
       const steps = [
         { id: "explore_dashboard", label: "Explore Your Dashboard", complete: true },
         { id: "review_clients", label: "Review Your Clients", complete: clients.length > 0 },
@@ -372,19 +374,19 @@ app.post("/api/billing/checkout", requireAuth, async (req, res) => {
 
     console.log(`[billing/checkout] plan=${planKey} annual_raw=${JSON.stringify(annual)} isAnnual=${isAnnual}`);
 
+    const Stripe = (await import("stripe")).default;
+    const stripe = new Stripe(stripeKey);
+
     let priceId: string;
     try {
-      const { getPriceId } = await import("../stripe-prices");
-      priceId = getPriceId(planKey as "STARTER" | "PROFESSIONAL" | "BUSINESS", isAnnual);
+      const { resolvePriceId } = await import("../stripe-prices");
+      priceId = await resolvePriceId(stripe as any, planKey as "STARTER" | "PROFESSIONAL" | "BUSINESS", isAnnual);
     } catch (priceErr: any) {
       console.error("[billing/checkout] Price ID resolution failed:", priceErr.message);
       return res.status(503).json({ message: "Billing configuration error, please contact support" });
     }
 
     console.log(`[billing/checkout] resolved priceId=${priceId} for ${planKey}/${isAnnual ? "yearly" : "monthly"}`);
-
-    const Stripe = (await import("stripe")).default;
-    const stripe = new Stripe(stripeKey);
 
     let customerId = org.stripeCustomerId;
     if (!customerId) {

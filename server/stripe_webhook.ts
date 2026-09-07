@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { planFromPrice } from "./stripe-prices";
 import { storage, PayoutEntriesAlreadyPaidError } from "./storage";
 import type { CreateStripePaymentResult } from "./storage";
 import { db } from "./db";
@@ -588,19 +589,31 @@ async function handleSubscriptionUpdated(
     stripeSubscriptionId: subscription.id,
   };
 
+  // Which plan is this subscription? The checkout session stamps the chosen
+  // tier into subscription metadata (settings-routes: subscription_data.metadata),
+  // which survives every later subscription.* event. Then the price itself
+  // (env ids or the product name), then the legacy lookup keys.
   const items = subscription.items?.data;
-  if (items && items.length > 0) {
+  const metaTier = subscription.metadata?.planTier;
+  if (metaTier && ["STARTER", "PROFESSIONAL", "BUSINESS"].includes(metaTier)) {
+    updates.planTier = metaTier;
+    updates.maxTeamMembers = 999999;
+  } else if (items && items.length > 0) {
     const lookupKey = items[0].price?.lookup_key;
-    if (lookupKey && PLAN_TIER_MAP[lookupKey]) {
+    const fromPrice = planFromPrice(items[0].price);
+    if (fromPrice) {
+      updates.planTier = fromPrice;
+      updates.maxTeamMembers = 999999;
+    } else if (lookupKey && PLAN_TIER_MAP[lookupKey]) {
       updates.planTier = PLAN_TIER_MAP[lookupKey].tier;
       updates.maxTeamMembers = PLAN_TIER_MAP[lookupKey].maxTeamMembers;
     }
   }
 
-  if (status === "active" && org.planTier === "TRIAL") {
-    if (!updates.planTier) {
-      updates.planTier = "PROFESSIONAL";
-    }
+  // A trial that Stripe knows about IS the plan the customer picked; keep
+  // the org on TRIAL only while no subscription exists at all.
+  if ((status === "active" || status === "trialing") && org.planTier === "TRIAL" && !updates.planTier) {
+    updates.planTier = "PROFESSIONAL";
   }
 
   await storage.updateOrg(org.id, updates);

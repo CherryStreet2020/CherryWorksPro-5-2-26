@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import { appBaseUrl } from "../lib/app-url";
 import { storage } from "../storage";
 import { paramId } from "../lib/req-params";
 import { db } from "../db";
@@ -191,9 +192,7 @@ app.post("/api/team/invite", userCreationLimiter, requireAdmin, async (req, res)
     let previewUrl: string | undefined;
     const org2 = await storage.getOrg(req.session.orgId!);
     const orgName = org2?.name || "CherryWorks Pro";
-    const protocol = req.headers["x-forwarded-proto"] || "https";
-    const host = req.headers.host || "localhost:5000";
-    const loginUrl = `${protocol}://${host}`;
+    const loginUrl = appBaseUrl(req);
     const smtpConfig = getSmtpConfigFromOrg(org2);
     const smtpConfigured = !!(smtpConfig || process.env.SMTP_HOST);
 
@@ -220,9 +219,11 @@ app.post("/api/team/invite", userCreationLimiter, requireAdmin, async (req, res)
       console.error("[invite] Failed to send invite email:", emailErr.message);
     }
 
-    const inviteUrl = `${loginUrl}/login?email=${encodeURIComponent(email)}&tempPassword=${encodeURIComponent(tempPwd)}`;
+    const inviteUrl = `${loginUrl}/login?email=${encodeURIComponent(email)}`;
     const { password: _, ...safeUser } = user;
-    return res.json({ user: safeUser, inviteId: pendingInvite.id, inviteUrl, emailSent, emailError, previewUrl, smtpConfigured });
+    // The temporary password leaves the server only when the email did not,
+    // so the admin can hand it over out of band. It is never part of a URL.
+    return res.json({ user: safeUser, inviteId: pendingInvite.id, inviteUrl, emailSent, emailError, previewUrl, smtpConfigured, ...(emailSent ? {} : { tempPassword: tempPwd }) });
   } catch (err: any) {
     return res.status(500).json({ message: sanitizeErrorMessage(err) });
   }
@@ -242,9 +243,7 @@ app.post("/api/team/:id/resend-invite", requireAdmin, async (req, res) => {
 
     const org = await storage.getOrg(req.session.orgId!);
     const orgName = org?.name || "CherryWorks Pro";
-    const protocol = req.headers["x-forwarded-proto"] || "https";
-    const host = req.headers.host || "localhost:5000";
-    const loginUrl = `${protocol}://${host}`;
+    const loginUrl = appBaseUrl(req);
     const smtpConfig = getSmtpConfigFromOrg(org);
 
     let emailSent = false;
@@ -255,8 +254,8 @@ app.post("/api/team/:id/resend-invite", requireAdmin, async (req, res) => {
       console.error("[resend-invite] Failed to send invite email:", emailErr.message);
     }
 
-    const inviteUrl = `${loginUrl}/login?email=${encodeURIComponent(targetUser.email)}&tempPassword=${encodeURIComponent(tempPwd)}`;
-    return res.json({ emailSent, inviteUrl });
+    const inviteUrl = `${loginUrl}/login?email=${encodeURIComponent(targetUser.email)}`;
+    return res.json({ emailSent, inviteUrl, ...(emailSent ? {} : { tempPassword: tempPwd }) });
   } catch (err: any) {
     return res.status(500).json({ message: sanitizeErrorMessage(err) });
   }
@@ -317,9 +316,7 @@ app.post("/api/team/invites/:id/resend", requireAdmin, async (req, res) => {
 
     const org = await storage.getOrg(req.session.orgId!);
     const orgName = org?.name || "CherryWorks Pro";
-    const protocol = req.headers["x-forwarded-proto"] || "https";
-    const host = req.headers.host || "localhost:5000";
-    const loginUrl = `${protocol}://${host}`;
+    const loginUrl = appBaseUrl(req);
     const smtpConfig = getSmtpConfigFromOrg(org);
 
     const targetUser = await storage.getUserByEmailInOrg(invite.email, invite.orgId);
@@ -345,7 +342,7 @@ app.post("/api/team/invites/:id/resend", requireAdmin, async (req, res) => {
       resendCount: invite.resendCount + 1,
     });
 
-    const inviteUrl = `${loginUrl}/login?email=${encodeURIComponent(invite.email)}&tempPassword=${encodeURIComponent(tempPwd)}`;
+    const inviteUrl = `${loginUrl}/login?email=${encodeURIComponent(invite.email)}`;
     return res.json({ inviteId: updated!.id, inviteUrl, emailSent, emailError });
   } catch (err: any) {
     return res.status(500).json({ message: sanitizeErrorMessage(err) });
@@ -460,9 +457,7 @@ app.post("/api/team/:id/reset-password", resetPasswordLimiter, requireAdmin, asy
     try {
       const org = await storage.getOrg(req.session.orgId!);
       const orgName = org?.name || "CherryWorks Pro";
-      const protocol = req.headers["x-forwarded-proto"] || "https";
-      const host = req.headers.host || "localhost:5000";
-      const loginUrl = `${protocol}://${host}`;
+      const loginUrl = appBaseUrl(req);
       const smtpConfig = getSmtpConfigFromOrg(org);
       await sendInviteEmail(updated.email, updated.name, orgName, tempPwd, loginUrl, smtpConfig, org);
       emailSent = true;

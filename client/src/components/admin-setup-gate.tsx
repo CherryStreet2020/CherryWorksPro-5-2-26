@@ -64,7 +64,9 @@ export function AdminSetupGate({ children }: { children: ReactNode }) {
   // incomplete — otherwise the gate swallows /403 and /500 and the admin
   // can never see the real error page (audit §6.1 finding #1). The 404
   // catch-all has no fixed path so the gate still takes precedence there.
-  const allowedWhileIncomplete = ["/getting-started", "/profile", "/403", "/500"];
+  // Settings is where an admin connects email and billing; locking it behind
+  // the firm profile left new workspaces unable to send their first invite.
+  const allowedWhileIncomplete = ["/getting-started", "/profile", "/settings", "/403", "/500"];
   const hasBrands = Array.isArray(brands) && brands.length > 0;
   const marketingOsAllowed =
     location.startsWith("/marketing/") && (marketingOsActive || hasBrands);
@@ -72,7 +74,7 @@ export function AdminSetupGate({ children }: { children: ReactNode }) {
   if (
     data &&
     !data.firmProfileComplete &&
-    !allowedWhileIncomplete.includes(location) &&
+    !allowedWhileIncomplete.some((p) => location === p || location.startsWith(`${p}/`)) &&
     !marketingOsAllowed
   ) {
     const style = {
