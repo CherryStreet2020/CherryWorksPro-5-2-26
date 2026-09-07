@@ -38,6 +38,13 @@ BASH5="$HOME/.local/bin/bash"
 TEST_DB_URL="${CWP_TEST_DATABASE_URL:-$(printf '%s' "$CWP_DATABASE_URL" | sed 's#/cwp_dev\([?].*\)\{0,1\}$#/cwp_test\1#')}"
 # The reset below always recreates the database named cwp_test, so the URL must point at exactly that.
 case "$TEST_DB_URL" in */cwp_test|*/cwp_test\?*) ;; *) echo "[cwp] the test DB URL must end in /cwp_test (got: ${TEST_DB_URL%%\?*}); set CWP_TEST_DATABASE_URL accordingly" >&2; exit 1 ;; esac
+# Administrative connection = the same role/host/port as a URL, pointed at the maintenance db.
+admin_url() { printf '%s' "${1%%\?*}" | sed 's#/[^/]*$#/postgres#'; }
+recreate_db() { # $1 = url of the db to recreate
+  local url="$1" name; name="$(printf '%s' "${url%%\?*}" | sed 's#.*/##')"
+  psql "$(admin_url "$url")" -Atqc "DROP DATABASE IF EXISTS \"$name\"" || { echo "[cwp] drop $name failed (another session holding it open?)" >&2; return 1; }
+  psql "$(admin_url "$url")" -Atqc "CREATE DATABASE \"$name\"" || return 1
+}
 
 # Full env the dev/test server boots with (NODE_ENV=test → Vite serving +
 # relaxed rate limits + marketing/email flags on, matching vitest globalSetup).
@@ -93,22 +100,15 @@ case "$cmd" in
     ensure_pg; cd "$REPO"
     echo "[cwp] fresh cwp_test → migrate → vitest"
     # Fail fast: a stale or half-migrated test DB must never run the suite.
-    dropdb -p "$PGPORT" --if-exists cwp_test || { echo "[cwp] dropdb cwp_test failed (another session holding it open?)" >&2; exit 1; }
-    createdb -p "$PGPORT" cwp_test || exit 1
+    recreate_db "$TEST_DB_URL" || exit 1
     DATABASE_URL="$TEST_DB_URL" NODE_ENV=development npm run db:migrate:prod || { echo "[cwp] migration of cwp_test failed" >&2; exit 1; }
     exec env DATABASE_URL="$TEST_DB_URL" npm run test -- "$@" ;;
 
   e2e)
     ensure_pg; cd "$REPO"
-    # Reuse :5000 only if THIS launcher started it against THIS database (flags + seeds guaranteed); else restart.
-    LISTEN_PID="$(lsof -ti tcp:5000 -sTCP:LISTEN 2>/dev/null | head -1)"
-    if app_ready && [ -n "$LISTEN_PID" ] && [ -f /tmp/cwp-app-5000.launched ] \
-       && grep -qx "db=${CWP_DATABASE_URL%%\?*}" /tmp/cwp-app-5000.launched \
-       && grep -qx "pid=$LISTEN_PID" /tmp/cwp-app-5000.launched; then
-      echo "[cwp] reusing the cwp-launched app on :5000"
-    else
-      echo "[cwp] (re)starting app for e2e with the test configuration"; "$SELF" app-bg || exit 1
-    fi
+    # Always a fresh server from this launcher: tsx is not in watch mode, so a
+    # reused process would test stale code (and a stranger's server, stale flags).
+    echo "[cwp] starting app for e2e with the test configuration"; "$SELF" app-bg || exit 1
     exec env DATABASE_URL="$CWP_DATABASE_URL" PORT=5000 npx playwright test "$@" ;;
 
   migcheck)
@@ -120,7 +120,7 @@ case "$cmd" in
     ensure_pg; cd "$REPO"
     echo "[cwp] dropping + recreating cwp_dev"
     kill_5000
-    dropdb -p "$PGPORT" --if-exists cwp_dev || { echo "[cwp] dropdb cwp_dev failed (another session holding it open?)" >&2; exit 1; }; createdb -p "$PGPORT" cwp_dev || exit 1
+    recreate_db "$CWP_DATABASE_URL" || exit 1
     DATABASE_URL="$CWP_DATABASE_URL" NODE_ENV=development npm run db:migrate:prod || { echo "[cwp] migration of cwp_dev failed" >&2; exit 1; }
     echo "[cwp] booting once to seed (dean admin + dev orgs)…"
     "$SELF" app-bg || exit 1
