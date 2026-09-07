@@ -88,6 +88,12 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# A plan review and a code review are different invocations: mixing them
+# would silently run one and let a wrapper mistake it for the other.
+if [ -n "$PLAN_FILE" ] && { [ "$TARGET_KIND" != "plan" ] || [ ${#ARGS[@]} -gt 0 ]; }; then
+  echo "redteam-codex: --plan cannot be combined with --commit / --base / --uncommitted." >&2; exit 4
+fi
+
 # --- resolve the codex binary --------------------------------------------------
 # The desktop-app bundle comes FIRST: codex looks for its sibling
 # `codex-code-mode-host` next to its own path, so a lone symlink in ~/.local/bin
@@ -160,13 +166,13 @@ APPROVED means no unresolved P1/P2. BLOCKED means the plan cannot proceed as wri
     if [ "$(printf '%s\n' "$VERDICTS" | grep -c .)" -eq 1 ]; then VERDICT="$VERDICTS"; fi
   fi
   # The source must be the bytes that were reviewed; otherwise no verdict stands.
-  NOW_SHA="$(shasum -a 256 "$PLAN_ABS" | cut -c1-64)"
-  SOURCE_CHANGED=0; [ "$NOW_SHA" != "$PLAN_SHA" ] && SOURCE_CHANGED=1
+  NOW_SHA="$( { shasum -a 256 "$PLAN_ABS" 2>/dev/null || echo "missing"; } | cut -c1-64)"
+  SOURCE_CHANGED=0; [ "$NOW_SHA" != "$PLAN_SHA" ] && SOURCE_CHANGED=1   # "missing" ≠ sha → invalidated, report still published
   {
     echo "# Plan review — $(basename -- "$PLAN_FILE")"
     echo "- plan: $PLAN_ABS"
     echo "- sha256: $PLAN_SHA (of the reviewed snapshot)"
-    if [ "$SOURCE_CHANGED" -eq 1 ]; then echo "- ⚠️ SOURCE CHANGED DURING REVIEW: $PLAN_ABS is now ${NOW_SHA:0:12}… — this verdict does NOT cover the current file. Review again."; fi
+    if [ "$SOURCE_CHANGED" -eq 1 ]; then echo "- ⚠️ SOURCE CHANGED OR VANISHED DURING REVIEW: $PLAN_ABS is now ${NOW_SHA:0:12}… — this verdict does NOT cover the current file. Review again."; fi
     echo "- model: $MODEL @ $EFFORT · $(date -u +%Y-%m-%dT%H:%M:%SZ) · codex exit $rc"
     echo
     if [ -s "$MSG" ]; then cat "$MSG"; else echo "(no final message from Codex — NOT a verdict; transcript follows)"; echo; cat "$RAW"; fi
