@@ -16,12 +16,13 @@
 #   scripts/redteam-codex.sh --uncommitted   # review working-tree changes (pre-commit)
 #
 # MODEL / COST
-#   Default gpt-5.6-terra at `high` reasoning: a red-team pass runs over a
-#   BOUNDED diff, not an open-ended agentic task. Use --deep (gpt-6-astra,
-#   xhigh) for PRs that warrant the ceiling: authz fences, money/posting paths,
-#   migrations, concurrency. Both are passed PER INVOCATION with `-c`, so the
-#   global ~/.codex/config.toml (interactive Codex) is untouched.
-#   Override: REDTEAM_CODEX_MODEL=gpt-5.6-luna REDTEAM_CODEX_EFFORT=medium …
+#   Default gpt-6-astra at `medium` reasoning — Dean's call, 2026-09-07
+#   ("we should be running Astra at med"): the frontier model, kept fast by
+#   effort. Use --deep (same model, xhigh) for PRs that warrant the ceiling:
+#   authz fences, money/posting paths, migrations, concurrency. Both are
+#   passed PER INVOCATION with `-c`, so the global ~/.codex/config.toml
+#   (interactive Codex) is untouched.
+#   Override: REDTEAM_CODEX_MODEL=gpt-5.6-luna REDTEAM_CODEX_EFFORT=low …
 #
 # Exit codes: 0 = review completed (READ THE FINDINGS — 0 does not mean "clean")
 #             1 = codex binary not found
@@ -42,8 +43,8 @@
 # =============================================================================
 set -euo pipefail
 
-MODEL="${REDTEAM_CODEX_MODEL:-gpt-5.6-terra}"
-EFFORT="${REDTEAM_CODEX_EFFORT:-high}"
+MODEL="${REDTEAM_CODEX_MODEL:-gpt-6-astra}"
+EFFORT="${REDTEAM_CODEX_EFFORT:-medium}"
 
 ARGS=()
 TARGET_COMMIT=""
