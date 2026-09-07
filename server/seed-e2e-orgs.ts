@@ -57,6 +57,7 @@ async function seedE2EOrgs() {
       role: "ADMIN",
       isActive: true,
       onboardingComplete: true,
+      emailVerifiedAt: new Date(),
       tempPassword: false,
     });
 

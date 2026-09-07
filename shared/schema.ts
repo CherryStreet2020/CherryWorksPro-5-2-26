@@ -88,6 +88,11 @@ export const orgs = pgTable("orgs", {
   subscriptionStatus: text("subscription_status").notNull().default("trialing"),
   maxTeamMembers: integer("max_team_members").notNull().default(15),
   trialEndsAt: timestamp("trial_ends_at"),
+  // Trial lifecycle (server/trial-lifecycle.ts): reminder stamps and the
+  // moment a no-card trial was closed (subscription_status = trial_expired).
+  trialReminder7SentAt: timestamp("trial_reminder_7_sent_at"),
+  trialReminder1SentAt: timestamp("trial_reminder_1_sent_at"),
+  trialExpiredAt: timestamp("trial_expired_at"),
   invoiceTheme: text("invoice_theme").notNull().default("classic"),
   smtpHost: text("smtp_host"),
   smtpPort: integer("smtp_port"),
@@ -205,6 +210,12 @@ export const users = pgTable("users", {
   onboardingComplete: boolean("onboarding_complete").notNull().default(false),
   tempPassword: boolean("temp_password").notNull().default(false),
   lastLoginAt: timestamp("last_login_at"),
+  // Email verification (2026-09-07): set when the user proves the address —
+  // clicks the link, signs in with an emailed temporary password, or
+  // completes a password reset. Existing accounts are backfilled at boot.
+  emailVerifiedAt: timestamp("email_verified_at"),
+  emailVerificationTokenHash: varchar("email_verification_token_hash", { length: 64 }),
+  emailVerificationExpiresAt: timestamp("email_verification_expires_at"),
   phone: text("phone"),
   avatarUrl: text("avatar_url"),
   // Business entity
@@ -2527,6 +2538,18 @@ export const inboundEmails = pgTable("inbound_emails", {
   // (docs/DEPLOY.md); migrations/0036 carries the same index for the SQL path.
   uniqueIndex("inbound_emails_message_id_unique").on(table.resendMessageId).where(sql`resend_message_id IS NOT NULL`),
 ]);
+
+/**
+ * Platform-wide switches a platform operator can flip at runtime without a
+ * deploy (e.g. signup_enabled). One row per key, JSON value.
+ */
+export const platformSettings = pgTable("platform_settings", {
+  key: varchar("key", { length: 64 }).primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  updatedByUserId: varchar("updated_by_user_id", { length: 36 }),
+});
+export type PlatformSetting = typeof platformSettings.$inferSelect;
 
 export const insertInboundEmailSchema = createInsertSchema(inboundEmails).omit({
   id: true,

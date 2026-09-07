@@ -15,6 +15,8 @@ import { createServer } from "http";
 import { runMigrationsAndSeed, markStartupComplete } from "./startup-orchestrator";
 import { startWebhookRetryProcessor } from "./webhooks";
 import { startReminderProcessor, stopReminderProcessor } from "./reminders";
+import { startTrialLifecycleProcessor, stopTrialLifecycleProcessor } from "./trial-lifecycle";
+import { backfillLegacyVerified } from "./email-verification";
 import {
   startMarketingScheduledSendProcessor,
   stopMarketingScheduledSendProcessor,
@@ -280,6 +282,16 @@ app.use((req, res, next) => {
       })();
 
       // ---------------------------------------------------------------
+      // Accounts from before email verification existed are verified by
+      // definition. Idempotent; mirrors migrations/0037 for the Azure
+      // push-only schema path. Runs regardless of the scheduler switch.
+      try {
+        const n = await backfillLegacyVerified();
+        if (n > 0) console.log(`[email-verification] backfilled ${n} legacy account(s) as verified`);
+      } catch (err) {
+        console.warn("[email-verification] backfill failed:", (err as Error).message);
+      }
+
       // SCHEDULERS_ENABLED kill-switch (added for the Azure migration).
       //
       // Set SCHEDULERS_ENABLED=false to boot the app with NO background
@@ -316,6 +328,7 @@ app.use((req, res, next) => {
 
       startWebhookRetryProcessor();
       startReminderProcessor();
+      startTrialLifecycleProcessor();
       startMailboxRecoveryProcessor();
       // Task #207 — dispatch scheduled marketing campaigns + due
       // sequence enrollment steps. Process-wide pg advisory lock inside
@@ -555,6 +568,7 @@ app.use((req, res, next) => {
   function gracefulShutdown(signal: string) {
     console.log(`[shutdown] Graceful shutdown initiated (${signal})`);
     stopReminderProcessor();
+    stopTrialLifecycleProcessor();
     stopMailboxRecoveryProcessor();
     stopMarketingScheduledSendProcessor();
     stopWebhookHealthCheckProcessor();

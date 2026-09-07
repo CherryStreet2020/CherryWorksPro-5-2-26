@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import { requireVerifiedEmail } from "../email-verification";
 import { appBaseUrl } from "../lib/app-url";
 import { storage } from "../storage";
 import { paramId } from "../lib/req-params";
@@ -97,7 +98,7 @@ app.get("/api/team/smtp-status", requireAdmin, async (req, res) => {
   }
 });
 
-app.post("/api/team/invite", userCreationLimiter, requireAdmin, async (req, res) => {
+app.post("/api/team/invite", userCreationLimiter, requireAdmin, requireVerifiedEmail, async (req, res) => {
   try {
     const { name, firstName, lastName, email, role, projectAssignments, workerType, title, department, payType, hourlyPayRate, salaryAmount, payrollProviderName, payrollProviderId, phone } = req.body;
     const resolvedFirstName = firstName || (name ? name.split(/\s+/)[0] : "");
@@ -228,7 +229,7 @@ app.post("/api/team/invite", userCreationLimiter, requireAdmin, async (req, res)
     return res.status(500).json({ message: sanitizeErrorMessage(err) });
   }
 });
-app.post("/api/team/:id/resend-invite", requireAdmin, async (req, res) => {
+app.post("/api/team/:id/resend-invite", requireAdmin, requireVerifiedEmail, async (req, res) => {
   try {
     const targetUser = await storage.getUserById(paramId(req));
     if (!targetUser || targetUser.orgId !== req.session.orgId!) {
@@ -300,7 +301,7 @@ app.get("/api/team/invites", requireManagerOrAbove, async (req, res) => {
   }
 });
 
-app.post("/api/team/invites/:id/resend", requireAdmin, async (req, res) => {
+app.post("/api/team/invites/:id/resend", requireAdmin, requireVerifiedEmail, async (req, res) => {
   try {
     const invite = await storage.getPendingInviteById(paramId(req), req.session.orgId!);
     if (!invite) {

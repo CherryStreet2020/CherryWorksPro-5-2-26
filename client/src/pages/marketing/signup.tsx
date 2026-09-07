@@ -70,6 +70,7 @@ export default function SignupPage() {
   // already exists, so the form collapses to "finish billing" instead of
   // inviting a second signup (which used to create a duplicate "firm-1" org).
   const [resume, setResume] = useState<{ name: string } | null>(null);
+  const [closed, setClosed] = useState<string | null>(null);
 
   const generatedSlug = firmName.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50);
 
@@ -89,6 +90,7 @@ export default function SignupPage() {
     if (params.get("annual") === "true") {
       setAnnual(true);
     }
+    fetch("/api/auth/signup-status").then(r => r.ok ? r.json() : null).then(st => { if (st && st.enabled === false) setClosed(st.message || "New signups are paused right now."); }).catch(() => {});
     if (params.get("checkout") === "canceled") {
       fetch("/api/auth/me", { credentials: "include" })
         .then(r => (r.ok ? r.json() : null))
@@ -305,6 +307,11 @@ export default function SignupPage() {
             >
               <h2 className="text-xl font-bold mb-1 hidden lg:block" style={{ color: "var(--lux-text)" }}>{resume ? "Finish setting up billing" : "Start your free trial"}</h2>
               <p className="text-sm mb-6 hidden lg:block" style={{ color: "var(--lux-text-muted)" }}>{resume ? `Welcome back, ${resume.name}. Your workspace is ready — pick a plan to start your 14-day trial.` : "No commitment. Full access. Live in 5 minutes."}</p>
+              {closed && !resume && (
+                <div className="mb-4 px-4 py-3 rounded-lg text-sm" style={{ background: "var(--lux-surface-alt)", color: "var(--lux-text)" }} data-testid="signup-closed-notice">
+                  <strong>Signups are closed for the moment.</strong> {closed} Want a heads-up when they reopen? <a href="/contact" className="underline">Get in touch</a>.
+                </div>
+              )}
               {resume && (
                 <div className="mb-4 px-4 py-3 rounded-lg text-sm" style={{ background: "var(--lux-surface-alt)", color: "var(--lux-text)" }} data-testid="signup-resume-notice">
                   Checkout was canceled, but your account was created. You can also do this later from <a href="/settings/billing" className="underline">Settings → Billing</a>, or <a href="/getting-started" className="underline">go to your dashboard</a> now.
@@ -398,7 +405,7 @@ export default function SignupPage() {
                   </div>
                 </div>
 
-                <button type="submit" disabled={loading || (!resume && (!firmName || !firstName || !lastName || !email || !passwordValid))} className="w-full px-4 py-3 text-sm font-semibold text-white rounded-lg transition-opacity hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2" style={{ background: "var(--gradient-brand)" }} data-testid="button-signup-submit">
+                <button type="submit" disabled={loading || (!!closed && !resume) || (!resume && (!firmName || !firstName || !lastName || !email || !passwordValid))} className="w-full px-4 py-3 text-sm font-semibold text-white rounded-lg transition-opacity hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2" style={{ background: "var(--gradient-brand)" }} data-testid="button-signup-submit">
                   <CreditCard className="w-4 h-4" />
                   {loading ? (resume ? "Opening checkout..." : "Creating your account...") : "Continue to Payment"}
                 </button>

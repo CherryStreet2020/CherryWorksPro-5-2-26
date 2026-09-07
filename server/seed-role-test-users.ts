@@ -110,6 +110,7 @@ export async function seedDevQaUsers() {
           role: u.role,
           isActive: true,
           onboardingComplete: true,
+          emailVerifiedAt: new Date(),
           tempPassword: false,
         })
         .where(eq(users.id, existing[0].id));
@@ -128,6 +129,7 @@ export async function seedDevQaUsers() {
           role: u.role,
           isActive: true,
           onboardingComplete: true,
+          emailVerifiedAt: new Date(),
           tempPassword: false,
         })
         .returning({ id: users.id });
@@ -338,6 +340,7 @@ export async function seedDevQaUsers() {
         role: PSO_ADMIN.role,
         isActive: true,
         onboardingComplete: true,
+        emailVerifiedAt: new Date(),
         tempPassword: false,
       })
       .where(eq(users.id, existingPsoAdmin[0].id));
@@ -353,6 +356,7 @@ export async function seedDevQaUsers() {
       role: PSO_ADMIN.role,
       isActive: true,
       onboardingComplete: true,
+      emailVerifiedAt: new Date(),
       tempPassword: false,
     });
     console.log(`[seed] Created PSO admin: ${PSO_ADMIN.email}`);

@@ -18,6 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Sparkles, HelpCircle, Search, AlertTriangle, X as XIcon } from "lucide-react";
 import { useBillingStatus } from "@/hooks/use-billing-status";
+import { VerifyEmailBanner, TrialCountdownBanner } from "@/components/account-banners";
 import { useEntitlement } from "@/lib/entitlements";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -188,6 +189,8 @@ const SwitchPaymoPage = lazy(() => lazyRetry(() => import("@/pages/marketing/swi
 const AboutPage = lazy(() => lazyRetry(() => import("@/pages/marketing/about")));
 const ContactPage = lazy(() => lazyRetry(() => import("@/pages/marketing/contact")));
 const SignupPage = lazy(() => lazyRetry(() => import("@/pages/marketing/signup")));
+const VerifyEmailPage = lazy(() => lazyRetry(() => import("@/pages/verify-email")));
+const TrialEndedPage = lazy(() => lazyRetry(() => import("@/pages/trial-ended")));
 const TermsPage = lazy(() => lazyRetry(() => import("@/pages/marketing/terms")));
 const PrivacyPage = lazy(() => lazyRetry(() => import("@/pages/marketing/privacy")));
 const DemoPage = lazy(() => lazyRetry(() => import("@/pages/marketing/demo")));
@@ -510,6 +513,8 @@ function AuthenticatedLayout() {
         <AppSidebar />
         <div className="flex flex-col flex-1 min-w-0">
           <DeletionBanner />
+          <VerifyEmailBanner />
+          <TrialCountdownBanner />
           <header
             className="flex items-center justify-between px-4 py-2 border-b flex-shrink-0"
             style={{
@@ -565,6 +570,7 @@ function AuthenticatedLayout() {
 
 function AppContent() {
   const { user, loading } = useAuth();
+  const { planInactive } = useBillingStatus();
   const [location] = useLocation();
 
   if (loading) {
@@ -610,6 +616,13 @@ function AppContent() {
 
   if (!user.onboardingComplete && (user.role === "TEAM_MEMBER" || user.role === "MANAGER")) {
     return <Suspense fallback={<LazyFallback />}><OnboardingPage /></Suspense>;
+  }
+
+  // Plan inactive (trial ended without a card / subscription gone): the API
+  // answers 402 everywhere except billing, so the only useful screen is the
+  // plan picker. /verify-email stays reachable so a late click still lands.
+  if (planInactive && location !== "/verify-email") {
+    return <Suspense fallback={<LazyFallback />}><TrialEndedPage /></Suspense>;
   }
 
   if (user.role === "ADMIN") {
@@ -664,6 +677,7 @@ function App() {
             <Route path="/demo">{() => <LazyRoute component={DemoPage} />}</Route>
             <Route path="/contact">{() => <LazyRoute component={ContactPage} />}</Route>
             <Route path="/signup">{() => <LazyRoute component={SignupPage} />}</Route>
+            <Route path="/verify-email">{() => <LazyRoute component={VerifyEmailPage} />}</Route>
             <Route path="/terms">{() => <LazyRoute component={TermsPage} />}</Route>
             <Route path="/privacy">{() => <LazyRoute component={PrivacyPage} />}</Route>
             <Route path="/security">{() => <LazyRoute component={SecurityPage} />}</Route>

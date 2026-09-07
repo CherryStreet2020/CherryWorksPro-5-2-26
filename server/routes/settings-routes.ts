@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import { planInactive } from "../trial-lifecycle";
 import { appBaseUrl } from "../lib/app-url";
 import { storage } from "../storage";
 import { db } from "../db";
@@ -486,6 +487,8 @@ app.get("/api/billing/status", requireAuth, async (req, res) => {
       maxTeamMembers: org.maxTeamMembers,
       currentTeamMembers: activeUserCount.length,
       trialEndsAt: org.trialEndsAt,
+      hasSubscription: !!org.stripeSubscriptionId,
+      planInactive: planInactive(org),
       stripeCustomerId: org.stripeCustomerId ? "configured" : null,
       hasPaymentMethod,
       deletionScheduledFor: (org as any).deletionScheduledFor || null,

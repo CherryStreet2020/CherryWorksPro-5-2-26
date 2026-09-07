@@ -1,4 +1,7 @@
 import type { Express } from "express";
+import { resetPlanGateCache } from "./trial-lifecycle";
+import { sendTrialEndingEmail } from "./email";
+import { trustedBaseUrl } from "./lib/app-url";
 import { planFromPrice } from "./stripe-prices";
 import { storage, PayoutEntriesAlreadyPaidError } from "./storage";
 import type { CreateStripePaymentResult } from "./storage";
@@ -517,6 +520,7 @@ async function handleSubscriptionCheckout(
   const planLimits: Record<string, number> = { STARTER: 999999, PROFESSIONAL: 999999, BUSINESS: 999999, ENTERPRISE: 999999 };
 
   try {
+    resetPlanGateCache(orgId);
     await storage.updateOrg(orgId, {
       stripeSubscriptionId: subscriptionId,
       stripeCustomerId: customerId,
@@ -624,6 +628,7 @@ async function handleSubscriptionUpdated(
   }
 
   await storage.updateOrg(org.id, updates);
+  resetPlanGateCache(org.id);
 
   // Task #392 — Re-derive marketing_os from the new tier+status. Tier
   // upgrades (PROFESSIONAL→BUSINESS) light it up; downgrades flip the
@@ -1001,8 +1006,15 @@ async function handleSubscriptionTrialWillEnd(
   const org = customerId ? await storage.getOrgByStripeCustomerId(customerId) : null;
 
   if (org) {
-    const adminUsers = await db.select({ id: users.id, email: users.email }).from(users).where(and(eq(users.orgId, org.id), eq(users.role, "ADMIN"))).limit(1);
+    const adminUsers = await db.select({ id: users.id, email: users.email, name: users.name }).from(users).where(and(eq(users.orgId, org.id), eq(users.role, "ADMIN"), eq(users.isActive, true)));
     const adminEmail = adminUsers[0]?.email || "unknown";
+    let billingLink = "http://localhost:5000/settings/billing";
+    try { billingLink = `${trustedBaseUrl()}/settings/billing`; } catch { /* unconfigured non-production */ }
+    for (const admin of adminUsers) {
+      if (!admin.email) continue;
+      await sendTrialEndingEmail(admin.email, admin.name || "", org.name, 3, billingLink, org)
+        .catch(err => console.warn(`[stripe-webhook] trial-ending email failed for ${org.slug}:`, (err as Error).message));
+    }
 
     await storage.createAuditLog({
       orgId: org.id,

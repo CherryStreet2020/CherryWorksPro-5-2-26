@@ -1,0 +1,143 @@
+/**
+ * Trial lifecycle for workspaces that started a trial but never entered a
+ * card (no Stripe subscription). Stripe owns the calendar for card trials;
+ * this owns the rest:
+ *
+ *   T-7d  reminder email to the workspace admins   (orgs.trial_reminder_7_sent_at)
+ *   T-1d  reminder email                            (orgs.trial_reminder_1_sent_at)
+ *   T+0   subscription_status → "trial_expired"    (orgs.trial_expired_at)
+ *         + "your trial has ended" email. The data stays; the app shows the
+ *         plan picker and the API answers 402 PLAN_INACTIVE outside billing.
+ *
+ * ENTERPRISE workspaces are comped by hand and never expire. A workspace
+ * that later completes checkout is reactivated by the Stripe webhook
+ * (checkout.session.completed sets subscription_status = trialing).
+ */
+import { and, eq, isNull, lt, ne, sql } from "drizzle-orm";
+import type { NextFunction, Request, Response } from "express";
+import { db } from "./db";
+import { orgs, users, type Org } from "@shared/schema";
+import { storage } from "./storage";
+import { sendTrialEndingEmail, sendTrialEndedEmail } from "./email";
+import { trustedBaseUrl } from "./lib/app-url";
+
+export const TRIAL_EXPIRED_STATUS = "trial_expired";
+const DAY = 24 * 60 * 60 * 1000;
+
+export type TrialAction = "remind_7d" | "remind_1d" | "expire" | null;
+
+/** Pure: what, if anything, the tick should do for this org right now. */
+export function trialActionFor(org: Pick<Org, "planTier" | "subscriptionStatus" | "stripeSubscriptionId" | "trialEndsAt" | "trialReminder7SentAt" | "trialReminder1SentAt">, now = new Date()): TrialAction {
+  if (org.planTier === "ENTERPRISE") return null;
+  if (org.stripeSubscriptionId) return null;            // Stripe runs card trials
+  if (org.subscriptionStatus !== "trialing") return null;
+  if (!org.trialEndsAt) return null;
+  const msLeft = org.trialEndsAt.getTime() - now.getTime();
+  if (msLeft <= 0) return "expire";
+  if (msLeft <= 1 * DAY && !org.trialReminder1SentAt) return "remind_1d";
+  if (msLeft <= 7 * DAY && !org.trialReminder7SentAt) return "remind_7d";
+  return null;
+}
+
+/** Pure: is this org's plan inactive (trial ended without a card, or subscription gone)? */
+export function planInactive(org: Pick<Org, "planTier" | "subscriptionStatus"> | null | undefined): boolean {
+  if (!org) return false;
+  if (org.planTier === "ENTERPRISE") return false; // comped by hand; never locked by automation
+  return org.subscriptionStatus === TRIAL_EXPIRED_STATUS || org.planTier === "EXPIRED";
+}
+
+async function adminRecipients(orgId: string): Promise<{ email: string; name: string }[]> {
+  const rows = await db.select({ email: users.email, name: users.name }).from(users)
+    .where(and(eq(users.orgId, orgId), eq(users.role, "ADMIN"), eq(users.isActive, true)));
+  return rows.filter(r => !!r.email).map(r => ({ email: r.email, name: r.name || "" }));
+}
+
+function billingUrl(): string {
+  let base = "http://localhost:5000";
+  try { base = trustedBaseUrl(); } catch { /* unconfigured non-production: local link */ }
+  return `${base}/settings/billing`;
+}
+
+export interface TrialTickResult { reminded7: number; reminded1: number; expired: number; errors: number }
+
+export async function runTrialLifecycleTick(now = new Date()): Promise<TrialTickResult> {
+  const result: TrialTickResult = { reminded7: 0, reminded1: 0, expired: 0, errors: 0 };
+  const candidates = await db.select().from(orgs).where(and(
+    eq(orgs.subscriptionStatus, "trialing"),
+    isNull(orgs.stripeSubscriptionId),
+    ne(orgs.planTier, "ENTERPRISE"),
+    lt(orgs.trialEndsAt, new Date(now.getTime() + 7 * DAY)),
+  ));
+  for (const org of candidates) {
+    const action = trialActionFor(org, now);
+    if (!action) continue;
+    try {
+      const recipients = await adminRecipients(org.id);
+      const daysLeft = Math.max(1, Math.ceil((org.trialEndsAt!.getTime() - now.getTime()) / DAY));
+      if (action === "expire") {
+        await db.update(orgs).set({ subscriptionStatus: TRIAL_EXPIRED_STATUS, trialExpiredAt: now }).where(and(eq(orgs.id, org.id), eq(orgs.subscriptionStatus, "trialing")));
+        await storage.createAuditLog({ orgId: org.id, userId: null, action: "TRIAL_EXPIRED", entityType: "org", entityId: org.id, details: { trialEndsAt: org.trialEndsAt, recipients: recipients.map(r => r.email) } });
+        for (const r of recipients) await sendTrialEndedEmail(r.email, r.name, org.name, billingUrl(), org).catch(err => console.warn("[trial-lifecycle] ended email failed", org.slug, (err as Error).message));
+        result.expired++;
+      } else {
+        const stamp = action === "remind_7d" ? { trialReminder7SentAt: now } : { trialReminder1SentAt: now };
+        await db.update(orgs).set(stamp).where(eq(orgs.id, org.id));
+        await storage.createAuditLog({ orgId: org.id, userId: null, action: "TRIAL_ENDING_SOON", entityType: "org", entityId: org.id, details: { daysRemaining: daysLeft, source: "trial-lifecycle", recipients: recipients.map(r => r.email) } });
+        for (const r of recipients) await sendTrialEndingEmail(r.email, r.name, org.name, daysLeft, billingUrl(), org).catch(err => console.warn("[trial-lifecycle] reminder email failed", org.slug, (err as Error).message));
+        if (action === "remind_7d") result.reminded7++; else result.reminded1++;
+      }
+    } catch (err) {
+      result.errors++;
+      console.error("[trial-lifecycle] org failed", org.slug, (err as Error).message);
+    }
+  }
+  if (result.reminded7 || result.reminded1 || result.expired || result.errors) {
+    console.log(JSON.stringify({ ts: now.toISOString(), level: "info", event: "TRIAL_LIFECYCLE_TICK", ...result }));
+  }
+  return result;
+}
+
+let interval: NodeJS.Timeout | null = null;
+export function startTrialLifecycleProcessor(): void {
+  if (interval) return;
+  interval = setInterval(() => { void runTrialLifecycleTick(); }, 60 * 60 * 1000);
+  setTimeout(() => { void runTrialLifecycleTick(); }, 30 * 1000);
+  console.log("[trial-lifecycle] processor started (60min interval, first pass in 30s)");
+}
+export function stopTrialLifecycleProcessor(): void {
+  if (interval) { clearInterval(interval); interval = null; }
+}
+
+// ─── API gate ────────────────────────────────────────────────────────────
+// Everything under /api answers 402 PLAN_INACTIVE for an inactive workspace,
+// except what the plan picker itself needs.
+const ALLOW_PREFIXES = ["/api/auth/", "/api/csrf-token", "/api/billing/", "/api/health", "/api/readyz", "/api/webhooks/", "/api/platform/", "/api/portal/", "/api/notifications/unread-count", "/api/help/", "/api/csp-report", "/api/entitlements"];
+const orgCache = new Map<string, { at: number; inactive: boolean }>();
+const ORG_CACHE_MS = 30 * 1000;
+export function resetPlanGateCache(orgId?: string): void { if (orgId) orgCache.delete(orgId); else orgCache.clear(); }
+
+export async function planGate(req: Request, res: Response, next: NextFunction) {
+  const orgId = req.session?.orgId;
+  if (!orgId || !req.path.startsWith("/api/")) return next();
+  if (ALLOW_PREFIXES.some(p => req.path === p || req.path.startsWith(p))) return next();
+  try {
+    let entry = orgCache.get(orgId);
+    if (!entry || Date.now() - entry.at > ORG_CACHE_MS) {
+      const [org] = await db.select({ planTier: orgs.planTier, subscriptionStatus: orgs.subscriptionStatus }).from(orgs).where(eq(orgs.id, orgId));
+      entry = { at: Date.now(), inactive: planInactive(org) };
+      orgCache.set(orgId, entry);
+    }
+    if (entry.inactive) {
+      return res.status(402).json({ code: "PLAN_INACTIVE", message: "Your trial has ended. Choose a plan to keep working — your data is safe." });
+    }
+  } catch (err) {
+    console.warn("[trial-lifecycle] plan gate lookup failed; allowing", (err as Error).message);
+  }
+  next();
+}
+
+/** For tests and admin tooling: expire an org immediately. */
+export async function expireOrgNow(orgId: string): Promise<void> {
+  await db.update(orgs).set({ subscriptionStatus: TRIAL_EXPIRED_STATUS, trialExpiredAt: new Date(), trialEndsAt: sql`LEAST(trial_ends_at, now())` }).where(eq(orgs.id, orgId));
+  resetPlanGateCache(orgId);
+}

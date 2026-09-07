@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import { requireVerifiedEmail } from "../email-verification";
 import { storage, PayoutEntriesAlreadyPaidError } from "../storage";
 import { db, pool } from "../db";
 import { eq, desc, and, gte } from "drizzle-orm";
@@ -746,6 +747,7 @@ app.post("/api/invoices/:id/duplicate", requireManagerOrAbove, async (req, res) 
 app.post(
   "/api/invoices/:id/send",
   requireManagerOrAbove,
+  requireVerifiedEmail,
   async (req, res) => {
     try {
       const orgId = req.session.orgId!;
@@ -1064,6 +1066,7 @@ app.post(
 app.post(
   "/api/invoices/:id/resend",
   requireManagerOrAbove,
+  requireVerifiedEmail,
   async (req, res) => {
     try {
       const orgId = req.session.orgId!;

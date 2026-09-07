@@ -6,6 +6,8 @@ export interface BillingStatus {
   maxTeamMembers: number;
   currentTeamMembers: number;
   trialEndsAt: string | null;
+  hasSubscription?: boolean;
+  planInactive?: boolean;
   stripeCustomerId: string | null;
   deletionScheduledFor: string | null;
 }
@@ -24,6 +26,7 @@ export function useBillingStatus() {
 
   return {
     ...query,
+    planInactive: query.data?.planInactive === true,
     planTier,
     isStarter,
     isProfessionalPlus,

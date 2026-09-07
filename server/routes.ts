@@ -1,4 +1,6 @@
 import express from "express";
+import { planGate } from "./trial-lifecycle";
+import { registerPlatformSettingsRoutes } from "./routes/platform-settings-routes";
 import { startupState } from "./startup-orchestrator";
 import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
@@ -233,6 +235,7 @@ export async function registerRoutes(
     "/api/auth/signup",
     "/api/auth/forgot-password",
     "/api/auth/reset-password/",
+    "/api/auth/verify-email",
     "/api/v1/",
     "/api/newsletter/",
     "/api/csp-report",
@@ -261,6 +264,10 @@ export async function registerRoutes(
     }
     next();
   });
+
+  // A workspace whose trial ended without a card (or whose subscription is
+  // gone) answers 402 PLAN_INACTIVE everywhere except auth + billing.
+  app.use(planGate);
 
   const cspReportLimiter = (await import("express-rate-limit")).default({
     windowMs: 60_000,
@@ -643,6 +650,7 @@ export async function registerRoutes(
   app.use("/api/import", importLimiter);
 
   registerSettingsRoutes(app);
+  registerPlatformSettingsRoutes(app);
   registerOauthMailboxRoutes(app);
   registerTestEmailRoutes(app);
   registerAuthRoutes(app);
