@@ -413,7 +413,8 @@ app.post("/api/billing/checkout", requireAuth, async (req, res) => {
       },
       payment_method_collection: "always",
       success_url: `${baseUrl}/getting-started?welcome=true&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${baseUrl}/signup?checkout=canceled&orgId=${orgId}`,
+      // The signup page restores plan + interval from these on the way back.
+      cancel_url: `${baseUrl}/signup?checkout=canceled&orgId=${orgId}&plan=${planKey}&annual=${isAnnual}`,
       metadata: { orgId, planTier: planKey, annual: String(isAnnual) },
     });
 

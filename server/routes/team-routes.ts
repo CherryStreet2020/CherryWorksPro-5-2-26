@@ -343,7 +343,7 @@ app.post("/api/team/invites/:id/resend", requireAdmin, async (req, res) => {
     });
 
     const inviteUrl = `${loginUrl}/login?email=${encodeURIComponent(invite.email)}`;
-    return res.json({ inviteId: updated!.id, inviteUrl, emailSent, emailError });
+    return res.json({ inviteId: updated!.id, inviteUrl, emailSent, emailError, ...(emailSent ? {} : { tempPassword: tempPwd }) });
   } catch (err: any) {
     return res.status(500).json({ message: sanitizeErrorMessage(err) });
   }

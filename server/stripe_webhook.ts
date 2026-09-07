@@ -593,21 +593,23 @@ async function handleSubscriptionUpdated(
   // tier into subscription metadata (settings-routes: subscription_data.metadata),
   // which survives every later subscription.* event. Then the price itself
   // (env ids or the product name), then the legacy lookup keys.
+  // The billed price is the truth (a Customer Portal upgrade/downgrade changes
+  // the item but not the metadata stamped at checkout); metadata is the
+  // fallback when the price cannot be recognised; then the legacy lookup map.
   const items = subscription.items?.data;
+  const basePrice = (items || []).map((it: any) => it?.price).find((pr: any) => pr?.id && !isAddonPriceId(pr.id)) ?? items?.[0]?.price;
+  const fromPrice = planFromPrice(basePrice);
   const metaTier = subscription.metadata?.planTier;
-  if (metaTier && ["STARTER", "PROFESSIONAL", "BUSINESS"].includes(metaTier)) {
+  const lookupKey = basePrice?.lookup_key;
+  if (fromPrice) {
+    updates.planTier = fromPrice;
+    updates.maxTeamMembers = 999999;
+  } else if (metaTier && ["STARTER", "PROFESSIONAL", "BUSINESS"].includes(metaTier)) {
     updates.planTier = metaTier;
     updates.maxTeamMembers = 999999;
-  } else if (items && items.length > 0) {
-    const lookupKey = items[0].price?.lookup_key;
-    const fromPrice = planFromPrice(items[0].price);
-    if (fromPrice) {
-      updates.planTier = fromPrice;
-      updates.maxTeamMembers = 999999;
-    } else if (lookupKey && PLAN_TIER_MAP[lookupKey]) {
-      updates.planTier = PLAN_TIER_MAP[lookupKey].tier;
-      updates.maxTeamMembers = PLAN_TIER_MAP[lookupKey].maxTeamMembers;
-    }
+  } else if (lookupKey && PLAN_TIER_MAP[lookupKey]) {
+    updates.planTier = PLAN_TIER_MAP[lookupKey].tier;
+    updates.maxTeamMembers = PLAN_TIER_MAP[lookupKey].maxTeamMembers;
   }
 
   // A trial that Stripe knows about IS the plan the customer picked; keep
