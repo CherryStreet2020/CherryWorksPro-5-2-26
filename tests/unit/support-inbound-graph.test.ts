@@ -12,11 +12,13 @@ describe("Microsoft 365 inbox reader helpers", () => {
     expect(htmlToText(html)).toBe("Hi Dean,\n\nThe PO column is blank.\nSee attached.\n\nThanks & regards");
   });
   it("picks up mail to the support address or carrying an org case key, ignores the rest", () => {
-    const prefixes = new Set(["ABS"]);
+    const prefixes = new Set(["ABS-157"]);
     const to = (addr: string) => ({ toRecipients: [{ emailAddress: { address: addr } }] });
     expect(isRelevant({ id: "1", subject: "Printer offline", ...to("Support@CherryStConsulting.com") }, "support@cherrystconsulting.com", prefixes)).toBe(true);
     expect(isRelevant({ id: "2", subject: "Re: [ABS-157] PO column", ...to("dean@cherrystconsulting.com") }, "support@cherrystconsulting.com", prefixes)).toBe(true);
     expect(isRelevant({ id: "3", subject: "Lunch?", ...to("dean@cherrystconsulting.com") }, "support@cherrystconsulting.com", prefixes)).toBe(false);
     expect(isRelevant({ id: "4", subject: "XYZ-9 unrelated", ...to("dean@cherrystconsulting.com") }, "support@cherrystconsulting.com", prefixes)).toBe(false);
+    // Same prefix, but not an existing case: ordinary mailbox traffic must not open a case.
+    expect(isRelevant({ id: "5", subject: "[ABS-999] not a case", ...to("dean@cherrystconsulting.com") }, "support@cherrystconsulting.com", prefixes)).toBe(false);
   });
 });

@@ -22,6 +22,12 @@ import { createAttachment, MAX_ATTACHMENT_BYTES } from "./support-attachments";
 import { randomUUID } from "crypto";
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
+/** 50 messages × 20 pages = the newest 1000 unread messages are scanned each pass. */
+const MAX_PAGES = 20;
+/** Targeted support-address search: 100 × 10 pages of recipient matches (read and unread). */
+const MAX_SEARCH_PAGES = 10;
+/** A claim older than this is not an in-flight pass any more (passes run every 2 min, bounded by page cap). */
+const CLAIM_IN_FLIGHT_MS = 10 * 60 * 1000;
 export const INBOUND_REQUIRED_SCOPE = "Mail.ReadWrite";
 
 export function hasReadScope(scopes: string | null | undefined): boolean {
@@ -35,6 +41,7 @@ interface GraphMessage {
   internetMessageId?: string;
   receivedDateTime?: string;
   hasAttachments?: boolean;
+  isRead?: boolean;
   from?: { emailAddress?: { address?: string; name?: string } };
   toRecipients?: { emailAddress?: { address?: string; name?: string } }[];
   ccRecipients?: { emailAddress?: { address?: string; name?: string } }[];
@@ -42,8 +49,11 @@ interface GraphMessage {
   bodyPreview?: string;
 }
 
-async function graphGet<T>(token: string, path: string): Promise<T> {
-  const res = await fetch(`${GRAPH}${path}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+/** `path` is relative to GRAPH, or an absolute Graph URL (e.g. an @odata.nextLink). */
+async function graphGet<T>(token: string, path: string, extraHeaders: Record<string, string> = {}): Promise<T> {
+  const url = path.startsWith("https://") ? path : `${GRAPH}${path}`;
+  if (!url.startsWith(GRAPH)) throw new Error("Refusing non-Graph URL");
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json", ...extraHeaders } });
   if (!res.ok) throw new Error(`Graph ${res.status} on ${path.split("?")[0]}`);
   return res.json() as Promise<T>;
 }
@@ -65,13 +75,18 @@ export function htmlToText(html: string): string {
     .replace(/[ \t]+/g, " ").replace(/ ?\n ?/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-/** Messages the poller should pick up: addressed to the support address, or carrying one of the org's case keys. */
-export function isRelevant(msg: GraphMessage, supportAddress: string, orgPrefixes: Set<string>): boolean {
+/**
+ * Messages the poller should pick up: addressed to the support address, or
+ * carrying the EXACT key of one of the org's existing cases. A merely
+ * prefix-shaped subject on ordinary mailbox traffic is not enough: it would
+ * otherwise reach the "open a new case" path (Codex P2 on #52).
+ */
+export function isRelevant(msg: GraphMessage, supportAddress: string, orgCaseKeys: Set<string>): boolean {
   const addr = supportAddress.toLowerCase();
   const rcpts = [...(msg.toRecipients || []), ...(msg.ccRecipients || [])].map(r => (r.emailAddress?.address || "").toLowerCase());
   if (rcpts.includes(addr)) return true;
   const key = extractCaseKey(msg.subject);
-  return !!key && orgPrefixes.has(key.split("-")[0]);
+  return !!key && orgCaseKeys.has(key);
 }
 
 export interface GraphPollResult { orgId: string; scanned: number; processed: number; skipped: number; outcomes: Record<string, number>; error?: string }
@@ -80,31 +95,76 @@ export async function pollOrg(org: { id: string; supportInboundAddress: string; 
   const result: GraphPollResult = { orgId: org.id, scanned: 0, processed: 0, skipped: 0, outcomes: {} };
   if (!hasReadScope(org.emailOauthScopes)) { result.error = `mailbox needs reconnect for ${INBOUND_REQUIRED_SCOPE}`; return result; }
   const token = await refreshGraphAccessToken(org as any);
-  const prefixes = new Set((await db.select({ k: supportCases.caseKey }).from(supportCases).where(eq(supportCases.orgId, org.id))).map(r => r.k.split("-")[0]));
+  const caseKeys = new Set((await db.select({ k: supportCases.caseKey }).from(supportCases).where(eq(supportCases.orgId, org.id))).map(r => r.k));
 
-  const page = await graphGet<{ value: GraphMessage[] }>(token,
-    `/me/mailFolders/inbox/messages?$filter=isRead eq false&$top=25&$orderby=receivedDateTime asc&$select=id,subject,internetMessageId,receivedDateTime,hasAttachments,from,toRecipients,ccRecipients,body,bodyPreview`);
-  for (const msg of page.value || []) {
-    result.scanned++;
-    if (!isRelevant(msg, org.supportInboundAddress, prefixes)) { result.skipped++; continue; }
+  // Unrelated unread mail stays unread, so a fixed first page would show the
+  // same old messages every pass and never reach newer support mail. Walk the
+  // unread set newest-first through @odata.nextLink, bounded by MAX_PAGES.
+  const relevant: GraphMessage[] = [];
+  let next: string | null = `/me/mailFolders/inbox/messages?$filter=isRead eq false&$top=50&$orderby=receivedDateTime desc&$select=id,subject,internetMessageId,receivedDateTime,hasAttachments,from,toRecipients,ccRecipients,body,bodyPreview`;
+  for (let pages = 0; next && pages < MAX_PAGES; pages++) {
+    const page: { value?: GraphMessage[]; "@odata.nextLink"?: string } = await graphGet(token, next);
+    for (const msg of page.value || []) {
+      result.scanned++;
+      if (isRelevant(msg, org.supportInboundAddress, caseKeys)) relevant.push(msg); else result.skipped++;
+    }
+    const link = page["@odata.nextLink"];
+    next = link || null;
+  }
+  // Beyond the page cap a large unread backlog could hide older support mail
+  // forever (no cursor is kept, unrelated mail stays unread). A second,
+  // targeted query asks Graph for mail sent to the support address itself,
+  // independent of how much newer unrelated mail sits above it.
+  try {
+    const seen = new Set(relevant.map(m => m.id));
+    const search = encodeURIComponent(`"recipients:${org.supportInboundAddress}"`);
+    // $search needs ConsistencyLevel: eventual, cannot be combined with $filter,
+    // and returns read mail too; so page through it (bounded) and keep the unread.
+    let next: string | null = `/me/messages?$search=${search}&$top=100&$select=id,subject,internetMessageId,receivedDateTime,hasAttachments,isRead,from,toRecipients,ccRecipients,body,bodyPreview`;
+    for (let pages = 0; next && pages < MAX_SEARCH_PAGES; pages++) {
+      const targeted: { value?: GraphMessage[]; "@odata.nextLink"?: string } = await graphGet(token, next, { ConsistencyLevel: "eventual" });
+      for (const msg of targeted.value || []) {
+        if (msg.isRead !== false || seen.has(msg.id)) continue;
+        if (isRelevant(msg, org.supportInboundAddress, caseKeys)) { relevant.push(msg); seen.add(msg.id); }
+      }
+      const link = targeted["@odata.nextLink"];
+      next = link || null;
+    }
+  } catch (err) {
+    console.warn("[support-inbound-graph] targeted search failed", (err as Error).message);
+  }
+  // Oldest first so a thread's replies land in order.
+  relevant.sort((a, b) => (a.receivedDateTime || "").localeCompare(b.receivedDateTime || ""));
+
+  for (const msg of relevant) {
     const messageId = msg.internetMessageId || `graph:${msg.id}`;
-    const [seen] = await db.select({ id: inboundEmails.id }).from(inboundEmails).where(eq(inboundEmails.resendMessageId, messageId)).limit(1);
-    if (seen) { result.skipped++; await graphPatch(token, `/me/messages/${msg.id}`, { isRead: true }).catch(() => {}); continue; }
 
     const text = msg.body?.contentType?.toLowerCase() === "html" ? htmlToText(msg.body.content || "") : (msg.body?.content || msg.bodyPreview || "");
     const from = msg.from?.emailAddress?.address ? `${msg.from.emailAddress.name || ""} <${msg.from.emailAddress.address}>` : "unknown";
     const to = (msg.toRecipients || []).map(r => r.emailAddress?.address || "").filter(Boolean);
 
+    // Claim the message: the unique index on the ledger makes this the single
+    // point where two overlapping passes are serialised. Loser skips.
     const emailId = randomUUID();
-    await db.insert(inboundEmails).values({
+    const claimed = await db.insert(inboundEmails).values({
       id: emailId, from, to: JSON.stringify(to), subject: msg.subject || null, bodyText: text || null,
       bodyHtml: msg.body?.contentType?.toLowerCase() === "html" ? (msg.body.content || null) : null,
       headers: { source: "m365-graph", graphId: msg.id, receivedDateTime: msg.receivedDateTime ?? null }, resendMessageId: messageId,
-    });
+    }).onConflictDoNothing({ target: inboundEmails.resendMessageId, where: sql`resend_message_id IS NOT NULL` }).returning({ id: inboundEmails.id });
+    if (claimed.length === 0) {
+      // Lost the claim. A pass still in flight marks the mail read itself (and
+      // drops its row on failure, so the mail is retried). A row older than the
+      // in-flight window is a finished claim whose isRead PATCH failed: mark it
+      // read now so it stops occupying the unread window.
+      result.skipped++;
+      const [prior] = await db.select({ createdAt: inboundEmails.createdAt }).from(inboundEmails).where(eq(inboundEmails.resendMessageId, messageId)).limit(1);
+      if (prior && Date.now() - prior.createdAt.getTime() > CLAIM_IN_FLIGHT_MS) await graphPatch(token, `/me/messages/${msg.id}`, { isRead: true }).catch(() => {});
+      continue;
+    }
 
     let outcome: Awaited<ReturnType<typeof processInboundEmail>>;
     try {
-      outcome = await processInboundEmail({ from, to, subject: msg.subject ?? null, text, html: null, messageId });
+      outcome = await processInboundEmail({ from, to, subject: msg.subject ?? null, text, html: null, messageId, orgId: org.id });
     } catch (err) {
       // Leave the mail unread and drop the ledger row so the next pass can retry it.
       await db.delete(inboundEmails).where(eq(inboundEmails.id, emailId)).catch(() => {});

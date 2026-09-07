@@ -103,6 +103,13 @@ describe("support phase 3: service levels, persisted notifications, email-to-cas
     expect(msg.body).toBe("Here is the screenshot you asked for.");
     expect(msg.visibility).toBe("CUSTOMER");
 
+    // A redelivery of the same message id is claimed once: no second customer message.
+    const again = await webhook({ type: "email.received", data: { from: `Ronald Ndanga <${contactEmail}>`, to: [inboundAddress], subject: `Re: [${key}] SLA case`, text: "Here is the screenshot you asked for.", message_id: `<m1.${stamp}@example.com>` } });
+    expect(again.ok).toBe(true);
+    expect((await again.json()).duplicate).toBe(true);
+    const afterDup = await (await api("GET", `/api/support/cases/${caseId}`, admin)).json();
+    expect(afterDup.messages.filter((m: any) => m.authorContactId === contactId).length).toBe(1);
+
     const fresh = await webhook({ type: "email.received", data: { from: contactEmail, to: inboundAddress, subject: "Fwd: Printer on the shop floor is offline", text: "Since this morning." } });
     const r2 = await fresh.json();
     expect(r2.outcome).toBe("created");

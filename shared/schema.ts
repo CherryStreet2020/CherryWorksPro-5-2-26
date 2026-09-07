@@ -2521,7 +2521,12 @@ export const inboundEmails = pgTable("inbound_emails", {
   headers: jsonb("headers"),
   resendMessageId: varchar("resend_message_id", { length: 255 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  // The ON CONFLICT arbiter for the inbound claim (webhook + Microsoft 365 poller).
+  // Declared here because Azure provisions schema with `drizzle-kit push` only
+  // (docs/DEPLOY.md); migrations/0036 carries the same index for the SQL path.
+  uniqueIndex("inbound_emails_message_id_unique").on(table.resendMessageId).where(sql`resend_message_id IS NOT NULL`),
+]);
 
 export const insertInboundEmailSchema = createInsertSchema(inboundEmails).omit({
   id: true,

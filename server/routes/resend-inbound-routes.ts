@@ -81,13 +81,15 @@ export function stripQuotedReply(text: string): string {
 
 export async function processInboundEmail(input: {
   from: unknown; to: unknown; subject: string | null; text: string | null; html: string | null; messageId: string | null;
+  /** Set by the Microsoft 365 poller: the mailbox already belongs to this org, so a reply carrying a case key routes there even when it was not sent to the support address. */
+  orgId?: string;
 }): Promise<{ outcome: "no_org" | "appended" | "created" | "stored"; caseId?: string; caseKey?: string; orgId?: string }> {
   const recipients = allAddresses(input.to);
   const sender = parseAddress(input.from);
-  if (recipients.length === 0 || !sender) return { outcome: "stored" };
+  if (!sender || (!input.orgId && recipients.length === 0)) return { outcome: "stored" };
 
   const [org] = await db.select({ id: orgs.id, name: orgs.name, address: orgs.supportInboundAddress }).from(orgs)
-    .where(sql`lower(${orgs.supportInboundAddress}) IN (${sql.join(recipients.map(r => sql`${r}`), sql`, `)})`);
+    .where(input.orgId ? eq(orgs.id, input.orgId) : sql`lower(${orgs.supportInboundAddress}) IN (${sql.join(recipients.map(r => sql`${r}`), sql`, `)})`);
   if (!org) return { outcome: "no_org" };
 
   const body = stripQuotedReply(input.text || "") || (input.html ? input.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "") || "(no text)";
@@ -150,7 +152,7 @@ export function registerResendInboundRoutes(app: Express) {
 
       const data = body.data || {};
       const emailId = randomUUID();
-      await db.insert(inboundEmails).values({
+      const claimed = await db.insert(inboundEmails).values({
         id: emailId,
         from: typeof data.from === "string" ? data.from : JSON.stringify(data.from ?? "unknown"),
         to: typeof data.to === "string" ? data.to : JSON.stringify(data.to ?? "unknown"),
@@ -159,12 +161,23 @@ export function registerResendInboundRoutes(app: Express) {
         bodyHtml: data.html || null,
         headers: data.headers || null,
         resendMessageId: data.message_id || data.id || null,
-      });
+      }).onConflictDoNothing({ target: inboundEmails.resendMessageId, where: sql`resend_message_id IS NOT NULL` }).returning({ id: inboundEmails.id });
+      if (claimed.length === 0) {
+        console.log(`[resend-inbound] duplicate delivery of ${data.message_id || data.id} ignored`);
+        return res.status(200).json({ success: true, duplicate: true });
+      }
 
-      const result = await processInboundEmail({
-        from: data.from, to: data.to, subject: data.subject ?? null, text: data.text ?? null, html: data.html ?? null,
-        messageId: data.message_id || data.id || null,
-      });
+      let result: Awaited<ReturnType<typeof processInboundEmail>>;
+      try {
+        result = await processInboundEmail({
+          from: data.from, to: data.to, subject: data.subject ?? null, text: data.text ?? null, html: data.html ?? null,
+          messageId: data.message_id || data.id || null,
+        });
+      } catch (err) {
+        // Release the claim so Resend's retry is processed instead of reported as a duplicate.
+        await db.delete(inboundEmails).where(eq(inboundEmails.id, emailId)).catch(() => {});
+        throw err;
+      }
       console.log(`[resend-inbound] ${emailId} → ${result.outcome}${result.caseKey ? ` ${result.caseKey}` : ""}`);
       return res.status(200).json({ success: true, emailId, ...result });
     } catch (err: any) {
