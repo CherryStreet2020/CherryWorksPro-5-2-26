@@ -429,7 +429,7 @@ export function registerMarketingCampaignRoutes(app: Express) {
               fromEmail: senderEmail,
               replyTo: replyTo || null,
             });
-            if (result.ok === false) throw new Error("No email provider is connected for this workspace. Connect a mailbox in Settings → Email.");
+            if (result.ok === false) throw new Error("This workspace has no working email provider: connect a Microsoft 365 or Google mailbox, or configure SMTP, in Settings → Email.");
             await storage.recordCampaignSendAttempt({
               orgId,
               campaignId: id,
@@ -437,6 +437,7 @@ export function registerMarketingCampaignRoutes(app: Express) {
               recipientEmail: r.email,
               status: "success",
               providerMessageId: result.messageId,
+              transport: transport.kind,
             });
             sentCount += 1;
           } catch (sendErr) {
