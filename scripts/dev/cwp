@@ -93,8 +93,7 @@ case "$cmd" in
     app_env nohup npx tsx server/index.ts > /tmp/cwp-app-5000.log 2>&1 &
     APP_PID=$!
     echo "[cwp] app pid $APP_PID"; wait_health || exit 1
-    # Marker bound to the LISTENING pid: `e2e` reuses :5000 only when the same process still owns it.
-    printf 'db=%s\nlauncher=cwp\npid=%s\n' "${CWP_DATABASE_URL%%\?*}" "$(lsof -ti tcp:5000 -sTCP:LISTEN 2>/dev/null | head -1)" > /tmp/cwp-app-5000.launched ;;
+    ;;
 
   app-stop) kill_5000; echo "[cwp] :5000 cleared" ;;
 
@@ -115,7 +114,7 @@ case "$cmd" in
 
   migcheck)
     ensure_pg; cd "$REPO"
-    dropdb -p "$PGPORT" --if-exists cwp_migcheck; createdb -p "$PGPORT" cwp_migcheck
+    recreate_db "$CWP_MIGCHECK_URL" || exit 1
     exec env MIGRATION_CHECK_DATABASE_URL="$CWP_MIGCHECK_URL" "$BASH5" scripts/check-migrations.sh ;;
 
   reset-dev)
