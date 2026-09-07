@@ -107,3 +107,6 @@ playwright-output.txt
 pw-output.txt
 proof-bundle-*.zip
 codebase-*-complete-*.zip
+
+# local Codex red-team output (findings may quote exploit detail)
+.redteam/
