@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { timeEntriesInRange } from "@/lib/time-range";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -71,6 +72,8 @@ interface ClientDetailData {
   projects: Array<{ id: string; name: string; status: string; totalMinutes?: number; members?: Array<{ name: string }> }>;
   invoices: Array<{ id: string; number: string; total: string; paidAmount?: string; status: string; issuedDate?: string; dueDate?: string }>;
   recentTimeEntries: Array<{ id: string; date: string; minutes: number; projectName: string; userName: string; billable?: boolean; notes?: string }>;
+  /** Every time entry for the client, newest first. Older API responses may omit it. */
+  timeEntries?: Array<{ id: string; date: string; minutes: number; projectName: string; userName: string; billable?: boolean; notes?: string }>;
   totalBilled: number;
   totalPaid: number;
   outstanding: number;
@@ -185,6 +188,7 @@ function computeHealthScore(d: ClientDetailData | undefined): number {
   return Math.max(0, Math.min(100, score));
 }
 
+
 export default function ClientDetailPage() {
   const params = useParams<{ id: string }>();
   const clientId = params.id;
@@ -225,6 +229,12 @@ export default function ClientDetailPage() {
   const [activityFilters, setActivityFilters] = useState<Record<string, boolean>>({});
   const [activityLimit, setActivityLimit] = useState<number>(50);
   const [timeRange, setTimeRange] = useState<"7d" | "30d" | "90d" | "month" | "all">("30d");
+  // The Time & Billing tab sums AND lists this; compute it once per render so the
+  // cards and the table always agree (one `now`, one filter pass).
+  const rangedTimeEntries = useMemo(
+    () => clientDetail ? timeEntriesInRange(clientDetail.timeEntries ?? clientDetail.recentTimeEntries, timeRange) : [],
+    [clientDetail, timeRange],
+  );
   const activeTypes = useMemo(
     () => Object.keys(activityFilters).filter(k => activityFilters[k]),
     [activityFilters]
@@ -1092,19 +1102,8 @@ export default function ClientDetailPage() {
           {activeTab === "time" && (
             <div className="space-y-4 lux-tab-content">
               {(() => {
-                const now = new Date();
-                const cutoff = (() => {
-                  const d = new Date(now);
-                  if (timeRange === "7d") d.setDate(d.getDate() - 7);
-                  else if (timeRange === "30d") d.setDate(d.getDate() - 30);
-                  else if (timeRange === "90d") d.setDate(d.getDate() - 90);
-                  else if (timeRange === "month") { d.setDate(1); d.setHours(0, 0, 0, 0); }
-                  else d.setFullYear(d.getFullYear() - 100);
-                  return d;
-                })();
-                const ranged = clientDetail.recentTimeEntries.filter(te => {
-                  try { return new Date(te.date + "T00:00:00") >= cutoff; } catch { return false; }
-                });
+                // Sum and filter the FULL history, not the ten-row Overview sample.
+                const ranged = rangedTimeEntries;
                 const totalMinutes = ranged.reduce((s, te) => s + te.minutes, 0);
                 const billableMinutes = ranged.filter(te => te.billable !== false).reduce((s, te) => s + te.minutes, 0);
                 const unbilledMinutes = totalMinutes - billableMinutes;
@@ -1153,10 +1152,12 @@ export default function ClientDetailPage() {
                   </>
                 );
               })()}
-              {clientDetail.recentTimeEntries.length === 0 ? (
+              {rangedTimeEntries.length === 0 ? (
                 <div className="text-center py-8">
                   <Timer className="w-8 h-8 mx-auto mb-2" style={{ color: "var(--lux-text-muted)" }} />
-                  <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>No time entries yet</p>
+                  <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>
+                    {(clientDetail.timeEntries ?? clientDetail.recentTimeEntries).length === 0 ? "No time entries yet" : "No time entries in this range"}
+                  </p>
                 </div>
               ) : (
                 <div className="rounded-lg border overflow-hidden" style={{ borderColor: "var(--lux-border)" }}>
@@ -1172,7 +1173,7 @@ export default function ClientDetailPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {clientDetail.recentTimeEntries.map(te => (
+                      {rangedTimeEntries.map(te => (
                         <tr key={te.id} className="border-t hover:bg-black/[0.02] transition-colors" style={{ borderColor: "var(--lux-border)" }}>
                           <td className="px-3 py-2.5" style={{ color: "var(--lux-text-secondary)" }}>
                             {(() => { try { return format(new Date(te.date + "T00:00:00"), "MMM d"); } catch { return te.date; } })()}

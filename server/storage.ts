@@ -829,7 +829,10 @@ export class DatabaseStorage {
     const rawOutstanding = round2(totalBilled - totalPaid);
     const outstanding = Math.max(0, rawOutstanding);
 
-    const recentEntries = await db
+    // Every time entry for the client, newest first. The Time & Billing tab sums
+    // and range-filters this list, so it must not be capped; the Overview card
+    // takes the first ten as `recentTimeEntries`.
+    const allEntries = await db
       .select({
         entry: timeEntries,
         projectName: projects.name,
@@ -839,8 +842,9 @@ export class DatabaseStorage {
       .innerJoin(projects, eq(timeEntries.projectId, projects.id))
       .innerJoin(users, eq(timeEntries.userId, users.id))
       .where(and(eq(projects.clientId, id), eq(projects.orgId, orgId)))
-      .orderBy(desc(timeEntries.date))
-      .limit(10);
+      .orderBy(desc(timeEntries.date), desc(timeEntries.createdAt));
+    const clientTimeEntries = allEntries.map(r => ({ ...r.entry, projectName: r.projectName, userName: r.userName }));
+    const recentEntries = clientTimeEntries.slice(0, 10);
 
     const hasOverdue = allClientInvoices.some(inv =>
       inv.status === "SENT" && inv.dueDate && new Date(inv.dueDate) < new Date()
@@ -850,7 +854,8 @@ export class DatabaseStorage {
       ...client,
       projects: clientProjects,
       invoices: recentInvoices,
-      recentTimeEntries: recentEntries.map(r => ({ ...r.entry, projectName: r.projectName, userName: r.userName })),
+      recentTimeEntries: recentEntries,
+      timeEntries: clientTimeEntries,
       totalBilled: round2(totalBilled),
       totalPaid: round2(totalPaid),
       outstanding,

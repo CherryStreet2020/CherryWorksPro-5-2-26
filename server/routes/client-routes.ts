@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { clients, createClientSchema, projects, projectMembers } from "@shared/schema";
 import { db } from "../db";
-import { sanitizeErrorMessage, requireAdmin, requireManagerOrAbove, requireAuth, fetchClientLogo } from "./middleware";
+import { sanitizeErrorMessage, requireAdmin, requireManagerOrAbove, requireAuth, fetchClientLogo, stripCostFieldsForRole } from "./middleware";
 import { fireWebhookEvent } from "../webhooks";
 
 export function registerClientRoutes(app: Express) {
@@ -129,7 +129,19 @@ app.get("/api/clients/:id", requireAuth, async (req, res) => {
   else if (outstanding > 5000) score -= 8;
 
   const healthScore = Math.max(0, Math.min(100, score));
-  return res.json({ ...detail, healthScore });
+  // Time entries carry the bill rate and the cost snapshot. Managers and admins
+  // see both; everyone else gets the same shape /api/time-entries gives a
+  // TEAM_MEMBER: cost fields scrubbed AND the rate dropped.
+  const viewer = await storage.getUserById(req.session.userId!);
+  const isManager = viewer?.role === "ADMIN" || viewer?.role === "MANAGER";
+  const redact = (rows: any[]) =>
+    isManager ? rows : stripCostFieldsForRole(rows, viewer?.role).map(({ rate: _rate, invoiceLineId: _line, ...rest }: any) => rest);
+  return res.json({
+    ...detail,
+    recentTimeEntries: redact(detail.recentTimeEntries),
+    timeEntries: redact(detail.timeEntries),
+    healthScore,
+  });
 });
 app.patch("/api/clients/:id", requireManagerOrAbove, async (req, res) => {
   try {
