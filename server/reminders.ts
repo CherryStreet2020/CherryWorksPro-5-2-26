@@ -1,4 +1,5 @@
 import { db, pool } from "./db";
+import { orgHasVerifiedAdmin } from "./email-verification";
 import { invoices, invoiceLines, clients, clientContacts, orgs } from "@shared/schema";
 import { eq, and, lt, inArray, sql, asc } from "drizzle-orm";
 import { sendInvoiceEmail } from "./email";
@@ -26,6 +27,11 @@ function interpolateTemplate(template: string, vars: Record<string, string>): st
 export async function processReminders(orgId: string) {
   const [org] = await db.select().from(orgs).where(eq(orgs.id, orgId));
   if (!org || !org.reminderEnabled) {
+    return { sent: 0, skipped: 0, errors: 0 };
+  }
+  // Same rule as the send/resend routes: no customer mail from a workspace
+  // whose owner has not verified their address.
+  if (!(await orgHasVerifiedAdmin(orgId))) {
     return { sent: 0, skipped: 0, errors: 0 };
   }
 

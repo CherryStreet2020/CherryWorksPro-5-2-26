@@ -1851,6 +1851,7 @@ export default function SettingsPage() {
                       className="border-t pt-3 mt-4 flex flex-col gap-2"
                       style={{ borderColor: "var(--lux-border)" }}
                     >
+                      <SignupSwitch />
                       <Link
                         href="/admin/m365-rescope"
                         className="inline-flex items-center gap-1.5 text-xs font-medium hover:underline"
@@ -2127,6 +2128,37 @@ export default function SettingsPage() {
           </form>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/** Platform-operator only: public signup on/off at runtime (no deploy). */
+function SignupSwitch() {
+  const { toast } = useToast();
+  const { data, refetch } = useQuery<{ enabled: boolean; source: string; message?: string | null; envHardOff: boolean }>({ queryKey: ["/api/platform/settings/signup"] });
+  const [busy, setBusy] = useState(false);
+  if (!data) return null;
+  const flip = async () => {
+    setBusy(true);
+    try {
+      await apiRequest("PUT", "/api/platform/settings/signup", { enabled: !data.enabled });
+      await refetch();
+      toast({ title: !data.enabled ? "Signups enabled" : "Signups paused", description: !data.enabled ? "The signup page accepts new workspaces again." : "The signup page now shows a 'closed' notice." });
+    } catch (err: any) {
+      toast({ title: "Could not change signup state", description: err?.message, variant: "destructive" });
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="flex items-center justify-between gap-3 text-xs" data-testid="operator-signup-switch">
+      <span style={{ color: "var(--lux-text-muted)" }}>
+        Public signup: <strong style={{ color: data.enabled ? "#16a34a" : "#dc2626" }}>{data.enabled ? "open" : "paused"}</strong>
+        {data.envHardOff && " (SIGNUP_ENABLED=false — hard off, change the environment to reopen)"}
+      </span>
+      {!data.envHardOff && (
+        <button onClick={flip} disabled={busy} className="underline font-medium disabled:opacity-60" style={{ color: "var(--lux-text)" }} data-testid="button-toggle-signup">
+          {busy ? "Saving…" : data.enabled ? "Pause signups" : "Reopen signups"}
+        </button>
+      )}
     </div>
   );
 }

@@ -1,4 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import { passwordResetTokens } from "@shared/schema";
+import { requireVerifiedEmail, unverifiedFields, noteTempCredential, forgetTempCredential } from "../email-verification";
 import { appBaseUrl } from "../lib/app-url";
 import { storage } from "../storage";
 import { paramId } from "../lib/req-params";
@@ -97,7 +99,7 @@ app.get("/api/team/smtp-status", requireAdmin, async (req, res) => {
   }
 });
 
-app.post("/api/team/invite", userCreationLimiter, requireAdmin, async (req, res) => {
+app.post("/api/team/invite", userCreationLimiter, requireAdmin, requireVerifiedEmail, async (req, res) => {
   try {
     const { name, firstName, lastName, email, role, projectAssignments, workerType, title, department, payType, hourlyPayRate, salaryAmount, payrollProviderName, payrollProviderId, phone } = req.body;
     const resolvedFirstName = firstName || (name ? name.split(/\s+/)[0] : "");
@@ -164,6 +166,7 @@ app.post("/api/team/invite", userCreationLimiter, requireAdmin, async (req, res)
       workerType: resolvedWorkerType,
       ...extraFields,
     } as any);
+    await noteTempCredential(user.id, user.email); // the emailed temp password proves THIS address
     if (projectAssignments && Array.isArray(projectAssignments)) {
       for (const pa of projectAssignments) {
         if (pa.projectId && pa.hourlyRate) {
@@ -215,6 +218,7 @@ app.post("/api/team/invite", userCreationLimiter, requireAdmin, async (req, res)
       emailSent = true;
       previewUrl = result.previewUrl;
     } catch (emailErr: any) {
+      await forgetTempCredential(user.id).catch(() => {}); // exposed to the caller below: no longer proof of the inbox
       emailError = emailErr.message || "Failed to send email";
       console.error("[invite] Failed to send invite email:", emailErr.message);
     }
@@ -228,7 +232,7 @@ app.post("/api/team/invite", userCreationLimiter, requireAdmin, async (req, res)
     return res.status(500).json({ message: sanitizeErrorMessage(err) });
   }
 });
-app.post("/api/team/:id/resend-invite", requireAdmin, async (req, res) => {
+app.post("/api/team/:id/resend-invite", requireAdmin, requireVerifiedEmail, async (req, res) => {
   try {
     const targetUser = await storage.getUserById(paramId(req));
     if (!targetUser || targetUser.orgId !== req.session.orgId!) {
@@ -240,6 +244,7 @@ app.post("/api/team/:id/resend-invite", requireAdmin, async (req, res) => {
     const tempPwd = randomBytes(6).toString("base64url").slice(0, 12);
     const hashed = await hashPassword(tempPwd);
     await storage.updateUser(targetUser.id, targetUser.orgId, { password: hashed, tempPassword: true } as any);
+    await noteTempCredential(targetUser.id, targetUser.email);
 
     const org = await storage.getOrg(req.session.orgId!);
     const orgName = org?.name || "CherryWorks Pro";
@@ -251,6 +256,7 @@ app.post("/api/team/:id/resend-invite", requireAdmin, async (req, res) => {
       await sendInviteEmail(targetUser.email, targetUser.name, orgName, tempPwd, loginUrl, smtpConfig, org);
       emailSent = true;
     } catch (emailErr: any) {
+      await forgetTempCredential(targetUser.id).catch(() => {}); // exposed to the caller below: no longer proof of the inbox
       console.error("[resend-invite] Failed to send invite email:", emailErr.message);
     }
 
@@ -300,7 +306,7 @@ app.get("/api/team/invites", requireManagerOrAbove, async (req, res) => {
   }
 });
 
-app.post("/api/team/invites/:id/resend", requireAdmin, async (req, res) => {
+app.post("/api/team/invites/:id/resend", requireAdmin, requireVerifiedEmail, async (req, res) => {
   try {
     const invite = await storage.getPendingInviteById(paramId(req), req.session.orgId!);
     if (!invite) {
@@ -324,6 +330,7 @@ app.post("/api/team/invites/:id/resend", requireAdmin, async (req, res) => {
     if (targetUser) {
       const hashed = await hashPassword(tempPwd);
       await storage.updateUser(targetUser.id, targetUser.orgId, { password: hashed, tempPassword: true } as any);
+      await noteTempCredential(targetUser.id, invite.email);
     }
 
     let emailSent = false;
@@ -333,6 +340,7 @@ app.post("/api/team/invites/:id/resend", requireAdmin, async (req, res) => {
       await sendInviteEmail(invite.email, resolvedName, orgName, tempPwd, loginUrl, smtpConfig, org);
       emailSent = true;
     } catch (emailErr: any) {
+      if (targetUser) await forgetTempCredential(targetUser.id).catch(() => {}); // exposed to the caller below: no longer proof of the inbox
       emailError = emailErr.message || "Failed to send email";
       console.error("[resend-invite] Failed to send invite email:", emailErr.message);
     }
@@ -391,7 +399,15 @@ app.patch("/api/team/:id", requireAdmin, async (req, res) => {
       if (fn || ln) updates.name = [fn, ln].filter(Boolean).join(" ");
     }
     if (name !== undefined && firstName === undefined && lastName === undefined) updates.name = name;
-    if (email !== undefined) updates.email = email;
+    if (email !== undefined) {
+      updates.email = email;
+      const current = await storage.getUserById(paramId(req));
+      if (current && current.email.toLowerCase() !== String(email).toLowerCase()) {
+        Object.assign(updates, unverifiedFields());
+        // A reset link sent to the old address must not be redeemable for the new one.
+        await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, current.id));
+      }
+    }
     if (role !== undefined) {
       const validRoles = ["ADMIN", "MANAGER", "TEAM_MEMBER"];
       if (!validRoles.includes(role)) return res.status(400).json({ message: "Invalid role" });
@@ -446,10 +462,17 @@ app.post("/api/team/:id/reset-password", resetPasswordLimiter, requireAdmin, asy
     if (!targetUser || targetUser.orgId !== req.session.orgId!) {
       return res.status(404).json({ message: "User not found" });
     }
+    // Handing yourself a temporary password would let an unverified owner
+    // "prove" their address without any email. Own password → Change
+    // password (knows the current one) or Forgot password (emailed link).
+    if (targetUser.id === req.session.userId) {
+      return res.status(400).json({ message: "Use Change password for your own account, or Forgot password if you're locked out." });
+    }
     const tempPwd = randomBytes(6).toString("base64url").slice(0, 12);
     const hashed = await hashPassword(tempPwd);
     const updated = await storage.updateUser(paramId(req), req.session.orgId!, { password: hashed, tempPassword: true });
     if (!updated) return res.status(404).json({ message: "User not found" });
+    await noteTempCredential(updated.id, updated.email); // the emailed temp password proves THIS address
 
     console.log(`[reset-password] Temp password generated for user ${updated.id} (${maskEmail(updated.email)})`);
 
@@ -462,6 +485,7 @@ app.post("/api/team/:id/reset-password", resetPasswordLimiter, requireAdmin, asy
       await sendInviteEmail(updated.email, updated.name, orgName, tempPwd, loginUrl, smtpConfig, org);
       emailSent = true;
     } catch (emailErr: any) {
+      await forgetTempCredential(updated.id).catch(() => {}); // exposed to the caller below: no longer proof of the inbox
       console.error("[reset-password] Failed to send email:", emailErr.message);
     }
 

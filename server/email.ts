@@ -570,7 +570,8 @@ export async function sendInviteEmail(
   smtpConfig?: SmtpConfig | null,
   org?: OrgForTransport | null,
 ): Promise<{ messageId: string; previewUrl?: string }> {
-  const transport = await pickTransport(org, smtpConfig);
+  // The temporary password is a credential that now proves the address: platform transport only.
+  const transport = await pickTransport(null, null); void org; void smtpConfig;
   const subject = `You've been invited to ${orgName} on CherryWorks Pro`;
 
   const innerHtml = `
@@ -611,9 +612,10 @@ export async function sendInviteEmail(
     subject,
     html,
     text: `Hi ${teamMemberName},\n\nYou've been invited to ${orgName} on CherryWorks Pro.\n\nEmail: ${to}\nTemporary Password: ${tempPassword}\n\nLog in at: ${loginUrl}\n\nYou'll be asked to set a new password on first login.`,
-    replyTo: smtpConfig?.replyTo ?? null,
-    fromName: smtpConfig?.fromName ?? null,
-    fromEmail: smtpConfig?.fromEmail ?? null,
+    // Platform sender identity: a tenant's smtpFromEmail would be rejected by a provider that pins senders.
+    replyTo: null,
+    fromName: null,
+    fromEmail: null,
   };
 
   const result = await transport.send(message);
@@ -633,9 +635,12 @@ export async function sendWelcomeEmail(
   loginUrl: string,
   smtpConfig?: SmtpConfig | null,
   org?: OrgForTransport | null,
+  verifyUrl?: string | null,
 ): Promise<{ messageId: string; previewUrl?: string }> {
-  const transport = await pickTransport(org, smtpConfig);
-  const subject = `Welcome to CherryWorks Pro, ${firmName}`;
+  // A verification link is a credential: it goes through the platform's own
+  // mail transport, never a mailbox the (unverified) tenant configured.
+  const transport = verifyUrl ? await pickTransport(null, null) : await pickTransport(org, smtpConfig);
+  const subject = verifyUrl ? `Verify your email for ${firmName} on CherryWorks Pro` : `Welcome to CherryWorks Pro, ${firmName}`;
 
   const safeName = escapeHtml(recipientName || "there");
   const safeFirm = escapeHtml(firmName);
@@ -645,12 +650,13 @@ export async function sendWelcomeEmail(
     <p style="font-size:14px;color:${TEXT_MUTED};margin:0 0 28px;">Your ${safeFirm} workspace is ready</p>
 
     <p style="font-size:15px;color:${TEXT_SECONDARY};line-height:1.7;margin:0 0 24px;">
-      Thanks for starting your free trial. Sign in any time to invite your team, set up billing, and start running ${safeFirm} on CherryWorks Pro.
+      Thanks for starting your free trial.${verifyUrl ? " Please confirm this is your email address — it takes one click and unlocks team invites and sending invoices." : " Sign in any time to invite your team, set up billing, and start running " + safeFirm + " on CherryWorks Pro."}
     </p>
 
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-      <tr><td align="center">${emailButton("Open your workspace", loginUrl)}</td></tr>
+      <tr><td align="center">${emailButton(verifyUrl ? "Verify my email" : "Open your workspace", verifyUrl || loginUrl)}</td></tr>
     </table>
+    ${verifyUrl ? `<p style="font-size:12px;color:${TEXT_MUTED};margin:16px 0 0;text-align:center;">The link works for 24 hours. Sign in any time at <a href="${loginUrl}" style="color:${TEXT_MUTED};">${escapeHtml(loginUrl)}</a>.</p>` : ""}
 
     ${emailDivider()}
 
@@ -665,7 +671,7 @@ export async function sendWelcomeEmail(
     to,
     subject,
     html,
-    text: `Welcome, ${recipientName || "there"}\n\nYour ${firmName} workspace on CherryWorks Pro is ready.\n\nSign in any time: ${loginUrl}\n\nNeed help getting started? Just reply to this email.`,
+    text: `Welcome, ${recipientName || "there"}\n\nYour ${firmName} workspace on CherryWorks Pro is ready.\n\n${verifyUrl ? `Verify your email (link works for 24 hours): ${verifyUrl}\n\n` : ""}Sign in any time: ${loginUrl}\n\nNeed help getting started? Just reply to this email.`,
     replyTo: smtpConfig?.replyTo ?? null,
     fromName: smtpConfig?.fromName ?? null,
     fromEmail: smtpConfig?.fromEmail ?? null,
@@ -687,7 +693,8 @@ export async function sendPasswordResetEmail(
   smtpConfig?: SmtpConfig | null,
   org?: OrgForTransport | null,
 ): Promise<{ messageId: string; previewUrl?: string }> {
-  const transport = await pickTransport(org, smtpConfig);
+  // A reset link is a credential (and now proves the address): platform transport only.
+  const transport = await pickTransport(null, null); void org; void smtpConfig;
   const subject = "Reset your CherryWorks Pro password";
 
   const innerHtml = `
@@ -716,9 +723,10 @@ export async function sendPasswordResetEmail(
     subject,
     html,
     text: `Password Reset\n\nWe received a request to reset your CherryWorks Pro password.\n\nClick the link below to set a new password (expires in 1 hour):\n${resetUrl}\n\nIf you didn't request this, you can safely ignore this email.`,
-    replyTo: smtpConfig?.replyTo ?? null,
-    fromName: smtpConfig?.fromName ?? null,
-    fromEmail: smtpConfig?.fromEmail ?? null,
+    // Platform sender identity: a tenant's smtpFromEmail would be rejected by a provider that pins senders.
+    replyTo: null,
+    fromName: null,
+    fromEmail: null,
   };
 
   const result = await transport.send(message);
@@ -1134,5 +1142,91 @@ export async function sendCaseEmail(input: CaseEmailInput): Promise<{ messageId:
     fromEmail: smtpConfig?.fromEmail ?? null,
   };
   const result = await transport.send(message);
+  return { messageId: result.messageId, previewUrl: result.previewUrl };
+}
+
+/** Resend of the verification link alone (the welcome email carries the first one). */
+export async function sendVerificationEmail(
+  to: string,
+  recipientName: string,
+  verifyUrl: string,
+  _org?: OrgForTransport | null,
+): Promise<{ messageId: string; previewUrl?: string }> {
+  // Platform transport only (see sendWelcomeEmail): the tenant's SMTP could
+  // be a server the unverified admin controls.
+  const transport = await pickTransport(null, null);
+  const safeName = escapeHtml(recipientName || "there");
+  const innerHtml = `
+    <p style="font-size:20px;font-weight:700;color:${TEXT_PRIMARY};margin:0 0 4px;">Confirm your email</p>
+    <p style="font-size:14px;color:${TEXT_MUTED};margin:0 0 28px;">One click and you're done</p>
+    <p style="font-size:15px;color:${TEXT_SECONDARY};line-height:1.7;margin:0 0 24px;">Hi ${safeName}, please confirm that this is your email address for CherryWorks Pro.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">${emailButton("Verify my email", verifyUrl)}</td></tr></table>
+    ${emailDivider()}
+    <p style="font-size:12px;color:${TEXT_MUTED};margin:0;text-align:center;">The link works for 24 hours. If you didn't request this, you can ignore it.</p>
+  `;
+  const html = wrapEmailLayout(innerHtml, { orgName: "CherryWorks Pro", preheader: "Confirm your email address" });
+  const result = await transport.send({ to, subject: "Confirm your email for CherryWorks Pro", html, text: `Hi ${recipientName || "there"},\n\nConfirm your email for CherryWorks Pro (link works for 24 hours):\n${verifyUrl}\n\nIf you didn't request this, ignore it.` });
+  if (result.ok === false) throw new Error("Email was not sent — no email provider is configured.");
+  return { messageId: result.messageId, previewUrl: result.previewUrl };
+}
+
+/** T-7 / T-1 reminder (our lifecycle job) and Stripe's trial_will_end (3 days). */
+export async function sendTrialEndingEmail(
+  to: string,
+  recipientName: string,
+  firmName: string,
+  daysLeft: number,
+  billingUrl: string,
+  org?: OrgForTransport | null,
+  /** true = a plan and card are on file with Stripe: the subscription simply starts billing. */
+  cardOnFile = false,
+): Promise<{ messageId: string; previewUrl?: string }> {
+  const transport = await pickTransport(org, null);
+  const safeName = escapeHtml(recipientName || "there");
+  const safeFirm = escapeHtml(firmName);
+  const when = daysLeft <= 1 ? "tomorrow" : `in ${daysLeft} days`;
+  const body = cardOnFile
+    ? `Hi ${safeName}, your free trial ends ${when}. Your plan then starts billing automatically to the card on file — nothing to do, and nothing changes in your workspace. Want to switch plans, update the card, or cancel before then? It's all in Billing.`
+    : `Hi ${safeName}, your free trial ends ${when}. Pick a plan to keep everything exactly as it is — clients, projects, time, invoices and your books all carry over. Nothing is deleted when a trial ends; the workspace simply pauses until a plan is chosen.`;
+  const cta = cardOnFile ? "Manage billing" : "Choose a plan";
+  const innerHtml = `
+    <p style="font-size:20px;font-weight:700;color:${TEXT_PRIMARY};margin:0 0 4px;">Your trial ends ${when}</p>
+    <p style="font-size:14px;color:${TEXT_MUTED};margin:0 0 28px;">${safeFirm} on CherryWorks Pro</p>
+    <p style="font-size:15px;color:${TEXT_SECONDARY};line-height:1.7;margin:0 0 24px;">${body}</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">${emailButton(cta, billingUrl)}</td></tr></table>
+    ${emailDivider()}
+    <p style="font-size:12px;color:${TEXT_MUTED};margin:0;text-align:center;">Questions about plans or pricing? Just reply to this email.</p>
+  `;
+  const html = wrapEmailLayout(innerHtml, { orgName: firmName, preheader: `Your CherryWorks Pro trial ends ${when}` });
+  const textBody = cardOnFile
+    ? `Hi ${recipientName || "there"},\n\nYour free trial for ${firmName} ends ${when}. Your plan then starts billing automatically to the card on file. To switch plans, update the card, or cancel:\n${billingUrl}`
+    : `Hi ${recipientName || "there"},\n\nYour free trial for ${firmName} ends ${when}. Choose a plan to keep everything as it is:\n${billingUrl}\n\nNothing is deleted when a trial ends; the workspace pauses until a plan is chosen.`;
+  const result = await transport.send({ to, subject: `Your CherryWorks Pro trial ends ${when}`, html, text: textBody });
+  if (result.ok === false) throw new Error("Email was not sent — no email provider is configured.");
+  return { messageId: result.messageId, previewUrl: result.previewUrl };
+}
+
+/** Sent once when a no-card trial closes. */
+export async function sendTrialEndedEmail(
+  to: string,
+  recipientName: string,
+  firmName: string,
+  billingUrl: string,
+  org?: OrgForTransport | null,
+): Promise<{ messageId: string; previewUrl?: string }> {
+  const transport = await pickTransport(org, null);
+  const safeName = escapeHtml(recipientName || "there");
+  const safeFirm = escapeHtml(firmName);
+  const innerHtml = `
+    <p style="font-size:20px;font-weight:700;color:${TEXT_PRIMARY};margin:0 0 4px;">Your trial has ended</p>
+    <p style="font-size:14px;color:${TEXT_MUTED};margin:0 0 28px;">${safeFirm} on CherryWorks Pro</p>
+    <p style="font-size:15px;color:${TEXT_SECONDARY};line-height:1.7;margin:0 0 24px;">Hi ${safeName}, the free trial for ${safeFirm} has ended. Your data is safe and waiting. Choose a plan and you'll be right back where you left off.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">${emailButton("Choose a plan", billingUrl)}</td></tr></table>
+    ${emailDivider()}
+    <p style="font-size:12px;color:${TEXT_MUTED};margin:0;text-align:center;">Not the right time? Reply to this email and tell us what would make it work.</p>
+  `;
+  const html = wrapEmailLayout(innerHtml, { orgName: firmName, preheader: "Your CherryWorks Pro trial has ended — your data is safe" });
+  const result = await transport.send({ to, subject: `Your CherryWorks Pro trial has ended`, html, text: `Hi ${recipientName || "there"},\n\nThe free trial for ${firmName} has ended. Your data is safe. Choose a plan to pick up where you left off:\n${billingUrl}` });
+  if (result.ok === false) throw new Error("Email was not sent — no email provider is configured.");
   return { messageId: result.messageId, previewUrl: result.previewUrl };
 }

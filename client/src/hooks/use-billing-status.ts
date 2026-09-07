@@ -6,6 +6,8 @@ export interface BillingStatus {
   maxTeamMembers: number;
   currentTeamMembers: number;
   trialEndsAt: string | null;
+  hasSubscription?: boolean;
+  planInactive?: boolean;
   stripeCustomerId: string | null;
   deletionScheduledFor: string | null;
 }
@@ -14,7 +16,10 @@ export function useBillingStatus() {
   const query = useQuery<BillingStatus>({
     queryKey: ["/api/billing/status"],
     staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
+    // A tab left open must notice a trial ending: refetch on focus and on a
+    // timer (plus immediately on any 402 PLAN_INACTIVE, see queryClient).
+    refetchOnWindowFocus: true,
+    refetchInterval: 5 * 60 * 1000,
   });
 
   const planTier = query.data?.planTier || "TRIAL";
@@ -24,6 +29,7 @@ export function useBillingStatus() {
 
   return {
     ...query,
+    planInactive: query.data?.planInactive === true,
     planTier,
     isStarter,
     isProfessionalPlus,

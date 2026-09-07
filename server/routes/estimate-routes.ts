@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import { requireVerifiedEmail } from "../email-verification";
 import { storage } from "../storage";
 import { db } from "../db";
 import { eq } from "drizzle-orm";
@@ -114,7 +115,7 @@ app.patch("/api/estimates/:id", requireManagerOrAbove, async (req, res) => {
   const full = await storage.getEstimate(est.id, req.session.orgId!);
   res.json(full);
 });
-app.post("/api/estimates/:id/send", requireManagerOrAbove, async (req, res) => {
+app.post("/api/estimates/:id/send", requireManagerOrAbove, requireVerifiedEmail, async (req, res) => {
   const orgId = req.session.orgId!;
   const est = await storage.getEstimate(req.params.id as string, orgId);
   if (!est) return res.status(404).json({ message: "Estimate not found" });

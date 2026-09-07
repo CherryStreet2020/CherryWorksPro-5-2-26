@@ -33,6 +33,10 @@ vi.mock("@/components/ui/sidebar", () => ({
   SidebarProvider: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   SidebarTrigger: () => <button data-testid="sidebar-trigger" />,
 }));
+vi.mock("@/components/account-banners", () => ({
+  VerifyEmailBanner: () => null,
+  TrialCountdownBanner: () => null,
+}));
 vi.mock("@/components/app-sidebar", () => ({
   AppSidebar: () => <nav data-testid="app-sidebar" />,
 }));

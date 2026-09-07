@@ -496,6 +496,14 @@ export async function requirePlatformOperator(req: Request, res: Response, next:
   if (!ok) {
     return res.status(404).json({ message: "Not found" });
   }
+  // The allow-list is by address; an address is only an identity once it
+  // has been verified (a fresh signup could otherwise claim an operator's).
+  try {
+    const me = await storage.getUserById(req.session.userId);
+    if (!me?.emailVerifiedAt) return res.status(404).json({ message: "Not found" });
+  } catch {
+    return res.status(404).json({ message: "Not found" });
+  }
   next();
 }
 

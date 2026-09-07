@@ -27,7 +27,7 @@ let currentUserId: string = ADMIN_USER_ID;
 
 const userRecords: Record<string, { id: string; email: string; isActive: boolean; role: string }> = {
   [ADMIN_USER_ID]: { id: ADMIN_USER_ID, email: ADMIN_EMAIL, isActive: true, role: "ADMIN" },
-  [OPERATOR_USER_ID]: { id: OPERATOR_USER_ID, email: OPERATOR_EMAIL, isActive: true, role: "ADMIN" },
+  [OPERATOR_USER_ID]: { id: OPERATOR_USER_ID, email: OPERATOR_EMAIL, isActive: true, role: "ADMIN", emailVerifiedAt: new Date() },
 };
 
 vi.mock("../../server/storage", async () => {

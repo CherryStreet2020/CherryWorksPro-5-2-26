@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import { planInactive } from "../trial-lifecycle";
 import { appBaseUrl } from "../lib/app-url";
 import { storage } from "../storage";
 import { db } from "../db";
@@ -368,6 +369,10 @@ app.post("/api/billing/checkout", requireAuth, async (req, res) => {
     const org = await storage.getOrg(orgId);
     if (!org) return res.status(404).json({ message: "Organization not found" });
 
+    if (org.stripeSubscriptionId && ["active", "trialing", "past_due"].includes(org.subscriptionStatus || "")) {
+      return res.status(409).json({ code: "ALREADY_SUBSCRIBED", message: "This workspace already has a subscription. Change plans or cards from Billing." });
+    }
+
     const { plan, annual } = req.body;
     const validPlans = ["STARTER", "PROFESSIONAL", "BUSINESS"] as const;
     const planKey = validPlans.includes(plan) ? plan : "PROFESSIONAL";
@@ -486,6 +491,8 @@ app.get("/api/billing/status", requireAuth, async (req, res) => {
       maxTeamMembers: org.maxTeamMembers,
       currentTeamMembers: activeUserCount.length,
       trialEndsAt: org.trialEndsAt,
+      hasSubscription: !!org.stripeSubscriptionId,
+      planInactive: planInactive(org),
       stripeCustomerId: org.stripeCustomerId ? "configured" : null,
       hasPaymentMethod,
       deletionScheduledFor: (org as any).deletionScheduledFor || null,

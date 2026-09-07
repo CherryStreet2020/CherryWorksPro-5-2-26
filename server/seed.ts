@@ -42,6 +42,7 @@ export async function seedDatabase() {
     role: "ADMIN",
     isActive: true,
     onboardingComplete: true,
+    emailVerifiedAt: new Date(),
     tempPassword: true,
   });
 

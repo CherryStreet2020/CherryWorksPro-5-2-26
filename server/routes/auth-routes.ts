@@ -1,4 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import { issueVerificationToken, verifyToken, markVerified, tempCredentialProves } from "../email-verification";
+import { signupState } from "../platform-settings";
 import { appBaseUrl, trustedBaseUrl } from "../lib/app-url";
 
 /** Consumer mailbox providers: many unrelated people share one domain. */
@@ -137,6 +139,9 @@ app.post("/api/auth/login", loginLimiter, awaitSessionSave, async (req, res) => 
       }
 
       rehashAndUpdate(parsed.password, user.password, user.id, user.orgId).catch(() => {});
+      // Signing in with the temporary password that was emailed to THIS
+      // address demonstrates possession of the inbox.
+      if (user.tempPassword && tempCredentialProves(user)) markVerified(user.id, user.email).catch(() => {});
 
       req.session.regenerate((err) => {
         if (err) {
@@ -176,6 +181,7 @@ app.post("/api/auth/login", loginLimiter, awaitSessionSave, async (req, res) => 
       }
       if (!user.isActive) return res.status(403).json({ message: "Your account has been deactivated. Please contact your administrator." });
       const valid = await comparePasswords(parsed.password, user.password);
+      if (valid && user.tempPassword && tempCredentialProves(user)) markVerified(user.id, user.email).catch(() => {});
       if (!valid) {
         recordFailedLogin(parsed.email);
         storage.createAuditLog({ orgId: user.orgId, userId: user.id, action: "LOGIN_FAILED", entityType: "user", entityId: user.id, details: { email: parsed.email, ip: clientIp, reason: "wrong_password" } }).catch(() => {});
@@ -193,7 +199,10 @@ app.post("/api/auth/login", loginLimiter, awaitSessionSave, async (req, res) => 
 
     const matches = [];
     for (const c of candidates) {
-      if (await comparePasswords(parsed.password, c.password)) matches.push(c);
+      if (await comparePasswords(parsed.password, c.password)) {
+        matches.push(c);
+        if (c.tempPassword && tempCredentialProves(c)) markVerified(c.id, c.email).catch(() => {});
+      }
     }
     if (matches.length === 0) {
       recordFailedLogin(parsed.email);
@@ -309,8 +318,52 @@ app.post("/api/auth/logout", (req, res) => {
   });
 });
 
+// ─── EMAIL VERIFICATION + SIGNUP STATUS ──────────────────
+app.get("/api/auth/signup-status", async (_req, res) => {
+  const state = await signupState();
+  return res.json({ enabled: state.enabled, message: state.enabled ? null : state.message });
+});
+
+app.post("/api/auth/verify-email", passwordChangeLimiter, async (req, res) => {
+  const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+  const outcome = await verifyToken(token);
+  if (!outcome.ok) {
+    // A used link opened again by the (now verified) signed-in owner is not an error.
+    if (req.session.userId) {
+      const me = await storage.getUserById(req.session.userId).catch(() => null);
+      if (me?.emailVerifiedAt) return res.json({ ok: true, alreadyVerified: true, signedIn: true });
+    }
+    return res.status(400).json({ code: outcome.reason === "expired" ? "TOKEN_EXPIRED" : "TOKEN_INVALID", message: outcome.reason === "expired" ? "This verification link has expired. Sign in and request a new one." : "This verification link is not valid." });
+  }
+  if (!outcome.alreadyVerified) {
+    await storage.createAuditLog({ orgId: outcome.orgId, userId: outcome.userId, action: "EMAIL_VERIFIED", entityType: "user", entityId: outcome.userId, details: {} }).catch(() => {});
+  }
+  return res.json({ ok: true, alreadyVerified: outcome.alreadyVerified, signedIn: req.session.userId === outcome.userId });
+});
+
+app.post("/api/auth/resend-verification", passwordChangeLimiter, async (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ message: "Not authenticated" });
+  const user = await storage.getUserById(req.session.userId);
+  if (!user) return res.status(401).json({ message: "Not authenticated" });
+  if (user.emailVerifiedAt) return res.json({ ok: true, alreadyVerified: true });
+  const org = await storage.getOrg(user.orgId);
+  try {
+    const rawToken = await issueVerificationToken(user.id, user.email);
+    const verifyUrl = `${trustedBaseUrl()}/verify-email?token=${rawToken}`;
+    const { sendVerificationEmail } = await import("../email");
+    const sent = await sendVerificationEmail(user.email, user.name || user.firstName || "", verifyUrl, org);
+    return res.json({ ok: true, alreadyVerified: false, previewUrl: sent.previewUrl });
+  } catch (err: any) {
+    return res.status(502).json({ message: err?.message || "Could not send the verification email" });
+  }
+});
+
 // ─── SELF-SERVICE SIGNUP ──────────────────────────────────
 app.post("/api/auth/signup", signupLimiter, awaitSessionSave, async (req, res) => {
+  const signup = await signupState();
+  if (!signup.enabled) {
+    return res.status(503).json({ code: "SIGNUP_DISABLED", message: signup.message || "New signups are paused right now." });
+  }
   try {
     const parsed = signupSchema.parse(req.body);
 
@@ -441,6 +494,13 @@ app.post("/api/auth/signup", signupLimiter, awaitSessionSave, async (req, res) =
     // Welcome email — best-effort. Three audit actions distinguish intent
     // (ATTEMPTED) from outcome (SUCCEEDED/FAILED).
     const loginUrl = `${appBaseUrl(req)}/login`;
+    let verifyUrl: string | null = null;
+    try {
+      const rawToken = await issueVerificationToken(user.id, parsed.email);
+      verifyUrl = `${trustedBaseUrl()}/verify-email?token=${rawToken}`;
+    } catch (err) {
+      console.error("[signup] could not issue verification token:", (err as Error).message);
+    }
     storage.createAuditLog({
       orgId: org.id,
       userId: user.id,
@@ -449,7 +509,7 @@ app.post("/api/auth/signup", signupLimiter, awaitSessionSave, async (req, res) =
       entityId: user.id,
       details: { email: parsed.email, firmName: parsed.firmName },
     }).catch(() => {});
-    sendWelcomeEmail(parsed.email, fullName, parsed.firmName, loginUrl, null, org)
+    sendWelcomeEmail(parsed.email, fullName, parsed.firmName, loginUrl, null, org, verifyUrl)
       .then(() => {
         storage.createAuditLog({
           orgId: org.id,
@@ -505,6 +565,9 @@ app.patch("/api/auth/change-password", passwordChangeLimiter, requireAuth, await
     }
     const hashed = await hashPassword(newPassword);
     await storage.updateUser(user.id, req.session.orgId!, { password: hashed, tempPassword: false });
+    // (Verification by temporary password happens at LOGIN, where possession
+    // of the emailed credential is actually demonstrated — not here, where an
+    // already-authenticated session can change the password without it.)
 
     const allAccounts = await storage.getActiveUsersByEmail(user.email);
     const allUserIds = allAccounts.map((u) => u.id);
@@ -637,6 +700,7 @@ app.post("/api/auth/forgot-password", forgotPasswordLimiter, async (req, res) =>
         userId: user.id,
         token: tokenHash,
         expiresAt,
+        sentTo: user.email,
       });
 
       const resetUrl = `${resetBaseUrl}/reset-password/${token}`;
@@ -717,6 +781,10 @@ app.post("/api/auth/reset-password/:token", passwordChangeLimiter, async (req, r
 
     const hashed = await hashPassword(password);
     await db.update(users).set({ password: hashed, tempPassword: false }).where(eq(users.id, record.userId));
+    // The link reached the inbox it was mailed to (stored with the token):
+    // that address — and only that one — is proven. markVerified is
+    // conditional on it still being the account's address.
+    if (record.sentTo) await markVerified(record.userId, record.sentTo).catch(() => {});
 
     await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, record.userId));
 

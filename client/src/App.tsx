@@ -18,6 +18,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Sparkles, HelpCircle, Search, AlertTriangle, X as XIcon } from "lucide-react";
 import { useBillingStatus } from "@/hooks/use-billing-status";
+import { VerifyEmailBanner, TrialCountdownBanner } from "@/components/account-banners";
+import { DeletionBanner } from "@/components/deletion-banner";
 import { useEntitlement } from "@/lib/entitlements";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -188,6 +190,8 @@ const SwitchPaymoPage = lazy(() => lazyRetry(() => import("@/pages/marketing/swi
 const AboutPage = lazy(() => lazyRetry(() => import("@/pages/marketing/about")));
 const ContactPage = lazy(() => lazyRetry(() => import("@/pages/marketing/contact")));
 const SignupPage = lazy(() => lazyRetry(() => import("@/pages/marketing/signup")));
+const VerifyEmailPage = lazy(() => lazyRetry(() => import("@/pages/verify-email")));
+const TrialEndedPage = lazy(() => lazyRetry(() => import("@/pages/trial-ended")));
 const TermsPage = lazy(() => lazyRetry(() => import("@/pages/marketing/terms")));
 const PrivacyPage = lazy(() => lazyRetry(() => import("@/pages/marketing/privacy")));
 const DemoPage = lazy(() => lazyRetry(() => import("@/pages/marketing/demo")));
@@ -317,6 +321,7 @@ function Router() {
       <Route path="/invoices">{() => <ManagerRoute component={InvoicesPage} />}</Route>
       <Route path="/payments">{() => <ManagerRoute component={PaymentsPage} />}</Route>
       <Route path="/payouts">{() => <AdminRoute component={PayoutsPage} />}</Route>
+      <Route path="/choose-plan">{() => <AdminRoute component={TrialEndedPage} />}</Route>
       <Route path="/reports">{() => <ManagerRoute component={ReportsPage} />}</Route>
       <Route path="/expenses">{() => <LazyRoute component={ExpensesPage} />}</Route>
       <Route path="/expense-reports">{() => <LazyRoute component={ExpenseReportsPage} />}</Route>
@@ -385,6 +390,7 @@ function Router() {
 
 function AuthenticatedGettingStarted() {
   const { user, loading } = useAuth();
+  const { planInactive } = useBillingStatus();
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center" style={{ background: "var(--lux-bg)" }}>
@@ -394,6 +400,12 @@ function AuthenticatedGettingStarted() {
   }
   if (!user) {
     return <Redirect to="/login?auth=required" />;
+  }
+  // Same rule as AppContent: an inactive plan only ever sees the plan picker.
+  // (Stripe's success URL lands here, so this also covers a lapsed-then-paid
+  // workspace until billing status refreshes.)
+  if (planInactive) {
+    return <Suspense fallback={<LazyFallback />}><TrialEndedPage /></Suspense>;
   }
   const style = {
     "--sidebar-width": "16rem",
@@ -405,6 +417,9 @@ function AuthenticatedGettingStarted() {
       <div className="flex h-screen w-full" style={{ background: "var(--lux-bg)" }}>
         <AppSidebar />
         <div className="flex flex-col flex-1 min-w-0">
+          <DeletionBanner />
+          <VerifyEmailBanner />
+          <TrialCountdownBanner />
           <header
             className="flex items-center justify-between px-4 py-2 border-b flex-shrink-0"
             style={{ background: "var(--lux-surface)", borderColor: "var(--lux-border)" }}
@@ -446,57 +461,6 @@ function AuthenticatedGettingStarted() {
   );
 }
 
-function DeletionBanner() {
-  const { data: billing } = useBillingStatus();
-  const [dismissed, setDismissed] = useState(false);
-  const { user } = useAuth();
-  const [cancelling, setCancelling] = useState(false);
-  const { toast } = useToast();
-
-  if (dismissed || !billing?.deletionScheduledFor) return null;
-
-  const scheduledDate = new Date(billing.deletionScheduledFor);
-  const daysLeft = Math.max(0, Math.ceil((scheduledDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
-  const formattedDate = scheduledDate.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-
-  const handleCancel = async () => {
-    setCancelling(true);
-    try {
-      await apiRequest("POST", "/api/account/cancel-deletion");
-      queryClient.invalidateQueries({ queryKey: ["/api/billing/status"] });
-      toast({ title: "Deletion cancelled", description: "Your account deletion has been cancelled." });
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message || "Failed to cancel deletion", variant: "destructive" });
-    } finally {
-      setCancelling(false);
-    }
-  };
-
-  return (
-    <div className="flex items-center justify-between px-4 py-2 text-sm" style={{ background: "#fef2f2", borderBottom: "1px solid #fecaca" }} data-testid="banner-deletion-pending">
-      <div className="flex items-center gap-2">
-        <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0" />
-        <span className="text-red-800">
-          Account scheduled for deletion on <strong>{formattedDate}</strong> ({daysLeft} day{daysLeft !== 1 ? "s" : ""} remaining).
-        </span>
-        {user?.role === "ADMIN" && (
-          <button
-            className="ml-2 text-red-700 underline hover:text-red-900 font-medium"
-            onClick={handleCancel}
-            disabled={cancelling}
-            data-testid="button-cancel-deletion"
-          >
-            {cancelling ? "Cancelling..." : "Cancel deletion"}
-          </button>
-        )}
-      </div>
-      <button onClick={() => setDismissed(true)} className="text-red-400 hover:text-red-600 ml-2" data-testid="button-dismiss-deletion-banner">
-        <XIcon className="w-4 h-4" />
-      </button>
-    </div>
-  );
-}
-
 function AuthenticatedLayout() {
   const style = {
     "--sidebar-width": "16rem",
@@ -510,6 +474,8 @@ function AuthenticatedLayout() {
         <AppSidebar />
         <div className="flex flex-col flex-1 min-w-0">
           <DeletionBanner />
+          <VerifyEmailBanner />
+          <TrialCountdownBanner />
           <header
             className="flex items-center justify-between px-4 py-2 border-b flex-shrink-0"
             style={{
@@ -565,6 +531,7 @@ function AuthenticatedLayout() {
 
 function AppContent() {
   const { user, loading } = useAuth();
+  const { planInactive } = useBillingStatus();
   const [location] = useLocation();
 
   if (loading) {
@@ -610,6 +577,13 @@ function AppContent() {
 
   if (!user.onboardingComplete && (user.role === "TEAM_MEMBER" || user.role === "MANAGER")) {
     return <Suspense fallback={<LazyFallback />}><OnboardingPage /></Suspense>;
+  }
+
+  // Plan inactive (trial ended without a card / subscription gone): the API
+  // answers 402 everywhere except billing, so the only useful screen is the
+  // plan picker. /verify-email stays reachable so a late click still lands.
+  if (planInactive && location !== "/verify-email") {
+    return <Suspense fallback={<LazyFallback />}><TrialEndedPage /></Suspense>;
   }
 
   if (user.role === "ADMIN") {
@@ -664,6 +638,7 @@ function App() {
             <Route path="/demo">{() => <LazyRoute component={DemoPage} />}</Route>
             <Route path="/contact">{() => <LazyRoute component={ContactPage} />}</Route>
             <Route path="/signup">{() => <LazyRoute component={SignupPage} />}</Route>
+            <Route path="/verify-email">{() => <LazyRoute component={VerifyEmailPage} />}</Route>
             <Route path="/terms">{() => <LazyRoute component={TermsPage} />}</Route>
             <Route path="/privacy">{() => <LazyRoute component={PrivacyPage} />}</Route>
             <Route path="/security">{() => <LazyRoute component={SecurityPage} />}</Route>

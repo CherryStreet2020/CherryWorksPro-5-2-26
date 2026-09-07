@@ -1,4 +1,7 @@
 import type { Express } from "express";
+import { resetPlanGateCache } from "./trial-lifecycle";
+import { sendTrialEndingEmail } from "./email";
+import { trustedBaseUrl } from "./lib/app-url";
 import { planFromPrice } from "./stripe-prices";
 import { storage, PayoutEntriesAlreadyPaidError } from "./storage";
 import type { CreateStripePaymentResult } from "./storage";
@@ -275,7 +278,10 @@ export function registerStripeWebhook(app: Express): void {
 
     if (resolvedOrgId) {
       const existing = await storage.getStripeEventByEventId(stripeEventId, resolvedOrgId);
-      if (existing) {
+      // A pre-delivery claim (trial_will_end) is not a completed event: let a
+      // retry reach the handler, which releases stale claims and re-sends.
+      const undelivered = existing?.status === "FAILED" && existing.failureCode === "PENDING_DELIVERY";
+      if (existing && !undelivered) {
         return res.json({ received: true, duplicate: true });
       }
     }
@@ -524,6 +530,7 @@ async function handleSubscriptionCheckout(
       subscriptionStatus: "trialing",
       maxTeamMembers: planLimits[planTier] || 999999,
     });
+    resetPlanGateCache(orgId); // after the write: a request racing us must not re-cache the old status
 
     // Task #392 — Sync tier-derived marketing_os immediately. A BUSINESS
     // checkout must light up the entitlement row in lockstep with the org
@@ -624,6 +631,7 @@ async function handleSubscriptionUpdated(
   }
 
   await storage.updateOrg(org.id, updates);
+  resetPlanGateCache(org.id);
 
   // Task #392 — Re-derive marketing_os from the new tier+status. Tier
   // upgrades (PROFESSIONAL→BUSINESS) light it up; downgrades flip the
@@ -680,6 +688,7 @@ async function handleSubscriptionDeleted(
       subscriptionStatus: "canceled",
       stripeSubscriptionId: null,
     });
+    resetPlanGateCache(org.id); // after the write (see checkout handler)
 
     // Task #392 — Final cancellation flips marketing_os off (unless a
     // grandfather row is still in-window, which sync intentionally leaves
@@ -1001,8 +1010,61 @@ async function handleSubscriptionTrialWillEnd(
   const org = customerId ? await storage.getOrgByStripeCustomerId(customerId) : null;
 
   if (org) {
-    const adminUsers = await db.select({ id: users.id, email: users.email }).from(users).where(and(eq(users.orgId, org.id), eq(users.role, "ADMIN"))).limit(1);
+    // Claim the event first: a Stripe retry that arrives while this delivery
+    // is still emailing must not send the reminder a second time.
+    const already = await storage.getStripeEventByEventId(stripeEventId, org.id);
+    if (already) {
+      // A pre-delivery claim older than the window is an interrupted attempt
+      // (process exited between claim and send): release it and try again.
+      const stale = already.status === "FAILED" && already.failureCode === "PENDING_DELIVERY"
+        && already.receivedAt && Date.now() - new Date(already.receivedAt).getTime() > 10 * 60 * 1000;
+      if (!stale) {
+        // A claim younger than the window is either a concurrent delivery in
+        // progress or an interrupted one: answer 5xx so Stripe keeps retrying
+        // until it is either PROCESSED (200 duplicate) or stale (re-sent).
+        const pending = already.status === "FAILED" && already.failureCode === "PENDING_DELIVERY";
+        return pending
+          ? res.status(503).json({ received: false, error: "Reminder delivery in progress; retry later" })
+          : res.json({ received: true, duplicate: true });
+      }
+      await db.delete(stripeEvents).where(eq(stripeEvents.id, already.id)).catch(() => {});
+    }
+    let claim: { id: string };
+    try {
+      claim = await storage.createStripeEvent({
+        orgId: org.id, stripeEventId, type: eventType, livemode, created,
+        // "FAILED" until delivery succeeds: the row is the claim; the status is the outcome.
+        status: "FAILED", failureCode: "PENDING_DELIVERY", failureDetail: null,
+      });
+    } catch (err: any) {
+      if (err?.code === "23505" || /duplicate|unique/i.test(String(err?.message))) {
+        // Lost the race. Only a PROCESSED winner is a real duplicate; while the
+        // winner is still delivering, keep Stripe retrying.
+        const winner = await storage.getStripeEventByEventId(stripeEventId, org.id).catch(() => undefined);
+        return winner?.status === "PROCESSED"
+          ? res.json({ received: true, duplicate: true })
+          : res.status(503).json({ received: false, error: "Reminder delivery in progress; retry later" });
+      }
+      console.error(`[stripe-webhook] trial_will_end claim failed for ${org.slug}:`, err?.message);
+      return res.status(500).json({ received: false, error: "Could not record event; will retry" });
+    }
+    const adminUsers = await db.select({ id: users.id, email: users.email, name: users.name }).from(users).where(and(eq(users.orgId, org.id), eq(users.role, "ADMIN"), eq(users.isActive, true)));
     const adminEmail = adminUsers[0]?.email || "unknown";
+    // Card on file: the subscription tab (Manage Subscription → Stripe portal), not the add-ons page.
+    let billingLink = "http://localhost:5000/settings#subscription";
+    try { billingLink = `${trustedBaseUrl()}/settings#subscription`; } catch { /* unconfigured non-production */ }
+    let delivered = 0;
+    for (const admin of adminUsers) {
+      if (!admin.email) continue;
+      try { await sendTrialEndingEmail(admin.email, admin.name || "", org.name, 3, billingLink, org, true); delivered++; }
+      catch (err) { console.warn(`[stripe-webhook] trial-ending email failed for ${org.slug}:`, (err as Error).message); }
+    }
+    if (adminUsers.length > 0 && delivered === 0) {
+      // Nobody reached: release the claim and let Stripe retry the event.
+      await db.delete(stripeEvents).where(eq(stripeEvents.id, claim.id)).catch(() => {});
+      return res.status(500).json({ received: false, error: "Reminder email could not be delivered; will retry" });
+    }
+    await db.update(stripeEvents).set({ status: "PROCESSED", failureCode: null }).where(eq(stripeEvents.id, claim.id)).catch(() => {});
 
     await storage.createAuditLog({
       orgId: org.id,
@@ -1014,11 +1076,6 @@ async function handleSubscriptionTrialWillEnd(
     });
 
     console.info(`[stripe-webhook] Trial ending soon for org ${org.id} (admin: ${adminEmail}), subscription ${subscription?.id}`);
-
-    await storage.createStripeEvent({
-      orgId: org.id, stripeEventId, type: eventType, livemode, created,
-      status: "PROCESSED", failureCode: null, failureDetail: null,
-    });
   } else {
     console.warn(`[stripe-webhook] handleSubscriptionTrialWillEnd: no org found, event ${stripeEventId}`);
   }

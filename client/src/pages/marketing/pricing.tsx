@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { PLAN_PRICING, annualPerMonth } from "@shared/plan-pricing";
 import { Link } from "wouter";
 import { CheckCircle, X, ArrowRight, Building2, Shield, ChevronDown } from "lucide-react";
 import { SEO, SoftwareApplicationStructuredData, FAQStructuredData } from "@/components/seo";
@@ -20,8 +21,8 @@ function useFadeIn() {
 const plans = [
   {
     name: "Starter",
-    monthly: 39,
-    annual: 31,
+    monthly: PLAN_PRICING.STARTER.monthly,
+    annual: annualPerMonth("STARTER"),
     users: "Unlimited",
     clients: "Up to 5",
     projects: "Up to 3",
@@ -31,8 +32,8 @@ const plans = [
   },
   {
     name: "Professional",
-    monthly: 89,
-    annual: 71,
+    monthly: PLAN_PRICING.PROFESSIONAL.monthly,
+    annual: annualPerMonth("PROFESSIONAL"),
     users: "Unlimited",
     clients: "Unlimited",
     projects: "Unlimited",
@@ -42,8 +43,8 @@ const plans = [
   },
   {
     name: "Business",
-    monthly: 159,
-    annual: 127,
+    monthly: PLAN_PRICING.BUSINESS.monthly,
+    annual: annualPerMonth("BUSINESS"),
     users: "Unlimited",
     clients: "Unlimited",
     projects: "Unlimited",
