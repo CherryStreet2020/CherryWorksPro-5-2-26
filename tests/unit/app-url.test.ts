@@ -1,8 +1,9 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { appBaseUrl } from "../../server/lib/app-url";
+import { appBaseUrl, trustedBaseUrl } from "../../server/lib/app-url";
 
-const saved = { APP_BASE_URL: process.env.APP_BASE_URL, BASE_URL: process.env.BASE_URL };
-afterEach(() => { for (const k of ["APP_BASE_URL", "BASE_URL"] as const) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; } });
+const KEYS = ["APP_BASE_URL", "BASE_URL", "REPLIT_DOMAINS", "NODE_ENV"] as const;
+const saved: Record<string, string | undefined> = Object.fromEntries(KEYS.map(k => [k, process.env[k]]));
+afterEach(() => { for (const k of KEYS) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; } });
 
 const req = (headers: Record<string, string>, host = "evil.example") => ({ headers, protocol: "http", get: (h: string) => (h.toLowerCase() === "host" ? host : undefined) }) as any;
 
@@ -18,5 +19,16 @@ describe("appBaseUrl", () => {
     expect(appBaseUrl(req({ "x-forwarded-proto": "https, http", "x-forwarded-host": "app.example, other" }))).toBe("https://app.example");
     expect(appBaseUrl(req({}, "localhost:5000"))).toBe("http://localhost:5000");
     expect(appBaseUrl()).toBe("http://localhost:5000");
+  });
+  it("trustedBaseUrl never reads the request: config, then the Replit domain, then fails closed in production", () => {
+    delete process.env.APP_BASE_URL; delete process.env.BASE_URL; delete process.env.REPLIT_DOMAINS;
+    process.env.NODE_ENV = "production";
+    expect(() => trustedBaseUrl()).toThrow(/not configured/);
+    process.env.REPLIT_DOMAINS = "cwp.replit.app,other";
+    expect(trustedBaseUrl()).toBe("https://cwp.replit.app");
+    process.env.BASE_URL = "https://cherryworkspro.com";
+    expect(trustedBaseUrl()).toBe("https://cherryworkspro.com");
+    process.env.NODE_ENV = "test"; delete process.env.BASE_URL; delete process.env.REPLIT_DOMAINS;
+    expect(trustedBaseUrl()).toBe("http://localhost:5000");
   });
 });

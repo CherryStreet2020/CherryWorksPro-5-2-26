@@ -1,5 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
-import { appBaseUrl } from "../lib/app-url";
+import { appBaseUrl, trustedBaseUrl } from "../lib/app-url";
 
 /** Consumer mailbox providers: many unrelated people share one domain. */
 const PUBLIC_MAILBOX_DOMAINS = new Set([
@@ -614,7 +614,7 @@ app.post("/api/auth/forgot-password", forgotPasswordLimiter, async (req, res) =>
       return res.status(400).json({ message: "Email is required" });
     }
 
-    const resetBaseUrl = appBaseUrl(req);
+    const resetBaseUrl = trustedBaseUrl();
 
     let usersToReset: Array<{ id: string; orgId: string; email: string }> = [];
 
