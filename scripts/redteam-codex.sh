@@ -94,6 +94,18 @@ if [ -n "$PLAN_FILE" ] && { [ "$TARGET_KIND" != "plan" ] || [ ${#ARGS[@]} -gt 0 
   echo "redteam-codex: --plan cannot be combined with --commit / --base / --uncommitted." >&2; exit 4
 fi
 
+# --- isolated Codex home ---------------------------------------------------------
+# The interactive ~/.codex carries MCP servers (VPN pipeline hosts, computer
+# use, REPLs) whose side effects sit outside the shell sandbox, and
+# `-c mcp_servers={}` does NOT disable them (verified: `codex mcp list` still
+# lists them). A review runs from a private CODEX_HOME holding only the auth
+# file and a minimal config: no MCP servers, no personal AGENTS.md.
+ISO_HOME="$(mktemp -d "${TMPDIR:-/tmp}/redteam-codex-home.XXXXXX")"
+trap 'rm -rf "$ISO_HOME"' EXIT
+[ -f "$HOME/.codex/auth.json" ] && ln -s "$HOME/.codex/auth.json" "$ISO_HOME/auth.json"
+printf 'model = "%s"\nmodel_reasoning_effort = "%s"\n' "$MODEL" "$EFFORT" > "$ISO_HOME/config.toml"
+export CODEX_HOME="$ISO_HOME"
+
 # --- resolve the codex binary --------------------------------------------------
 # The desktop-app bundle comes FIRST: codex looks for its sibling
 # `codex-code-mode-host` next to its own path, so a lone symlink in ~/.local/bin
@@ -126,7 +138,7 @@ if [ "$TARGET_KIND" = "plan" ]; then
   # the report certifies exactly the bytes Codex read, and concurrent reviews
   # of the same plan cannot touch each other's files.
   TMP="$(mktemp -d "${TMPDIR:-/tmp}/redteam-plan.XXXXXX")"
-  trap 'rm -rf "$TMP"' EXIT
+  trap 'rm -rf "$TMP" "$ISO_HOME"' EXIT
   SNAP="$TMP/plan.md"
   cp -- "$PLAN_ABS" "$SNAP"
   PLAN_SHA="$(shasum -a 256 "$SNAP" | cut -c1-64)"
@@ -151,7 +163,6 @@ APPROVED means no unresolved P1/P2. BLOCKED means the plan cannot proceed as wri
       -s read-only \
       -c model="$MODEL" \
       -c model_reasoning_effort="$EFFORT" \
-      -c 'mcp_servers={}' \
       -o "$MSG" \
       "$PROMPT" < /dev/null ) > "$RAW" 2>&1   # </dev/null: exec otherwise waits on stdin when not a TTY
   rc=$?
@@ -238,13 +249,10 @@ echo "redteam-codex: args=${ARGS[*]}"
 echo "redteam-codex: writing → $OUT"
 
 set +e
-# mcp_servers={} : a review needs git + the tree only. The interactive config's
-# MCP servers (VPN-only pipeline hosts, browser/computer-use) otherwise spew
-# transport errors into the findings file and slow the run.
+# Runs in the isolated CODEX_HOME above: git + the tree only, no MCP servers.
 ( cd "$REPO_ROOT" && "$CODEX" review \
     -c model="$MODEL" \
     -c model_reasoning_effort="$EFFORT" \
-    -c 'mcp_servers={}' \
     "${ARGS[@]}" ) > "$OUT" 2>&1
 rc=$?
 set -e
