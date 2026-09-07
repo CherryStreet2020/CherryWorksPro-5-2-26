@@ -25,8 +25,8 @@ const GRAPH = "https://graph.microsoft.com/v1.0";
 export const INBOUND_REQUIRED_SCOPE = "Mail.ReadWrite";
 
 export function hasReadScope(scopes: string | null | undefined): boolean {
-  const s = (scopes || "").toLowerCase();
-  return s.includes("mail.readwrite") || s.includes("mail.read ");
+  const tokens = (scopes || "").toLowerCase().split(/[\s,]+/).map(t => t.replace(/^https:\/\/graph\.microsoft\.com\//, ""));
+  return tokens.includes("mail.readwrite");
 }
 
 interface GraphMessage {
@@ -102,7 +102,14 @@ export async function pollOrg(org: { id: string; supportInboundAddress: string; 
       headers: { source: "m365-graph", graphId: msg.id, receivedDateTime: msg.receivedDateTime ?? null }, resendMessageId: messageId,
     });
 
-    const outcome = await processInboundEmail({ from, to, subject: msg.subject ?? null, text, html: null, messageId });
+    let outcome: Awaited<ReturnType<typeof processInboundEmail>>;
+    try {
+      outcome = await processInboundEmail({ from, to, subject: msg.subject ?? null, text, html: null, messageId });
+    } catch (err) {
+      // Leave the mail unread and drop the ledger row so the next pass can retry it.
+      await db.delete(inboundEmails).where(eq(inboundEmails.id, emailId)).catch(() => {});
+      throw err;
+    }
     result.outcomes[outcome.outcome] = (result.outcomes[outcome.outcome] || 0) + 1;
     result.processed++;
 

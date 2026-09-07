@@ -122,7 +122,8 @@ export async function importJiraIssues(opts: ImportOptions): Promise<ImportRepor
   const existingKeys = new Set(existingRows.map(r => r.k));
   const existingByKey = new Map(existingRows.map(r => [r.k, r]));
   const attachmentsMode = opts.attachmentsForExisting ?? "open";
-  const knownRefs = opts.downloadAttachment ? await existingExternalRefs(opts.orgId, existingRows.map(r => r.id)) : new Set<string>();
+  const touchedIds = opts.items.map(it => existingByKey.get(it.key)?.id).filter((x): x is string => !!x);
+  const knownRefs = opts.downloadAttachment ? await existingExternalRefs(opts.orgId, touchedIds) : new Set<string>();
 
   /** On re-run, bring existing imported cases' text up to date (e.g. media markers that now carry filenames). */
   const refreshImportedText = async (caseId: string, item: JiraExportIssue) => {

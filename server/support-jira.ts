@@ -67,9 +67,20 @@ export class JiraClient {
     if (target.origin !== new URL(this.base).origin) throw new Error("Attachment is not on the Jira site");
     const res = await this.fetchImpl(target.toString(), { headers: { Authorization: this.auth }, redirect: "follow" });
     if (!res.ok) throw new JiraHttpError(res.status, target.pathname);
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length > maxBytes) throw new Error("Attachment larger than the limit");
-    return buf;
+    const declared = Number(res.headers.get("content-length") || 0);
+    if (declared > maxBytes) { await res.body?.cancel().catch(() => {}); throw new Error("Attachment larger than the limit"); }
+    if (!res.body) return Buffer.from(await res.arrayBuffer());
+    const chunks: Buffer[] = [];
+    let total = 0;
+    const reader = res.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) { await reader.cancel().catch(() => {}); throw new Error("Attachment larger than the limit"); }
+      chunks.push(Buffer.from(value));
+    }
+    return Buffer.concat(chunks);
   }
 
   /** Verifies the credentials and returns the caller's display name. */
