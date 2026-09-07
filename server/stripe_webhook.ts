@@ -1018,7 +1018,15 @@ async function handleSubscriptionTrialWillEnd(
       // (process exited between claim and send): release it and try again.
       const stale = already.status === "FAILED" && already.failureCode === "PENDING_DELIVERY"
         && already.receivedAt && Date.now() - new Date(already.receivedAt).getTime() > 10 * 60 * 1000;
-      if (!stale) return res.json({ received: true, duplicate: true });
+      if (!stale) {
+        // A claim younger than the window is either a concurrent delivery in
+        // progress or an interrupted one: answer 5xx so Stripe keeps retrying
+        // until it is either PROCESSED (200 duplicate) or stale (re-sent).
+        const pending = already.status === "FAILED" && already.failureCode === "PENDING_DELIVERY";
+        return pending
+          ? res.status(503).json({ received: false, error: "Reminder delivery in progress; retry later" })
+          : res.json({ received: true, duplicate: true });
+      }
       await db.delete(stripeEvents).where(eq(stripeEvents.id, already.id)).catch(() => {});
     }
     let claim: { id: string };
