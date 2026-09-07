@@ -21,3 +21,4 @@ UPDATE users SET email_verified_at = COALESCE(created_at, now())
 INSERT INTO platform_settings (key, value)
   VALUES ('legacy_email_verification_backfill_done', '{"source":"migration-0037"}')
   ON CONFLICT (key) DO NOTHING;
+ALTER TABLE password_reset_tokens ADD COLUMN IF NOT EXISTS sent_to text;

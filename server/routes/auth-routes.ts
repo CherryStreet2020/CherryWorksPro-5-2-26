@@ -700,6 +700,7 @@ app.post("/api/auth/forgot-password", forgotPasswordLimiter, async (req, res) =>
         userId: user.id,
         token: tokenHash,
         expiresAt,
+        sentTo: user.email,
       });
 
       const resetUrl = `${resetBaseUrl}/reset-password/${token}`;
@@ -778,13 +779,12 @@ app.post("/api/auth/reset-password/:token", passwordChangeLimiter, async (req, r
       return res.status(400).json({ message: "This reset link is invalid or has expired." });
     }
 
-    // The address the link was mailed to, read BEFORE the password write: if
-    // an admin changes the address mid-flight, this proves nothing for the new one.
-    const linkOwner = await storage.getUserById(record.userId);
     const hashed = await hashPassword(password);
     await db.update(users).set({ password: hashed, tempPassword: false }).where(eq(users.id, record.userId));
-    // The reset link reached this inbox: the address is proven.
-    if (linkOwner?.email) await markVerified(record.userId, linkOwner.email).catch(() => {});
+    // The link reached the inbox it was mailed to (stored with the token):
+    // that address — and only that one — is proven. markVerified is
+    // conditional on it still being the account's address.
+    if (record.sentTo) await markVerified(record.userId, record.sentTo).catch(() => {});
 
     await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, record.userId));
 

@@ -520,7 +520,6 @@ async function handleSubscriptionCheckout(
   const planLimits: Record<string, number> = { STARTER: 999999, PROFESSIONAL: 999999, BUSINESS: 999999, ENTERPRISE: 999999 };
 
   try {
-    resetPlanGateCache(orgId);
     await storage.updateOrg(orgId, {
       stripeSubscriptionId: subscriptionId,
       stripeCustomerId: customerId,
@@ -528,6 +527,7 @@ async function handleSubscriptionCheckout(
       subscriptionStatus: "trialing",
       maxTeamMembers: planLimits[planTier] || 999999,
     });
+    resetPlanGateCache(orgId); // after the write: a request racing us must not re-cache the old status
 
     // Task #392 — Sync tier-derived marketing_os immediately. A BUSINESS
     // checkout must light up the entitlement row in lockstep with the org
@@ -680,12 +680,12 @@ async function handleSubscriptionDeleted(
   const org = customerId ? await storage.getOrgByStripeCustomerId(customerId) : null;
 
   if (org) {
-    resetPlanGateCache(org.id);
     await storage.updateOrg(org.id, {
       planTier: "EXPIRED",
       subscriptionStatus: "canceled",
       stripeSubscriptionId: null,
     });
+    resetPlanGateCache(org.id); // after the write (see checkout handler)
 
     // Task #392 — Final cancellation flips marketing_os off (unless a
     // grandfather row is still in-window, which sync intentionally leaves

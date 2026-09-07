@@ -2385,6 +2385,9 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
     .references(() => users.id),
   token: varchar("token", { length: 128 }).notNull().unique(),
   expiresAt: timestamp("expires_at").notNull(),
+  // The address the link was mailed to: completing the reset proves THIS
+  // address, whatever the account's address is by then.
+  sentTo: text("sent_to"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;

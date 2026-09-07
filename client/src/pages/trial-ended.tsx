@@ -123,7 +123,12 @@ export default function TrialEndedPage() {
   );
 }
 
-/** Not continuing? The existing 30-day deletion flow stays available without a plan (password-confirmed). */
+/**
+ * Not continuing? The existing deletion flow stays available without a plan.
+ * Same semantics as Profile: the only admin schedules the WHOLE workspace for
+ * deletion in 30 days (cancel by signing in); any other user removes only
+ * their own account. Password-confirmed.
+ */
 function DeleteWorkspaceLink() {
   const [open, setOpen] = useState(false);
   const [password, setPassword] = useState("");
@@ -140,10 +145,10 @@ function DeleteWorkspaceLink() {
       setMsg(err?.message?.replace(/^\d+:\s*/, "") || "Could not schedule deletion");
     } finally { setBusy(false); }
   };
-  if (!open) return <button onClick={() => setOpen(true)} className="underline" data-testid="button-delete-workspace">Delete this workspace</button>;
+  if (!open) return <button onClick={() => setOpen(true)} className="underline" data-testid="button-delete-workspace">Delete my account</button>;
   return (
     <span className="flex flex-col items-center gap-2" data-testid="delete-workspace-form">
-      <span>Confirm with your password. Deletion happens in 30 days and can be cancelled by signing in.</span>
+      <span>If you are the only admin, the whole workspace is scheduled for deletion in 30 days (cancel any time by signing in). Otherwise only your own account is removed. Confirm with your password.</span>
       <span className="flex gap-2">
         <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" className="px-2 py-1 rounded text-xs" style={{ background: "var(--color-surface-0)", border: "1px solid var(--lux-border)", color: "var(--lux-text)" }} data-testid="input-delete-password" />
         <button onClick={submit} disabled={busy || !password} className="underline disabled:opacity-60" data-testid="button-delete-confirm">{busy ? "…" : "Schedule deletion"}</button>
