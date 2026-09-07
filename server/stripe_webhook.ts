@@ -1010,7 +1010,14 @@ async function handleSubscriptionTrialWillEnd(
     // Claim the event first: a Stripe retry that arrives while this delivery
     // is still emailing must not send the reminder a second time.
     const already = await storage.getStripeEventByEventId(stripeEventId, org.id);
-    if (already) return res.json({ received: true, duplicate: true });
+    if (already) {
+      // A pre-delivery claim older than the window is an interrupted attempt
+      // (process exited between claim and send): release it and try again.
+      const stale = already.status === "FAILED" && already.failureCode === "PENDING_DELIVERY"
+        && already.receivedAt && Date.now() - new Date(already.receivedAt).getTime() > 10 * 60 * 1000;
+      if (!stale) return res.json({ received: true, duplicate: true });
+      await db.delete(stripeEvents).where(eq(stripeEvents.id, already.id)).catch(() => {});
+    }
     let claim: { id: string };
     try {
       claim = await storage.createStripeEvent({
@@ -1027,8 +1034,9 @@ async function handleSubscriptionTrialWillEnd(
     }
     const adminUsers = await db.select({ id: users.id, email: users.email, name: users.name }).from(users).where(and(eq(users.orgId, org.id), eq(users.role, "ADMIN"), eq(users.isActive, true)));
     const adminEmail = adminUsers[0]?.email || "unknown";
-    let billingLink = "http://localhost:5000/settings/billing";
-    try { billingLink = `${trustedBaseUrl()}/settings/billing`; } catch { /* unconfigured non-production */ }
+    // Card on file: the subscription tab (Manage Subscription → Stripe portal), not the add-ons page.
+    let billingLink = "http://localhost:5000/settings#subscription";
+    try { billingLink = `${trustedBaseUrl()}/settings#subscription`; } catch { /* unconfigured non-production */ }
     let delivered = 0;
     for (const admin of adminUsers) {
       if (!admin.email) continue;
