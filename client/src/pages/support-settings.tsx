@@ -149,10 +149,10 @@ function JiraImportCard({ card, muted, fieldStyle }: { card: React.CSSProperties
   const { toast } = useToast();
   const { data: saved, isLoading: savedLoading } = useQuery<JiraConnection>({ queryKey: ["/api/support/import/jira-connection"] });
   const [editing, setEditing] = useState(false);
-  const [baseUrl, setBaseUrl] = useState("https://cherrystreet.atlassian.net");
+  const [baseUrl, setBaseUrl] = useState("");
   const [email, setEmail] = useState("");
   const [apiToken, setApiToken] = useState("");
-  const [projectKey, setProjectKey] = useState("ABS");
+  const [projectKey, setProjectKey] = useState("");
   const [clientId, setClientId] = useState("");
   const [projectId, setProjectId] = useState("");
   const [test, setTest] = useState<JiraTest | null>(null);
@@ -203,7 +203,7 @@ function JiraImportCard({ card, muted, fieldStyle }: { card: React.CSSProperties
     <section className="rounded-2xl p-5 border-0 space-y-3" style={card} data-testid="card-jira-import">
       <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Import from Jira Service Management</h2>
       <p className="text-sm" style={{ color: "var(--lux-text-secondary)" }}>
-        Pulls every issue in a Jira project with its comments, status history and attachments, keeps the keys and dates, and continues the numbering here. Re-running brings over anything new. The API token is stored encrypted; create one at id.atlassian.com → Security → API tokens.
+        Moving from Jira Service Management? Connect your Jira Cloud site once and import a project: every issue comes over with its comments, status history and attachments, keeps its key and dates, and case numbering continues from there. Run it again any time to pick up what's new. The API token is stored encrypted — create one at id.atlassian.com → Security → API tokens (use the same Atlassian account email).
       </p>
       {saved?.connected && !editing && (
         <div className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm" style={{ background: "var(--lux-surface-alt)", border: "1px solid var(--lux-border)", color: "var(--lux-text)" }} data-testid="text-jira-connected">
@@ -219,9 +219,9 @@ function JiraImportCard({ card, muted, fieldStyle }: { card: React.CSSProperties
       )}
       {showForm && !savedLoading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div><Label className="text-xs" style={muted}>Jira URL</Label><Input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} style={fieldStyle} data-testid="input-jira-url" /></div>
-          <div><Label className="text-xs" style={muted}>Project key</Label><Input value={projectKey} onChange={e => setProjectKey(e.target.value)} style={fieldStyle} data-testid="input-jira-project" /></div>
-          <div><Label className="text-xs" style={muted}>Atlassian account email</Label><Input type="email" value={email} onChange={e => setEmail(e.target.value)} style={fieldStyle} data-testid="input-jira-email" /></div>
+          <div><Label className="text-xs" style={muted}>Jira URL</Label><Input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://yourcompany.atlassian.net" style={fieldStyle} data-testid="input-jira-url" /></div>
+          <div><Label className="text-xs" style={muted}>Project key</Label><Input value={projectKey} onChange={e => setProjectKey(e.target.value)} placeholder="SUP — the prefix on your issue keys" style={fieldStyle} data-testid="input-jira-project" /></div>
+          <div><Label className="text-xs" style={muted}>Atlassian account email</Label><Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@yourcompany.com" style={fieldStyle} data-testid="input-jira-email" /></div>
           <div><Label className="text-xs" style={muted}>API token</Label><Input type="password" value={apiToken} onChange={e => setApiToken(e.target.value)} placeholder={saved?.connected ? "Leave blank to keep the saved token" : ""} style={fieldStyle} data-testid="input-jira-token" autoComplete="off" /></div>
         </div>
       )}
