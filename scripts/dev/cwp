@@ -38,6 +38,10 @@ REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # the header above lists what the toolchain consists of).
 if [ -f "$HOME/.local/pgsql/cwp-pg-env.sh" ]; then source "$HOME/.local/pgsql/cwp-pg-env.sh"; else
   echo "[cwp] ~/.local/pgsql/cwp-pg-env.sh not found — copy scripts/dev/cwp-pg-env.example.sh there and fill it in (see the header of scripts/dev/cwp)." >&2; exit 1; fi
+# Name what is missing instead of letting `set -u` say "unbound variable".
+for v in PGHOME PGDATA PGPORT CWP_DATABASE_URL CWP_MIGCHECK_URL; do
+  [ -n "${!v:-}" ] || { echo "[cwp] $v is not set — fill it in ~/.local/pgsql/cwp-pg-env.sh (template: scripts/dev/cwp-pg-env.example.sh)." >&2; exit 1; }
+done
 BASH5="$HOME/.local/bin/bash"
 # libpq (psql, check-migrations.sh) and node-postgres fill in whatever a URL leaves
 # unset from the environment, and PGHOSTADDR wins even over an explicit host, so an
