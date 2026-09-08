@@ -20,7 +20,7 @@ function useFadeIn() {
 const painPoints = [
   { pain: "FreshBooks charges per user ($11/mo each)", fix: "CherryWorks Pro includes unlimited users on every plan. A 10-person firm saves $1,320/year in seat fees alone. No per-user pricing, ever." },
   { pain: "Client limits on lower plans (Lite=5, Plus=50)", fix: "CherryWorks Pro has no client limits on any plan. Grow your roster without worrying about hitting a wall or being forced to upgrade." },
-  { pain: "No project profitability or utilization reports", fix: "CherryWorks Pro includes 25+ built-in reports: project profitability, team utilization, AR aging, expense analytics, and more. See exactly where your firm makes money." },
+  { pain: "No project profitability or utilization reports", fix: "CherryWorks Pro includes 19 built-in reports: project profitability, team utilization, AR aging, expense analytics, and more. See exactly where your firm makes money." },
   { pain: "No unified 1099 + W-2 + Corp-to-Corp worker types", fix: "CherryWorks Pro supports all three worker classifications in one platform. Smart onboarding adapts to each type. Payouts, tax exports, and compliance are built in." },
   { pain: "No timesheet approval workflow", fix: "Full Submit → Approve → Lock lifecycle. Approved hours lock automatically so invoices are always based on verified, immutable time. Rejection with mandatory reasons." },
   { pain: "No auto-reimbursement payouts", fix: "When you approve a reimbursable expense, CherryWorks Pro automatically creates a payout for the team member. No manual tracking, no spreadsheets." },
@@ -56,12 +56,7 @@ export default function SwitchFreshBooksDetailPage() {
   return (
     <div style={{ background: "#0a0f1c" }}>
       <MarketingNav />
-      <SEO
-        title="Switch from FreshBooks to CherryWorks Pro"
-        fullTitle="Switch from FreshBooks to CherryWorks Pro | Unlimited Users, Built-in GL"
-        description="FreshBooks charges $11/user/month. CherryWorks Pro: unlimited users, full GL, 1099 exports, and project profitability — starting at $39/mo flat."
-        path="/switch-from-freshbooks"
-      />
+      <SEO path="/switch-from-freshbooks" />
 
       <section className="pt-[100px] pb-8 md:pb-10" style={{ background: "var(--gradient-hero)" }}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8 md:pt-12 md:pb-10">
@@ -171,7 +166,7 @@ export default function SwitchFreshBooksDetailPage() {
             {[
               { icon: Clock, title: "Native time tracking", desc: "Week, month, and day views with a floating timer widget. No add-ons needed." },
               { icon: Shield, title: "Unlimited users & clients", desc: "No per-seat fees, no client caps. Add your entire team on any plan." },
-              { icon: Zap, title: "25+ built-in reports", desc: "Project profitability, team utilization, AR aging, and expense analytics. The reporting FreshBooks never gave you." },
+              { icon: Zap, title: "19 built-in reports", desc: "Project profitability, team utilization, AR aging, and expense analytics. The reporting FreshBooks never gave you." },
               { icon: Upload, title: "Timesheet approval workflow", desc: "Submit → Approve → Lock lifecycle with rejection reasons and immutable approved hours." },
             ].map((b, i) => (
               <div key={i} className="rounded-xl p-6 flex items-start gap-4" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>

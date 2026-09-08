@@ -77,12 +77,7 @@ export default function ResetPasswordPage() {
         background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)",
       }}
     >
-      <SEO
-        title="Reset Password"
-        fullTitle="Reset Password | CherryWorks Pro"
-        description="Set a new password for your CherryWorks Pro account."
-        path="/reset-password"
-      />
+      <SEO path="/reset-password" />
       <Card className="w-full max-w-md border-0 shadow-2xl" style={{ background: "rgba(255,255,255,0.97)", color: "#1a1a2e" }}>
         <CardContent className="p-8">
           {validating ? (

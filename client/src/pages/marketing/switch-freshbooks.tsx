@@ -55,7 +55,7 @@ const comparisonData: CompRow[] = [
   { feature: "Recurring invoice templates", category: "Billing", cherry: true, freshbooks: true, quickbooks: true, xero: true, wave: false, harvest: false, bigtime: false, scoro: true, paymo: true },
   { feature: "Stripe Checkout integration", category: "Billing", cherry: true, freshbooks: true, quickbooks: false, xero: true, wave: false, harvest: false, bigtime: false, scoro: true, paymo: false },
   { feature: "ACH bank transfer payments", category: "Billing", cherry: true, freshbooks: true, quickbooks: true, xero: false, wave: false, harvest: false, bigtime: false, scoro: false, paymo: false },
-  { feature: "25+ built-in reports", category: "Reports", cherry: true, freshbooks: false, quickbooks: true, xero: true, wave: false, harvest: false, bigtime: true, scoro: true, paymo: true },
+  { feature: "19 built-in reports", category: "Reports", cherry: true, freshbooks: false, quickbooks: true, xero: true, wave: false, harvest: false, bigtime: true, scoro: true, paymo: true },
   { feature: "AR aging report", category: "Reports", cherry: true, freshbooks: true, quickbooks: true, xero: true, wave: false, harvest: false, bigtime: false, scoro: false, paymo: false },
   { feature: "Team utilization report", category: "Reports", cherry: true, freshbooks: true, quickbooks: false, xero: false, wave: false, harvest: false, bigtime: true, scoro: true, paymo: true },
   { feature: "Expense analytics (category, project, team member)", category: "Reports", cherry: true, freshbooks: false, quickbooks: true, xero: false, wave: false, harvest: false, bigtime: true, scoro: true, paymo: true },
@@ -108,12 +108,7 @@ export default function SwitchFreshBooksPage() {
   return (
     <div style={{ background: "#0a0f1c" }}>
       <MarketingNav />
-      <SEO
-        title="Compare"
-        fullTitle="CherryWorks Pro vs FreshBooks, QuickBooks, Xero, Harvest & More"
-        description="41 features compared. 41 CherryWorks wins. See how unlimited users, built-in GL, and 1099 support set CherryWorks Pro apart from 8 competitors."
-        path="/compare"
-      />
+      <SEO path="/compare" />
 
       <section className="pt-[100px] pb-8 md:pb-10" style={{ background: "linear-gradient(135deg, #0a0f1c 0%, #111827 50%, #1a0a0a 100%)" }}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8 md:pt-12 md:pb-10">

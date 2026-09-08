@@ -57,12 +57,7 @@ export default function SwitchHarvestPage() {
   return (
     <div style={{ background: "#0a0f1c" }}>
       <MarketingNav />
-      <SEO
-        title="Switch from Harvest to CherryWorks Pro"
-        fullTitle="Switch from Harvest to CherryWorks Pro | More Than a Time Tracker"
-        description="Harvest tracks time. CherryWorks Pro replaces Harvest and the 3 other tools you use alongside it — invoicing, GL, payouts, and reporting in one platform."
-        path="/switch-from-harvest"
-      />
+      <SEO path="/switch-from-harvest" />
 
       <section className="pt-[100px] pb-8 md:pb-10" style={{ background: "var(--gradient-hero)" }}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8 md:pt-12 md:pb-10">

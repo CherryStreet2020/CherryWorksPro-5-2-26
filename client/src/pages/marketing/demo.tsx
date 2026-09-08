@@ -481,7 +481,7 @@ function ReportsSection() {
       <div ref={ref} className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 fade-in-section">
         <SectionBadge num="03" color="#3b82f6" />
         <h2 className="text-3xl md:text-4xl font-bold text-white mb-3" data-testid="demo-section-reports">Reports Suite</h2>
-        <p className="text-lg mb-10" style={{ color: "rgba(255,255,255,0.5)" }}>20+ built-in reports. Revenue, AR aging, utilization, profitability — export anything.</p>
+        <p className="text-lg mb-10" style={{ color: "rgba(255,255,255,0.5)" }}>19 built-in reports. Revenue, AR aging, utilization, profitability — export anything.</p>
         <MockupChrome url="cherryworkspro.com/reports">
           <div className="flex items-center justify-between mb-6">
             <div>
@@ -1768,12 +1768,7 @@ export default function DemoPage() {
   return (
     <div style={{ background: "#0a0f1c" }}>
       <MarketingNav />
-      <SEO
-        title="Product Tour"
-        fullTitle="Product Tour — CherryWorks Pro | See Every Feature in Action"
-        description="Explore 20 features in one scroll. Time tracking, invoicing, reports, approvals, payouts, GL, and more. No signup required."
-        path="/demo"
-      />
+      <SEO path="/demo" />
 
       <section className="pt-[100px] pb-8 md:pb-10" style={{ background: "linear-gradient(135deg, #0a0f1c 0%, #111827 50%, #1a0a0a 100%)" }}>
         <div ref={heroRef} className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-10 md:pt-12 text-center">

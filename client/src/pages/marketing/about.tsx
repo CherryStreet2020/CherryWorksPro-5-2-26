@@ -31,12 +31,7 @@ export default function AboutPage() {
   return (
     <div style={{ background: "#0a0f1c" }}>
       <MarketingNav />
-      <SEO
-        title="About"
-        fullTitle="About CherryWorks Pro — Built for Professional Services Firms"
-        description="Born inside a real consulting firm. CherryWorks Pro was built because we needed it — then we realized every firm like ours did too. 20+ years of industry experience."
-        path="/about"
-      />
+      <SEO path="/about" />
 
       <section className="pt-[100px] pb-8 md:pb-10" style={{ background: "var(--gradient-hero)" }}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8 md:pt-12 md:pb-10">
@@ -123,7 +118,7 @@ export default function AboutPage() {
                 icon: Award,
                 title: "Professional Grade",
                 tagline: "Enterprise features at startup prices",
-                desc: "SOC 2 compliance, bank-level encryption, full general ledger, multi-currency support, and 20+ enterprise reports. The features Fortune 500 firms expect, at prices any firm can afford.",
+                desc: "AES-256 encryption at rest and in transit, full general ledger, multi-currency support, and 19 built-in reports. The features Fortune 500 firms expect, at prices any firm can afford.",
                 color: "#eab308",
                 bg: "rgba(234,179,8,0.1)",
               },

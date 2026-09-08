@@ -18,9 +18,9 @@ function useFadeIn() {
 }
 
 const painPoints = [
-  { pain: "Paymo charges per user ($11.90+/user/month)", fix: "CherryWorks Pro includes unlimited users on every plan. A 15-person firm saves $2,142/year in seat fees alone." },
+  { pain: "Paymo charges per user ($15.90/user/month on Plus at list price)", fix: "CherryWorks Pro includes unlimited users on every plan. A 15-person firm saves $2,862/year in seat fees alone." },
   { pain: "No general ledger or accounting module", fix: "CherryWorks Pro includes a full chart of accounts, double-entry journal entries, trial balance report, and bank reconciliation." },
-  { pain: "No project profitability or utilization reports", fix: "CherryWorks Pro includes 25+ reports: project profitability, team utilization, AR aging, expense analytics, and more." },
+  { pain: "No project profitability or utilization reports", fix: "CherryWorks Pro includes 19 reports: project profitability, team utilization, AR aging, expense analytics, and more." },
   { pain: "No 1099 + W-2 + Corp-to-Corp support", fix: "Manage all three worker classifications in one platform. Smart onboarding adapts to each type. Payouts, tax exports, and compliance are built in." },
   { pain: "No payout tracking", fix: "Automatic payout creation when invoices are sent. Track ACH, Zelle, wire — and export 1099 totals at year-end." },
   { pain: "No import wizard for data migration", fix: "Upload CSVs from any platform. Preview with dry-run. Execute with one click. Full rollback if anything looks wrong." },
@@ -56,12 +56,7 @@ export default function SwitchPaymoPage() {
   return (
     <div style={{ background: "#0a0f1c" }}>
       <MarketingNav />
-      <SEO
-        title="Switch from Paymo to CherryWorks Pro"
-        fullTitle="Switch from Paymo to CherryWorks Pro | Scale Without Per-Seat Fees"
-        description="Paymo charges $11.90/user/month with no GL or team payouts. CherryWorks Pro: unlimited users, full accounting, and 1099 exports from $39/mo."
-        path="/switch-from-paymo"
-      />
+      <SEO path="/switch-from-paymo" />
 
       <section className="pt-[100px] pb-8 md:pb-10" style={{ background: "var(--gradient-hero)" }}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8 md:pt-12 md:pb-10">
@@ -171,8 +166,8 @@ export default function SwitchPaymoPage() {
             {[
               { icon: Clock, title: "Full general ledger", desc: "Chart of accounts, journal entries, trial balance, and bank reconciliation — built in." },
               { icon: Shield, title: "Team payouts", desc: "Auto-created payouts when invoices are sent. Track ACH, Zelle, wire. Export 1099 totals." },
-              { icon: Zap, title: "Unlimited users", desc: "No $11.90/user/month. Add your entire team on any plan. Scale without seat-fee anxiety." },
-              { icon: Upload, title: "25+ built-in reports", desc: "Project profitability, utilization, AR aging — the reporting Paymo doesn't offer." },
+              { icon: Zap, title: "Unlimited users", desc: "No $15.90/user/month. Add your entire team on any plan. Scale without seat-fee anxiety." },
+              { icon: Upload, title: "19 built-in reports", desc: "Project profitability, utilization, AR aging — the reporting Paymo doesn't offer." },
             ].map((b, i) => (
               <div key={i} className="rounded-xl p-6 flex items-start gap-4" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
                 <div className="w-10 h-10 rounded-lg flex-shrink-0 flex items-center justify-center" style={{ background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.2)" }}>

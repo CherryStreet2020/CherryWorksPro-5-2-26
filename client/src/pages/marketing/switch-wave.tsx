@@ -23,7 +23,7 @@ const painPoints = [
   { pain: "No team management features", fix: "CherryWorks Pro manages 1099, W-2, and Corp-to-Corp workers in one platform with smart onboarding that adapts to each worker type." },
   { pain: "No expense approval workflow", fix: "Full expense management with submit → approve → reimburse lifecycle. Receipt uploads, category tracking, and batch expense reports." },
   { pain: "No payout tracking", fix: "Automatic payout creation when invoices are sent. Track ACH, Zelle, wire — and export 1099 totals at year-end." },
-  { pain: "Limited reporting capabilities", fix: "CherryWorks Pro includes 20+ built-in reports: AR aging, team utilization, project profitability, expense analytics, and more." },
+  { pain: "Limited reporting capabilities", fix: "CherryWorks Pro includes 19 built-in reports: AR aging, team utilization, project profitability, expense analytics, and more." },
 ];
 
 const comparison = [
@@ -56,12 +56,7 @@ export default function SwitchWavePage() {
   return (
     <div style={{ background: "#0a0f1c" }}>
       <MarketingNav />
-      <SEO
-        title="Switch from Wave to CherryWorks Pro"
-        fullTitle="Switch from Wave to CherryWorks Pro | Time Tracking, Payouts & Reports"
-        description="Wave doesn't have time tracking. CherryWorks Pro has time tracking, project profitability, team payouts, expense approvals, and 25+ reports."
-        path="/switch-from-wave"
-      />
+      <SEO path="/switch-from-wave" />
 
       <section className="pt-[100px] pb-8 md:pb-10" style={{ background: "var(--gradient-hero)" }}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8 md:pt-12 md:pb-10">

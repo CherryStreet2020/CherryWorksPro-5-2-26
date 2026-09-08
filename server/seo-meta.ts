@@ -1,180 +1,75 @@
-const BASE_URL = "https://cherryworkspro.com";
+import type { Express, Request, Response } from "express";
+import {
+  BASE_URL, SITE_NAME, REPORT_COUNT, PUBLIC_ROUTES, classifyPath, normalizePath, sitemapPaths, type RouteClass,
+} from "@shared/seo-routes";
+
 const OG_IMAGE = `${BASE_URL}/og-preview.png`;
-const SITE_NAME = "CherryWorks Pro";
-
-interface SeoData {
-  title: string;
-  description: string;
-}
-
-const SEO_MAP: Record<string, SeoData> = {
-  "/": {
-    title: "CherryWorks Pro — The Professional Services Operating System",
-    description: "Professional services operating system with unlimited users. Time tracking, invoicing, GL, expenses, team payouts, and 25+ reports — starting at $39/mo. No per-user fees.",
-  },
-  "/features": {
-    title: "Features — Every Tool Purpose-Built for Professional Services | CherryWorks Pro",
-    description: "Time tracking, invoicing, expenses, payouts, GL, AI support, and multi-currency — core features on every plan. Advanced ops tools on Professional and above.",
-  },
-  "/pricing": {
-    title: "Pricing — CherryWorks Pro | Unlimited Users, Flat-Rate Plans from $39/mo",
-    description: "Simple flat-rate pricing with unlimited users. Starter $39, Professional $89, Business $159, Enterprise custom. No per-user fees, no hidden costs.",
-  },
-  "/compare": {
-    title: "Compare CherryWorks Pro vs FreshBooks, QuickBooks & More",
-    description: "Side-by-side comparison of CherryWorks Pro against FreshBooks, QuickBooks, Xero, Wave, Harvest, BigTime, Scoro, and Paymo.",
-  },
-  "/demo": {
-    title: "Request a Demo | CherryWorks Pro",
-    description: "See CherryWorks Pro in action. Schedule a personalized demo to learn how our platform can streamline your firm's operations.",
-  },
-  "/about": {
-    title: "About CherryWorks Pro — Built for Professional Services Firms",
-    description: "CherryWorks Pro is the operating system purpose-built for professional services firms. Learn about our mission and team.",
-  },
-  "/contact": {
-    title: "Contact Us | CherryWorks Pro",
-    description: "Get in touch with the CherryWorks Pro team. We're here to help with questions about pricing, features, integrations, and onboarding.",
-  },
-  "/signup": {
-    title: "Start Your Free Trial | CherryWorks Pro",
-    description: "Sign up for a 14-day free trial of CherryWorks Pro. No credit card required to start. Full access to all features.",
-  },
-  "/integrations": {
-    title: "Integrations — Connect CherryWorks Pro to Your Favorite Tools",
-    description: "Integrate CherryWorks Pro with Stripe, QuickBooks, Xero, Zapier, Slack, and more. Automate payouts, sync invoices, and streamline workflows.",
-  },
-  "/terms": {
-    title: "Terms of Service | CherryWorks Pro",
-    description: "Read the CherryWorks Pro terms of service. Understand your rights and responsibilities when using our platform.",
-  },
-  "/privacy": {
-    title: "Privacy Policy | CherryWorks Pro",
-    description: "CherryWorks Pro privacy policy. Learn how we collect, use, and protect your data.",
-  },
-  "/security": {
-    title: "Security — How CherryWorks Pro Protects Your Data",
-    description: "Enterprise-grade security for professional services firms. AES-256 encryption, MFA, audit logging, SOC 2 practices, and more.",
-  },
-  "/switch-from-quickbooks": {
-    title: "Switch from QuickBooks to CherryWorks Pro",
-    description: "Migrate from QuickBooks to CherryWorks Pro in minutes. Import your clients, invoices, chart of accounts, and historical data automatically.",
-  },
-  "/switch-from-freshbooks": {
-    title: "Switch from FreshBooks to CherryWorks Pro",
-    description: "Migrate from FreshBooks to CherryWorks Pro. Import invoices, clients, projects, and time entries with our guided wizard.",
-  },
-  "/switch-from-xero": {
-    title: "Switch from Xero to CherryWorks Pro",
-    description: "Migrate from Xero to CherryWorks Pro. Import your GL, invoices, and client data. Purpose-built for professional services.",
-  },
-  "/switch-from-wave": {
-    title: "Switch from Wave to CherryWorks Pro",
-    description: "Outgrown Wave? Migrate to CherryWorks Pro for unlimited users, team payouts, GL, and advanced reporting.",
-  },
-  "/switch-from-harvest": {
-    title: "Switch from Harvest to CherryWorks Pro",
-    description: "Migrate from Harvest to CherryWorks Pro. Get invoicing, GL, team payouts, and 25+ reports alongside time tracking.",
-  },
-  "/switch-from-bigtime": {
-    title: "Switch from BigTime to CherryWorks Pro",
-    description: "Migrate from BigTime to CherryWorks Pro. Flat-rate pricing with unlimited users, no per-seat fees, and a modern interface.",
-  },
-  "/switch-from-scoro": {
-    title: "Switch from Scoro to CherryWorks Pro",
-    description: "Migrate from Scoro to CherryWorks Pro. Purpose-built for professional services firms with time tracking, invoicing, GL, and payouts.",
-  },
-  "/switch-from-paymo": {
-    title: "Switch from Paymo to CherryWorks Pro",
-    description: "Migrate from Paymo to CherryWorks Pro. Get a complete professional services platform with invoicing, GL, payouts, and more.",
-  },
-  "/login": {
-    title: "Log In | CherryWorks Pro",
-    description: "Log in to your CherryWorks Pro account to manage time tracking, invoicing, expenses, and more.",
-  },
-};
-
-const DEFAULT_SEO: SeoData = {
-  title: "CherryWorks Pro",
-  description: "The professional services operating system. Time tracking, invoicing, GL, expenses, team payouts, and 25+ reports — starting at $39/mo.",
-};
-
-const MARKETING_PATHS = new Set(Object.keys(SEO_MAP));
 
 const ORGANIZATION_SCHEMA = {
   "@context": "https://schema.org",
   "@type": "Organization",
-  "name": "CherryWorks Pro",
+  "name": SITE_NAME,
   "url": BASE_URL,
   "logo": OG_IMAGE,
-  "description": "Professional services automation software for agencies, consultancies, and service firms",
+  "description": "Professional services platform for agencies, consultancies and service firms",
   "foundingDate": "2024",
-  "numberOfEmployees": { "@type": "QuantitativeValue", "value": "10-50" },
   "address": { "@type": "PostalAddress", "addressLocality": "New York", "addressRegion": "NY", "addressCountry": "US" },
-  "contactPoint": {
-    "@type": "ContactPoint",
-    "contactType": "customer support",
-    "url": `${BASE_URL}/contact`,
-  },
+  "contactPoint": { "@type": "ContactPoint", "contactType": "customer support", "url": `${BASE_URL}/contact` },
 };
 
+// Only priced offers: an Enterprise "price: 0" told Google the top tier was free.
 const SOFTWARE_APPLICATION_SCHEMA = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
-  "name": "CherryWorks Pro",
+  "name": SITE_NAME,
   "applicationCategory": "BusinessApplication",
   "operatingSystem": "Web-based",
-  "description": "Professional services operating system with time tracking, invoicing, GL, expenses, and team payouts",
+  "description": "Professional services operating system with time tracking, invoicing, general ledger, expenses, team payouts and client support",
   "offers": [
     { "@type": "Offer", "name": "Starter", "price": "39", "priceCurrency": "USD", "billingDuration": "P1M" },
     { "@type": "Offer", "name": "Professional", "price": "89", "priceCurrency": "USD", "billingDuration": "P1M" },
     { "@type": "Offer", "name": "Business", "price": "159", "priceCurrency": "USD", "billingDuration": "P1M" },
-    { "@type": "Offer", "name": "Enterprise", "price": "0", "priceCurrency": "USD", "billingDuration": "P1M", "description": "Custom pricing" },
   ],
-  "publisher": {
-    "@type": "Organization",
-    "name": "CherryWorks Pro",
-    "url": BASE_URL,
-  },
+  "publisher": { "@type": "Organization", "name": SITE_NAME, "url": BASE_URL },
   "featureList": [
-    "Time Tracking",
-    "Timesheet Approval Workflow",
-    "Invoicing with Multi-Currency",
-    "Expense Management with Approvals",
-    "Team Payout Tracking",
-    "25+ Built-in Reports",
-    "Client Portal",
-    "Import Wizard for 8 Platforms",
-    "1099 Export",
-    "Project Profitability Analysis",
-    "Enterprise Audit Logging",
-    "AI Receipt OCR",
-    "GL Journal Entries",
-    "Recurring Invoices",
-    "Stripe Financial Connections",
+    "Time Tracking", "Timesheet Approval Workflow", "Invoicing with Multi-Currency", "Expense Management with Approvals",
+    "Team Payout Tracking", `${REPORT_COUNT} Built-in Reports`, "Client Portal", "Client Support Cases", "Import Wizard for 8 Platforms",
+    "1099 Export", "Project Profitability Analysis", "Enterprise Audit Logging", "AI Receipt OCR", "GL Journal Entries",
+    "Recurring Invoices", "Stripe Financial Connections",
   ],
 };
 
-const PATHS_WITH_SOFTWARE_SCHEMA = new Set(["/", "/pricing"]);
+const PATHS_WITH_SOFTWARE_SCHEMA = new Set(["/", "/pricing", "/features"]);
 
 function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return str.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-export function getMetaTagsForPath(path: string): string {
-  const cleanPath = path.split("?")[0].split("#")[0].replace(/\/+$/, "") || "/";
-  const seo = SEO_MAP[cleanPath] || DEFAULT_SEO;
+const NOINDEX = `<meta name="robots" content="noindex,nofollow" />`;
+
+/**
+ * Head tags for a path. Public routes get the full title/description/canonical/
+ * Open Graph/JSON-LD set from the shared map; everything else (the signed-in app,
+ * token pages, unknown paths) gets a bare title and noindex so the app shell can
+ * never be indexed as a duplicate of the home page.
+ */
+export function getMetaTagsForPath(rawPath: string, route: RouteClass = classifyPath(rawPath)): string {
+  if (route.kind !== "public") {
+    return [`<title>${SITE_NAME}</title>`, NOINDEX].join("\n    ");
+  }
+  const { path, seo } = route;
   const t = escapeHtml(seo.title);
   const d = escapeHtml(seo.description);
-  const url = `${BASE_URL}${cleanPath === "/" ? "" : cleanPath}`;
-
+  const url = `${BASE_URL}${path === "/" ? "" : path}`;
   const tags = [
     `<title>${t}</title>`,
     `<meta name="description" content="${d}" />`,
+  ];
+  if (seo.noindex) {
+    tags.push(NOINDEX);
+    return tags.join("\n    ");
+  }
+  tags.push(
     `<link rel="canonical" href="${url}" />`,
     `<meta property="og:title" content="${t}" />`,
     `<meta property="og:description" content="${d}" />`,
@@ -186,15 +81,71 @@ export function getMetaTagsForPath(path: string): string {
     `<meta name="twitter:title" content="${t}" />`,
     `<meta name="twitter:description" content="${d}" />`,
     `<meta name="twitter:image" content="${OG_IMAGE}" />`,
-  ];
-
-  if (MARKETING_PATHS.has(cleanPath)) {
-    tags.push(`<script type="application/ld+json">${JSON.stringify(ORGANIZATION_SCHEMA)}</script>`);
-  }
-
-  if (PATHS_WITH_SOFTWARE_SCHEMA.has(cleanPath)) {
+    `<script type="application/ld+json">${JSON.stringify(ORGANIZATION_SCHEMA)}</script>`,
+  );
+  if (PATHS_WITH_SOFTWARE_SCHEMA.has(path)) {
     tags.push(`<script type="application/ld+json">${JSON.stringify(SOFTWARE_APPLICATION_SCHEMA)}</script>`);
   }
-
   return tags.join("\n    ");
 }
+
+/**
+ * Decide the HTTP response for a non-API, non-asset request, shared by the
+ * production static server and the Vite dev server so both behave alike:
+ * a 301 for retired paths, a real 404 for paths nothing owns (the shell is
+ * still sent so the client renders its not-found page), 200 otherwise.
+ */
+export function shellResponse(rawPath: string): { status: 200 | 404; head: string } | { redirect: string } {
+  const route = classifyPath(rawPath);
+  if (route.kind === "redirect") return { redirect: route.to };
+  return { status: route.kind === "unknown" ? 404 : 200, head: getMetaTagsForPath(rawPath, route) };
+}
+
+const NO_STORE = "no-cache, no-store, must-revalidate";
+
+/** Send the SPA shell (or a redirect) for a request, with the head tags for its path. */
+export function sendShell(req: Request, res: Response, rawHtml: string): void {
+  const decision = shellResponse(normalizePath(req.originalUrl));
+  if ("redirect" in decision) {
+    res.redirect(301, decision.redirect);
+    return;
+  }
+  const html = rawHtml.replace("</head>", `    ${decision.head}\n  </head>`);
+  res.status(decision.status).set({ "Content-Type": "text/html", "Cache-Control": NO_STORE }).end(html);
+}
+
+/** The one sitemap and the one robots.txt, both derived from the shared route map. */
+export function registerSeoRoutes(app: Express): void {
+  app.get("/sitemap.xml", (_req, res) => {
+    const urls = sitemapPaths()
+      .map((p) => `  <url><loc>${BASE_URL}${p === "/" ? "/" : p}</loc></url>`)
+      .join("\n");
+    res
+      .status(200)
+      .set({ "Content-Type": "application/xml", "Cache-Control": "public, max-age=3600" })
+      .send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`);
+  });
+  app.get("/robots.txt", (_req, res) => {
+    res
+      .status(200)
+      .set({ "Content-Type": "text/plain", "Cache-Control": "public, max-age=3600" })
+      .send(
+        [
+          "User-agent: *",
+          "Allow: /",
+          "Disallow: /api/",
+          "Disallow: /portal/",
+          "Disallow: /i/",
+          "Disallow: /e/",
+          "Disallow: /verify-email",
+          "Disallow: /reset-password",
+          "Disallow: /dashboard",
+          "Disallow: /admin/",
+          `Sitemap: ${BASE_URL}/sitemap.xml`,
+          "",
+        ].join("\n"),
+      );
+  });
+}
+
+export { PUBLIC_ROUTES };

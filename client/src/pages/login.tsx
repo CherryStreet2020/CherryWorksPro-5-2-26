@@ -224,7 +224,7 @@ export default function LoginPage() {
       className="min-h-screen flex items-center justify-center p-4"
       style={{ background: "var(--gradient-hero)" }}
     >
-      <SEO title="Log In" fullTitle="Log In | CherryWorks Pro" description="Sign in to your CherryWorks Pro account." path="/login" />
+      <SEO path="/login" />
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <Link href="/">

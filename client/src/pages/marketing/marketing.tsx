@@ -794,12 +794,7 @@ export default function MarketingLandingPage() {
   return (
     <div style={{ background: "#0a0f1c" }}>
       <MarketingNav />
-      <SEO
-        title="Marketing Hub"
-        fullTitle="Marketing Hub — CRM, Campaigns & Sequences for Professional Services Firms | CherryWorks Pro"
-        description="Marketing Hub adds a full prospect-to-client CRM to CherryWorks Pro: contacts, companies, tags, segments, campaigns, sequences, activity timeline, and CSV import — with strict Prospect / Client Separation. Included in the Business plan."
-        path="/marketing"
-      />
+      <SEO path="/marketing" />
       <FAQStructuredData faqs={faqs} />
 
       {/* Hero */}

@@ -54,12 +54,7 @@ export default function SwitchBigTimePage() {
   return (
     <div style={{ background: "#0a0f1c" }}>
       <MarketingNav />
-      <SEO
-        title="Switch from BigTime to CherryWorks Pro"
-        fullTitle="Switch from BigTime to CherryWorks Pro | Save $4,800+/Year on Seat Fees"
-        description="BigTime charges $20+/user/month. CherryWorks Pro: unlimited users, full GL, and 1099 exports — everything BigTime does plus accounting, at a fraction of the cost."
-        path="/switch-from-bigtime"
-      />
+      <SEO path="/switch-from-bigtime" />
 
       <section className="pt-[100px] pb-8 md:pb-10" style={{ background: "var(--gradient-hero)" }}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8 md:pt-12 md:pb-10">
@@ -170,7 +165,7 @@ export default function SwitchBigTimePage() {
               { icon: Zap, title: "Unlimited users", desc: "No $20+/user/month. Add your entire team on any plan. No per-seat fees, ever." },
               { icon: Clock, title: "Full general ledger", desc: "Chart of accounts, journal entries, trial balance, and bank reconciliation — no separate accounting tool." },
               { icon: Shield, title: "Team payouts", desc: "Auto-created payouts when invoices are sent. Track ACH, Zelle, wire. Export 1099 totals." },
-              { icon: Upload, title: "25+ built-in reports", desc: "Project profitability, team utilization, AR aging, and expense analytics — all included with the GL." },
+              { icon: Upload, title: "19 built-in reports", desc: "Project profitability, team utilization, AR aging, and expense analytics — all included with the GL." },
             ].map((b, i) => (
               <div key={i} className="rounded-xl p-6 flex items-start gap-4" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
                 <div className="w-10 h-10 rounded-lg flex-shrink-0 flex items-center justify-center" style={{ background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.2)" }}>

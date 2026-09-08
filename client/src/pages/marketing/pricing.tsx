@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { PLAN_PRICING, annualPerMonth } from "@shared/plan-pricing";
 import { Link } from "wouter";
 import { CheckCircle, X, ArrowRight, Building2, Shield, ChevronDown } from "lucide-react";
-import { SEO, SoftwareApplicationStructuredData, FAQStructuredData } from "@/components/seo";
+import { SEO, FAQStructuredData } from "@/components/seo";
 import { MarketingNav } from "@/components/marketing/marketing-nav";
 import { MarketingFooter } from "@/components/marketing/marketing-footer";
 
@@ -151,13 +151,7 @@ export default function PricingPage() {
   return (
     <div style={{ background: "#0a0f1c" }}>
       <MarketingNav />
-      <SEO
-        title="Pricing"
-        fullTitle="Pricing — CherryWorks Pro | Unlimited Users, Flat-Rate Plans from $39/mo"
-        description="Transparent pricing. Starter $39, Professional $89, Business $159. Unlimited team members on every plan. Zero per-user fees. 14-day free trial."
-        path="/pricing"
-      />
-      <SoftwareApplicationStructuredData />
+      <SEO path="/pricing" />
       <FAQStructuredData faqs={faqs} />
 
       <section className="pt-[100px] pb-8 md:pb-10" style={{ background: "linear-gradient(135deg, #0a0f1c 0%, #111827 50%, #1a0a0a 100%)" }}>

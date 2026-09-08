@@ -55,12 +55,7 @@ export default function SwitchScoroPage() {
   return (
     <div style={{ background: "#0a0f1c" }}>
       <MarketingNav />
-      <SEO
-        title="Switch from Scoro to CherryWorks Pro"
-        fullTitle="Switch from Scoro to CherryWorks Pro | No Feature Bloat, No Seat Fees"
-        description="Scoro bundles 50 features you'll never use. CherryWorks Pro focuses on what runs your firm — time, invoicing, payouts, GL, and reports. Unlimited users from $39/mo."
-        path="/switch-from-scoro"
-      />
+      <SEO path="/switch-from-scoro" />
 
       <section className="pt-[100px] pb-8 md:pb-10" style={{ background: "var(--gradient-hero)" }}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8 md:pt-12 md:pb-10">
@@ -171,7 +166,7 @@ export default function SwitchScoroPage() {
               { icon: Clock, title: "Full general ledger", desc: "Chart of accounts, journal entries, trial balance, and bank reconciliation — built in." },
               { icon: Shield, title: "1099-ready exports", desc: "Team payouts, worker classifications, and year-end 1099 exports in one click." },
               { icon: Zap, title: "Unlimited users", desc: "No $28/user/month. Add your entire team on any plan. No per-seat fees, ever." },
-              { icon: Upload, title: "25+ built-in reports", desc: "Project profitability, team utilization, AR aging, and expense analytics — all included, no add-on needed." },
+              { icon: Upload, title: "19 built-in reports", desc: "Project profitability, team utilization, AR aging, and expense analytics — all included, no add-on needed." },
             ].map((b, i) => (
               <div key={i} className="rounded-xl p-6 flex items-start gap-4" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
                 <div className="w-10 h-10 rounded-lg flex-shrink-0 flex items-center justify-center" style={{ background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.2)" }}>
