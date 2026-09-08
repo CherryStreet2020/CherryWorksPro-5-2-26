@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import {
-  BASE_URL, SITE_NAME, REPORT_COUNT, PUBLIC_ROUTES, classifyPath, normalizePath, sitemapPaths, type RouteClass,
+  BASE_URL, SITE_NAME, REPORT_COUNT, PUBLIC_ROUTES, classifyPath, sitemapPaths, type RouteClass,
 } from "@shared/seo-routes";
 
 const OG_IMAGE = `${BASE_URL}/og-preview.png`;
@@ -100,17 +100,22 @@ export function getMetaTagsForPath(rawPath: string, route: RouteClass = classify
  * a 301 for retired paths, a real 404 for paths nothing owns (the shell is
  * still sent so the client renders its not-found page), 200 otherwise.
  */
-export function shellResponse(rawPath: string): { status: 200 | 404; head: string } | { redirect: string } {
-  const route = classifyPath(rawPath);
-  if (route.kind === "redirect") return { redirect: route.to };
-  return { status: route.kind === "unknown" ? 404 : 200, head: getMetaTagsForPath(rawPath, route) };
+export function shellResponse(rawUrl: string): { status: 200 | 404; head: string } | { redirect: string } {
+  const route = classifyPath(rawUrl);
+  if (route.kind === "redirect") {
+    // Keep the query string (UTM tags, plan deep-links) across the redirect.
+    const q = rawUrl.indexOf("?");
+    const query = q === -1 ? "" : rawUrl.slice(q).split("#")[0];
+    return { redirect: route.to + query };
+  }
+  return { status: route.kind === "unknown" ? 404 : 200, head: getMetaTagsForPath(rawUrl, route) };
 }
 
 const NO_STORE = "no-cache, no-store, must-revalidate";
 
 /** Send the SPA shell (or a redirect) for a request, with the head tags for its path. */
 export function sendShell(req: Request, res: Response, rawHtml: string): void {
-  const decision = shellResponse(normalizePath(req.originalUrl));
+  const decision = shellResponse(req.originalUrl);
   if ("redirect" in decision) {
     res.redirect(301, decision.redirect);
     return;

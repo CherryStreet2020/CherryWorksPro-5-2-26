@@ -23,6 +23,9 @@ describe("public site HTTP contract", () => {
     const tour = await get("/tour");
     expect(tour.status).toBe(301);
     expect(tour.headers.get("location")).toBe("/demo");
+    const utm = await get("/tour?utm_source=newsletter");
+    expect(utm.status).toBe(301);
+    expect(utm.headers.get("location")).toBe("/demo?utm_source=newsletter");
     const blog = await get("/blog");
     expect(blog.status).toBe(301);
     expect(blog.headers.get("location")).toBe("/");

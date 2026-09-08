@@ -91,5 +91,8 @@ describe("server/seo-meta", () => {
     expect(shellResponse("/totally-bogus")).toMatchObject({ status: 404 });
     expect(shellResponse("/blog")).toEqual({ redirect: "/" });
     expect(shellResponse("/tour/")).toEqual({ redirect: "/demo" });
+    // the query string survives a redirect (UTM attribution, plan deep-links)
+    expect(shellResponse("/tour?utm_source=newsletter&utm_campaign=q3")).toEqual({ redirect: "/demo?utm_source=newsletter&utm_campaign=q3" });
+    expect(shellResponse("/blog?x=1#section")).toEqual({ redirect: "/?x=1" });
   });
 });
