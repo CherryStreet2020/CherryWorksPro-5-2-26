@@ -88,7 +88,7 @@ export function PayoutStatementDialog({ teamMemberId, open, onOpenChange }: { te
                 <h3 className="text-sm font-bold" style={{ color: "var(--lux-text)" }}>Paid — what each payout covered</h3>
                 <p className="text-sm" style={{ color: "var(--lux-text-muted)" }}>{data.payouts.length} payout(s) · completed total <span className="font-bold" style={{ color: "var(--lux-text)" }} data-testid="statement-paid-total">{formatMoney(data.paidTotal, data.currency)}</span></p>
               </div>
-              {data.payouts.length === 0 && <p className="text-sm py-3" style={{ color: "var(--lux-text-muted)" }}>No payouts recorded yet.</p>}
+              {data.payouts.length === 0 && <p className="text-sm py-3" style={{ color: "var(--lux-text-muted)" }}>No payouts yet.</p>}
               <div className="space-y-3">
                 {data.payouts.map((p) => (
                   <details key={p.id} className="rounded-lg p-3" style={{ background: "var(--lux-bg)", border: "1px solid var(--lux-border)" }} data-testid={`statement-payout-${p.id}`}>
@@ -111,7 +111,7 @@ export function PayoutStatementDialog({ teamMemberId, open, onOpenChange }: { te
                 ))}
               </div>
             </section>
-            <p className="text-[11px]" style={{ color: "var(--lux-text-muted)" }}>Outstanding values use the same rate and rounding as the Record Payment dialog and the member's earnings view. Paid lines show the amount recorded when the payout was booked.</p>
+            <p className="text-[11px]" style={{ color: "var(--lux-text-muted)" }}>Outstanding values use the same rate and rounding as the Record Payment dialog and the member's earnings view. Paid lines show the amount recorded when the payout was booked. Voided payouts are not listed.</p>
           </div>
         )}
       </DialogContent>
