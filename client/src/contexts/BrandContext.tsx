@@ -11,7 +11,8 @@
  *  - persists activeBrandId to the same localStorage key on change
  *  - exposes { activeBrand, brands, setActiveBrand, isLoading } via context
  */
-import { createContext, useEffect, useState, useMemo, useCallback } from "react";
+import { createContext, useEffect, useState, useMemo, useCallback, startTransition } from "react";
+import { useAuthOptional } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
 import { isMarketingOsEnabled } from "@/lib/featureFlags";
 import type { Brand } from "@shared/schema";
@@ -60,15 +61,21 @@ export function BrandProvider({ children }: { children: React.ReactNode }) {
 
 function BrandProviderInner({ children }: { children: React.ReactNode }) {
   const [activeBrandId, setActiveBrandId] = useState<string | null>(null);
+  const auth = useAuthOptional();
+  // Anonymous visitors have no brands: the query stays idle so this provider's
+  // context never changes under a pre-rendered public page while it is still
+  // hydrating (a sync context change there discards the server HTML — React #421).
+  const signedIn = !!auth?.user;
 
-  // Hydrate from localStorage on mount (client-only).
+  // Hydrate from localStorage on mount (client-only), as a transition for the same reason.
   useEffect(() => {
     const stored = readStoredBrandId();
-    if (stored) setActiveBrandId(stored);
+    if (stored) startTransition(() => setActiveBrandId(stored));
   }, []);
 
   const { data: brands = [], isLoading } = useQuery<Brand[]>({
     queryKey: ["/api/brands"],
+    enabled: signedIn,
   });
 
   // Auto-select the only brand when the org has exactly one. This is a UX
@@ -76,7 +83,7 @@ function BrandProviderInner({ children }: { children: React.ReactNode }) {
   // behavior the e2e smoke depends on. Multi-brand orgs still require
   // explicit selection.
   useEffect(() => {
-    if (isLoading) return;
+    if (!signedIn || isLoading) return;
     // Priority 1: keep stored id only if it still exists in the loaded list.
     if (activeBrandId && brands.some((b) => b.id === activeBrandId)) return;
     // Priority 1 (cont.): stored id is stale — clear it.
@@ -92,7 +99,7 @@ function BrandProviderInner({ children }: { children: React.ReactNode }) {
     }
     // Priority 3 (>1 brands, no stored match) and Priority 4 (0 brands):
     // leave activeBrandId null — user must pick (or there's nothing to pick).
-  }, [brands, isLoading, activeBrandId]);
+  }, [brands, isLoading, activeBrandId, signedIn]);
 
   const activeBrand = useMemo<Brand | null>(() => {
     if (!activeBrandId) return null;

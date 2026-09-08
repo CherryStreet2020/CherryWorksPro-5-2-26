@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useFadeIn } from "@/hooks/use-fade-in";
 import { Link } from "wouter";
 import {
   Clock, FileText, DollarSign, BarChart3, Users, Shield, CheckCircle, ArrowRight,
@@ -12,17 +13,6 @@ import { SEO } from "@/components/seo";
 import { MarketingNav } from "@/components/marketing/marketing-nav";
 import { MarketingFooter } from "@/components/marketing/marketing-footer";
 
-function useFadeIn() {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { el.classList.add("fade-in-visible"); obs.disconnect(); } }, { threshold: 0.12 });
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-  return ref;
-}
 
 function MockupShell({ url, activeNav, children }: { url: string; activeNav: string; children: React.ReactNode }) {
   const navItems = ["Dashboard","Clients","Projects","Time","Invoices","Payments","Payouts","Reports","Expenses","Team","Settings"];

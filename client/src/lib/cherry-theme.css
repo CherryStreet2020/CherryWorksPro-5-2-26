@@ -261,10 +261,17 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Content is visible by default so the pre-rendered HTML reads without JavaScript
+   and before the page chunk loads. The reveal animation only applies once the client
+   marks <html> as js-ready (useFadeIn does that after making above-the-fold sections
+   visible, all within one effect flush, so nothing flickers). */
 .fade-in-section {
+  transition: opacity 0.7s ease-out, transform 0.7s ease-out;
+}
+
+html.js-ready .fade-in-section:not(.fade-in-visible) {
   opacity: 0;
   transform: translateY(30px);
-  transition: opacity 0.7s ease-out, transform 0.7s ease-out;
 }
 
 .fade-in-visible {
@@ -273,9 +280,12 @@ body {
 }
 
 .fade-in-section .fade-child {
+  transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+}
+
+html.js-ready .fade-in-section:not(.fade-in-visible) .fade-child {
   opacity: 0;
   transform: translateY(20px);
-  transition: opacity 0.6s ease-out, transform 0.6s ease-out;
 }
 
 .fade-in-visible .fade-child {
