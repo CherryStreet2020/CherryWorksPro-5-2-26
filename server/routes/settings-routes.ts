@@ -586,6 +586,7 @@ app.post("/api/public/contact", apiLimiter, async (req, res) => {
 // team is notified through the platform mailbox. Nothing is acknowledged unless
 // the prospect row exists. Prospects never touch billing clients (Prospect / Client
 // separation).
+const SHARED_MAIL_DOMAINS = new Set(["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "msn.com", "yahoo.com", "ymail.com", "icloud.com", "me.com", "mac.com", "aol.com", "proton.me", "protonmail.com", "pm.me", "gmx.com", "gmx.net", "zoho.com", "mail.com", "fastmail.com", "hey.com", "yandex.com"]);
 app.post("/api/public/demo-request", apiLimiter, async (req, res) => {
   try {
     const { name, email, company, teamSize, message } = req.body ?? {};
@@ -601,16 +602,26 @@ app.post("/api/public/demo-request", apiLimiter, async (req, res) => {
       console.error("[demo-request] PLATFORM_MAILBOX_ORG_SLUG is not set or names no workspace — request NOT recorded");
       return res.status(503).json({ message: "Demo requests are not available right now. Email info@cherrystconsulting.com and we will reply within one business day." });
     }
+    // Marketing Hub lists contacts per brand: records without the operator's brand
+    // would be invisible in the team's workflow.
+    const brands = await storage.listBrandsByOrg(operator.id);
+    const brandId = (brands.find((b) => b.active) ?? brands[0])?.id ?? null;
     const [firstName, ...rest] = n.split(/\s+/);
     const lastName = rest.join(" ") || null;
-    const domain = e.split("@")[1] ?? null;
-    const companyRow = (await storage.findMarketingCompanyByName(operator.id, c))
-      ?? (await storage.createMarketingCompany({ orgId: operator.id, name: c, domain } as InsertMarketingCompany));
+    // A business domain identifies the company (unique per workspace); a shared
+    // mail provider's domain identifies nobody, so those companies carry no domain.
+    const rawDomain = e.split("@")[1] ?? "";
+    const domain = SHARED_MAIL_DOMAINS.has(rawDomain) ? null : rawDomain || null;
+    const companyRow = (domain ? await storage.findMarketingCompanyByDomain(operator.id, domain) : undefined)
+      ?? (await storage.findMarketingCompanyByName(operator.id, c))
+      ?? (await storage.createMarketingCompany({ orgId: operator.id, brandId, name: c, domain } as InsertMarketingCompany));
     const stamp = new Date().toISOString().slice(0, 10);
     const note = `[${stamp}] Demo request from the website — team size ${t || "-"}${m ? `:\n${m}` : ""}`;
-    const existing = await storage.findProspectByEmail(operator.id, e);
+    const existing = await storage.findProspectByEmail(operator.id, e); // includes a soft-deleted row (unique email)
     const prospect = existing
       ? await storage.updateProspect(existing.id, operator.id, {
+          deletedAt: null, // a deleted prospect who asks again is restored
+          brandId: existing.brandId ?? brandId,
           companyId: existing.companyId ?? companyRow.id,
           firstName: existing.firstName ?? firstName,
           lastName: existing.lastName ?? lastName,
@@ -619,6 +630,7 @@ app.post("/api/public/demo-request", apiLimiter, async (req, res) => {
         })
       : await storage.createProspect({
           orgId: operator.id,
+          brandId,
           companyId: companyRow.id,
           firstName,
           lastName,
@@ -630,6 +642,7 @@ app.post("/api/public/demo-request", apiLimiter, async (req, res) => {
     if (!prospect) throw new Error("prospect row missing after write");
     await storage.createActivity({
       orgId: operator.id,
+      brandId,
       prospectId: prospect.id,
       type: "demo_request",
       payload: { name: n, email: e, company: c, teamSize: t || null, message: m || null, source: "website" },
@@ -660,7 +673,7 @@ app.post("/api/public/demo-request", apiLimiter, async (req, res) => {
       console.error(`[demo-request] prospect ${prospect.id} recorded; notification failed:`, emailErr.message);
     }
     console.log(`[demo-request] ${existing ? "updated" : "created"} prospect ${prospect.id} ${maskEmail(e)} ${c} ${t}`);
-    return res.json({ ok: true, updated: !!existing });
+    return res.json({ ok: true }); // no hint of whether the address was already known
   } catch (err: any) {
     console.error("[demo-request] failed:", err?.message);
     return res.status(502).json({ message: "We could not record your request. Email info@cherrystconsulting.com and we will reply within one business day." });

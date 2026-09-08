@@ -20,6 +20,9 @@ describe("POST /api/public/demo-request", () => {
     // a second request from the same address updates the prospect instead of failing on the unique email
     const again = await post({ name: "Ada Lovelace", email: "ada@example.com", company: "Example Consulting", teamSize: "6-15", message: "Following up." });
     expect(again.status).toBe(200);
-    expect((await again.json()).updated).toBe(true);
+    expect((await again.json()).ok).toBe(true);
+    // shared mail providers never become a company "domain"
+    const gmail = await post({ name: "Bo", email: `bo-${Date.now()}@gmail.com`, company: "Bo Consulting", teamSize: "1-5" });
+    expect(gmail.status).toBe(200);
   });
 });
