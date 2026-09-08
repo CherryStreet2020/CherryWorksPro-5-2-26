@@ -101,6 +101,7 @@ export async function setup(): Promise<void> {
   console.log(`[vitest globalSetup] Spawning test server on :${TEST_PORT} (NODE_ENV=test)`);
   child = spawn("npx", ["tsx", "server/index.ts"], {
     env: {
+      PLATFORM_MAILBOX_ORG_SLUG: "cherry-street-consulting", // the operator workspace the recovery migration creates; demo requests become its cases
       ...process.env,
       NODE_ENV: "test",
       VITEST: "true",

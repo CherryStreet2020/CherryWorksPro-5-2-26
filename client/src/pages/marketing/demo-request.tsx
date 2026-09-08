@@ -41,7 +41,7 @@ export default function DemoRequestPage() {
               Tell us how your firm bills and where the time goes today. We&rsquo;ll walk the same flow in CherryWorks Pro — from a client email to the invoice, the ledger and the payout — on a screen share.
             </p>
             <ul className="mt-8 space-y-3">
-              {["Your request lands in our own Support Cases — you will get a case key and a reply within one business day", "Prefer to look around first? The self-guided tour shows every screen", "Already decided? The free trial has everything on"].map((t) => (
+              {["Your request goes straight into our own Marketing Hub — a person replies within one business day", "Prefer to look around first? The self-guided tour shows every screen", "Already decided? The free trial has everything on"].map((t) => (
                 <li key={t} className="flex gap-3 text-sm" style={{ color: "rgba(255,255,255,0.6)" }}><CheckCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "#22c55e" }} />{t}</li>
               ))}
             </ul>
@@ -55,7 +55,7 @@ export default function DemoRequestPage() {
               <div className="text-center py-10" data-testid="demo-sent">
                 <CheckCircle className="w-10 h-10 mx-auto mb-4" style={{ color: "#22c55e" }} />
                 <h2 className="text-2xl font-bold text-white">Request received</h2>
-                <p className="mt-3 text-base" style={{ color: "rgba(255,255,255,0.6)" }}>It is a case in our support desk now. Expect a reply from a person within one business day.</p>
+                <p className="mt-3 text-base" style={{ color: "rgba(255,255,255,0.6)" }}>A person will reply within one business day.</p>
               </div>
             ) : (
               <form onSubmit={submit} className="space-y-4" data-testid="demo-form">

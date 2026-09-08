@@ -8568,6 +8568,25 @@ export class DatabaseStorage {
       .limit(500);
   }
 
+  /** Live (not soft-deleted) prospect with this email in the org — email is unique per org. */
+  async findProspectByEmail(orgId: string, email: string): Promise<MarketingProspect | undefined> {
+    const [row] = await db
+      .select()
+      .from(marketingProspects)
+      .where(and(eq(marketingProspects.orgId, orgId), eq(marketingProspects.email, email), isNull(marketingProspects.deletedAt)))
+      .limit(1);
+    return row;
+  }
+
+  async findMarketingCompanyByName(orgId: string, name: string): Promise<MarketingCompany | undefined> {
+    const [row] = await db
+      .select()
+      .from(marketingCompanies)
+      .where(and(eq(marketingCompanies.orgId, orgId), sql`lower(${marketingCompanies.name}) = lower(${name})`))
+      .limit(1);
+    return row;
+  }
+
   async createProspect(data: InsertMarketingProspect): Promise<MarketingProspect> {
     const [row] = await db.insert(marketingProspects).values(data).returning();
     // Sprint 2o.0 5b1c.1 (Blocker A): brand-stats contactCount now reflects

@@ -1,7 +1,6 @@
 /**
- * The public demo-request form posts here; the request is emailed to the operator
- * workspace's support inbound address so the inbox reader turns it into a Support
- * Case. Validation and the success contract are pinned; the email leg is best-effort
+ * The public demo-request form posts here; the request is recorded in the operator
+ * workspace's Marketing Hub (prospect + company + activity) and the team notified. Validation and the success contract are pinned; the email leg is best-effort
  * (the route answers ok with a warning when no transport is configured).
  */
 import { describe, it, expect } from "vitest";
@@ -18,5 +17,9 @@ describe("POST /api/public/demo-request", () => {
     const r = await post({ name: "Ada", email: "ada@example.com", company: "Example Consulting", teamSize: "6-15", message: "We use Harvest + Jira." });
     expect(r.status).toBe(200);
     expect((await r.json()).ok).toBe(true);
+    // a second request from the same address updates the prospect instead of failing on the unique email
+    const again = await post({ name: "Ada Lovelace", email: "ada@example.com", company: "Example Consulting", teamSize: "6-15", message: "Following up." });
+    expect(again.status).toBe(200);
+    expect((await again.json()).updated).toBe(true);
   });
 });

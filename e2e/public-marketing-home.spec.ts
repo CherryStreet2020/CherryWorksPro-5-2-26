@@ -30,9 +30,9 @@ test.describe("Public marketing home", () => {
     await page.goto("/");
     await expect(page.locator('[data-testid="marketing-nav"]')).toBeVisible({ timeout: 15000 });
     await expect(page.locator('[data-testid="announcement-bar"]')).toBeVisible();
-    await expect(page.locator('[data-testid="hero-cta-start-free"]').first()).toBeVisible();
-    await expect(page.locator('[data-testid="section-home-marketing-os"]').first()).toBeVisible();
-    await expect(page.locator('[data-testid="cta-start-free-trial"]').first()).toBeVisible();
+    await expect(page.locator('[data-testid="hero-cta-signup"]').first()).toBeVisible();
+    await expect(page.locator('[data-testid="section-pillars"]').first()).toBeVisible();
+    await expect(page.locator('[data-testid="pillar-client-support"]').first()).toBeVisible();
     expect(realErrors(errors), `home page errors: ${errors.join(" | ")}`).toEqual([]);
   });
 
@@ -52,12 +52,11 @@ test.describe("Public marketing home", () => {
 
   test("feature/before-after sections render with comparison content", async ({ page }) => {
     await page.goto("/");
-    // Before/after section
-    await expect(page.getByText(/before/i).first()).toBeVisible({ timeout: 15000 });
-    // "Why firms switch" feature pillars (FeatureGrid)
-    const why = page.getByText(/Why firms switch/i).first();
-    await why.scrollIntoViewIfNeeded();
-    await expect(why).toBeVisible();
+    // Four pillars + the Client Support spotlight
+    await expect(page.getByText(/support desk built in/i).first()).toBeVisible({ timeout: 15000 });
+    const support = page.locator('[data-testid="section-support"]').first();
+    await support.scrollIntoViewIfNeeded();
+    await expect(support).toBeVisible();
     // FeatureGrid pain/value tiles include the per-user cost narrative
     await expect(page.getByText(/Zero per-user fees/i).first()).toBeVisible();
     // Testimonial / what-firms-saying section

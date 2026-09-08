@@ -7,7 +7,7 @@ import { db } from "../db";
 import { eq, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import { randomBytes } from "crypto";
-import { invoices, payments, services, orgs, users, expenses, clients, projects } from "@shared/schema";
+import { InsertMarketingCompany, InsertMarketingProspect, InsertContactActivity, invoices, payments, services, orgs, users, expenses, clients, projects } from "@shared/schema";
 import { sanitizeErrorMessage, requireAuth, requireAdmin, apiLimiter, settingsUpdateLimiter, escapeHtml, wrapEmailLayout, emailDetailCard, emailKeyValue, maskSensitiveFields, isPlatformOperatorUserId } from "./middleware";
 import { hashPassword, comparePasswords } from "../auth";
 import { sendInvoiceEmail, encryptSmtpPassword, getSmtpConfigFromOrg, clearTransporterCache } from "../email";
@@ -580,36 +580,73 @@ app.post("/api/public/contact", apiLimiter, async (req, res) => {
     return res.status(500).json({ message: sanitizeErrorMessage(err) });
   }
 });
-// Public demo request. It is sent to the operator workspace's support inbound
-// address (Support → Settings), so the M365 inbox reader turns it into a Support
-// Case — the same path a client email takes — and falls back to the contact inbox
-// when no support address is configured.
+// Public demo request → Marketing Hub. The prospect is created (or updated, email
+// is unique per workspace) in the operator workspace's Marketing Hub with the firm
+// as a marketing company, a `demo_request` activity carrying the message, and the
+// team is notified through the platform mailbox. Nothing is acknowledged unless
+// the prospect row exists. Prospects never touch billing clients (Prospect / Client
+// separation).
 app.post("/api/public/demo-request", apiLimiter, async (req, res) => {
   try {
     const { name, email, company, teamSize, message } = req.body ?? {};
-    const clean = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
-    const n = clean(name, 120), e = clean(email, 320), c = clean(company, 160), t = clean(teamSize, 10), m = clean(message, 4000);
+    const clean = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/[\r\n]+/g, " ").trim().slice(0, max) : "");
+    const n = clean(name, 120), e = clean(email, 320).toLowerCase(), c = clean(company, 160), t = clean(teamSize, 10);
+    const m = typeof message === "string" ? message.trim().slice(0, 4000) : "";
     if (!n || !e || !c) return res.status(400).json({ message: "Name, work email and firm are required" });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return res.status(400).json({ message: "Enter a valid email address" });
-    let to = "info@cherrystconsulting.com";
-    const slug = process.env.PLATFORM_MAILBOX_ORG_SLUG;
-    if (slug) {
-      const operator = await storage.getOrgBySlug(slug).catch(() => null);
-      if (operator?.supportInboundAddress) to = operator.supportInboundAddress;
+
+    const slug = (process.env.PLATFORM_MAILBOX_ORG_SLUG || "").trim();
+    const operator = slug ? await storage.getOrgBySlug(slug) : undefined;
+    if (!operator) {
+      console.error("[demo-request] PLATFORM_MAILBOX_ORG_SLUG is not set or names no workspace — request NOT recorded");
+      return res.status(503).json({ message: "Demo requests are not available right now. Email info@cherrystconsulting.com and we will reply within one business day." });
     }
-    const text = `Demo request\n\nName: ${n}\nEmail: ${e}\nFirm: ${c}\nTeam size: ${t || "-"}\n\n${m || "(no message)"}`;
+    const [firstName, ...rest] = n.split(/\s+/);
+    const lastName = rest.join(" ") || null;
+    const domain = e.split("@")[1] ?? null;
+    const companyRow = (await storage.findMarketingCompanyByName(operator.id, c))
+      ?? (await storage.createMarketingCompany({ orgId: operator.id, name: c, domain } as InsertMarketingCompany));
+    const stamp = new Date().toISOString().slice(0, 10);
+    const note = `[${stamp}] Demo request from the website — team size ${t || "-"}${m ? `:\n${m}` : ""}`;
+    const existing = await storage.findProspectByEmail(operator.id, e);
+    const prospect = existing
+      ? await storage.updateProspect(existing.id, operator.id, {
+          companyId: existing.companyId ?? companyRow.id,
+          firstName: existing.firstName ?? firstName,
+          lastName: existing.lastName ?? lastName,
+          notes: existing.notes ? `${existing.notes}\n\n${note}` : note,
+          lastActivityAt: new Date(),
+        })
+      : await storage.createProspect({
+          orgId: operator.id,
+          companyId: companyRow.id,
+          firstName,
+          lastName,
+          email: e,
+          leadSource: "website-demo-request",
+          notes: note,
+          lastActivityAt: new Date(),
+        } as InsertMarketingProspect);
+    if (!prospect) throw new Error("prospect row missing after write");
+    await storage.createActivity({
+      orgId: operator.id,
+      prospectId: prospect.id,
+      type: "demo_request",
+      payload: { name: n, email: e, company: c, teamSize: t || null, message: m || null, source: "website" },
+    } as InsertContactActivity);
+
+    // Best effort: the team hears about it through the platform mailbox. The prospect already exists.
     try {
-      const { createTransporter } = await import("../email");
-      const transporter = await createTransporter();
-      await transporter!.sendMail({
-        from: process.env.SMTP_USER || "noreply@cherryworkspro.com",
-        to,
+      const { sendPlatformNotice } = await import("../email");
+      const text = `Demo request\n\nName: ${n}\nEmail: ${e}\nFirm: ${c}\nTeam size: ${t || "-"}\n\n${m || "(no message)"}\n\nMarketing Hub: /marketing/contacts/${prospect.id}`;
+      await sendPlatformNotice({
+        to: operator.email || "info@cherrystconsulting.com",
         replyTo: e,
         subject: `Demo request: ${c} (${n})`,
         text,
         html: wrapEmailLayout(`
           <p style="font-size:20px;font-weight:700;color:#1a1a2e;margin:0 0 4px;">Demo request</p>
-          <p style="font-size:14px;color:#8b8da3;margin:0 0 28px;">From the website</p>
+          <p style="font-size:14px;color:#8b8da3;margin:0 0 28px;">From the website · now in Marketing Hub</p>
           ${emailDetailCard(
             emailKeyValue("Name", escapeHtml(n)) +
             emailKeyValue("Email", `<a href="mailto:${escapeHtml(e)}" style="color:#1a1a2e;text-decoration:underline;">${escapeHtml(e)}</a>`) +
@@ -620,14 +657,13 @@ app.post("/api/public/demo-request", apiLimiter, async (req, res) => {
         `),
       });
     } catch (emailErr: any) {
-      console.error("[demo-request] send failed:", emailErr.message);
-      console.log(`[demo-request] ${n} <${maskEmail(e)}> ${c} ${t}: ${m.slice(0, 100)}`);
-      return res.json({ ok: true, warning: "Saved; the notification could not be sent" });
+      console.error(`[demo-request] prospect ${prospect.id} recorded; notification failed:`, emailErr.message);
     }
-    console.log(`[demo-request] ${n} <${maskEmail(e)}> ${c} ${t} → ${to.split("@")[1] ?? to}`);
-    return res.json({ ok: true });
+    console.log(`[demo-request] ${existing ? "updated" : "created"} prospect ${prospect.id} ${maskEmail(e)} ${c} ${t}`);
+    return res.json({ ok: true, updated: !!existing });
   } catch (err: any) {
-    return res.status(500).json({ message: sanitizeErrorMessage(err) });
+    console.error("[demo-request] failed:", err?.message);
+    return res.status(502).json({ message: "We could not record your request. Email info@cherrystconsulting.com and we will reply within one business day." });
   }
 });
 app.get("/api/org/settings", requireAdmin, async (req, res) => {
