@@ -60,14 +60,14 @@ const NOINDEX = `<meta name="robots" content="noindex,nofollow"${RH} />`;
  */
 export function getMetaTagsForPath(rawPath: string, route: RouteClass = classifyPath(rawPath)): string {
   if (route.kind !== "public") {
-    return [`<title>${SITE_NAME}</title>`, NOINDEX].join("\n    ");
+    return [`<title${RH}>${SITE_NAME}</title>`, NOINDEX].join("\n    ");
   }
   const { path, seo } = route;
   const t = escapeHtml(seo.title);
   const d = escapeHtml(seo.description);
   const url = `${BASE_URL}${path === "/" ? "" : path}`;
   const tags = [
-    `<title>${t}</title>`,
+    `<title${RH}>${t}</title>`,
     `<meta name="description" content="${d}"${RH} />`,
   ];
   if (seo.noindex) {
@@ -150,7 +150,7 @@ export function registerSeoRoutes(app: Express): void {
           "Disallow: /verify-email",
           "Disallow: /reset-password",
           "Disallow: /dashboard",
-          "Disallow: /admin/",
+          "Disallow: /admin",
           `Sitemap: ${BASE_URL}/sitemap.xml`,
           "",
         ].join("\n"),

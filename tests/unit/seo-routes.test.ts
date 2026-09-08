@@ -63,7 +63,7 @@ describe("shared/seo-routes", () => {
 describe("server/seo-meta", () => {
   it("public pages get canonical + JSON-LD and no noindex", () => {
     const head = getMetaTagsForPath("/pricing");
-    expect(head).toContain(`<title>${PUBLIC_ROUTES["/pricing"].title}</title>`);
+    expect(head).toContain(`<title data-rh="true">${PUBLIC_ROUTES["/pricing"].title}</title>`);
     expect(head).toMatch(/<link rel="canonical" href="https:\/\/cherryworkspro\.com\/pricing"[^>]*\/>/);
     expect(head).toContain('"@type":"SoftwareApplication"');
     expect(head).not.toContain("noindex");
