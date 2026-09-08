@@ -1264,8 +1264,8 @@ export async function runProductionMigrations(): Promise<void> {
     }
 
   } catch (err: any) {
-    lastDataMigrationError = err?.message ?? String(err);
-    console.error("[migration] Error during production migrations:", err.message);
+    lastDataMigrationError = err instanceof Error ? err.message : String(err);
+    console.error("[migration] Error during production migrations:", lastDataMigrationError);
   } finally {
     client.release();
   }

@@ -57,14 +57,22 @@ case "$TEST_DB_URL" in */cwp_test) ;; *) echo "[cwp] the test DB URL must end in
 # database. Refuse any query string outright, then check the host and the name
 # from the URL itself. Only loopback hosts (or none, i.e. the local socket) pass.
 assert_disposable_local_db() { # $1 = url, $2 = the database name it MUST address
-  local url="$1" want="$2" rest hostport host name
+  local url="$1" want="$2" rest hostport host port name
   case "$url" in
     *\?*|*\#*) echo "[cwp] refusing to reset $want: the URL must not carry query parameters or a fragment (libpq honours ?host=/?dbname= overrides); got ${url%%[?#]*}…" >&2; return 1 ;;
   esac
   rest="${url#*://}"; rest="${rest##*@}"          # scheme and userinfo (may contain / and @) removed
   case "$rest" in */*) ;; *) echo "[cwp] refusing to reset $want: no database name in URL" >&2; return 1 ;; esac
   hostport="${rest%%/*}"; name="${rest#*/}"
-  case "$hostport" in \[*\]*) host="${hostport#\[}"; host="${host%%\]*}" ;; *) host="${hostport%%:*}" ;; esac
+  # libpq accepts host1:port1,host2:port2 and falls back to the next host when the
+  # first refuses: one authority only, and whatever follows the host must be a port.
+  case "$hostport" in
+    \[*\]*) host="${hostport#\[}"; host="${host%%\]*}"; port="${hostport#*\]}" ;;
+    *:*)     host="${hostport%%:*}"; port=":${hostport#*:}" ;;
+    *)       host="$hostport"; port="" ;;
+  esac
+  case "$port" in ""|:[0-9]*) case "$port" in *[!0-9:]*) port="bad" ;; esac ;; *) port="bad" ;; esac
+  [ "$port" != "bad" ] || { echo "[cwp] refusing to reset $want: '$hostport' is not a single host[:port] (multi-host URLs fall back to other servers)" >&2; return 1; }
   case "$host" in ""|localhost|127.0.0.1|::1) ;;
     *) echo "[cwp] refusing to reset $want: host '$host' is not loopback" >&2; return 1 ;; esac
   [ "$name" = "$want" ] || { echo "[cwp] refusing to reset $want: URL names database '$name'" >&2; return 1; }
@@ -79,11 +87,21 @@ recreate_db() { # $1 = url of the db to recreate, $2 = the name it must address 
   psql "$(admin_url "$url")" -Atqc "CREATE DATABASE \"$name\"" || return 1
 }
 
-# Full env the dev/test server boots with (NODE_ENV=test → Vite serving +
-# relaxed rate limits + marketing/email flags on, matching vitest globalSetup).
+# Outgoing mail from the dev/e2e server lands as files here, and the Playwright
+# specs read the same directory (their default; .replit's launcher used it too).
+E2E_MAIL_DIR="${EMAIL_CAPTURE_DIR:-/tmp/cherry-e2e-emails}"
+# Full env the dev/e2e server boots with. NODE_ENV=test: Vite serving + rate limits
+# raised to 1000 (the fully-parallel suite logs in from one IP hundreds of times;
+# under real limits a 429 cascade fails ~200 specs — measured 2026-09-07; the one
+# spec that expects a 429 cannot pass under this launcher). TZ=UTC: the hosts the
+# suite was authored on (Replit, the Azure container) run UTC, and specs that insert
+# timestamps through raw `pg` serialise local time while the server compares UTC —
+# on a non-UTC Mac every such expiry is hours off. Vitest boots its own server from
+# its globalSetup and is unaffected by this function.
 app_env() {
-  env DATABASE_URL="$CWP_DATABASE_URL" \
-      NODE_ENV=test E2E_SEED_ENABLED=true \
+  mkdir -p "$E2E_MAIL_DIR"
+  env DATABASE_URL="$CWP_DATABASE_URL" TZ=UTC \
+      NODE_ENV=test E2E_SEED_ENABLED=true EMAIL_CAPTURE_DIR="$E2E_MAIL_DIR" \
       MARKETING_OS_ENABLED=true VITE_MARKETING_OS_ENABLED=true \
       EMAIL_OAUTH_ENABLED=true VITE_EMAIL_OAUTH_ENABLED=true \
       ADMIN_EMAIL=dean@cherrystconsulting.com \
@@ -142,7 +160,7 @@ case "$cmd" in
     # Always a fresh server from this launcher: tsx is not in watch mode, so a
     # reused process would test stale code (and a stranger's server, stale flags).
     echo "[cwp] starting app for e2e with the test configuration"; "$SELF" app-bg || exit 1
-    exec env DATABASE_URL="$CWP_DATABASE_URL" PORT=5000 npx playwright test "$@" ;;
+    exec env DATABASE_URL="$CWP_DATABASE_URL" PORT=5000 TZ=UTC EMAIL_CAPTURE_DIR="$E2E_MAIL_DIR" npx playwright test "$@" ;;
 
   migcheck)
     ensure_pg; cd "$REPO" || exit 1
@@ -160,6 +178,10 @@ case "$cmd" in
     "$SELF" app-bg || exit 1
     # The seeded admin boots with a temporary password; browser tests need a normal account.
     psql "$CWP_DATABASE_URL" -Atqc "update users set temp_password=false, onboarding_complete=true, email_verified_at=coalesce(email_verified_at, now()) where email='dean@cherrystconsulting.com'" >/dev/null || { echo "[cwp] could not prepare the seeded admin" >&2; exit 1; }
+    # On a fresh database the data migrations create the admin's recovery org before the
+    # seed runs, with no contact fields, so /api/implementation-status reports the firm
+    # profile incomplete and AdminSetupGate hides every admin page from the e2e specs.
+    psql "$CWP_DATABASE_URL" -Atqc "update orgs set email=coalesce(email,'info@cherrystconsulting.com'), phone=coalesce(phone,'(214) 555-0142') where id in (select org_id from users where email='dean@cherrystconsulting.com')" >/dev/null || { echo "[cwp] could not complete the seeded admin's firm profile" >&2; exit 1; }
     echo "[cwp] cwp_dev ready (app left running on :5000; admin dean@cherrystconsulting.com ready for e2e)" ;;
 
   validate)
