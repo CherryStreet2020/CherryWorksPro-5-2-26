@@ -1,21 +1,11 @@
-import { useEffect, useRef } from "react";
+
+import { useFadeIn } from "@/hooks/use-fade-in";
 import { Link } from "wouter";
 import { ArrowRight, CheckCircle, X, AlertTriangle, Upload, Shield, Clock, Zap, Users, Send, Database } from "lucide-react";
 import { SEO } from "@/components/seo";
 import { MarketingNav } from "@/components/marketing/marketing-nav";
 import { MarketingFooter } from "@/components/marketing/marketing-footer";
 
-function useFadeIn() {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { el.classList.add("fade-in-visible"); obs.disconnect(); } }, { threshold: 0.12 });
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-  return ref;
-}
 
 const painPoints = [
   { pain: "Xero charges per plan with strict limits", fix: "CherryWorks Pro includes unlimited users, unlimited clients, and unlimited invoices on every plan. No per-user fees, no client limits, no invoice caps." },

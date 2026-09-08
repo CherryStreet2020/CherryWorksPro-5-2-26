@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
+import { useFadeIn } from "@/hooks/use-fade-in";
 import { PLAN_PRICING, annualPerMonth } from "@shared/plan-pricing";
 import { Link } from "wouter";
 import { CheckCircle, X, ArrowRight, Building2, Shield, ChevronDown } from "lucide-react";
@@ -6,17 +7,6 @@ import { SEO, FAQStructuredData } from "@/components/seo";
 import { MarketingNav } from "@/components/marketing/marketing-nav";
 import { MarketingFooter } from "@/components/marketing/marketing-footer";
 
-function useFadeIn() {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { el.classList.add("fade-in-visible"); obs.disconnect(); } }, { threshold: 0.12 });
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-  return ref;
-}
 
 const plans = [
   {

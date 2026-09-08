@@ -1,4 +1,4 @@
-import { createRoot } from "react-dom/client";
+import { createRoot, hydrateRoot } from "react-dom/client";
 import { HelmetProvider } from "react-helmet-async";
 import App from "./App";
 import "react-phone-number-input/style.css";
@@ -35,8 +35,24 @@ window.addEventListener("popstate", () => {
   sessionStorage.removeItem("chunk-reload-attempted");
 });
 
-createRoot(document.getElementById("root")!).render(
+// Pre-rendered public pages (dist/prerendered, served by server/static.ts) arrive
+// with markup in #root: hydrate it so React keeps the server HTML on screen while the
+// page chunk loads. Recoverable hydration errors are recorded for the e2e gate —
+// production React reports them as minified #418/#423/#425, so a message filter is
+// not enough.
+const rootEl = document.getElementById("root")!;
+const tree = (
   <HelmetProvider>
     <App />
   </HelmetProvider>
 );
+if (rootEl.firstElementChild) {
+  hydrateRoot(rootEl, tree, {
+    onRecoverableError(err) {
+      (window as unknown as { __hydrationErrors?: string[] }).__hydrationErrors ??= [];
+      (window as unknown as { __hydrationErrors: string[] }).__hydrationErrors.push(String(err));
+    },
+  });
+} else {
+  createRoot(rootEl).render(tree);
+}

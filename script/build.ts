@@ -161,6 +161,9 @@ async function buildAll() {
 
   console.log("building client...");
   await viteBuild();
+  // Real HTML for the public routes (dist/prerendered) — see script/prerender.ts.
+  const { prerenderAll } = await import("./prerender");
+  await prerenderAll();
 
   console.log("building server...");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));

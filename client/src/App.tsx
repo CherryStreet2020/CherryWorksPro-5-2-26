@@ -33,7 +33,7 @@ import { openHelpPanel } from "@/lib/help-context";
 import { NetworkStatusProvider } from "@/components/network-status";
 import "@/lib/cherry-theme.css";
 
-ensureCSRFToken();
+if (typeof window !== "undefined") ensureCSRFToken();
 
 function lazyRetry<T extends { default: any }>(
   loader: () => Promise<T>,
@@ -240,7 +240,7 @@ const DevCrashRoute: React.ReactElement | null = (() => {
 
 function LazyFallback() {
   return (
-    <div className="h-full flex items-center justify-center p-8">
+    <div className="h-full flex items-center justify-center p-8" data-testid="lazy-fallback">
       <div className="space-y-3 text-center">
         <Skeleton className="h-10 w-10 rounded-xl mx-auto" />
         <Skeleton className="h-4 w-32 mx-auto rounded" />
@@ -533,10 +533,29 @@ function AuthenticatedLayout() {
 }
 
 
+/** True when the server set the non-HttpOnly signed-in hint (see auth-routes). */
+function hasSignedInHint(): boolean {
+  return typeof document !== "undefined" && document.cookie.split(";").some((c) => c.trim().startsWith("cwp_signed_in="));
+}
+
+// One element for the anonymous home, used by BOTH the loading and the resolved
+// branch below: when /api/auth/me resolves while the pre-rendered home is still a
+// dehydrated Suspense boundary, React sees the same element type in the same
+// position and keeps the server HTML instead of discarding it.
+const anonymousHome = <Suspense fallback={<LazyFallback />}><MarketingHomePage /></Suspense>;
+
 function AppContent() {
   const { user, loading } = useAuth();
   const { planInactive } = useBillingStatus();
   const [location] = useLocation();
+  const atRoot = location === "/" || location === "";
+
+  // Pre-rendered "/" (served only to cookie-less requests) hydrates against this
+  // branch: a visitor without the signed-in hint sees the marketing home at once;
+  // a signed-in browser keeps the skeleton → dashboard path.
+  if (loading && atRoot && !hasSignedInHint()) {
+    return anonymousHome;
+  }
 
   if (loading) {
     return (
@@ -550,8 +569,8 @@ function AppContent() {
   }
 
   if (!user) {
-    if (location === "/" || location === "") {
-      return <Suspense fallback={<LazyFallback />}><MarketingHomePage /></Suspense>;
+    if (atRoot) {
+      return anonymousHome;
     }
     if (location === "/login") {
       return <Suspense fallback={<LazyFallback />}><LoginPage /></Suspense>;
@@ -610,9 +629,16 @@ function AppContent() {
   return <AuthenticatedLayout />;
 }
 
+/** Marks <html data-hydrated> once React has committed — the e2e hydration gate waits for it. */
+function HydrationMarker() {
+  useEffect(() => { document.documentElement.dataset.hydrated = "1"; }, []);
+  return null;
+}
+
 function App() {
   return (
     <ErrorBoundary>
+    <HydrationMarker />
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <NetworkStatusProvider>
@@ -621,6 +647,9 @@ function App() {
           <ScrollToTopButton />
           <Suspense fallback={<LazyFallback />}>
           <Switch>
+            {import.meta.env.VITE_E2E_FIXTURES === "true" && (
+              <Route path="/__hydration_mismatch">{() => <p data-testid="mismatch">{String(Date.now())}</p>}</Route>
+            )}
             <Route path="/i/:token" component={PublicInvoiceWrapper} />
             <Route path="/e/:token" component={PublicEstimateWrapper} />
             <Route path="/portal/:slug/*?" component={ClientPortalWrapper} />

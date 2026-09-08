@@ -1,21 +1,11 @@
-import { useEffect, useRef } from "react";
+
+import { useFadeIn } from "@/hooks/use-fade-in";
 import { Link } from "wouter";
 import { ArrowRight, CheckCircle, X, AlertTriangle, Upload, Shield, Clock, Zap, Users, Send, Database } from "lucide-react";
 import { SEO } from "@/components/seo";
 import { MarketingNav } from "@/components/marketing/marketing-nav";
 import { MarketingFooter } from "@/components/marketing/marketing-footer";
 
-function useFadeIn() {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { el.classList.add("fade-in-visible"); obs.disconnect(); } }, { threshold: 0.12 });
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-  return ref;
-}
 
 const painPoints = [
   { pain: "FreshBooks charges per user ($11/mo each)", fix: "CherryWorks Pro includes unlimited users on every plan. A 10-person firm saves $1,320/year in seat fees alone. No per-user pricing, ever." },

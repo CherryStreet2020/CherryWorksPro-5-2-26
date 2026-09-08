@@ -24,6 +24,29 @@ import path from "path";
 import fs from "fs";
 import rateLimit from "express-rate-limit";
 
+const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Non-HttpOnly hint that a session exists, for the client's FIRST paint only:
+ * AppContent renders the marketing home immediately at "/" when it is absent (that
+ * matches the pre-rendered HTML the server sends to cookie-less requests) and the
+ * auth skeleton when present. It carries no identity and grants nothing; the real
+ * session cookie stays HttpOnly. Set wherever a session gains a user, cleared on logout.
+ */
+export const SIGNED_IN_HINT_COOKIE = "cwp_signed_in";
+export function setSignedInHint(res: Response): void {
+  res.cookie(SIGNED_IN_HINT_COOKIE, "1", {
+    httpOnly: false,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: SESSION_MAX_AGE_MS,
+  });
+}
+export function clearSignedInHint(res: Response): void {
+  res.clearCookie(SIGNED_IN_HINT_COOKIE, { path: "/" });
+}
+
 function escapeLikePattern(str: string): string {
   return str.replace(/[\\%_]/g, (ch) => '\\' + ch);
 }
@@ -113,6 +136,7 @@ app.post("/api/auth/login", loginLimiter, awaitSessionSave, async (req, res) => 
             req.session.regenerate((err) => {
               if (err) return res.status(500).json({ message: "Login failed" });
               req.session.userId = user.id;
+        setSignedInHint(res);
               req.session.orgId = user.orgId;
               req.session.role = user.role;
               req.session.lastActivity = Date.now();
@@ -126,6 +150,7 @@ app.post("/api/auth/login", loginLimiter, awaitSessionSave, async (req, res) => 
           req.session.regenerate((err) => {
             if (err) return res.status(500).json({ message: "Login failed" });
             req.session.userId = user.id;
+        setSignedInHint(res);
             req.session.orgId = user.orgId;
             req.session.role = user.role;
             req.session.lastActivity = Date.now();
@@ -149,6 +174,7 @@ app.post("/api/auth/login", loginLimiter, awaitSessionSave, async (req, res) => 
           return res.status(500).json({ message: "Login failed" });
         }
         req.session.userId = user.id;
+        setSignedInHint(res);
         req.session.orgId = user.orgId;
         req.session.role = user.role;
         req.session.lastActivity = Date.now();
@@ -232,6 +258,7 @@ app.get("/api/auth/me", async (req, res) => {
   const user = await storage.getUserById(req.session.userId);
   if (user && !user.isActive) {
     req.session.destroy((err) => { if (err) console.error("[auth] Deactivated session destroy:", err); });
+    clearSignedInHint(res);
     return res.status(403).json({ message: "Your account has been deactivated." });
   }
   if (!user) {
@@ -311,6 +338,7 @@ app.get("/api/csrf-token", (req, res) => {
 app.post("/api/auth/logout", (req, res) => {
   const hashedSid = req.sessionID ? hashSessionId(req.sessionID) : null;
   res.clearCookie("csrf-token", { path: "/" });
+  clearSignedInHint(res);
   req.session.destroy((err) => {
     if (err) console.error("[auth] Session destroy failed:", err);
     if (hashedSid) removeSessionByHash(hashedSid).catch(() => {});
@@ -477,6 +505,7 @@ app.post("/api/auth/signup", signupLimiter, awaitSessionSave, async (req, res) =
     }
 
     req.session.userId = user.id;
+        setSignedInHint(res);
     req.session.orgId = org.id;
     req.session.role = user.role;
     req.session.lastActivity = Date.now();
@@ -587,6 +616,7 @@ app.patch("/api/auth/change-password", passwordChangeLimiter, requireAuth, await
     req.session.regenerate((err) => {
       if (err) return res.status(500).json({ message: "Session error" });
       req.session.userId = user.id;
+        setSignedInHint(res);
       req.session.orgId = user.orgId;
       req.session.role = user.role;
       return res.json({ ok: true });

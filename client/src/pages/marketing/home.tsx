@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useFadeIn } from "@/hooks/use-fade-in";
 import { Link } from "wouter";
 import {
   Clock, DollarSign, BarChart3, Users, Shield, FileText, CheckCircle, ArrowRight,
@@ -10,20 +11,6 @@ import { SEO } from "@/components/seo";
 import { MarketingNav } from "@/components/marketing/marketing-nav";
 import { MarketingFooter } from "@/components/marketing/marketing-footer";
 
-function useFadeIn() {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) { el.classList.add("fade-in-visible"); obs.unobserve(el); } },
-      { threshold: 0.08 }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-  return ref;
-}
 
 function DashboardMockup() {
   return (
@@ -249,7 +236,9 @@ function SocialProofTicker() {
 }
 
 function useCountUp(target: number, duration: number = 1800) {
-  const [count, setCount] = useState(0);
+  // The pre-rendered HTML shows the final value; the count-up starts from 0 only once
+  // the section scrolls into view (identical first paint on server and client).
+  const [count, setCount] = useState(target);
   const [started, setStarted] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 

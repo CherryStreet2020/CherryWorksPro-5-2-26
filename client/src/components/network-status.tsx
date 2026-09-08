@@ -13,11 +13,17 @@ export function useNetworkStatus() {
 }
 
 export function NetworkStatusProvider({ children }: { children: React.ReactNode }) {
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  // Starts online so the first paint is identical on the server (pre-render) and the
+  // client; the real navigator.onLine is read in the effect below.
+  const [isOnline, setIsOnline] = useState(true);
   const [isServerReachable, setIsServerReachable] = useState(true);
   const [showRestoredBanner, setShowRestoredBanner] = useState(false);
   const wasOfflineRef = useRef(false);
   const restoredTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) setIsOnline(false);
+  }, []);
 
   const checkServer = useCallback(async () => {
     if (!navigator.onLine) {

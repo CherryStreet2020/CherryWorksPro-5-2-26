@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, startTransition } from "react";
 import type { User } from "@shared/schema";
 import { apiRequest, queryClient, ensureCSRFToken } from "./queryClient";
 
@@ -22,19 +22,27 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+/** The auth context if an AuthProvider is above, else null (for providers used both inside and outside it). */
+export function useAuthOptional(): AuthContextType | null {
+  return useContext(AuthContext);
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // The resolved state is applied in a transition: on a pre-rendered "/" the
+    // marketing home is still a hydrating Suspense boundary when this resolves, and a
+    // synchronous update there makes React discard the server HTML and client-render
+    // it (recoverable error #421). A transition lets hydration finish first.
     fetch("/api/auth/me", { credentials: "include" })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        setUser(data);
+        startTransition(() => { setUser(data); setLoading(false); });
         if (data) ensureCSRFToken();
       })
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
+      .catch(() => startTransition(() => { setUser(null); setLoading(false); }));
   }, []);
 
   const login = useCallback(async (
