@@ -236,41 +236,6 @@ app.post("/api/onboarding/reset", requireAdmin, async (req, res) => {
   }
 });
 
-app.get("/sitemap.xml", (_req, res) => {
-  const baseUrl = "https://cherryworkspro.com";
-  const pages = [
-    { path: "/", priority: "1.0", changefreq: "weekly" },
-    { path: "/features", priority: "0.9", changefreq: "weekly" },
-    { path: "/pricing", priority: "0.9", changefreq: "weekly" },
-    { path: "/compare", priority: "0.9", changefreq: "weekly" },
-    { path: "/demo", priority: "0.8", changefreq: "weekly" },
-    { path: "/integrations", priority: "0.8", changefreq: "weekly" },
-    { path: "/about", priority: "0.8", changefreq: "weekly" },
-    { path: "/switch-from-freshbooks", priority: "0.8", changefreq: "weekly" },
-    { path: "/switch-from-quickbooks", priority: "0.8", changefreq: "weekly" },
-    { path: "/switch-from-xero", priority: "0.8", changefreq: "weekly" },
-    { path: "/switch-from-wave", priority: "0.8", changefreq: "weekly" },
-    { path: "/switch-from-harvest", priority: "0.8", changefreq: "weekly" },
-    { path: "/switch-from-bigtime", priority: "0.8", changefreq: "weekly" },
-    { path: "/switch-from-scoro", priority: "0.8", changefreq: "weekly" },
-    { path: "/switch-from-paymo", priority: "0.8", changefreq: "weekly" },
-  ];
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${pages.map(p => `  <url>
-  <loc>${baseUrl}${p.path}</loc>
-  <changefreq>${p.changefreq}</changefreq>
-  <priority>${p.priority}</priority>
-</url>`).join("\n")}
-</urlset>`;
-  res.header("Content-Type", "application/xml").send(xml);
-});
-app.get("/robots.txt", (_req, res) => {
-  res.header("Content-Type", "text/plain").send(
-    `User-agent: *\nAllow: /\nDisallow: /dashboard\nDisallow: /api/\nDisallow: /auth/\nSitemap: https://cherryworkspro.com/sitemap.xml`
-  );
-});
-
 // ─── SUPPORT REQUEST ──────────────────────────────────────
 app.post("/api/support-request", requireAuth, async (req, res) => {
   try {

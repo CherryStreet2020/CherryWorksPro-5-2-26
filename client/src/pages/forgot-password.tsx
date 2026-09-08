@@ -41,12 +41,7 @@ export default function ForgotPasswordPage() {
       className="min-h-screen flex items-center justify-center p-4"
       style={{ background: "var(--gradient-hero)" }}
     >
-      <SEO
-        title="Forgot Password"
-        fullTitle="Forgot Password | CherryWorks Pro"
-        description="Reset your CherryWorks Pro password."
-        path="/forgot-password"
-      />
+      <SEO path="/forgot-password" />
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <Link href="/">

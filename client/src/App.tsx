@@ -98,7 +98,13 @@ function MarketingOsCheckoutToast() {
   return null;
 }
 
+// Warm the signed-in app's route chunks (~1 MB) once, after sign-in. Running this
+// on window load for everyone made every anonymous marketing visit download the
+// dashboard.
+let routeChunksPreloaded = false;
 function preloadRouteChunks() {
+  if (routeChunksPreloaded) return;
+  routeChunksPreloaded = true;
   const routes = [
     () => import("@/pages/dashboard"),
     () => import("@/pages/clients"),
@@ -116,9 +122,6 @@ function preloadRouteChunks() {
   schedule(() => {
     routes.forEach(load => load().catch(() => {}));
   });
-}
-if (typeof window !== "undefined") {
-  window.addEventListener("load", preloadRouteChunks, { once: true });
 }
 
 const LoginPage = lazy(() => lazyRetry(() => import("@/pages/login")));
@@ -462,6 +465,7 @@ function AuthenticatedGettingStarted() {
 }
 
 function AuthenticatedLayout() {
+  useEffect(() => { preloadRouteChunks(); }, []);
   const style = {
     "--sidebar-width": "16rem",
     "--sidebar-width-icon": "3rem",

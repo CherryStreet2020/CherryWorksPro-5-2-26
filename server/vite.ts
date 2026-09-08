@@ -4,7 +4,7 @@ import { type Server } from "http";
 import viteConfig from "../vite.config";
 import fs from "fs";
 import path from "path";
-import { getMetaTagsForPath } from "./seo-meta";
+import { shellResponse } from "./seo-meta";
 
 const viteLogger = createLogger();
 
@@ -42,10 +42,15 @@ export async function setupVite(server: Server, app: Express) {
         "index.html",
       );
 
+      const decision = shellResponse(url);
+      if ("redirect" in decision) {
+        res.redirect(301, decision.redirect);
+        return;
+      }
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
-      template = template.replace("</head>", `    ${getMetaTagsForPath(url)}\n  </head>`);
+      template = template.replace("</head>", `    ${decision.head}\n  </head>`);
       const page = await vite.transformIndexHtml(url, template);
-      res.status(200).set({ "Content-Type": "text/html" }).end(page);
+      res.status(decision.status).set({ "Content-Type": "text/html" }).end(page);
     } catch (e) {
       vite.ssrFixStacktrace(e as Error);
       next(e);

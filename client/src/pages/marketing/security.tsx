@@ -56,12 +56,7 @@ export default function SecurityPage() {
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--lux-bg)" }}>
       <MarketingNav />
-      <SEO
-        title="Security"
-        fullTitle="Security at CherryWorks Pro"
-        description="How CherryWorks Pro protects your data with tenant isolation, financial determinism, CSRF protection, rate limiting, and audit logging."
-        path="/security"
-      />
+      <SEO path="/security" />
       <main className="flex-1 pt-[136px] pb-16 px-4">
         <div className="max-w-3xl mx-auto" style={{ color: "var(--lux-text)" }}>
           <h1 className="text-3xl font-bold mb-2" style={{ color: "var(--lux-text)" }} data-testid="heading-security-title">

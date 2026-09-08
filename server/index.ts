@@ -11,6 +11,8 @@ import express, { type Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
+import { registerSeoRoutes } from "./seo-meta";
+import compression from "compression";
 import { createServer } from "http";
 import { runMigrationsAndSeed, markStartupComplete } from "./startup-orchestrator";
 import { startWebhookRetryProcessor } from "./webhooks";
@@ -65,6 +67,13 @@ if (process.env.NODE_ENV === 'production') {
     crossOriginOpenerPolicy: { policy: "same-origin" },
   }));
 }
+
+// gzip/brotli for every response that accepts it (the entry JS alone was 742 KB
+// uncompressed). Brotli is negotiated when the client offers it. This compresses
+// per request — hashed, immutable assets are cached by the browser after the
+// first load, which is what keeps the CPU cost low; serving pre-compressed
+// assets from the build is the follow-up in the bundle-diet step.
+app.use(compression({ threshold: 1024 }));
 
 app.use(
   express.json({
@@ -170,6 +179,9 @@ app.use((req, res, next) => {
   app.all("/api/{*path}", (_req, res) => {
     res.status(404).json({ error: "API route not found", path: _req.path });
   });
+
+  // One sitemap, one robots.txt, from the shared public-route map (before the shell fallback).
+  registerSeoRoutes(app);
 
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);

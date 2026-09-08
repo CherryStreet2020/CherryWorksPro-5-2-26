@@ -4,10 +4,9 @@ import {
   Clock, DollarSign, BarChart3, Users, Shield, FileText, CheckCircle, ArrowRight,
   Zap, TrendingUp, ChevronRight, UserCheck, Receipt, FileStack, CreditCard,
   Upload, Eye, Send, Star, X, Briefcase, Globe, Lock, Repeat, Award, Building2, ShieldCheck, Database, Fingerprint, Bot,
-  BookOpen, ScanLine, ClipboardCheck, Layers, Sparkles, ShieldAlert, Server, Scale,
-} from "lucide-react";
+  BookOpen, ScanLine, ClipboardCheck, Layers, Sparkles, ShieldAlert, Server, } from "lucide-react";
 import { BrandLockup } from "@/components/shared/brand-lockup";
-import { SEO, BusinessStructuredData, OrganizationStructuredData } from "@/components/seo";
+import { SEO } from "@/components/seo";
 import { MarketingNav } from "@/components/marketing/marketing-nav";
 import { MarketingFooter } from "@/components/marketing/marketing-footer";
 
@@ -932,7 +931,7 @@ function ComparisonSection() {
     { feature: "Auto-reimbursement payouts", cw: true, others: false },
     { feature: "Auto payout tracking", cw: true, others: false },
     { feature: "Project profitability (labor + expenses)", cw: true, others: false },
-    { feature: "20 built-in reports across 6 categories", cw: true, others: false, note: "Most offer 5\u20138 basic reports" },
+    { feature: "19 built-in reports across 6 categories", cw: true, others: false, note: "Most offer 5\u20138 basic reports" },
     { feature: "Client portal with overdue alerts", cw: true, others: false },
     { feature: "Import wizard for 8 platforms", cw: true, others: false, note: "Upload, preview, execute, rollback" },
     { feature: "Batch expense reports", cw: true, others: false },
@@ -1059,7 +1058,7 @@ function TrustSection() {
             { icon: Lock, title: "Encrypted Everywhere", desc: "HTTPS/TLS on every connection. Passwords hashed with bcrypt. Secure HTTP-only session cookies." },
             { icon: Database, title: "Tenant Isolation", desc: "Your data is completely invisible to other organizations. 164 org-scoped security checks across every query." },
             { icon: ShieldCheck, title: "PCI-Compliant Payments", desc: "Powered by Stripe. We never see or store your full card number. Bank-grade payment infrastructure." },
-            { icon: Fingerprint, title: "Data Protection", desc: "Bank-level 256-bit encryption. Automatic daily backups. Role-based access controls. SOC 2 compliance ready." },
+            { icon: Fingerprint, title: "Data Protection", desc: "Bank-level 256-bit encryption. Automatic daily backups. Role-based access controls." },
           ].map((item, i) => (
             <div key={i} className="p-6 rounded-xl" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
               <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-3" style={{ background: "rgba(207,51,57,0.08)" }}>
@@ -1074,7 +1073,7 @@ function TrustSection() {
           {[
             "Enterprise-Grade Security · AES-256 Encryption · Org-Scoped Isolation",
             "Unlimited Users · Flat Pricing · No Per-Seat Nonsense",
-            "20+ Built-In Reports · Zero Add-Ons Required",
+            "19 Built-In Reports · Zero Add-Ons Required",
             "Your Data · Your Export · No Lock-In · Cancel Anytime",
           ].map((badge, i) => (
             <div key={i} className="flex items-center gap-2">
@@ -1091,11 +1090,10 @@ function TrustSection() {
 function TrustBadges() {
   const fadeRef = useFadeIn();
   const badges = [
-    { icon: ShieldCheck, label: "SOC 2 Compliant" },
-    { icon: Lock, label: "256-bit Encryption" },
-    { icon: Server, label: "99.9% Uptime" },
-    { icon: Scale, label: "GDPR Ready" },
-    { icon: Shield, label: "Bank-Level Security" },
+    { icon: Lock, label: "AES-256 Encryption" },
+    { icon: ShieldCheck, label: "Org-Scoped Isolation" },
+    { icon: Server, label: "Daily Backups" },
+    { icon: Shield, label: "MFA & Audit Logging" },
   ];
   return (
     <div ref={fadeRef} className="py-10 fade-in-section" style={{ background: "rgba(255,255,255,0.015)" }}>
@@ -1190,14 +1188,7 @@ export default function HomePage() {
   return (
     <div>
       <MarketingNav />
-      <SEO
-        title="Run Your Firm Like a Fortune 500"
-        fullTitle="CherryWorks Pro — Run Your Firm Like a Fortune 500"
-        description="Professional services operating system with unlimited users. Time tracking, invoicing, GL, expenses, team payouts, and 25+ reports — starting at $39/mo. No per-user fees."
-        path="/"
-      />
-      <OrganizationStructuredData />
-      <BusinessStructuredData />
+      <SEO path="/" />
       <HeroSection />
       <SocialProofTicker />
       <StatsBar />

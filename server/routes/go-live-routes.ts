@@ -361,38 +361,6 @@ export function registerGoLiveRoutes(app: Express) {
     } catch (e: any) { return res.status(500).json({ error: e.message }); }
   });
 
-  app.get("/api/marketing/sitemap.xml", (_req: Request, res: Response) => {
-    const baseUrl = "https://cherryworkspro.com";
-    const pages = [
-      { path: "/", priority: "1.0" },
-      { path: "/features", priority: "0.9" },
-      { path: "/pricing", priority: "0.9" },
-      { path: "/compare", priority: "0.9" },
-      { path: "/demo", priority: "0.8" },
-      { path: "/integrations", priority: "0.8" },
-      { path: "/about", priority: "0.8" },
-      { path: "/switch-from-freshbooks", priority: "0.8" },
-      { path: "/switch-from-quickbooks", priority: "0.8" },
-      { path: "/switch-from-xero", priority: "0.8" },
-      { path: "/switch-from-wave", priority: "0.8" },
-      { path: "/switch-from-harvest", priority: "0.8" },
-      { path: "/switch-from-bigtime", priority: "0.8" },
-      { path: "/switch-from-scoro", priority: "0.8" },
-      { path: "/switch-from-paymo", priority: "0.8" },
-    ];
-    let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
-    for (const p of pages) {
-      xml += `  <url><loc>${baseUrl}${p.path}</loc><changefreq>weekly</changefreq><priority>${p.priority}</priority></url>\n`;
-    }
-    xml += "</urlset>";
-    res.header("Content-Type", "application/xml").send(xml);
-  });
-
-  app.get("/api/marketing/robots.txt", (_req: Request, res: Response) => {
-    res.header("Content-Type", "text/plain").send(
-      "User-agent: *\nAllow: /\nDisallow: /dashboard\nDisallow: /api/\nDisallow: /auth/\nSitemap: https://cherryworkspro.com/sitemap.xml\n"
-    );
-  });
 
   app.get("/api/marketing/meta", (_req: Request, res: Response) => {
     res.json({

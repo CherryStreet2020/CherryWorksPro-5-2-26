@@ -54,12 +54,7 @@ export default function SwitchQuickBooksPage() {
   return (
     <div style={{ background: "#0a0f1c" }}>
       <MarketingNav />
-      <SEO
-        title="Switch from QuickBooks to CherryWorks Pro"
-        fullTitle="Switch from QuickBooks to CherryWorks Pro | Purpose-Built for Services"
-        description="QuickBooks is built for accountants. CherryWorks Pro is built for agencies — time tracking, invoicing, payouts, and profitability in one platform."
-        path="/switch-from-quickbooks"
-      />
+      <SEO path="/switch-from-quickbooks" />
 
       <section className="pt-[100px] pb-8 md:pb-10" style={{ background: "var(--gradient-hero)" }}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8 md:pt-12 md:pb-10">
@@ -170,7 +165,7 @@ export default function SwitchQuickBooksPage() {
               { icon: Clock, title: "Native time tracking", desc: "Week, month, and day views with a floating timer widget. No add-on or integration needed." },
               { icon: Shield, title: "Timesheet approvals", desc: "Submit → Approve → Lock workflow. Rejection with mandatory reasons. Full audit trail." },
               { icon: Zap, title: "Unlimited users", desc: "No per-user fees, ever. Add your entire team on any plan." },
-              { icon: Upload, title: "25+ built-in reports", desc: "Project profitability, team utilization, AR aging, and expense analytics — purpose-built for services firms." },
+              { icon: Upload, title: "19 built-in reports", desc: "Project profitability, team utilization, AR aging, and expense analytics — purpose-built for services firms." },
             ].map((b, i) => (
               <div key={i} className="rounded-xl p-6 flex items-start gap-4" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
                 <div className="w-10 h-10 rounded-lg flex-shrink-0 flex items-center justify-center" style={{ background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.2)" }}>

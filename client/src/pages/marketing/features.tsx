@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { CherryLogo } from "@/components/shared/cherry-logo";
 import { BrandLockup } from "@/components/shared/brand-lockup";
-import { SEO, SoftwareApplicationStructuredData } from "@/components/seo";
+import { SEO } from "@/components/seo";
 import { MarketingNav } from "@/components/marketing/marketing-nav";
 import { MarketingFooter } from "@/components/marketing/marketing-footer";
 
@@ -1230,13 +1230,7 @@ export default function FeaturesPage() {
   return (
     <div style={{ background: "#0a0f1c" }}>
       <MarketingNav />
-      <SEO
-        title="Features"
-        fullTitle="Features — Every Tool Purpose-Built for Professional Services | CherryWorks Pro"
-        description="Time tracking, invoicing, expenses, payouts, GL, AI support, and multi-currency — core features on every plan. Advanced ops tools on Professional and above."
-        path="/features"
-      />
-      <SoftwareApplicationStructuredData />
+      <SEO path="/features" />
       <section className="pt-[100px] pb-8 md:pb-10" style={{ background: "linear-gradient(135deg, #0a0f1c 0%, #111827 50%, #1a0a0a 100%)" }}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8 md:pt-12 md:pb-10">
           <div className="max-w-3xl">

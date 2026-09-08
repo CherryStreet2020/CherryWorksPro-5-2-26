@@ -52,12 +52,7 @@ export default function ContactPage() {
   return (
     <div style={{ background: "#0a0f1c" }}>
       <MarketingNav />
-      <SEO
-        title="Support & Contact"
-        fullTitle="Support & Contact — CherryAssist AI + Direct Support | CherryWorks Pro"
-        description="Get help from CherryAssist AI 24/7 or reach our team directly. We respond within hours, not days."
-        path="/contact"
-      />
+      <SEO path="/contact" />
 
       <section className="pt-[100px] pb-8 md:pb-10" style={{ background: "var(--gradient-hero)" }}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8 md:pt-12 md:pb-10">

@@ -21,7 +21,7 @@ const painPoints = [
   { pain: "Xero charges per plan with strict limits", fix: "CherryWorks Pro includes unlimited users, unlimited clients, and unlimited invoices on every plan. No per-user fees, no client limits, no invoice caps." },
   { pain: "No built-in time tracking", fix: "CherryWorks Pro has native time tracking with week, month, and day views plus a floating timer widget. No add-on needed." },
   { pain: "No timesheet approval workflow", fix: "Full Submit → Approve → Lock lifecycle. Approved hours lock automatically so invoices are based on verified, immutable time." },
-  { pain: "No project profitability or utilization reports", fix: "CherryWorks Pro includes 25+ reports built for services firms: project profitability, team utilization, AR aging, expense analytics, and more." },
+  { pain: "No project profitability or utilization reports", fix: "CherryWorks Pro includes 19 reports built for services firms: project profitability, team utilization, AR aging, expense analytics, and more." },
   { pain: "No 1099 + W-2 + Corp-to-Corp support", fix: "CherryWorks Pro supports all three worker classifications natively. Smart onboarding adapts to each type. Payouts, tax exports, and compliance are built in." },
   { pain: "No payout tracking", fix: "Automatic payout creation when invoices are sent. Track ACH, Zelle, wire — and export 1099 totals at year-end." },
   { pain: "Built for accountants, not services firms", fix: "Xero is a general ledger tool designed for bookkeepers. CherryWorks Pro is purpose-built for agencies and consultancies managing multi-person teams across projects." },
@@ -56,12 +56,7 @@ export default function SwitchXeroPage() {
   return (
     <div style={{ background: "#0a0f1c" }}>
       <MarketingNav />
-      <SEO
-        title="Switch from Xero to CherryWorks Pro"
-        fullTitle="Switch from Xero to CherryWorks Pro | Time Tracking + GL in One Platform"
-        description="Xero gives you a ledger. CherryWorks Pro gives you the whole operating system — time tracking, invoicing, payouts, and 25+ reports for services firms."
-        path="/switch-from-xero"
-      />
+      <SEO path="/switch-from-xero" />
 
       <section className="pt-[100px] pb-8 md:pb-10" style={{ background: "var(--gradient-hero)" }}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8 md:pt-12 md:pb-10">
@@ -170,7 +165,7 @@ export default function SwitchXeroPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {[
               { icon: Clock, title: "Native time tracking", desc: "Week, month, and day views with a floating timer widget. No add-ons needed." },
-              { icon: Shield, title: "25+ built-in reports", desc: "Project profitability, utilization, AR aging — the reporting Xero doesn't offer for services firms." },
+              { icon: Shield, title: "19 built-in reports", desc: "Project profitability, utilization, AR aging — the reporting Xero doesn't offer for services firms." },
               { icon: Zap, title: "Unlimited users", desc: "No per-seat fees, ever. Add your entire team on any plan." },
               { icon: Upload, title: "1099-ready exports", desc: "Team payouts, worker classifications, and year-end 1099 exports in one click." },
             ].map((b, i) => (

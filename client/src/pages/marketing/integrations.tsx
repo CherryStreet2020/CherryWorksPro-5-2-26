@@ -74,12 +74,7 @@ const apps = [
 export default function IntegrationsPage() {
   return (
     <div className="min-h-screen" style={{ background: "#060a14" }}>
-      <SEO
-        title="Integrations"
-        fullTitle="Integrations — CherryWorks Pro | Zapier, Slack, Stripe & 6,000+ Apps"
-        description="Connect CherryWorks Pro to Slack, Stripe, QuickBooks, Google Sheets, HubSpot, and 6,000+ apps via Zapier. REST API and webhooks included."
-        path="/integrations"
-      />
+      <SEO path="/integrations" />
       <MarketingNav />
 
       <section className="pt-[100px] pb-8 md:pb-10 px-4 relative overflow-hidden">

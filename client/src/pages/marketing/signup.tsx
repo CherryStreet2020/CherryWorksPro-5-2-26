@@ -174,12 +174,7 @@ export default function SignupPage() {
 
   return (
     <div className="min-h-screen" style={{ background: "var(--gradient-hero)" }}>
-      <SEO
-        title="Start Your Free Trial"
-        fullTitle="Start Your Free Trial — 14 Days Free, Cancel Anytime | CherryWorks Pro"
-        description="Sign up for CherryWorks Pro. Full GL, unlimited users, no per-seat fees. 14-day free trial. Import from FreshBooks, QuickBooks, Harvest, Xero, and more. Live in 5 minutes."
-        path="/signup"
-      />
+      <SEO path="/signup" />
 
       <style>{`
         @keyframes fadeInLeft {

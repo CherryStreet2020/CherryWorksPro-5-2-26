@@ -1,117 +1,52 @@
 import { Helmet } from "react-helmet-async";
+import { BASE_URL, SITE_NAME, PUBLIC_ROUTES } from "@shared/seo-routes";
 
 interface SEOProps {
-  title: string;
-  description: string;
+  /**
+   * The page's path, looked up in PUBLIC_ROUTES (shared/seo-routes.ts) — the
+   * one place titles and descriptions live. A path that is not in the map
+   * renders the site name with noindex rather than failing, so the type is a
+   * plain string; the unit tests, not the type, keep the map complete.
+   */
   path: string;
   type?: "website" | "article";
-  noindex?: boolean;
-  fullTitle?: string;
 }
 
-const SITE_NAME = "CherryWorks Pro";
-const BASE_URL = "https://cherryworkspro.com";
-const OG_IMAGE_PATH = "/og-preview.png";
-const OG_IMAGE = `${BASE_URL}${OG_IMAGE_PATH}`;
-const PRICING_LOW = "39";
-const PRICING_HIGH = "159";
+const OG_IMAGE = `${BASE_URL}/og-preview.png`;
 
-export function SEO({ title, description, path, type = "website", noindex = false, fullTitle: fullTitleOverride }: SEOProps) {
-  const fullTitle = fullTitleOverride
-    ? fullTitleOverride
-    : path === "/"
-      ? `${SITE_NAME} — The Professional Services Operating System`
-      : `${title} | ${SITE_NAME}`;
-  const url = `${BASE_URL}${path}`;
+/**
+ * Head tags for a public page. The server injects the same tags (and the
+ * JSON-LD) into the shell from the same map; this keeps them correct after
+ * client-side navigation. A path missing from the map renders noindex so a
+ * typo can never publish the site-wide default as a duplicate page.
+ */
+export function SEO({ path, type = "website" }: SEOProps) {
+  const entry = PUBLIC_ROUTES[path];
+  const title = entry?.title ?? SITE_NAME;
+  const description = entry?.description ?? "";
+  const noindex = !entry || entry.noindex === true;
+  const url = `${BASE_URL}${path === "/" ? "" : path}`;
 
+  // react-helmet-async only collects DIRECT children of <Helmet>: a fragment
+  // here silently drops every tag inside it, so each tag is guarded on its own.
+  const pub = !noindex;
   return (
     <Helmet>
-      <title>{fullTitle}</title>
-      <meta name="description" content={description} />
-      <link rel="canonical" href={url} />
-      {noindex && <meta name="robots" content="noindex,nofollow" />}
-
-      <meta property="og:type" content={type} />
-      <meta property="og:title" content={fullTitle} />
-      <meta property="og:description" content={description} />
-      <meta property="og:url" content={url} />
-      <meta property="og:site_name" content={SITE_NAME} />
-      <meta property="og:image" content={OG_IMAGE} />
-      <meta property="og:image:alt" content={`${SITE_NAME} logo`} />
-
-      <meta name="twitter:card" content="summary_large_image" />
-      <meta name="twitter:title" content={fullTitle} />
-      <meta name="twitter:description" content={description} />
-      <meta name="twitter:image" content={OG_IMAGE} />
-    </Helmet>
-  );
-}
-
-export function OrganizationStructuredData() {
-  const data = {
-    "@context": "https://schema.org",
-    "@type": "Organization",
-    "name": "CherryWorks Pro",
-    "url": "https://cherryworkspro.com",
-    "logo": OG_IMAGE,
-    "description": "Professional services automation software for agencies, consultancies, and service firms",
-    "foundingDate": "2024",
-    "numberOfEmployees": { "@type": "QuantitativeValue", "value": "10-50" },
-    "address": { "@type": "PostalAddress", "addressLocality": "New York", "addressRegion": "NY", "addressCountry": "US" },
-    "contactPoint": {
-      "@type": "ContactPoint",
-      "contactType": "customer support",
-      "url": "https://cherryworkspro.com/contact"
-    }
-  };
-
-  return (
-    <Helmet>
-      <script type="application/ld+json">{JSON.stringify(data)}</script>
-    </Helmet>
-  );
-}
-
-export function SoftwareApplicationStructuredData() {
-  const data = {
-    "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    "name": "CherryWorks Pro",
-    "applicationCategory": "BusinessApplication",
-    "operatingSystem": "Web-based",
-    "description": "Professional services operating system with time tracking, invoicing, GL, expenses, and team payouts",
-    "offers": [
-      { "@type": "Offer", "name": "Starter", "price": PRICING_LOW, "priceCurrency": "USD", "billingDuration": "P1M" },
-      { "@type": "Offer", "name": "Professional", "price": "89", "priceCurrency": "USD", "billingDuration": "P1M" },
-      { "@type": "Offer", "name": "Business", "price": PRICING_HIGH, "priceCurrency": "USD", "billingDuration": "P1M" }
-    ],
-    "publisher": {
-      "@type": "Organization",
-      "name": "CherryWorks Pro",
-      "url": "https://cherryworkspro.com"
-    },
-    "featureList": [
-      "Time Tracking",
-      "Timesheet Approval Workflow",
-      "Invoicing with Multi-Currency",
-      "Expense Management with Approvals",
-      "Payout Tracking",
-      "25+ Built-in Reports",
-      "Client Portal",
-      "Import Wizard for 8 Platforms",
-      "1099 Export",
-      "Project Profitability Analysis",
-      "Enterprise Audit Logging",
-      "AI Receipt OCR",
-      "GL Journal Entries",
-      "Recurring Invoices",
-      "Stripe Financial Connections"
-    ]
-  };
-
-  return (
-    <Helmet>
-      <script type="application/ld+json">{JSON.stringify(data)}</script>
+      <title>{title}</title>
+      {description ? <meta name="description" content={description} /> : null}
+      {noindex ? <meta name="robots" content="noindex,nofollow" /> : null}
+      {pub ? <link rel="canonical" href={url} /> : null}
+      {pub ? <meta property="og:type" content={type} /> : null}
+      {pub ? <meta property="og:title" content={title} /> : null}
+      {pub ? <meta property="og:description" content={description} /> : null}
+      {pub ? <meta property="og:url" content={url} /> : null}
+      {pub ? <meta property="og:site_name" content={SITE_NAME} /> : null}
+      {pub ? <meta property="og:image" content={OG_IMAGE} /> : null}
+      {pub ? <meta property="og:image:alt" content={`${SITE_NAME} logo`} /> : null}
+      {pub ? <meta name="twitter:card" content="summary_large_image" /> : null}
+      {pub ? <meta name="twitter:title" content={title} /> : null}
+      {pub ? <meta name="twitter:description" content={description} /> : null}
+      {pub ? <meta name="twitter:image" content={OG_IMAGE} /> : null}
     </Helmet>
   );
 }
@@ -137,6 +72,3 @@ export function FAQStructuredData({ faqs }: { faqs: { q: string; a: string }[] }
   );
 }
 
-export function BusinessStructuredData() {
-  return <SoftwareApplicationStructuredData />;
-}

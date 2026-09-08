@@ -6,7 +6,7 @@ export default function TermsPage() {
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--lux-bg)" }}>
       <MarketingNav />
-      <SEO title="Terms of Service" fullTitle="Terms of Service | CherryWorks Pro" description="Terms governing your use of CherryWorks Pro platform and services." path="/terms" />
+      <SEO path="/terms" />
       <main className="flex-1 pt-[136px] pb-16 px-4">
         <div className="max-w-3xl mx-auto" style={{ color: "var(--lux-text)" }}>
           <h1 className="text-3xl font-bold mb-2" style={{ color: "var(--lux-text)" }}>Terms of Service</h1>
