@@ -45,7 +45,12 @@ function escapeHtml(str: string): string {
   return str.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-const NOINDEX = `<meta name="robots" content="noindex,nofollow" />`;
+// `data-rh` marks a tag as owned by react-helmet-async, so the client's <SEO>
+// replaces it on navigation instead of leaving e.g. the /login noindex on the
+// public page a visitor navigates to next. JSON-LD scripts stay unmanaged: the
+// client no longer renders schema, and crawlers only see the initial response.
+const RH = ' data-rh="true"';
+const NOINDEX = `<meta name="robots" content="noindex,nofollow"${RH} />`;
 
 /**
  * Head tags for a path. Public routes get the full title/description/canonical/
@@ -63,24 +68,24 @@ export function getMetaTagsForPath(rawPath: string, route: RouteClass = classify
   const url = `${BASE_URL}${path === "/" ? "" : path}`;
   const tags = [
     `<title>${t}</title>`,
-    `<meta name="description" content="${d}" />`,
+    `<meta name="description" content="${d}"${RH} />`,
   ];
   if (seo.noindex) {
     tags.push(NOINDEX);
     return tags.join("\n    ");
   }
   tags.push(
-    `<link rel="canonical" href="${url}" />`,
-    `<meta property="og:title" content="${t}" />`,
-    `<meta property="og:description" content="${d}" />`,
-    `<meta property="og:url" content="${url}" />`,
-    `<meta property="og:image" content="${OG_IMAGE}" />`,
-    `<meta property="og:type" content="website" />`,
-    `<meta property="og:site_name" content="${SITE_NAME}" />`,
-    `<meta name="twitter:card" content="summary_large_image" />`,
-    `<meta name="twitter:title" content="${t}" />`,
-    `<meta name="twitter:description" content="${d}" />`,
-    `<meta name="twitter:image" content="${OG_IMAGE}" />`,
+    `<link rel="canonical" href="${url}"${RH} />`,
+    `<meta property="og:title" content="${t}"${RH} />`,
+    `<meta property="og:description" content="${d}"${RH} />`,
+    `<meta property="og:url" content="${url}"${RH} />`,
+    `<meta property="og:image" content="${OG_IMAGE}"${RH} />`,
+    `<meta property="og:type" content="website"${RH} />`,
+    `<meta property="og:site_name" content="${SITE_NAME}"${RH} />`,
+    `<meta name="twitter:card" content="summary_large_image"${RH} />`,
+    `<meta name="twitter:title" content="${t}"${RH} />`,
+    `<meta name="twitter:description" content="${d}"${RH} />`,
+    `<meta name="twitter:image" content="${OG_IMAGE}"${RH} />`,
     `<script type="application/ld+json">${JSON.stringify(ORGANIZATION_SCHEMA)}</script>`,
   );
   if (PATHS_WITH_SOFTWARE_SCHEMA.has(path)) {

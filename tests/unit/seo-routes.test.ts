@@ -28,6 +28,8 @@ describe("shared/seo-routes", () => {
     expect(classifyPath("/admin/data/users").kind).toBe("app");
     expect(classifyPath("/i/abc123").kind).toBe("token");
     expect(classifyPath("/portal/acme/cases").kind).toBe("token");
+    expect(classifyPath("/reset-password/0123abcd").kind).toBe("token"); // the link in the reset email
+    expect(classifyPath("/reset-password").kind).toBe("public");
     expect(classifyPath("/i").kind).toBe("unknown");
     expect(classifyPath("/totally-bogus").kind).toBe("unknown");
     expect(classifyPath("/dashboardx").kind).toBe("unknown");
@@ -58,7 +60,7 @@ describe("server/seo-meta", () => {
   it("public pages get canonical + JSON-LD and no noindex", () => {
     const head = getMetaTagsForPath("/pricing");
     expect(head).toContain(`<title>${PUBLIC_ROUTES["/pricing"].title}</title>`);
-    expect(head).toContain('<link rel="canonical" href="https://cherryworkspro.com/pricing" />');
+    expect(head).toMatch(/<link rel="canonical" href="https:\/\/cherryworkspro\.com\/pricing"[^>]*\/>/);
     expect(head).toContain('"@type":"SoftwareApplication"');
     expect(head).not.toContain("noindex");
     expect(head).not.toMatch(/"price":"0"/);
@@ -69,6 +71,9 @@ describe("server/seo-meta", () => {
     expect(getMetaTagsForPath("/login")).toContain("noindex");
     expect(getMetaTagsForPath("/login")).toContain("Log In");
     expect(getMetaTagsForPath("/dashboard")).toContain('content="noindex,nofollow"');
+    // Helmet must own the injected tags so client-side navigation can replace them
+    expect(getMetaTagsForPath("/login")).toMatch(/name="robots"[^>]*data-rh="true"/);
+    expect(getMetaTagsForPath("/pricing")).toMatch(/rel="canonical"[^>]*data-rh="true"/);
     expect(getMetaTagsForPath("/dashboard")).not.toContain("canonical");
     expect(getMetaTagsForPath("/i/tok")).toContain("noindex");
     expect(getMetaTagsForPath("/nope")).toContain("noindex");
@@ -78,6 +83,7 @@ describe("server/seo-meta", () => {
     expect(shellResponse("/")).toMatchObject({ status: 200 });
     expect(shellResponse("/dashboard")).toMatchObject({ status: 200 });
     expect(shellResponse("/e/tok")).toMatchObject({ status: 200 });
+    expect(shellResponse("/reset-password/0123abcd")).toMatchObject({ status: 200 });
     expect(shellResponse("/totally-bogus")).toMatchObject({ status: 404 });
     expect(shellResponse("/blog")).toEqual({ redirect: "/" });
     expect(shellResponse("/tour/")).toEqual({ redirect: "/demo" });

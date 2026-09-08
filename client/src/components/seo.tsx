@@ -22,28 +22,26 @@ export function SEO({ path, type = "website" }: SEOProps) {
   const noindex = !entry || entry.noindex === true;
   const url = `${BASE_URL}${path === "/" ? "" : path}`;
 
+  // react-helmet-async only collects DIRECT children of <Helmet>: a fragment
+  // here silently drops every tag inside it, so each tag is guarded on its own.
+  const pub = !noindex;
   return (
     <Helmet>
       <title>{title}</title>
-      {description && <meta name="description" content={description} />}
-      {noindex ? (
-        <meta name="robots" content="noindex,nofollow" />
-      ) : (
-        <>
-          <link rel="canonical" href={url} />
-          <meta property="og:type" content={type} />
-          <meta property="og:title" content={title} />
-          <meta property="og:description" content={description} />
-          <meta property="og:url" content={url} />
-          <meta property="og:site_name" content={SITE_NAME} />
-          <meta property="og:image" content={OG_IMAGE} />
-          <meta property="og:image:alt" content={`${SITE_NAME} logo`} />
-          <meta name="twitter:card" content="summary_large_image" />
-          <meta name="twitter:title" content={title} />
-          <meta name="twitter:description" content={description} />
-          <meta name="twitter:image" content={OG_IMAGE} />
-        </>
-      )}
+      {description ? <meta name="description" content={description} /> : null}
+      {noindex ? <meta name="robots" content="noindex,nofollow" /> : null}
+      {pub ? <link rel="canonical" href={url} /> : null}
+      {pub ? <meta property="og:type" content={type} /> : null}
+      {pub ? <meta property="og:title" content={title} /> : null}
+      {pub ? <meta property="og:description" content={description} /> : null}
+      {pub ? <meta property="og:url" content={url} /> : null}
+      {pub ? <meta property="og:site_name" content={SITE_NAME} /> : null}
+      {pub ? <meta property="og:image" content={OG_IMAGE} /> : null}
+      {pub ? <meta property="og:image:alt" content={`${SITE_NAME} logo`} /> : null}
+      {pub ? <meta name="twitter:card" content="summary_large_image" /> : null}
+      {pub ? <meta name="twitter:title" content={title} /> : null}
+      {pub ? <meta name="twitter:description" content={description} /> : null}
+      {pub ? <meta name="twitter:image" content={OG_IMAGE} /> : null}
     </Helmet>
   );
 }

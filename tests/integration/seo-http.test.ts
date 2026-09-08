@@ -29,6 +29,8 @@ describe("public site HTTP contract", () => {
   });
 
   it("serves the signed-in app shell with 200 + noindex, and a public page with its canonical", async () => {
+    const reset = await get("/reset-password/0123abcd");
+    expect(reset.status).toBe(200);
     const app = await get("/dashboard");
     expect(app.status).toBe(200);
     expect(await app.text()).toContain('content="noindex,nofollow"');
