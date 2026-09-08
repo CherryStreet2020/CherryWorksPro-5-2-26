@@ -176,6 +176,7 @@ export default function PayoutsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/payouts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/payouts/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payouts/team-member"] }); // statements + unpaid entries
       setPayoutDialogOpen(false);
       resetForm();
       toast({ title: "Payment recorded successfully" });
@@ -221,6 +222,7 @@ export default function PayoutsPage() {
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/payouts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/payouts/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payouts/team-member"] }); // statements + unpaid entries
       // Close the dialog only if it is still showing THIS payout.
       setMarkPaidPayout(cur => (cur && cur.id === vars.id ? null : cur));
       toast({ title: "Marked paid", description: `Recorded as paid via ${PAYOUT_OFFLINE_METHOD_LABELS[vars.paymentMethod]}.` });
@@ -247,6 +249,7 @@ export default function PayoutsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/payouts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/payouts/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payouts/team-member"] }); // statements + unpaid entries
       toast({ title: "Payment voided" });
     },
     onError: (err: Error) => {
@@ -262,6 +265,7 @@ export default function PayoutsPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/payouts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/payouts/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payouts/team-member"] }); // statements + unpaid entries
       toast({ title: "Payment sent", description: `Transfer ${data.transferId} initiated via Stripe Connect.` });
     },
     onError: (err: Error) => {
@@ -278,6 +282,7 @@ export default function PayoutsPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/payouts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/payouts/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payouts/team-member"] }); // statements + unpaid entries
       const results: any[] = data.results || [];
       const sent = results.filter(r => r.success).length;
       // The server skips (does not attempt) members who are not on Stripe Connect

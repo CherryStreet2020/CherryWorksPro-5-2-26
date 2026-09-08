@@ -46,6 +46,8 @@ export interface StatementPayout {
 
 export interface PayoutStatement {
   generatedAt: string;
+  /** The organisation's base currency (ISO 4217) — every amount below is in it. */
+  currency: string;
   member: { id: string; name: string; email: string | null };
   outstanding: { total: number; hours: number; lines: StatementLine[] };
   payouts: StatementPayout[];
@@ -58,6 +60,8 @@ const hoursOf = (minutes: number) => r2(minutes / 60);
 export async function buildPayoutStatement(orgId: string, teamMemberId: string): Promise<PayoutStatement | null> {
   const member = await storage.getUserById(teamMemberId);
   if (!member || member.orgId !== orgId) return null;
+  const org = await storage.getOrg(orgId);
+  const currency = org?.baseCurrency || "USD";
   const name = (member as any).name || [ (member as any).firstName, (member as any).lastName ].filter(Boolean).join(" ") || member.email;
 
   const projectRows = await db
@@ -134,6 +138,7 @@ export async function buildPayoutStatement(orgId: string, teamMemberId: string):
 
   return {
     generatedAt: new Date().toISOString(),
+    currency,
     member: { id: member.id, name, email: member.email ?? null },
     outstanding: { total: outstandingTotal, hours: outstandingHours, lines: outstandingLines },
     payouts,
@@ -150,6 +155,7 @@ export function statementToXlsx(s: PayoutStatement): Buffer {
     ["Team member", s.member.name],
     ["Email", s.member.email ?? ""],
     ["Generated", s.generatedAt],
+    ["Currency", s.currency],
     [],
     ["Outstanding (unpaid time)", s.outstanding.total],
     ["Outstanding hours", s.outstanding.hours],
@@ -174,7 +180,10 @@ export function statementToPdf(s: PayoutStatement, orgName: string): Promise<Buf
     doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
-    const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+    const money = (n: number) => {
+      try { return n.toLocaleString("en-US", { style: "currency", currency: s.currency }); }
+      catch { return `${s.currency} ${n.toFixed(2)}`; }
+    };
     type CellKey = "date" | "client" | "project" | "hours" | "rate" | "amount" | "invoiced" | "notes";
     type Col = { key: CellKey; label: string; w: number; right?: boolean };
     const cols: Col[] = [
@@ -197,7 +206,7 @@ export function statementToPdf(s: PayoutStatement, orgName: string): Promise<Buf
       const y = doc.y;
       doc.font("Helvetica-Bold").fontSize(8).fillColor("#444");
       cols.forEach((c, i) => doc.text(c.label, xs[i], y, { width: c.w, align: c.right ? "right" : "left" }));
-      doc.y = y + 12;
+      doc.x = left; doc.y = y + 12;
       doc.moveTo(left, doc.y).lineTo(left + tableWidth, doc.y).strokeColor("#bbb").stroke();
       doc.moveDown(0.3);
     };
@@ -210,7 +219,7 @@ export function statementToPdf(s: PayoutStatement, orgName: string): Promise<Buf
       const y = doc.y;
       doc.font("Helvetica").fontSize(8).fillColor("#111");
       cols.forEach((c, i) => doc.text(cells[c.key], xs[i], y, { width: c.w - 4, align: c.right ? "right" : "left" }));
-      doc.y = y + h + 3;
+      doc.x = left; doc.y = y + h + 3;
     };
 
     doc.font("Helvetica-Bold").fontSize(16).fillColor("#111").text(`${orgName} — Payout statement`);
