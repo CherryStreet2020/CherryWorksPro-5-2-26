@@ -8,6 +8,8 @@
  *     earnings view reads (#40: one computation);
  *   • paid lines — payout_time_entries.amount: the amount recorded for that entry
  *     when the payout was booked, not today's rate.
+ * VOID payouts are not payouts: they are left out entirely (Dean, 2026-09-08 —
+ * "just give me the actual payouts"); their hours are back in Outstanding anyway.
  */
 import PDFDocument from "pdfkit";
 import * as XLSX from "xlsx";
@@ -90,7 +92,7 @@ export async function buildPayoutStatement(orgId: string, teamMemberId: string):
   const outstandingTotal = r2(outstandingLines.reduce((s, l) => s + l.amount, 0));
   const outstandingHours = r2(outstandingLines.reduce((s, l) => s + l.hours, 0));
 
-  const payoutRows = await storage.getTeamMemberPayouts(orgId, { teamMemberId });
+  const payoutRows = (await storage.getTeamMemberPayouts(orgId, { teamMemberId })).filter((p) => p.status !== "VOID");
   const payouts: StatementPayout[] = [];
   for (const p of payoutRows) {
     const links = await storage.getPayoutTimeEntries(p.id, orgId);

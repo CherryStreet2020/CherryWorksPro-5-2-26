@@ -21,6 +21,7 @@ const CLIENT_ID = randomUUID();
 const PROJECT_ID = randomUUID();
 const E = { paid: randomUUID(), u1: randomUUID(), u2: randomUUID() };
 const PAYOUT_ID = randomUUID();
+const VOID_PAYOUT_ID = randomUUID();
 
 import { db, pool } from "../../server/db";
 import { orgs } from "@shared/schema";
@@ -65,6 +66,9 @@ beforeAll(async () => {
   await pool.query(`INSERT INTO time_entries (id, org_id, project_id, user_id, date, minutes, billable, rate, cost_rate_snapshot, invoiced, notes) VALUES ($1,$2,$3,$4,'2026-08-12',50,true,'150','135',false,'unpaid two')`, [E.u2, ORG_ID, PROJECT_ID, MEMBER_ID]);
   await pool.query(`INSERT INTO team_member_payouts_v2 (id, org_id, team_member_id, amount, payout_date, payment_method, status, reference_number, notes) VALUES ($1,$2,$3,'270.00','2026-08-10','ZELLE','COMPLETED','Z-1',NULL)`, [PAYOUT_ID, ORG_ID, MEMBER_ID]);
   await pool.query(`INSERT INTO payout_time_entries (id, org_id, payout_id, time_entry_id, amount) VALUES ($1,$2,$3,$4,'270.00')`, [randomUUID(), ORG_ID, PAYOUT_ID, E.paid]);
+  // a voided attempt at paying u1: not a payout, and u1 is still outstanding
+  await pool.query(`INSERT INTO team_member_payouts_v2 (id, org_id, team_member_id, amount, payout_date, payment_method, status, reference_number, notes) VALUES ($1,$2,$3,'135.00','2026-09-10','ZELLE','VOID',NULL,'voided')`, [VOID_PAYOUT_ID, ORG_ID, MEMBER_ID]);
+  await pool.query(`INSERT INTO payout_time_entries (id, org_id, payout_id, time_entry_id, amount) VALUES ($1,$2,$3,$4,'135.00')`, [randomUUID(), ORG_ID, VOID_PAYOUT_ID, E.u1]);
 });
 
 afterAll(async () => {
@@ -98,7 +102,8 @@ describe("GET /api/payouts/team-member/:id/statement", () => {
 
   it("lists the lines behind each recorded payout with the booked amounts", async () => {
     const { body } = await get(buildApp(), `/api/payouts/team-member/${MEMBER_ID}/statement`);
-    expect(body.payouts).toHaveLength(1);
+    expect(body.payouts).toHaveLength(1); // the VOID payout is not a payout
+    expect(body.payouts.some((x: any) => x.status === "VOID")).toBe(false);
     const p = body.payouts[0];
     expect(p).toMatchObject({ id: PAYOUT_ID, amount: 270, status: "COMPLETED", paymentMethod: "ZELLE", referenceNumber: "Z-1", unlinkedAmount: 0 });
     expect(p.lines).toHaveLength(1);
