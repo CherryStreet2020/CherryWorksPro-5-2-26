@@ -84,6 +84,7 @@ describe("GET /api/payouts/team-member/:id/statement", () => {
     const { status, body } = await get(app, `/api/payouts/team-member/${MEMBER_ID}/statement`);
     expect(status).toBe(200);
     expect(body.member.name).toBe("David Statement");
+    expect(body.currency).toBe("USD"); // the org's base currency, carried into the dialog and both exports
     expect(body.outstanding.lines.map((l: any) => l.entryId).sort()).toEqual([E.u1, E.u2].sort());
     expect(body.outstanding.total).toBe(247.5);
     expect(body.outstanding.hours).toBe(1.83);

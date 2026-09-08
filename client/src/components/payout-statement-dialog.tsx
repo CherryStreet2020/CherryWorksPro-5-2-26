@@ -8,9 +8,9 @@ import { FileSpreadsheet, FileText } from "lucide-react";
 
 interface Line { entryId: string; date: string; project: string; client: string; hours: number; rate: number; amount: number; billable: boolean; invoiced: boolean; notes: string | null }
 interface Payout { id: string; payoutDate: string; amount: number; status: string; paymentMethod: string | null; referenceNumber: string | null; periodStart: string | null; periodEnd: string | null; notes: string | null; lines: Line[]; unlinkedAmount: number }
-interface Statement { generatedAt: string; member: { id: string; name: string; email: string | null }; outstanding: { total: number; hours: number; lines: Line[] }; payouts: Payout[]; paidTotal: number }
+interface Statement { generatedAt: string; currency: string; member: { id: string; name: string; email: string | null }; outstanding: { total: number; hours: number; lines: Line[] }; payouts: Payout[]; paidTotal: number }
 
-function LinesTable({ lines, testId }: { lines: Line[]; testId: string }) {
+function LinesTable({ lines, testId, currency }: { lines: Line[]; testId: string; currency: string }) {
   return (
     <div className="overflow-x-auto rounded-lg" style={{ border: "1px solid var(--lux-border)" }}>
       <table className="w-full text-xs" data-testid={testId}>
@@ -28,8 +28,8 @@ function LinesTable({ lines, testId }: { lines: Line[]; testId: string }) {
               <td className="px-2 py-1.5">{l.client}</td>
               <td className="px-2 py-1.5">{l.project}</td>
               <td className="px-2 py-1.5 text-right tabular-nums">{formatHours(l.hours)}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums">{formatMoney(l.rate)}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{formatMoney(l.amount)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{formatMoney(l.rate, currency)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{formatMoney(l.amount, currency)}</td>
               <td className="px-2 py-1.5">{l.invoiced ? "Yes" : "No"}</td>
               <td className="px-2 py-1.5 max-w-[220px] truncate" title={l.notes ?? ""} style={{ color: "var(--lux-text-muted)" }}>{l.notes ?? ""}</td>
             </tr>
@@ -77,16 +77,16 @@ export function PayoutStatementDialog({ teamMemberId, open, onOpenChange }: { te
             <section>
               <div className="flex items-baseline justify-between mb-2">
                 <h3 className="text-sm font-bold" style={{ color: "var(--lux-text)" }}>Outstanding — what is owed now</h3>
-                <p className="text-sm" style={{ color: "var(--lux-text-muted)" }}>{formatHours(data.outstanding.hours)}h · <span className="font-bold" style={{ color: "var(--lux-text)" }} data-testid="statement-outstanding-total">{formatMoney(data.outstanding.total)}</span></p>
+                <p className="text-sm" style={{ color: "var(--lux-text-muted)" }}>{formatHours(data.outstanding.hours)}h · <span className="font-bold" style={{ color: "var(--lux-text)" }} data-testid="statement-outstanding-total">{formatMoney(data.outstanding.total, data.currency)}</span></p>
               </div>
               {data.outstanding.lines.length === 0
                 ? <p className="text-sm py-3" style={{ color: "var(--lux-text-muted)" }}>No unpaid time.</p>
-                : <LinesTable lines={data.outstanding.lines} testId="statement-outstanding-lines" />}
+                : <LinesTable lines={data.outstanding.lines} testId="statement-outstanding-lines" currency={data.currency} />}
             </section>
             <section>
               <div className="flex items-baseline justify-between mb-2">
                 <h3 className="text-sm font-bold" style={{ color: "var(--lux-text)" }}>Paid — what each payout covered</h3>
-                <p className="text-sm" style={{ color: "var(--lux-text-muted)" }}>{data.payouts.length} payout(s) · completed total <span className="font-bold" style={{ color: "var(--lux-text)" }} data-testid="statement-paid-total">{formatMoney(data.paidTotal)}</span></p>
+                <p className="text-sm" style={{ color: "var(--lux-text-muted)" }}>{data.payouts.length} payout(s) · completed total <span className="font-bold" style={{ color: "var(--lux-text)" }} data-testid="statement-paid-total">{formatMoney(data.paidTotal, data.currency)}</span></p>
               </div>
               {data.payouts.length === 0 && <p className="text-sm py-3" style={{ color: "var(--lux-text-muted)" }}>No payouts recorded yet.</p>}
               <div className="space-y-3">
@@ -94,7 +94,7 @@ export function PayoutStatementDialog({ teamMemberId, open, onOpenChange }: { te
                   <details key={p.id} className="rounded-lg p-3" style={{ background: "var(--lux-bg)", border: "1px solid var(--lux-border)" }} data-testid={`statement-payout-${p.id}`}>
                     <summary className="cursor-pointer flex flex-wrap items-center gap-3 text-sm" style={{ color: "var(--lux-text)" }}>
                       <span className="font-semibold">{formatDate(p.payoutDate)}</span>
-                      <span className="font-bold tabular-nums">{formatMoney(p.amount)}</span>
+                      <span className="font-bold tabular-nums">{formatMoney(p.amount, data.currency)}</span>
                       <StatusBadge status={p.status} />
                       {p.paymentMethod && <span style={{ color: "var(--lux-text-muted)" }}>via {p.paymentMethod}</span>}
                       {p.referenceNumber && <span style={{ color: "var(--lux-text-muted)" }}>ref {p.referenceNumber}</span>}
@@ -104,8 +104,8 @@ export function PayoutStatementDialog({ teamMemberId, open, onOpenChange }: { te
                       {p.notes && <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>{p.notes}</p>}
                       {p.lines.length === 0
                         ? <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>Recorded without linked time entries.</p>
-                        : <LinesTable lines={p.lines} testId={`statement-payout-lines-${p.id}`} />}
-                      {p.lines.length > 0 && p.unlinkedAmount !== 0 && <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>Amount not linked to time: {formatMoney(p.unlinkedAmount)}</p>}
+                        : <LinesTable lines={p.lines} testId={`statement-payout-lines-${p.id}`} currency={data.currency} />}
+                      {p.lines.length > 0 && p.unlinkedAmount !== 0 && <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>Amount not linked to time: {formatMoney(p.unlinkedAmount, data.currency)}</p>}
                     </div>
                   </details>
                 ))}
