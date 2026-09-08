@@ -23,7 +23,8 @@ describe("shared/seo-routes", () => {
     expect(classifyPath("/pricing?utm=x#top").kind).toBe("public");
     expect(classifyPath("/marketing").kind).toBe("public");
     expect(classifyPath("/marketing/contacts").kind).toBe("app");
-    expect(classifyPath("/tour")).toEqual({ kind: "redirect", to: "/demo" });
+    expect(classifyPath("/tour").kind).toBe("public");
+    expect(classifyPath("/marketing-os")).toEqual({ kind: "redirect", to: "/marketing" });
     expect(classifyPath("/dashboard").kind).toBe("app");
     expect(classifyPath("/admin/data/users").kind).toBe("app");
     expect(classifyPath("/i/abc123").kind).toBe("token");
@@ -90,9 +91,9 @@ describe("server/seo-meta", () => {
     expect(shellResponse("/reset-password/0123abcd")).toMatchObject({ status: 200 });
     expect(shellResponse("/totally-bogus")).toMatchObject({ status: 404 });
     expect(shellResponse("/blog")).toEqual({ redirect: "/" });
-    expect(shellResponse("/tour/")).toEqual({ redirect: "/demo" });
+    expect(shellResponse("/marketing-os/")).toEqual({ redirect: "/marketing" });
     // the query string survives a redirect (UTM attribution, plan deep-links)
-    expect(shellResponse("/tour?utm_source=newsletter&utm_campaign=q3")).toEqual({ redirect: "/demo?utm_source=newsletter&utm_campaign=q3" });
+    expect(shellResponse("/marketing-os?utm_source=newsletter&utm_campaign=q3")).toEqual({ redirect: "/marketing?utm_source=newsletter&utm_campaign=q3" });
     expect(shellResponse("/blog?x=1#section")).toEqual({ redirect: "/?x=1" });
   });
 });

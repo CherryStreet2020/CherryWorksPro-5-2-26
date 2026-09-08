@@ -13,7 +13,9 @@ const ZAPIER_APP_URL = import.meta.env.VITE_ZAPIER_APP_URL || "https://zapier.co
 
 const footerLinks = {
   Product: [
-    { label: "Tour", href: "/demo" },
+    { label: "Tour", href: "/tour" },
+    { label: "Client Support", href: "/client-support" },
+    { label: "Request a Demo", href: "/demo" },
     { label: "Features", href: "/features" },
     { label: "Marketing Hub", href: "/marketing" },
     { label: "Pricing", href: "/pricing" },
@@ -26,6 +28,7 @@ const footerLinks = {
     { label: "Switch from BigTime", href: "/switch-from-bigtime" },
     { label: "Switch from Scoro", href: "/switch-from-scoro" },
     { label: "Switch from Paymo", href: "/switch-from-paymo" },
+    { label: "Switch from Jira Service Management", href: "/switch-from-jira-service-management" },
     { label: "Integrations", href: "/integrations" },
   ],
   Company: [

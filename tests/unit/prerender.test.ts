@@ -89,9 +89,9 @@ describe("serveStatic with pre-rendered pages", () => {
   it("keeps the #64 rules: app shell noindex, unknown 404, retired 301 with query", async () => {
     expect(await (await get("/dashboard")).text()).toContain("noindex");
     expect((await get("/no-such-page")).status).toBe(404);
-    const t = await get("/tour?utm=1");
+    const t = await get("/marketing-os?utm=1");
     expect(t.status).toBe(301);
-    expect(t.headers.get("location")).toBe("/demo?utm=1");
+    expect(t.headers.get("location")).toBe("/marketing?utm=1");
   });
 
   it("never exposes the pre-rendered files as static assets", async () => {

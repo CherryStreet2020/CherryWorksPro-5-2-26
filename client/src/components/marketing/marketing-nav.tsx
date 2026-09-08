@@ -5,7 +5,8 @@ import { BrandLockup } from "@/components/shared/brand-lockup";
 
 const navLinks = [
   { label: "Features", href: "/features" },
-  { label: "Tour", href: "/demo" },
+  { label: "Tour", href: "/tour" },
+  { label: "Client Support", href: "/client-support" },
   { label: "Compare", href: "/compare" },
   { label: "Pricing", href: "/pricing" },
   { label: "Marketing Hub", href: "/marketing" },

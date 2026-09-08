@@ -159,9 +159,6 @@ app.use((req, res, next) => {
 
   await registerRoutes(httpServer, app);
 
-  app.get("/marketing-os", (_req, res) => {
-    res.redirect(301, "/marketing");
-  });
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

@@ -1090,7 +1090,7 @@ function FeatureSection({ g, mockup, badge, callout }: { g: typeof featureGroups
               <ul className="space-y-2">
                 {g.highlights.map((h,j) => (<li key={j} className="flex items-start gap-2 text-base" style={{ color: "rgba(255,255,255,0.55)" }}><CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#22c55e" }} />{h}</li>))}
               </ul>
-              <Link href="/demo"><span className="inline-flex items-center gap-1.5 mt-6 text-sm font-semibold cursor-pointer transition-colors hover:opacity-80" style={{ color: "#f87171" }} data-testid="see-it-in-action">See it in action <ArrowRight className="w-3.5 h-3.5" /></span></Link>
+              <Link href="/tour"><span className="inline-flex items-center gap-1.5 mt-6 text-sm font-semibold cursor-pointer transition-colors hover:opacity-80" style={{ color: "#f87171" }} data-testid="see-it-in-action">See it in action <ArrowRight className="w-3.5 h-3.5" /></span></Link>
             </div>
             <div className="w-full lg:w-[60%] fade-child stagger-3">{mockup}</div>
           </div>
@@ -1113,7 +1113,7 @@ function FeatureSection({ g, mockup, badge, callout }: { g: typeof featureGroups
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 fade-child stagger-2">
             {g.highlights.map((h,j) => (<div key={j} className="flex items-start gap-2 text-base" style={{ color: "rgba(255,255,255,0.55)" }}><CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#22c55e" }} />{h}</div>))}
           </div>
-          <Link href="/demo"><span className="inline-flex items-center gap-1.5 mt-6 text-sm font-semibold cursor-pointer transition-colors hover:opacity-80 fade-child stagger-3" style={{ color: "#f87171" }} data-testid="see-it-in-action">See it in action <ArrowRight className="w-3.5 h-3.5" /></span></Link>
+          <Link href="/tour"><span className="inline-flex items-center gap-1.5 mt-6 text-sm font-semibold cursor-pointer transition-colors hover:opacity-80 fade-child stagger-3" style={{ color: "#f87171" }} data-testid="see-it-in-action">See it in action <ArrowRight className="w-3.5 h-3.5" /></span></Link>
         </div>
       )}
     </div>

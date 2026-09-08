@@ -580,6 +580,56 @@ app.post("/api/public/contact", apiLimiter, async (req, res) => {
     return res.status(500).json({ message: sanitizeErrorMessage(err) });
   }
 });
+// Public demo request. It is sent to the operator workspace's support inbound
+// address (Support → Settings), so the M365 inbox reader turns it into a Support
+// Case — the same path a client email takes — and falls back to the contact inbox
+// when no support address is configured.
+app.post("/api/public/demo-request", apiLimiter, async (req, res) => {
+  try {
+    const { name, email, company, teamSize, message } = req.body ?? {};
+    const clean = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+    const n = clean(name, 120), e = clean(email, 320), c = clean(company, 160), t = clean(teamSize, 10), m = clean(message, 4000);
+    if (!n || !e || !c) return res.status(400).json({ message: "Name, work email and firm are required" });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return res.status(400).json({ message: "Enter a valid email address" });
+    let to = "info@cherrystconsulting.com";
+    const slug = process.env.PLATFORM_MAILBOX_ORG_SLUG;
+    if (slug) {
+      const operator = await storage.getOrgBySlug(slug).catch(() => null);
+      if (operator?.supportInboundAddress) to = operator.supportInboundAddress;
+    }
+    const text = `Demo request\n\nName: ${n}\nEmail: ${e}\nFirm: ${c}\nTeam size: ${t || "-"}\n\n${m || "(no message)"}`;
+    try {
+      const { createTransporter } = await import("../email");
+      const transporter = await createTransporter();
+      await transporter!.sendMail({
+        from: process.env.SMTP_USER || "noreply@cherryworkspro.com",
+        to,
+        replyTo: e,
+        subject: `Demo request: ${c} (${n})`,
+        text,
+        html: wrapEmailLayout(`
+          <p style="font-size:20px;font-weight:700;color:#1a1a2e;margin:0 0 4px;">Demo request</p>
+          <p style="font-size:14px;color:#8b8da3;margin:0 0 28px;">From the website</p>
+          ${emailDetailCard(
+            emailKeyValue("Name", escapeHtml(n)) +
+            emailKeyValue("Email", `<a href="mailto:${escapeHtml(e)}" style="color:#1a1a2e;text-decoration:underline;">${escapeHtml(e)}</a>`) +
+            emailKeyValue("Firm", escapeHtml(c)) +
+            emailKeyValue("Team size", escapeHtml(t || "-"))
+          )}
+          <div style="font-size:15px;color:#555770;line-height:1.7;white-space:pre-wrap;">${escapeHtml(m || "(no message)").replace(/\n/g, "<br/>")}</div>
+        `),
+      });
+    } catch (emailErr: any) {
+      console.error("[demo-request] send failed:", emailErr.message);
+      console.log(`[demo-request] ${n} <${maskEmail(e)}> ${c} ${t}: ${m.slice(0, 100)}`);
+      return res.json({ ok: true, warning: "Saved; the notification could not be sent" });
+    }
+    console.log(`[demo-request] ${n} <${maskEmail(e)}> ${c} ${t} → ${to.split("@")[1] ?? to}`);
+    return res.json({ ok: true });
+  } catch (err: any) {
+    return res.status(500).json({ message: sanitizeErrorMessage(err) });
+  }
+});
 app.get("/api/org/settings", requireAdmin, async (req, res) => {
   const orgId = req.session.orgId!;
   const org = await storage.getOrg(orgId);
