@@ -42,6 +42,43 @@ app.get("/api/payouts/summary", requireAdmin, async (req, res) => {
     return res.status(500).json({ message: sanitizeErrorMessage(err) });
   }
 });
+// ── Per-member payout statement: the exact timesheet lines behind the outstanding
+// balance and behind each recorded payout (see server/payout-statement.ts). ──
+app.get("/api/payouts/team-member/:teamMemberId/statement", requireAdmin, async (req, res) => {
+  try {
+    const { buildPayoutStatement } = await import("../payout-statement");
+    const statement = await buildPayoutStatement(req.session.orgId!, req.params.teamMemberId as string);
+    if (!statement) return res.status(404).json({ message: "Team member not found in your organization" });
+    return res.json(statement);
+  } catch (err: any) {
+    return res.status(500).json({ message: sanitizeErrorMessage(err) });
+  }
+});
+// Express 5 (path-to-regexp v8) has no regex params, so the two download formats are
+// two routes over one handler.
+async function sendPayoutStatementFile(req: Request, res: Response, format: "xlsx" | "pdf") {
+  try {
+    const { buildPayoutStatement, statementToXlsx, statementToPdf } = await import("../payout-statement");
+    const statement = await buildPayoutStatement(req.session.orgId!, req.params.teamMemberId as string);
+    if (!statement) return res.status(404).json({ message: "Team member not found in your organization" });
+    const org = await storage.getOrg(req.session.orgId!);
+    const safeName = statement.member.name.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "member";
+    const stamp = statement.generatedAt.slice(0, 10);
+    if (format === "xlsx") {
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="payout-statement-${safeName}-${stamp}.xlsx"`);
+      return res.send(statementToXlsx(statement));
+    }
+    const pdf = await statementToPdf(statement, org?.name ?? "CherryWorks Pro");
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="payout-statement-${safeName}-${stamp}.pdf"`);
+    return res.send(pdf);
+  } catch (err: any) {
+    return res.status(500).json({ message: sanitizeErrorMessage(err) });
+  }
+}
+app.get("/api/payouts/team-member/:teamMemberId/statement.xlsx", requireAdmin, (req, res) => sendPayoutStatementFile(req, res, "xlsx"));
+app.get("/api/payouts/team-member/:teamMemberId/statement.pdf", requireAdmin, (req, res) => sendPayoutStatementFile(req, res, "pdf"));
 app.get("/api/payouts/:id", requireAdmin, async (req, res) => {
   try {
     const payout = await storage.getTeamMemberPayoutById(req.params.id as string, req.session.orgId!);
