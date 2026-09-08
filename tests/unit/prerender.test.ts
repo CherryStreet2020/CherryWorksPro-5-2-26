@@ -21,7 +21,9 @@ describe("prerender slugs and documents", () => {
     expect(slugFor("/pricing")).toBe("pricing");
     expect(slugFor("/switch-from-paymo")).toBe("switch-from-paymo");
     const dir = mkdtempSync(path.join(tmpdir(), "prerendered-"));
-    for (const p of sitemapPaths()) writeFileSync(path.join(dir, `${slugFor(p)}.html`), `<html>${p}</html>`);
+    const manifest: Record<string, string> = {};
+    for (const p of sitemapPaths()) { writeFileSync(path.join(dir, `${slugFor(p)}.html`), `<html>${p}</html>`); manifest[p] = `${slugFor(p)}.html`; }
+    writeFileSync(path.join(dir, "manifest.json"), JSON.stringify(manifest));
     const loaded = loadPrerendered(dir);
     expect([...loaded.keys()].sort()).toEqual([...sitemapPaths()].sort());
     expect(loaded.get("/")).toContain("/");
@@ -48,6 +50,7 @@ describe("serveStatic with pre-rendered pages", () => {
     mkdirSync(path.join(dist, "prerendered"));
     writeFileSync(path.join(dist, "public", "index.html"), TEMPLATE);
     writeFileSync(path.join(dist, "prerendered", "pricing.html"), composeDocument(TEMPLATE, "<h1>PRERENDERED PRICING</h1>", "/pricing"));
+    writeFileSync(path.join(dist, "prerendered", "manifest.json"), JSON.stringify({ "/pricing": "pricing.html" }));
     const app = express();
     serveStatic(app, dist);
     await new Promise<void>((resolve) => { server = app.listen(0, resolve); });

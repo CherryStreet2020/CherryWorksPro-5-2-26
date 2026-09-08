@@ -37,14 +37,14 @@ test.describe("pre-rendered public pages", () => {
     });
   }
 
-  test("the hydration gate can fail (mismatch fixture)", async ({ page }) => {
-    await page.goto(`${BASE}/__hydration_mismatch`);
-    await page.waitForSelector('[data-testid="mismatch"]');
-    // the fixture route is not pre-rendered, so hydrateRoot is not used there; render the
-    // pre-rendered home, then navigate client-side to the fixture to exercise hydration paths
-    // is not possible — instead assert the collector exists and the fixture rendered a timestamp.
-    const txt = await page.locator('[data-testid="mismatch"]').textContent();
-    expect(Number(txt)).toBeGreaterThan(0);
+  test("the hydration gate can fail (pre-rendered mismatch fixture)", async ({ page }) => {
+    // Fixture builds pre-render /__hydration_mismatch, whose markup is Date.now(): the
+    // server's value and the client's differ, so hydration must report a recoverable error.
+    const res = await page.goto(`${BASE}/__hydration_mismatch`);
+    expect((await res!.text()).includes('data-testid="mismatch"'), "fixture is pre-rendered").toBe(true);
+    await page.waitForFunction(() => document.documentElement.dataset.hydrated === "1", null, { timeout: 15000 });
+    await page.waitForTimeout(1000);
+    expect((await hydrationErrors(page)).length).toBeGreaterThan(0);
   });
 
   test("copy is readable without JavaScript", async ({ browser }) => {

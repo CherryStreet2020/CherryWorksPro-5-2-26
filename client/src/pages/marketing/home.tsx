@@ -371,7 +371,7 @@ function StatItem({ num, suffix, subtitle, icon: Icon }: { num: number; suffix: 
     <div ref={ref} className="flex flex-col items-center text-center gap-1">
       <Icon className="w-5 h-5 mb-1" style={{ color: "#cf3339" }} />
       <p className="text-3xl md:text-4xl font-bold text-white tabular-nums" style={{ animation: started ? "count-fade-in 0.6s ease-out" : "none" }}>
-        {started ? count : 0}{suffix}
+        {count}{suffix}
       </p>
       <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.5)" }}>{subtitle}</p>
     </div>
@@ -404,7 +404,7 @@ function StatsBar() {
         <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
           <StatItem num={50} suffix="+" subtitle="Features included" icon={Zap} />
           <StatItem num={8} suffix="" subtitle="Platform imports" icon={Upload} />
-          <StatItem num={20} suffix="+" subtitle="Built-in reports" icon={Globe} />
+          <StatItem num={19} suffix="" subtitle="Built-in reports" icon={Globe} />
           <div className="flex flex-col items-center text-center gap-1">
             <Bot className="w-5 h-5 mb-1" style={{ color: "#cf3339" }} />
             <p className="text-3xl md:text-4xl font-bold text-white">24/7</p>

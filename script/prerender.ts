@@ -47,15 +47,23 @@ export async function prerenderAll(): Promise<void> {
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
 
+  // Fixture builds (VITE_E2E_FIXTURES=true, never the deploy build) also pre-render the
+  // mismatch fixture so e2e/prerender.spec.ts can prove the hydration gate fails.
+  const fixtures = process.env.VITE_E2E_FIXTURES === "true" ? ["/__hydration_mismatch"] : [];
   const rows: string[] = [];
-  for (const routePath of sitemapPaths()) {
+  const manifest: Record<string, string> = {};
+  for (const routePath of [...sitemapPaths(), ...fixtures]) {
     const body = await render(routePath);
     const h1s = body.match(/<h1\b/g)?.length ?? 0;
-    if (h1s !== 1) throw new Error(`prerender: ${routePath} has ${h1s} <h1> elements (expected 1)`);
+    if (h1s !== 1 && !fixtures.includes(routePath)) throw new Error(`prerender: ${routePath} has ${h1s} <h1> elements (expected 1)`);
     const doc = composeDocument(template, body, routePath);
-    await writeFile(path.join(outDir, `${slugFor(routePath)}.html`), doc);
+    const file = `${slugFor(routePath)}.html`;
+    await writeFile(path.join(outDir, file), doc);
+    manifest[routePath] = file;
     const h1 = body.match(/<h1\b[^>]*>(.*?)<\/h1>/s)?.[1].replace(/<[^>]+>/g, "").trim().slice(0, 60) ?? "";
     rows.push(`${routePath.padEnd(26)} ${String(body.length).padStart(7)} B  ${h1}`);
   }
+  // The manifest is the only source of the path → file mapping (slugs are not reversible).
+  await writeFile(path.join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2));
   console.log(`[prerender] ${rows.length} route(s) → ${outDir}\n  ${rows.join("\n  ")}`);
 }

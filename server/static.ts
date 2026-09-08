@@ -1,7 +1,7 @@
 import express, { type Express, type Request, type Response } from "express";
 import fs from "fs";
 import path from "path";
-import { classifyPath } from "@shared/seo-routes";
+import { normalizePath } from "@shared/seo-routes";
 import { sendShell } from "./seo-meta";
 
 /** express-session's default cookie name — server/routes.ts configures no `name`. */
@@ -14,11 +14,11 @@ const SESSION_COOKIE = "connect.sid";
  */
 export function loadPrerendered(dir: string): Map<string, string> {
   const out = new Map<string, string>();
-  if (!fs.existsSync(dir)) return out;
-  for (const file of fs.readdirSync(dir)) {
-    if (!file.endsWith(".html")) continue;
-    const slug = file.slice(0, -".html".length);
-    const routePath = slug === "index" ? "/" : "/" + slug.replace(/_/g, "/");
+  const manifestPath = path.join(dir, "manifest.json");
+  if (!fs.existsSync(manifestPath)) return out;
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as Record<string, string>;
+  for (const [routePath, file] of Object.entries(manifest)) {
+    if (!/^[A-Za-z0-9_.-]+\.html$/.test(file)) throw new Error(`prerendered manifest: bad file name ${file}`);
     out.set(routePath, fs.readFileSync(path.join(dir, file), "utf-8"));
   }
   return out;
@@ -54,9 +54,10 @@ export function serveStatic(app: Express, distDir = __dirname) {
   console.log(`[static] ${prerendered.size} pre-rendered public page(s) loaded from ${prerenderedDir}`);
 
   const sendPage = (req: Request, res: Response) => {
-    const route = classifyPath(req.originalUrl);
-    if (route.kind === "public" && !hasSessionCookie(req)) {
-      const html = prerendered.get(route.path);
+    // The map holds exactly what the build produced (the indexable public routes, plus
+    // the mismatch fixture in fixture builds), so membership is the test.
+    if (!hasSessionCookie(req)) {
+      const html = prerendered.get(normalizePath(req.originalUrl));
       if (html) {
         res.status(200).set({ "Content-Type": "text/html", "Cache-Control": "no-cache" }).end(html);
         return;

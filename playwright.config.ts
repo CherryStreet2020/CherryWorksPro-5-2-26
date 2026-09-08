@@ -107,7 +107,8 @@ export default defineConfig({
     },
     {
       name: "serial",
-      testIgnore: [...ANON_SPECS, /\.flags-off\.spec\.ts$/],
+      // e2e/prerender.spec.ts runs on its own config against the static production preview
+      testIgnore: [...ANON_SPECS, /\.flags-off\.spec\.ts$/, /prerender\.spec\.ts$/],
       fullyParallel: false,
       workers: 1,
     },
