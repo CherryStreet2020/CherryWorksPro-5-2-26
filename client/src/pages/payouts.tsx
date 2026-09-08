@@ -36,6 +36,7 @@ import {
 import { useDocumentTitle } from "@/lib/use-document-title";
 import { useUrlFilterState } from "@/lib/use-url-filter-state";
 import { ErrorState } from "@/components/shared/error-state";
+import { PayoutStatementDialog } from "@/components/payout-statement-dialog";
 
 interface TeamMemberSummary {
   teamMemberId: string;
@@ -125,6 +126,7 @@ export default function PayoutsPage() {
   const [costRateWarningDismissed, setCostRateWarningDismissed] = useState(false);
 
   const [payTeamMemberId, setPayTeamMemberId] = useState("");
+  const [statementMemberId, setStatementMemberId] = useState<string | null>(null);
   const [payAmount, setPayAmount] = useState("");
   const [payDate, setPayDate] = useState(() => todayInputDate());
   const [payMethod, setPayMethod] = useState("");
@@ -592,7 +594,7 @@ export default function PayoutsPage() {
                 >
                   <AvatarInitials name={c.teamMemberName} size="sm" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate" style={{ color: "var(--lux-text)" }}>{c.teamMemberName}</p>
+                    <button type="button" onClick={() => setStatementMemberId(c.teamMemberId)} className="text-sm font-semibold truncate text-left hover:underline" style={{ color: "var(--lux-text)" }} title="See the timesheet lines behind this balance" data-testid={`button-statement-${c.teamMemberId}`}>{c.teamMemberName}</button>
                     <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>
                       {formatHours(c.unpaidHours)}h unpaid · Last paid {c.lastPayoutDate ? formatRelativeDate(c.lastPayoutDate) : "Never"}
                     </p>
@@ -708,7 +710,7 @@ export default function PayoutsPage() {
                     {expandedPayoutId === p.id ? <ChevronDown className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--lux-text-muted)" }} /> : <ChevronRight className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--lux-text-muted)" }} />}
                     <AvatarInitials name={teamMemberName(p.teamMemberId)} size="xs" />
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm font-medium" style={{ color: "var(--lux-text)" }}>{teamMemberName(p.teamMemberId)}</span>
+                      <span className="text-sm font-medium" style={{ color: "var(--lux-text)" }}><button type="button" onClick={(e) => { e.stopPropagation(); setStatementMemberId(p.teamMemberId); }} className="hover:underline text-left" title="See the timesheet lines behind this payout" data-testid={`button-statement-row-${p.id}`}>{teamMemberName(p.teamMemberId)}</button></span>
                       {p.periodStart && p.periodEnd && (
                         <span className="text-xs ml-2" style={{ color: "var(--lux-text-muted)" }}>
                           {formatDate(p.periodStart)} – {formatDate(p.periodEnd)}
@@ -973,6 +975,7 @@ export default function PayoutsPage() {
           </div>
         </DialogContent>
       </Dialog>
+      <PayoutStatementDialog teamMemberId={statementMemberId} open={statementMemberId !== null} onOpenChange={(o) => { if (!o) setStatementMemberId(null); }} />
     </div>
   );
 }
