@@ -69,8 +69,10 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // gzip/brotli for every response that accepts it (the entry JS alone was 742 KB
-// uncompressed). Brotli is negotiated when the client offers it; assets are
-// hashed + immutable so the CPU cost is paid once per revision per encoding.
+// uncompressed). Brotli is negotiated when the client offers it. This compresses
+// per request — hashed, immutable assets are cached by the browser after the
+// first load, which is what keeps the CPU cost low; serving pre-compressed
+// assets from the build is the follow-up in the bundle-diet step.
 app.use(compression({ threshold: 1024 }));
 
 app.use(

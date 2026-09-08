@@ -2,8 +2,13 @@ import { Helmet } from "react-helmet-async";
 import { BASE_URL, SITE_NAME, PUBLIC_ROUTES } from "@shared/seo-routes";
 
 interface SEOProps {
-  /** A key of PUBLIC_ROUTES (shared/seo-routes.ts) — the one place titles and descriptions live. */
-  path: keyof typeof PUBLIC_ROUTES | (string & {});
+  /**
+   * The page's path, looked up in PUBLIC_ROUTES (shared/seo-routes.ts) — the
+   * one place titles and descriptions live. A path that is not in the map
+   * renders the site name with noindex rather than failing, so the type is a
+   * plain string; the unit tests, not the type, keep the map complete.
+   */
+  path: string;
   type?: "website" | "article";
 }
 

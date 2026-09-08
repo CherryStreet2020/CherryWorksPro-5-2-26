@@ -46,7 +46,11 @@ describe("shared/seo-routes", () => {
 
   it("REPORT_COUNT matches the app's report registry", async () => {
     const src = await import("node:fs").then((fs) => fs.readFileSync("client/src/pages/reports.tsx", "utf8"));
-    const registry = src.slice(src.indexOf("REPORT_REGISTRY"), src.indexOf("REPORT_COUNT"));
+    const start = src.indexOf("REPORT_REGISTRY");
+    const end = src.indexOf("REPORT_COUNT");
+    expect(start, "reports.tsx must still declare REPORT_REGISTRY").toBeGreaterThan(-1);
+    expect(end, "reports.tsx must still derive REPORT_COUNT after the registry").toBeGreaterThan(start);
+    const registry = src.slice(start, end);
     const n = (registry.match(/^\s+[a-z]+: \[/gm) ?? []).reduce((sum, line) => {
       const lineStart = registry.indexOf(line);
       const arr = registry.slice(lineStart, registry.indexOf("]", lineStart));
