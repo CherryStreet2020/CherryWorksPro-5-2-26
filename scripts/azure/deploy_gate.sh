@@ -335,9 +335,19 @@ fi
 # talking to the database; it says nothing about whether the app shell
 # actually shipped. If dist/public failed to ship, every check above
 # still passes while the site serves nothing.
-HOME_HTML=$(curl -fsS --max-time 20 "https://$FQDN/" 2>/dev/null || true)
-printf '%s' "$HOME_HTML" | grep -qi '<div id="root"' \
-  || rollback_and_fail "the homepage did not serve the app shell — dist/public is missing, so the site is blank ($(printf '%s' "$HOME_HTML" | wc -c) bytes received)"
+# The homepage is either the empty shell or (since #65) the pre-rendered document
+# with the marketing home inside #root: both carry the root div and the hashed
+# entry script. Substring tests, NOT `printf | grep -q`: under pipefail, grep -q
+# exiting on an early match makes printf die of SIGPIPE on a large body, and the
+# pipeline reports failure for a page that matched (that false negative rolled
+# back the first pre-rendered deploy on 2026-09-08).
+HOME_HTML=$(curl -fsS --max-time 20 "https://$FQDN/" 2>/dev/null | tr -d '\000' || true)
+HOME_BYTES=${#HOME_HTML}
+[[ "$HOME_HTML" == *'<div id="root"'* ]] \
+  || rollback_and_fail "the homepage did not serve the app shell — dist/public is missing, so the site is blank ($HOME_BYTES bytes received)"
+[[ "$HOME_HTML" == *'/assets/index-'* ]] \
+  || rollback_and_fail "the homepage has no /assets/index-*.js entry script — the client bundle did not ship ($HOME_BYTES bytes received)"
+if [[ "$HOME_HTML" == *'<h1'* ]]; then echo "homepage: pre-rendered ($HOME_BYTES bytes, h1 present)"; else echo "homepage: app shell ($HOME_BYTES bytes)"; fi
 
 # Re-tag the digest as last-known-good so a rollback reference never
 # has to be recovered from a scrolled-away step summary. Best-effort:
