@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────
+# cwp — CherryWorks Pro local toolchain dispatcher
+#
+# Stands up / drives the user-space local gates that CI does NOT run
+# (vitest + playwright + the app). CI only runs lint + migration-replay.
+# Target loop:  cwp validate  →  push  →  CI  →  deploy  →  live-verify.
+#
+# Built once (2026-06-20): user-space PostgreSQL 16.14 (~/.local/pgsql),
+# bash 5.2 (~/.local/bin/bash, for check-migrations.sh's `mapfile`), node 20
+# (~/.local/node). Local-only app secrets + DB URLs live in
+# ~/.local/pgsql/cwp-pg-env.sh (fresh keys, NOT the prod ones).
+#
+# Usage:
+#   cwp pg-start | pg-stop | pg-status     manage the Postgres cluster
+#   cwp app                                run the dev app on :5000 (foreground)
+#   cwp app-bg                             start the app on :5000 (background) + wait healthy
+#   cwp app-stop                           kill whatever is on :5000
+#   cwp vitest [args]                      fresh cwp_test → migrate → vitest (real unit/integration gate)
+#   cwp e2e [args]                         ensure app up → playwright (real e2e gate)
+#   cwp migcheck                           CI migration-replay mirror (bash5 + cwp_migcheck)
+#   cwp reset-dev                          drop+recreate+migrate+seed cwp_dev (clean app DB)
+#   cwp validate                           migcheck + lint + typecheck + vitest (the pre-push gate)
+#   cwp codex [--deep|--commit <sha>|--base <b>|--uncommitted|--plan PLAN.md]
+#                                          LOCAL Codex red-team leg (scripts/redteam-codex.sh) — RUN ON EVERY PR
+#   cwp psql [db] [psql args…]             psql into cwp_dev (or named db) as the app's role
+# ─────────────────────────────────────────────────────────────────────────────
+# No `set -e` on purpose: this is a case-dispatcher whose branches run functions
+# in conditions (app_ready, wait_health) and `exec` chains, where -e is either
+# suppressed or surprising. Every consequential step checks its own status
+# (`|| exit 1`); `validate` opts in to -e for its linear gate sequence.
+set -uo pipefail
+
+SELF="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/$(basename -- "${BASH_SOURCE[0]}")"
+REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Local-only secrets + DB URLs (fresh keys, never prod). Copy scripts/dev/cwp-pg-env.example.sh
+# to ~/.local/pgsql/cwp-pg-env.sh and fill it in (the template documents the expected layout;
+# the header above lists what the toolchain consists of).
+if [ -f "$HOME/.local/pgsql/cwp-pg-env.sh" ]; then source "$HOME/.local/pgsql/cwp-pg-env.sh"; else
+  echo "[cwp] ~/.local/pgsql/cwp-pg-env.sh not found — copy scripts/dev/cwp-pg-env.example.sh there and fill it in (see the header of scripts/dev/cwp)." >&2; exit 1; fi
+# Name what is missing instead of letting `set -u` say "unbound variable".
+for v in PGHOME PGDATA PGPORT CWP_DATABASE_URL CWP_MIGCHECK_URL; do
+  [ -n "${!v:-}" ] || { echo "[cwp] $v is not set — fill it in ~/.local/pgsql/cwp-pg-env.sh (template: scripts/dev/cwp-pg-env.example.sh)." >&2; exit 1; }
+done
+BASH5="$HOME/.local/bin/bash"
+# libpq (psql, check-migrations.sh) and node-postgres fill in whatever a URL leaves
+# unset from the environment, and PGHOSTADDR wins even over an explicit host, so an
+# inherited PG* variable could retarget a validated-local URL at a remote server.
+# The URLs in the env file are the only source of truth: drop the targeting variables
+# here, once, for everything this launcher runs. (PGPORT stays: it is ours, from the
+# env file, and cannot leave the loopback host; PGPASSWORD/PGPASSFILE only supply credentials.)
+unset PGHOST PGHOSTADDR PGDATABASE PGUSER PGSERVICE PGSERVICEFILE PGSYSCONFDIR
+# Same cluster/role as the env file (CWP_DATABASE_URL points at cwp_dev); swap the db name.
+TEST_DB_URL="${CWP_TEST_DATABASE_URL:-$(printf '%s' "$CWP_DATABASE_URL" | sed 's#/cwp_dev\([?].*\)\{0,1\}$#/cwp_test\1#')}"
+# The reset below always recreates the database named cwp_test, so the URL must point at exactly that.
+case "$TEST_DB_URL" in */cwp_test) ;; *) echo "[cwp] the test DB URL must end in /cwp_test with no query parameters (got: ${TEST_DB_URL%%\?*}); set CWP_TEST_DATABASE_URL accordingly" >&2; exit 1 ;; esac
+# A destructive reset must be provably LOCAL and provably the EXPECTED database.
+# libpq lets URL query parameters override both the host and the dbname
+# (postgresql://localhost/cwp_migcheck?host=db.internal connects to db.internal),
+# so a guard that only inspects the part before "?" can be steered at a remote
+# database. Refuse any query string outright, then check the host and the name
+# from the URL itself. Only loopback hosts (or none, i.e. the local socket) pass.
+assert_disposable_local_db() { # $1 = url, $2 = the database name it MUST address
+  local url="$1" want="$2" rest hostport host port name
+  case "$url" in
+    *\?*|*\#*) echo "[cwp] refusing to reset $want: the URL must not carry query parameters or a fragment (libpq honours ?host=/?dbname= overrides); got ${url%%[?#]*}…" >&2; return 1 ;;
+  esac
+  rest="${url#*://}"; rest="${rest##*@}"          # scheme and userinfo (may contain / and @) removed
+  case "$rest" in */*) ;; *) echo "[cwp] refusing to reset $want: no database name in URL" >&2; return 1 ;; esac
+  hostport="${rest%%/*}"; name="${rest#*/}"
+  # libpq accepts host1:port1,host2:port2 and falls back to the next host when the
+  # first refuses: one authority only, and whatever follows the host must be a port.
+  case "$hostport" in
+    \[*\]*) host="${hostport#\[}"; host="${host%%\]*}"; port="${hostport#*\]}" ;;
+    *:*)     host="${hostport%%:*}"; port=":${hostport#*:}" ;;
+    *)       host="$hostport"; port="" ;;
+  esac
+  case "$port" in ""|:[0-9]*) case "$port" in *[!0-9:]*) port="bad" ;; esac ;; *) port="bad" ;; esac
+  [ "$port" != "bad" ] || { echo "[cwp] refusing to reset $want: '$hostport' is not a single host[:port] (multi-host URLs fall back to other servers)" >&2; return 1; }
+  case "$host" in ""|localhost|127.0.0.1|::1) ;;
+    *) echo "[cwp] refusing to reset $want: host '$host' is not loopback" >&2; return 1 ;; esac
+  [ "$name" = "$want" ] || { echo "[cwp] refusing to reset $want: URL names database '$name'" >&2; return 1; }
+}
+# Same role/host/port as a (query-free) URL, pointed at another database on that cluster.
+with_db() { printf '%s' "$1" | sed "s#/[^/]*\$#/$2#"; }   # $1 = url, $2 = database name
+admin_url() { with_db "$1" postgres; }                     # the maintenance database, for DROP/CREATE
+recreate_db() { # $1 = url of the db to recreate, $2 = the name it must address (guard lives HERE so no caller can skip it)
+  local url="$1" name="$2"
+  assert_disposable_local_db "$url" "$name" || return 1
+  psql "$(admin_url "$url")" -Atqc "DROP DATABASE IF EXISTS \"$name\"" || { echo "[cwp] drop $name failed (another session holding it open?)" >&2; return 1; }
+  psql "$(admin_url "$url")" -Atqc "CREATE DATABASE \"$name\"" || return 1
+}
+
+# Outgoing mail from the dev/e2e server lands as files here, and the Playwright
+# specs read the same directory (their default; .replit's launcher used it too).
+E2E_MAIL_DIR="${EMAIL_CAPTURE_DIR:-/tmp/cherry-e2e-emails}"
+# Full env the dev/e2e server boots with. NODE_ENV=test: Vite serving + rate limits
+# raised to 1000 (the fully-parallel suite logs in from one IP hundreds of times;
+# under real limits a 429 cascade fails ~200 specs — measured 2026-09-07; the one
+# spec that expects a 429 cannot pass under this launcher). TZ=UTC: the hosts the
+# suite was authored on (Replit, the Azure container) run UTC, and specs that insert
+# timestamps through raw `pg` serialise local time while the server compares UTC —
+# on a non-UTC Mac every such expiry is hours off. Vitest boots its own server from
+# its globalSetup and is unaffected by this function.
+app_env() {
+  mkdir -p "$E2E_MAIL_DIR"
+  env DATABASE_URL="$CWP_DATABASE_URL" TZ=UTC \
+      NODE_ENV=test E2E_SEED_ENABLED=true EMAIL_CAPTURE_DIR="$E2E_MAIL_DIR" \
+      MARKETING_OS_ENABLED=true VITE_MARKETING_OS_ENABLED=true \
+      EMAIL_OAUTH_ENABLED=true VITE_EMAIL_OAUTH_ENABLED=true \
+      ADMIN_EMAIL=dean@cherrystconsulting.com \
+      PORT=5000 "$@"
+}
+
+kill_5000() {
+  local pids; pids="$(lsof -ti tcp:5000 -sTCP:LISTEN 2>/dev/null || true)"   # listeners only — never a connected client
+  [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
+}
+
+# Ready = /api/health answers AND startup is complete (migrations + seeds done).
+app_ready() { curl -fsS --max-time 3 http://localhost:5000/api/health 2>/dev/null | grep -q '"startup":"complete"'; }
+wait_health() {
+  local i; for i in $(seq 1 60); do
+    app_ready && { echo "[cwp] app healthy on :5000 (startup complete)"; return 0; }
+    sleep 2
+  done
+  echo "[cwp] app did NOT become ready on :5000 (see /tmp/cwp-app-5000.log)"; return 1
+}
+
+ensure_pg() { # a command that needs Postgres cannot continue without it
+  pg_ctl -D "$PGDATA" status >/dev/null 2>&1 && return 0
+  pg_ctl -D "$PGDATA" -l "$PGHOME/logfile" -o "-p $PGPORT" -w start || { echo "[cwp] Postgres did not start (see $PGHOME/logfile)" >&2; exit 1; }
+}
+
+cmd="${1:-help}"; shift 2>/dev/null || true
+case "$cmd" in
+  pg-start)  pg_ctl -D "$PGDATA" -l "$PGHOME/logfile" -o "-p $PGPORT" -w start ;;
+  pg-stop)   pg_ctl -D "$PGDATA" -w stop ;;
+  pg-status) pg_ctl -D "$PGDATA" status ;;
+
+  app)
+    ensure_pg; cd "$REPO" || exit 1; kill_5000; sleep 1
+    app_env npx tsx server/index.ts ;;   # a shell function cannot be exec'd
+
+  app-bg)
+    ensure_pg; cd "$REPO" || exit 1; kill_5000; sleep 1
+    app_env nohup npx tsx server/index.ts > /tmp/cwp-app-5000.log 2>&1 &
+    APP_PID=$!
+    echo "[cwp] app pid $APP_PID"; wait_health || exit 1
+    ;;
+
+  app-stop) kill_5000; echo "[cwp] :5000 cleared" ;;
+
+  vitest)
+    ensure_pg; cd "$REPO" || exit 1
+    echo "[cwp] fresh cwp_test → migrate → vitest"
+    # Fail fast: a stale or half-migrated test DB must never run the suite.
+    recreate_db "$TEST_DB_URL" cwp_test || exit 1
+    DATABASE_URL="$TEST_DB_URL" NODE_ENV=development npm run db:migrate:prod || { echo "[cwp] migration of cwp_test failed" >&2; exit 1; }
+    exec env DATABASE_URL="$TEST_DB_URL" npm run test -- "$@" ;;
+
+  e2e)
+    ensure_pg; cd "$REPO" || exit 1
+    # Always a fresh server from this launcher: tsx is not in watch mode, so a
+    # reused process would test stale code (and a stranger's server, stale flags).
+    echo "[cwp] starting app for e2e with the test configuration"; "$SELF" app-bg || exit 1
+    exec env DATABASE_URL="$CWP_DATABASE_URL" PORT=5000 TZ=UTC EMAIL_CAPTURE_DIR="$E2E_MAIL_DIR" npx playwright test "$@" ;;
+
+  migcheck)
+    ensure_pg; cd "$REPO" || exit 1
+    # Destructive reset: only ever a LOCAL database literally named cwp_migcheck (recreate_db enforces it).
+    recreate_db "$CWP_MIGCHECK_URL" cwp_migcheck || exit 1
+    exec env MIGRATION_CHECK_DATABASE_URL="$CWP_MIGCHECK_URL" "$BASH5" scripts/check-migrations.sh ;;
+
+  reset-dev)
+    ensure_pg; cd "$REPO" || exit 1
+    echo "[cwp] dropping + recreating cwp_dev"
+    kill_5000
+    recreate_db "$CWP_DATABASE_URL" cwp_dev || exit 1
+    DATABASE_URL="$CWP_DATABASE_URL" NODE_ENV=development npm run db:migrate:prod || { echo "[cwp] migration of cwp_dev failed" >&2; exit 1; }
+    echo "[cwp] booting once to seed (dean admin + dev orgs)…"
+    "$SELF" app-bg || exit 1
+    # The seeded admin boots with a temporary password; browser tests need a normal account.
+    psql "$CWP_DATABASE_URL" -Atqc "update users set temp_password=false, onboarding_complete=true, email_verified_at=coalesce(email_verified_at, now()) where email='dean@cherrystconsulting.com'" >/dev/null || { echo "[cwp] could not prepare the seeded admin" >&2; exit 1; }
+    # On a fresh database the data migrations create the admin's recovery org before the
+    # seed runs, with no contact fields, so /api/implementation-status reports the firm
+    # profile incomplete and AdminSetupGate hides every admin page from the e2e specs.
+    psql "$CWP_DATABASE_URL" -Atqc "update orgs set email=coalesce(email,'info@cherrystconsulting.com'), phone=coalesce(phone,'(214) 555-0142') where id in (select org_id from users where email='dean@cherrystconsulting.com')" >/dev/null || { echo "[cwp] could not complete the seeded admin's firm profile" >&2; exit 1; }
+    echo "[cwp] cwp_dev ready (app left running on :5000; admin dean@cherrystconsulting.com ready for e2e)" ;;
+
+  validate)
+    cd "$REPO" || exit 1; set -e
+    echo "== [1/4] migration-replay ==";  "$SELF" migcheck
+    echo "== [2/4] lint ==";              export PATH="$HOME/.local/node/bin:$PATH"; npm run lint
+    echo "== [3/4] typecheck ==";         npm run typecheck
+    echo "== [4/4] vitest ==";            "$SELF" vitest
+    echo "[cwp] validate: all gates ran (review vitest summary for known pre-existing failures)" ;;
+
+  psql) # same role/host/port/password as the app (cwp psql [db] [psql args…])
+    name="${1:-cwp_dev}"; shift 2>/dev/null || true
+    case "$name" in *[!A-Za-z0-9_]*|"") echo "[cwp] psql: database name must be a simple identifier (got '$name')" >&2; exit 1 ;; esac
+    exec psql "$(with_db "$CWP_DATABASE_URL" "$name")" "$@" ;;
+
+  codex) exec "$REPO/scripts/redteam-codex.sh" "$@" ;;
+
+  *) sed -n '2,40p' "$SELF" | sed 's/^# \{0,1\}//' ;;
+esac
