@@ -61,9 +61,10 @@ describe("public site HTTP contract", () => {
     const r = await get("/robots.txt");
     expect(r.status).toBe(200);
     const txt = await r.text();
-    for (const line of ["Disallow: /api/", "Disallow: /portal/", "Disallow: /i/", "Disallow: /e/", "Disallow: /verify-email", "Disallow: /admin\n", "Sitemap: https://cherryworkspro.com/sitemap.xml"]) {
+    for (const line of ["Disallow: /api/", "Disallow: /portal/", "Disallow: /i/", "Disallow: /e/", "Disallow: /verify-email", "Sitemap: https://cherryworkspro.com/sitemap.xml"]) {
       expect(txt).toContain(line);
     }
+    expect(txt).toMatch(/^Disallow: \/admin$/m); // the bare route, not only /admin/
   });
 
   it("compresses responses for clients that accept it", async () => {
