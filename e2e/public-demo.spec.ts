@@ -41,7 +41,7 @@ test.describe("Public /demo", () => {
     const errors: string[] = [];
     page.on("pageerror", (err) => errors.push(`pageerror: ${err.message}`));
 
-    await page.goto("/demo");
+    await page.goto("/tour");
 
     for (const id of SECTIONS) {
       const section = page.locator(`[data-testid="${id}"]`).first();
@@ -58,7 +58,7 @@ test.describe("Public /demo", () => {
   });
 
   test("a section CTA navigates to /signup", async ({ page }) => {
-    await page.goto("/demo");
+    await page.goto("/tour");
     const cta = page.locator('[data-testid="cta-section-try-the-dashboard"]').first();
     await cta.scrollIntoViewIfNeeded();
     await expect(cta).toBeVisible({ timeout: 15000 });
@@ -70,7 +70,7 @@ test.describe("Public /demo", () => {
   });
 
   test("interactive mockup: timesheet approval has per-row approve/reject + bulk approve buttons", async ({ page }) => {
-    await page.goto("/demo");
+    await page.goto("/tour");
     const section = page.locator('[data-testid="demo-section-timesheet-approval"]');
     await section.scrollIntoViewIfNeeded();
     await expect(section).toBeVisible({ timeout: 15000 });
@@ -81,7 +81,7 @@ test.describe("Public /demo", () => {
   });
 
   test("interactive mockup: estimates section exposes convert-to-invoice + PDF actions", async ({ page }) => {
-    await page.goto("/demo");
+    await page.goto("/tour");
     const section = page.locator('[data-testid="demo-section-estimates"]');
     await section.scrollIntoViewIfNeeded();
     await expect(section).toBeVisible({ timeout: 15000 });
@@ -91,7 +91,7 @@ test.describe("Public /demo", () => {
   });
 
   test("Marketing OS cross-sell on /demo links to /marketing", async ({ page }) => {
-    await page.goto("/demo");
+    await page.goto("/tour");
     const link = page.locator('[data-testid="link-tour-marketing-os"]');
     await link.scrollIntoViewIfNeeded();
     await expect(link).toBeVisible({ timeout: 15000 });

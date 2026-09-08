@@ -7,7 +7,7 @@ import {
 } from "./email/smtp-transport";
 import { selectTransport, type OrgForTransport } from "./email/transport-selector";
 import { trackSelection } from "./email/failure-tracker";
-import type { EmailTransport, SendableMessage, SendableAttachment } from "./email/types";
+import type { EmailTransport, SendableMessage, SendableAttachment, SendResult } from "./email/types";
 
 // Re-exports for legacy callers (settings/go-live routes that still need a
 // raw nodemailer transporter for one-off env-SMTP sends).
@@ -1271,4 +1271,14 @@ export async function sendTrialEndedEmail(
   const result = await transport.send({ to, subject: `Your CherryWorks Pro trial has ended`, html, text: `Hi ${recipientName || "there"},\n\nThe free trial for ${firmName} has ended. Your data is safe. Choose a plan to pick up where you left off:\n${billingUrl}` });
   if (result.ok === false) throw new Error("Email was not sent — no email provider is configured.");
   return { messageId: result.messageId, previewUrl: result.previewUrl };
+}
+
+/**
+ * A notice from the platform itself (no tenant transport): sent through the
+ * operator workspace's OAuth mailbox when PLATFORM_MAILBOX_ORG_SLUG resolves, else
+ * env SMTP. Used for website-originated mail such as demo requests.
+ */
+export async function sendPlatformNotice(input: { to: string; replyTo?: string; subject: string; text: string; html: string }): Promise<SendResult> {
+  const transport = await pickTransport(null, null);
+  return transport.send({ to: input.to, replyTo: input.replyTo, subject: input.subject, text: input.text, html: input.html });
 }

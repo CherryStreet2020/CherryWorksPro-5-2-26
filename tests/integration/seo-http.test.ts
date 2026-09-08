@@ -20,12 +20,12 @@ describe("public site HTTP contract", () => {
   });
 
   it("301s retired public paths", async () => {
-    const tour = await get("/tour");
-    expect(tour.status).toBe(301);
-    expect(tour.headers.get("location")).toBe("/demo");
-    const utm = await get("/tour?utm_source=newsletter");
+    const mos = await get("/marketing-os");
+    expect(mos.status).toBe(301);
+    expect(mos.headers.get("location")).toBe("/marketing");
+    const utm = await get("/marketing-os?utm_source=newsletter");
     expect(utm.status).toBe(301);
-    expect(utm.headers.get("location")).toBe("/demo?utm_source=newsletter");
+    expect(utm.headers.get("location")).toBe("/marketing?utm_source=newsletter");
     const blog = await get("/blog");
     expect(blog.status).toBe(301);
     expect(blog.headers.get("location")).toBe("/");
@@ -52,7 +52,8 @@ describe("public site HTTP contract", () => {
     expect(xml).toContain("<loc>https://cherryworkspro.com/pricing</loc>");
     expect(xml).toContain("<loc>https://cherryworkspro.com/marketing</loc>");
     expect(xml).not.toContain("/login");
-    expect(xml).not.toContain("/tour");
+    expect(xml).toContain("/tour");
+    expect(xml).toContain("/client-support");
     // the old duplicate implementations are gone
     expect((await get("/api/marketing/sitemap.xml")).status).toBe(404);
   });

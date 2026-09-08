@@ -34,8 +34,20 @@ export const PUBLIC_ROUTES: Record<string, PublicRouteSeo> = {
     description: "Side-by-side comparison of CherryWorks Pro with FreshBooks, QuickBooks, Xero, Wave, Harvest, BigTime, Scoro and Paymo: users, GL, payouts and price.",
   },
   "/demo": {
+    title: "Request a Demo | CherryWorks Pro",
+    description: "A twenty-minute screen share on your own scenario: from a client email to the invoice, the ledger and the payout. A person replies within one business day.",
+  },
+  "/tour": {
     title: "Product Tour — See Every Feature | CherryWorks Pro",
     description: "Explore CherryWorks Pro in one scroll: time tracking, invoicing, approvals, payouts, general ledger, reports and client support. No signup required.",
+  },
+  "/client-support": {
+    title: "Client Support — A Support Desk That Bills | CherryWorks Pro",
+    description: "Cases, SLAs per client, a passwordless client portal and email-to-case, built into the platform that tracks the time, sends the invoice and pays your team.",
+  },
+  "/switch-from-jira-service-management": {
+    title: "Switch from Jira Service Management | CherryWorks Pro",
+    description: "Jira runs a service desk; your firm bills for service. Import the project, keep the email address, and put support hours on the invoice. Unlimited users.",
   },
   "/about": {
     title: "About CherryWorks Pro — Built Inside a Consulting Firm",
@@ -108,7 +120,6 @@ export const PUBLIC_ROUTES: Record<string, PublicRouteSeo> = {
 
 /** Old public paths that still get traffic: served as permanent redirects by the server. */
 export const PUBLIC_REDIRECTS: Record<string, string> = {
-  "/tour": "/demo",
   "/blog": "/",
   "/careers": "/",
   "/marketing-os": "/marketing",

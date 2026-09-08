@@ -190,6 +190,9 @@ const SwitchHarvestPage = lazy(() => lazyRetry(() => import("@/pages/marketing/s
 const SwitchBigTimePage = lazy(() => lazyRetry(() => import("@/pages/marketing/switch-bigtime")));
 const SwitchScoroPage = lazy(() => lazyRetry(() => import("@/pages/marketing/switch-scoro")));
 const SwitchPaymoPage = lazy(() => lazyRetry(() => import("@/pages/marketing/switch-paymo")));
+const SwitchJiraPage = lazy(() => lazyRetry(() => import("@/pages/marketing/switch-jira")));
+const ClientSupportPage = lazy(() => lazyRetry(() => import("@/pages/marketing/client-support")));
+const DemoRequestPage = lazy(() => lazyRetry(() => import("@/pages/marketing/demo-request")));
 const AboutPage = lazy(() => lazyRetry(() => import("@/pages/marketing/about")));
 const ContactPage = lazy(() => lazyRetry(() => import("@/pages/marketing/contact")));
 const SignupPage = lazy(() => lazyRetry(() => import("@/pages/marketing/signup")));
@@ -666,17 +669,19 @@ function App() {
             <Route path="/switch-from-bigtime">{() => <LazyRoute component={SwitchBigTimePage} />}</Route>
             <Route path="/switch-from-scoro">{() => <LazyRoute component={SwitchScoroPage} />}</Route>
             <Route path="/switch-from-paymo">{() => <LazyRoute component={SwitchPaymoPage} />}</Route>
+            <Route path="/switch-from-jira-service-management">{() => <LazyRoute component={SwitchJiraPage} />}</Route>
+            <Route path="/client-support">{() => <LazyRoute component={ClientSupportPage} />}</Route>
             <Route path="/about">{() => <LazyRoute component={AboutPage} />}</Route>
             <Route path="/integrations">{() => <LazyRoute component={IntegrationsPage} />}</Route>
-            <Route path="/demo">{() => <LazyRoute component={DemoPage} />}</Route>
+            <Route path="/demo">{() => <LazyRoute component={DemoRequestPage} />}</Route>
+            <Route path="/tour">{() => <LazyRoute component={DemoPage} />}</Route>
             <Route path="/contact">{() => <LazyRoute component={ContactPage} />}</Route>
             <Route path="/signup">{() => <LazyRoute component={SignupPage} />}</Route>
             <Route path="/verify-email">{() => <LazyRoute component={VerifyEmailPage} />}</Route>
             <Route path="/terms">{() => <LazyRoute component={TermsPage} />}</Route>
             <Route path="/privacy">{() => <LazyRoute component={PrivacyPage} />}</Route>
             <Route path="/security">{() => <LazyRoute component={SecurityPage} />}</Route>
-            <Route path="/tour"><Redirect to="/demo" /></Route>
-            <Route path="/blog"><Redirect to="/" /></Route>
+                        <Route path="/blog"><Redirect to="/" /></Route>
             <Route path="/careers"><Redirect to="/" /></Route>
             <Route path="/timesheets"><Redirect to="/time" /></Route>
             {DevPremiumShowcaseRoute}

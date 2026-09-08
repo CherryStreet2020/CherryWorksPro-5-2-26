@@ -1759,7 +1759,7 @@ export default function DemoPage() {
   return (
     <div style={{ background: "#0a0f1c" }}>
       <MarketingNav />
-      <SEO path="/demo" />
+      <SEO path="/tour" />
 
       <section className="pt-[100px] pb-8 md:pb-10" style={{ background: "linear-gradient(135deg, #0a0f1c 0%, #111827 50%, #1a0a0a 100%)" }}>
         <div ref={heroRef} className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-10 md:pt-12 text-center">
