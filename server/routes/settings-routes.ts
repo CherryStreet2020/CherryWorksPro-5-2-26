@@ -618,9 +618,9 @@ app.post("/api/public/demo-request", apiLimiter, async (req, res) => {
     const stamp = new Date().toISOString().slice(0, 10);
     const note = `[${stamp}] Demo request from the website — team size ${t || "-"}${m ? `:\n${m}` : ""}`;
     const existing = await storage.findProspectByEmail(operator.id, e); // includes a soft-deleted row (unique email)
+    if (existing?.deletedAt) await storage.restoreProspect(existing.id, operator.id); // asks again → restored
     const prospect = existing
       ? await storage.updateProspect(existing.id, operator.id, {
-          deletedAt: null, // a deleted prospect who asks again is restored
           brandId: existing.brandId ?? brandId,
           companyId: existing.companyId ?? companyRow.id,
           firstName: existing.firstName ?? firstName,

@@ -8581,6 +8581,15 @@ export class DatabaseStorage {
     return row;
   }
 
+  /** Bring a soft-deleted prospect back (the unique email index covers deleted rows). */
+  async restoreProspect(id: string, orgId: string): Promise<void> {
+    await db
+      .update(marketingProspects)
+      .set({ deletedAt: null, updatedAt: new Date() })
+      .where(and(eq(marketingProspects.id, id), eq(marketingProspects.orgId, orgId)));
+    invalidateBrandStatsCache(orgId);
+  }
+
   async findMarketingCompanyByDomain(orgId: string, domain: string): Promise<MarketingCompany | undefined> {
     const [row] = await db
       .select()
