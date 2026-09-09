@@ -470,7 +470,8 @@ export async function createCase(orgId: string, input: CreateCaseInput, actor: A
 
   await writeEvent(orgId, row.id, "created", null, row.status, actor, tx);
   if (row.assigneeUserId) await writeEvent(orgId, row.id, "assignee", null, row.assigneeUserId, actor, tx);
-  for (const w of watcherEvents) await writeEvent(orgId, row.id, "watcher", "added", w.name, actor, tx);
+  const watcherActor: Actor | null = portal ? { userId: null, contactId: portal.submitterContactId, name: input.openedByName || input.requesterName || "Customer" } : actor;
+  for (const w of watcherEvents) await writeEvent(orgId, row.id, "watcher", "added", w.name, watcherActor, tx);
   await writeActivity(orgId, row.clientId, actor, "SUPPORT_CASE_OPENED", `${caseKey} opened`, row.subject, row.id, { caseKey }, tx);
   return row;
   });
@@ -508,7 +509,7 @@ export async function customerCanAccess(conn: DbOrTx, orgId: string, c: Pick<Sup
   const isRequester = c.requesterContactId ? c.requesterContactId === k.id : (!!email && !!c.requesterEmail && c.requesterEmail.trim().toLowerCase() === email);
   if (isRequester) return { ok: true, role: "requester" };
   if (k.portalRole === "admin") return { ok: true, role: "admin" };
-  const [w] = await conn.select({ id: supportCaseWatchers.id }).from(supportCaseWatchers).where(and(eq(supportCaseWatchers.caseId, c.id), eq(supportCaseWatchers.contactId, k.id)));
+  const [w] = await conn.select({ id: supportCaseWatchers.id }).from(supportCaseWatchers).where(and(eq(supportCaseWatchers.orgId, orgId), eq(supportCaseWatchers.caseId, c.id), eq(supportCaseWatchers.contactId, k.id)));
   return w ? { ok: true, role: "watcher" } : { ok: false, role: null };
 }
 
@@ -556,10 +557,14 @@ export async function addWatcher(orgId: string, caseId: string, contactId: strin
     const target = locked.find(x => x.id === contactId);
     if (!target || target.deletedAt || target.clientId !== c.clientId) throw new CaseAccessError("That colleague is not part of this customer");
     await assertNotBlocked(tx, orgId, target.email);
-    if (c.requesterContactId === contactId) return false; // the requester already follows their own case
+    // The requester already follows their own case — by linked id, or by address on a legacy
+    // email-only case (a watcher row there would outlive a later requester reassignment).
+    const isRequester = c.requesterContactId ? c.requesterContactId === contactId
+      : (!!target.email && !!c.requesterEmail && c.requesterEmail.trim().toLowerCase() === target.email.trim().toLowerCase());
+    if (isRequester) return false;
     const [ins] = await tx.insert(supportCaseWatchers).values({ orgId, caseId, contactId, addedByContactId: actor.contactId ?? null, addedByUserId: actor.userId ?? null }).onConflictDoNothing().returning();
     if (!ins) return false;
-    await writeEvent(orgId, caseId, "watcher", "added", `${target.firstName} ${target.lastName}`.trim() || target.email || "colleague", actor.userId ? { userId: actor.userId, name: actor.name } : null, tx);
+    await writeEvent(orgId, caseId, "watcher", "added", `${target.firstName} ${target.lastName}`.trim() || target.email || "colleague", { userId: actor.userId ?? null, contactId: actor.contactId ?? null, name: actor.name }, tx);
     return true;
   });
   return { changed, watchers: await listWatchers(orgId, caseId) };
@@ -575,7 +580,7 @@ export async function removeWatcher(orgId: string, caseId: string, contactId: st
     const [gone] = await tx.delete(supportCaseWatchers).where(and(eq(supportCaseWatchers.orgId, orgId), eq(supportCaseWatchers.caseId, caseId), eq(supportCaseWatchers.contactId, contactId))).returning();
     if (!gone) return false;
     const target = locked.find(x => x.id === contactId);
-    await writeEvent(orgId, caseId, "watcher", "removed", target ? (`${target.firstName} ${target.lastName}`.trim() || target.email || "colleague") : "colleague", actor.userId ? { userId: actor.userId, name: actor.name } : null, tx);
+    await writeEvent(orgId, caseId, "watcher", "removed", target ? (`${target.firstName} ${target.lastName}`.trim() || target.email || "colleague") : "colleague", { userId: actor.userId ?? null, contactId: actor.contactId ?? null, name: actor.name }, tx);
     return true;
   });
   return { changed, watchers: await listWatchers(orgId, caseId) };

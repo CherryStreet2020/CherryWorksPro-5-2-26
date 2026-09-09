@@ -77,9 +77,20 @@ export async function customerRecipients(c: Pick<SupportCase, "id" | "orgId" | "
   return [...out.values()];
 }
 
-/** Re-resolved immediately before each send: a colleague removed or blocked while an earlier mail went out gets nothing. */
+/**
+ * Re-checked immediately before each send (one contact, not the whole list): a colleague removed
+ * or blocked while an earlier mail went out gets nothing.
+ */
 async function stillRecipient(c: Parameters<typeof customerRecipients>[0], r: { email: string; contactId: string | null }): Promise<boolean> {
-  return (await customerRecipients(c)).some(x => x.email === r.email && x.contactId === r.contactId);
+  const [b] = await db.select({ id: portalBlockedEmails.id }).from(portalBlockedEmails).where(and(eq(portalBlockedEmails.orgId, c.orgId), eq(portalBlockedEmails.email, r.email)));
+  if (b) return false;
+  if (!r.contactId) return !c.requesterContactId && (c.requesterEmail || "").trim().toLowerCase() === r.email; // legacy email-only requester
+  const [k] = await db.select({ email: clientContacts.email }).from(clientContacts)
+    .where(and(eq(clientContacts.id, r.contactId), eq(clientContacts.orgId, c.orgId), eq(clientContacts.clientId, c.clientId), isNull(clientContacts.deletedAt)));
+  if (!k || (k.email || "").trim().toLowerCase() !== r.email) return false;
+  if (c.requesterContactId === r.contactId) return true;
+  const [w] = await db.select({ id: supportCaseWatchers.id }).from(supportCaseWatchers).where(and(eq(supportCaseWatchers.orgId, c.orgId), eq(supportCaseWatchers.caseId, c.id), eq(supportCaseWatchers.contactId, r.contactId)));
+  return !!w;
 }
 
 async function safeEmail(label: string, fn: () => Promise<unknown>) {
