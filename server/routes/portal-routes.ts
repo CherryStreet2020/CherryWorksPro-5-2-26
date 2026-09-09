@@ -463,6 +463,7 @@ export function registerPortalRoutes(app: Express) {
           openedByName: `${p.contact.firstName} ${p.contact.lastName}`.trim(),
           source: "PORTAL",
           portal: { submitterContactId: p.contact.id, submissionKey: parsed.submissionKey ?? null, watcherContactIds: [...watcherIds] },
+          deferNotify: true,
         }, null);
       } catch (err: any) {
         if (!(err instanceof cases.CaseReplay)) throw err;
@@ -470,7 +471,9 @@ export function registerPortalRoutes(app: Express) {
         if (!winner) throw new Error("Could not open the case; please try again", { cause: err });
         return replayResponse(winner);
       }
+      // Files first, then the "case opened" mails — recipients open a case whose screenshots are already there.
       await storeFiles(row.id);
+      cases.notifyCreated(row, requester.id !== p.contact.id ? { name: `${p.contact.firstName} ${p.contact.lastName}`.trim(), contactId: p.contact.id } : undefined);
       return res.status(201).json({ id: row.id, caseKey: row.caseKey, subject: row.subject, status: row.status, attachments: await attachmentsOf(row.id), attachmentErrors });
     } catch (err: any) {
       if (err instanceof cases.CaseAccessError) return res.status(403).json({ message: err.message });

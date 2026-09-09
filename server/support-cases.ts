@@ -354,6 +354,8 @@ export interface CreateCaseInput {
     submissionKey?: string | null;
     watcherContactIds?: string[];
   };
+  /** Caller sends the creation notification itself (after the form's files are stored) via `notifyCreated`. */
+  deferNotify?: boolean;
 }
 
 export class CaseAccessError extends Error {}
@@ -477,8 +479,13 @@ export async function createCase(orgId: string, input: CreateCaseInput, actor: A
   });
   const openedBy = portal && input.requesterContactId && input.requesterContactId !== portal.submitterContactId
     ? { name: input.openedByName || "A colleague", contactId: portal.submitterContactId } : undefined;
-  void notifyCaseCreated(row, { openedBy }).catch(err => console.warn("[support] notifyCaseCreated failed", (err as Error)?.message));
+  if (!input.deferNotify) notifyCreated(row, openedBy);
   return row;
+}
+
+/** Fire-and-forget creation notification (used directly by callers that store attachments first). */
+export function notifyCreated(row: SupportCase, openedBy?: { name: string; contactId?: string | null }) {
+  void notifyCaseCreated(row, { openedBy }).catch(err => console.warn("[support] notifyCaseCreated failed", (err as Error)?.message));
 }
 
 /** A Help Center replay: the same authenticated contact submitted the same key before. */
