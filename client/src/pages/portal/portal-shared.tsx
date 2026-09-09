@@ -22,19 +22,21 @@ export const SURFACE_NAME: Record<Surface, string> = { help: "Help Center", port
 export const basePath = (surface: Surface, slug: string) => `${SURFACE_PATH[surface]}/${slug}`;
 
 // ─── Theme ────────────────────────────────────────────────────────────────
+// Same palette as the app's dark theme (client/src/lib/cherry-theme.css .dark): the customer surfaces
+// look like the product the firm works in.
 export const T = {
-  bg: "#0C0A0E",
-  surface: "#151216",
-  surface2: "#1C181D",
-  line: "#2A2226",
-  text: "#F1ECEE",
-  text2: "#C9BEC1",
-  muted: "#8F8488",
+  bg: "#080c14",
+  surface: "#111827",
+  surface2: "#1a2234",
+  line: "rgba(255,255,255,0.08)",
+  text: "#f5f8fb",
+  text2: "#c6d0da",
+  muted: "#8a96a6",
   accent: "var(--lux-accent, #cf3339)",
-  accentSoft: "rgba(207,51,57,0.14)",
-  good: "#5CCB8A", goodSoft: "#17301F",
-  warn: "#E9A94A", warnSoft: "#34260E",
-  info: "#8AB4F8", infoSoft: "#15233A",
+  accentSoft: "rgba(207,51,57,0.16)",
+  good: "#5CCB8A", goodSoft: "#14301f",
+  warn: "#E9A94A", warnSoft: "#33260f",
+  info: "#8AB4F8", infoSoft: "#15233a",
 };
 export const display = { fontFamily: "Fraunces, Georgia, 'Times New Roman', serif", fontWeight: 600, letterSpacing: "-0.01em" } as const;
 export const mono = { fontFamily: "'JetBrains Mono', ui-monospace, Menlo, monospace" } as const;

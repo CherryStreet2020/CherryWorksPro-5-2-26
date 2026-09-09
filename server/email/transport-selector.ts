@@ -11,6 +11,8 @@ import { MissingMailboxError } from "./types";
  */
 export interface OrgForTransport {
   id?: string;
+  /** Public logo URL — shown in the header of every mail the firm sends. */
+  logoUrl?: string | null;
   emailProviderType?: EmailProviderType | null;
   emailOauthRefreshToken?: string | null;
   emailOauthExpiresAt?: Date | string | null;
