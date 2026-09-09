@@ -519,23 +519,33 @@ export async function sendInvoiceEmail(
 }
 
 const FONT_STACK = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
-const BG_OUTER = "#f8f9fa";
+// The app's light theme (client/src/lib/cherry-theme.css): warm off-white ground, white cards,
+// navy text, cherry-red brand accent — so a mail looks like the product that sent it.
+const BG_OUTER = "#f7f6f3";
 const BG_CARD = "#ffffff";
-const ACCENT = "#1a1a2e";
-const ACCENT_BTN = "#1a1a2e";
-const ACCENT_LIGHT = "#e8e8ee";
-const TEXT_PRIMARY = "#1a1a2e";
-const TEXT_SECONDARY = "#555770";
-const TEXT_MUTED = "#8b8da3";
-const BORDER = "#e5e5ec";
 const CHERRY = "#cf3339";
+const ACCENT = CHERRY;
+const ACCENT_BTN = CHERRY;
+const ACCENT_LIGHT = "#fbe9ea";
+const TEXT_PRIMARY = "#1a1a2e";
+const TEXT_SECONDARY = "#555b66";
+const TEXT_MUTED = "#8b8da3";
+const BORDER = "#e6e3dd";
+/** Hosted brand mark (client/public/brand) — email clients need an absolute URL, never an inline SVG. */
+function brandIconUrl(): string {
+  // Same resolution as portalBaseUrl() (not imported: portal-auth already imports this module).
+  const base = (process.env.APP_BASE_URL || process.env.BASE_URL || "").trim().replace(/\/$/, "");
+  return `${/^https?:\/\//i.test(base) ? base : "https://cherryworkspro.com"}/brand/cherry-icon-red.png`;
+}
 
 function escapeHtml(str: string): string {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-export function wrapEmailLayout(innerHtml: string, opts?: { orgName?: string; preheader?: string }): string {
+export function wrapEmailLayout(innerHtml: string, opts?: { orgName?: string; preheader?: string; orgLogoUrl?: string | null }): string {
   const orgName = opts?.orgName || "CherryWorks Pro";
+  // Header: the firm's own logo + name when it has one, otherwise the CherryWorks mark.
+  const logo = opts?.orgLogoUrl && /^https?:\/\//i.test(opts.orgLogoUrl) ? escapeHtml(opts.orgLogoUrl) : null;
   const preheader = opts?.preheader || "";
   return `<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
@@ -557,12 +567,12 @@ export function wrapEmailLayout(innerHtml: string, opts?: { orgName?: string; pr
           <table role="presentation" cellpadding="0" cellspacing="0">
             <tr>
               <td style="padding-right:10px;vertical-align:middle;">
-                <div style="width:32px;height:32px;border-radius:8px;background:${ACCENT};text-align:center;line-height:32px;">
-                  <span style="color:#fff;font-size:14px;font-weight:700;font-family:${FONT_STACK};">C</span>
-                </div>
+                <img src="${logo || brandIconUrl()}" alt="${logo ? escapeHtml(orgName) : "CherryWorks Pro"}" width="36" height="36" style="display:block;width:36px;height:36px;border-radius:9px;object-fit:cover;" />
               </td>
               <td style="vertical-align:middle;">
-                <span style="font-family:${FONT_STACK};font-size:18px;font-weight:700;color:${ACCENT};letter-spacing:-0.3px;">Cherry<span style="font-weight:400;">Works</span></span>
+                ${logo
+                  ? `<span style="font-family:${FONT_STACK};font-size:18px;font-weight:700;color:${TEXT_PRIMARY};letter-spacing:-0.3px;">${escapeHtml(orgName)}</span>`
+                  : `<span style="font-family:${FONT_STACK};font-size:18px;font-weight:700;color:${CHERRY};letter-spacing:-0.3px;">Cherry<span style="font-weight:400;">Works</span> <span style="font-weight:400;color:${TEXT_SECONDARY};">Pro</span></span>`}
               </td>
             </tr>
           </table>
@@ -1208,7 +1218,7 @@ export async function sendCaseEmail(input: CaseEmailInput): Promise<{ messageId:
       ${escapeHtml(input.footer || `Reply to this email to add to the case. Keep ${input.caseKey} in the subject.`)}
     </p>
   `;
-  const html = wrapEmailLayout(innerHtml, { orgName: input.orgName, preheader: input.intro });
+  const html = wrapEmailLayout(innerHtml, { orgName: input.orgName, preheader: input.intro, orgLogoUrl: (input.org as any)?.logoUrl ?? null });
   const message: SendableMessage = {
     to: input.to,
     subject,
