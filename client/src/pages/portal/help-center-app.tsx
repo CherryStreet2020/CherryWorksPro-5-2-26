@@ -407,7 +407,7 @@ function TeamView({ slug, me }: { slug: string; me: Me }) {
         Everyone here can open and follow their own cases. Customer admins see every case for the company.
         {data?.approvedDomains.length ? <> Anyone with an <strong style={{ color: T.text }}>{data.approvedDomains.map(d => "@" + d).join(" or ")}</strong> address can sign in on their own — just share <span style={{ ...mono, fontSize: 13 }}>{typeof window !== "undefined" ? window.location.origin : ""}{base(slug)}</span>.</> : null}
       </p>
-      <div style={{ display: "grid", gap: 16, gridTemplateColumns: "minmax(0, 1fr) minmax(0, 360px)" }}>
+      <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
         <section style={card}>
           <p style={eyebrow}>People</p>
           {isLoading || !data ? <p style={{ color: T.muted, margin: 0 }}>Loading…</p> : (
