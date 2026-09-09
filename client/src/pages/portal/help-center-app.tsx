@@ -203,8 +203,9 @@ function NewCaseForm({ slug, me }: { slug: string; me: Me }) {
     if (!list) return;
     // A FileList is live: copy it now, before the input's value is reset.
     const picked: PickedFile[] = Array.from(list).map(f => ({ clientFileId: newId(), file: f, done: false, error: fileProblem(f) }));
-    // Never drop a selection silently: anything beyond ten is kept, flagged, and blocks submit until removed.
-    setFiles(prev => [...prev, ...picked].map((f, i) => i >= 10 && !f.error ? { ...f, error: "Only 10 files per case — remove this one or another" } : f));
+    // Never drop a selection silently: everything is kept; anything beyond ten is flagged at render time
+    // (so removing any file re-evaluates the limit) and blocks submit until the count fits.
+    setFiles(prev => [...prev, ...picked]);
   };
   const addEmail = () => {
     const e = emailDraft.trim().toLowerCase();
@@ -275,7 +276,8 @@ function NewCaseForm({ slug, me }: { slug: string; me: Me }) {
   });
   const impactOptions: SupportCaseImpact[] = ["ONE_PERSON", "TEAM", "COMPANY", "PRODUCTION_STOPPED"];
   const selectedColleagues = (colleagues ?? []).filter(c => watcherIds.includes(c.id));
-  const canSubmit = !!subject.trim() && !create.isPending && !files.some(f => f.error && !f.done);
+  const MAX_FILES = 10;
+  const canSubmit = !!subject.trim() && !create.isPending && files.length <= MAX_FILES && !files.some(f => f.error && !f.done);
   const inputStyle = { ...field } as React.CSSProperties;
 
   if (result) {
@@ -413,10 +415,10 @@ function NewCaseForm({ slug, me }: { slug: string; me: Me }) {
                 <input type="file" multiple disabled={create.isPending} style={{ display: "none" }} onChange={e => { addFiles(e.target.files); e.currentTarget.value = ""; }} data-testid="portal-new-file-input" />
               </label>
             </div>
-            {files.map(f => (
+            {files.map((f, i) => (
               <div key={f.clientFileId} style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 13 }} data-testid="portal-new-file-row">
                 <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.file.name} <span style={{ color: T.muted }}>· {sizeLabel(f.file.size)}</span></span>
-                {f.error && <span style={{ color: T.warn }}>{f.error}</span>}
+                {(f.error || i >= MAX_FILES) && <span style={{ color: T.warn }}>{f.error || `Only ${MAX_FILES} files per case — remove one`}</span>}
                 <button type="button" disabled={create.isPending} onClick={() => setFiles(prev => prev.filter(x => x.clientFileId !== f.clientFileId))} style={{ ...btnGhost, padding: "3px 8px", fontSize: 12 }} aria-label={`Remove ${f.file.name}`}>Remove</button>
               </div>
             ))}

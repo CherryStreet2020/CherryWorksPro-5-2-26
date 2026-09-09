@@ -14,7 +14,7 @@ import * as cases from "../support-cases";
 import { importJiraIssues } from "../support-import";
 import { JiraClient, JiraHttpError, pullProject, MAX_ISSUES } from "../support-jira";
 import multer from "multer";
-import { MAX_ATTACHMENT_BYTES, createAttachment, listAttachments, getAttachment, deleteAttachment, streamBytes, attachmentView, isAllowedAttachment, AttachmentConflictError } from "../support-attachments";
+import { MAX_ATTACHMENT_BYTES, createAttachment, listAttachments, getAttachment, deleteAttachment, streamBytes, attachmentView, isAllowedAttachment, AttachmentConflictError, parseClientFileIds } from "../support-attachments";
 
 const attachmentUpload = multer({
   storage: multer.memoryStorage(),
@@ -255,8 +255,7 @@ export function registerSupportCaseRoutes(app: Express) {
       const files = ((req as any).files as Express.Multer.File[] | undefined) ?? [];
       if (files.length === 0) return res.status(400).json({ message: "No files were uploaded" });
       const messageId = typeof req.body?.messageId === "string" && req.body.messageId ? req.body.messageId : null;
-      const raw = req.body?.clientFileIds;
-      const ids: string[] = Array.isArray(raw) ? raw : typeof raw === "string" ? (raw.startsWith("[") ? JSON.parse(raw) : [raw]) : [];
+      const ids = parseClientFileIds(req.body?.clientFileIds, files.length) ?? [];
       const created = [];
       for (let i = 0; i < files.length; i++) {
         const f = files[i];

@@ -20,7 +20,7 @@ import {
 import { isNull, ne } from "drizzle-orm";
 import { sendPortalLoginEmail } from "../email";
 import multer from "multer";
-import { MAX_ATTACHMENT_BYTES, createAttachment, listAttachments, getAttachment, streamBytes, attachmentView, isAllowedAttachment, AttachmentConflictError, AttachmentForbiddenError } from "../support-attachments";
+import { MAX_ATTACHMENT_BYTES, createAttachment, listAttachments, getAttachment, streamBytes, attachmentView, isAllowedAttachment, AttachmentConflictError, AttachmentForbiddenError, parseClientFileIds } from "../support-attachments";
 
 const portalUpload = multer({
   storage: multer.memoryStorage(),
@@ -407,7 +407,8 @@ export function registerPortalRoutes(app: Express) {
     let parsed: ReturnType<typeof parseCreateBody>;
     try { parsed = parseCreateBody(req); } catch (err: any) { return res.status(400).json({ message: friendly(err) }); }
     const files = ((req as any).files as Express.Multer.File[] | undefined) ?? [];
-    const fileIds = parsed.clientFileIds ?? [];
+    let fileIds: string[] = [];
+    try { fileIds = parseClientFileIds((req.body as any)?.clientFileIds, files.length) ?? []; } catch (err: any) { return res.status(400).json({ message: friendly(err) }); }
     const attachmentErrors: Array<{ filename: string; clientFileId: string | null; error: string }> = [];
     const attachmentsOf = async (caseId: string) => (await listAttachments(p.orgId, caseId)).map(a => attachmentView(a, `/api/portal/${p.orgSlug}/attachments`));
     const storeFiles = async (caseId: string) => {
@@ -587,8 +588,7 @@ export function registerPortalRoutes(app: Express) {
       if (!row) return res.status(404).json({ message: "Support case not found" });
       const files = ((req as any).files as Express.Multer.File[] | undefined) ?? [];
       if (files.length === 0) return res.status(400).json({ message: "No files were uploaded" });
-      const raw = (req.body as any)?.clientFileIds;
-      const ids: string[] = Array.isArray(raw) ? raw : typeof raw === "string" ? (raw.startsWith("[") ? JSON.parse(raw) : [raw]) : [];
+      const ids = parseClientFileIds((req.body as any)?.clientFileIds, files.length) ?? [];
       const created = [];
       for (let i = 0; i < files.length; i++) {
         const f = files[i];

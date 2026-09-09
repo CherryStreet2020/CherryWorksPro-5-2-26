@@ -114,6 +114,22 @@ export interface CreateAttachmentInput {
 }
 
 export class AttachmentConflictError extends Error {}
+export const CLIENT_FILE_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
+/**
+ * The `clientFileIds` field that travels beside multipart `files`: absent → server ids; present →
+ * one valid id per file, in order, or the whole request is refused (a silently mismatched array
+ * would break the retry contract for some files without the client knowing).
+ */
+export function parseClientFileIds(raw: unknown, fileCount: number): string[] | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  let ids: unknown = raw;
+  if (typeof raw === "string") { try { ids = raw.startsWith("[") ? JSON.parse(raw) : [raw]; } catch { throw new Error("clientFileIds must be a JSON array of ids"); } }
+  if (!Array.isArray(ids) || ids.length !== fileCount || !ids.every(x => typeof x === "string" && CLIENT_FILE_ID_RE.test(x))) {
+    throw new Error(`clientFileIds must list exactly one id (8–64 letters, digits, - or _) per uploaded file (${fileCount})`);
+  }
+  if (new Set(ids as string[]).size !== ids.length) throw new Error("clientFileIds must be unique");
+  return ids as string[];
+}
 export class AttachmentForbiddenError extends Error {}
 
 /**
@@ -128,7 +144,9 @@ export async function createAttachment(input: CreateAttachmentInput): Promise<Su
   if (input.bytes.length === 0) throw new Error("The file is empty");
   if (input.bytes.length > MAX_ATTACHMENT_BYTES) throw new Error("Files must be 15 MB or smaller");
   const filename = safeFilename(input.filename);
-  const clientFileId = input.clientFileId && /^[A-Za-z0-9_-]{8,64}$/.test(input.clientFileId) ? input.clientFileId : randomUUID();
+  // A provided id must be valid — replacing a bad one with a random id would make every retry a new file.
+  if (input.clientFileId != null && input.clientFileId !== "" && !CLIENT_FILE_ID_RE.test(input.clientFileId)) throw new Error("Invalid file id");
+  const clientFileId = input.clientFileId && CLIENT_FILE_ID_RE.test(input.clientFileId) ? input.clientFileId : randomUUID();
   const key = stableStorageKey(input.orgId, input.caseId, clientFileId, filename);
   const mime = input.mimeType && input.mimeType !== "application/octet-stream" ? input.mimeType : guessMime(filename);
   const digest = createHash("sha256").update(input.bytes).digest("hex");
