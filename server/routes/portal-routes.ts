@@ -6,7 +6,7 @@ import { db } from "../db";
 import { storage } from "../storage";
 import {
   orgs, clients, clientContacts, supportCases, supportCaseTypes, clientActivities, portalBlockedEmails,
-  portalRequestLinkSchema, portalVerifySchema, portalCreateCaseSchema, portalMessageSchema,
+  portalRequestLinkSchema, portalVerifySchema, portalCreateCaseSchema, portalMessageSchema, portalWatcherAddSchema, supportCaseWatchers,
   portalSetNameSchema, portalAdminCaseUpdateSchema, portalInviteColleagueSchema,
   SUPPORT_CASE_OPEN_STATUSES, SUPPORT_CASE_PRIORITIES,
 } from "@shared/schema";
@@ -20,7 +20,7 @@ import {
 import { isNull, ne } from "drizzle-orm";
 import { sendPortalLoginEmail } from "../email";
 import multer from "multer";
-import { MAX_ATTACHMENT_BYTES, createAttachment, listAttachments, getAttachment, streamBytes, attachmentView, isAllowedAttachment } from "../support-attachments";
+import { MAX_ATTACHMENT_BYTES, createAttachment, listAttachments, getAttachment, streamBytes, attachmentView, isAllowedAttachment, AttachmentConflictError, AttachmentForbiddenError } from "../support-attachments";
 
 const portalUpload = multer({
   storage: multer.memoryStorage(),
@@ -73,25 +73,56 @@ export function safeReturnPath(raw: unknown, orgSlug: string): string | null {
   return raw;
 }
 
-/** "My case": raised by this contact (by id, or by address for cases recorded before the contact existed). */
+/**
+ * "My case": raised by this contact — by id, or by address ONLY for cases that have no linked
+ * requester (recorded before the contact existed). Once a case has a linked requester, a stale
+ * requester_email grants nothing to whoever holds that address now.
+ */
 function ownCaseWhere(p: NonNullable<Request["portal"]>) {
   return or(
     eq(supportCases.requesterContactId, p.contact.id),
-    p.contact.email ? sql`lower(${supportCases.requesterEmail}) = ${p.contact.email.toLowerCase()}` : sql`false`,
+    p.contact.email ? and(isNull(supportCases.requesterContactId), sql`lower(${supportCases.requesterEmail}) = ${p.contact.email.toLowerCase()}`)! : sql`false`,
   )!;
 }
 function isOwnCase(p: NonNullable<Request["portal"]>, r: { requesterContactId: string | null; requesterEmail?: string | null }) {
-  return r.requesterContactId === p.contact.id || (!!p.contact.email && !!r.requesterEmail && r.requesterEmail.toLowerCase() === p.contact.email.toLowerCase());
+  if (r.requesterContactId) return r.requesterContactId === p.contact.id;
+  return !!p.contact.email && !!r.requesterEmail && r.requesterEmail.toLowerCase() === p.contact.email.toLowerCase();
+}
+/** Cases this contact follows as a watcher. */
+function watchedCaseWhere(p: NonNullable<Request["portal"]>) {
+  return sql`EXISTS (SELECT 1 FROM ${supportCaseWatchers} w WHERE w.case_id = ${supportCases.id} AND w.contact_id = ${p.contact.id})`;
 }
 
-/** Cases this contact may see: their own, or the whole client when they are a Customer Admin. */
+/** Cases this contact may see: their own or watched, or the whole client when they are a Customer Admin. */
 function visibleCaseWhere(req: Request) {
   const p = req.portal!;
   return and(
     eq(supportCases.orgId, p.orgId),
     eq(supportCases.clientId, p.client.id),
-    p.contact.portalRole === "admin" ? sql`true` : ownCaseWhere(p),
+    p.contact.portalRole === "admin" ? sql`true` : or(ownCaseWhere(p), watchedCaseWhere(p))!,
   )!;
+}
+/** In-transaction re-check of the same authority (for writes: message, upload, watcher changes). */
+function authorizeContact(req: Request) {
+  const p = req.portal!;
+  return async (tx: any, c: any) => (await cases.customerCanAccess(tx, p.orgId, c, p.contact.id)).ok;
+}
+/** Only the requester or a Customer Admin may remove watchers; anyone with access may add. */
+function authorizeContactManage(req: Request) {
+  const p = req.portal!;
+  return async (tx: any, c: any) => { const r = await cases.customerCanAccess(tx, p.orgId, c, p.contact.id); return r.ok && r.role !== "watcher"; };
+}
+/** Field values arrive as strings in a multipart form; JSON bodies arrive typed. */
+function parseCreateBody(req: Request) {
+  const b: any = req.body ?? {};
+  const asArr = (v: unknown) => v === undefined ? undefined : Array.isArray(v) ? v : typeof v === "string" && v.startsWith("[") ? JSON.parse(v) : [v];
+  const body = { ...b };
+  if (typeof b.intake === "string") body.intake = b.intake ? JSON.parse(b.intake) : undefined;
+  for (const k of ["watcherContactIds", "watcherEmails", "clientFileIds"]) body[k] = asArr(b[k]);
+  if (body.typeId === "") body.typeId = null;
+  if (body.onBehalfOfContactId === "") delete body.onBehalfOfContactId;
+  if (body.submissionKey === "") delete body.submissionKey;
+  return portalCreateCaseSchema.parse(body);
 }
 
 /** Non-GET portal calls must carry X-Requested-With: cwp-portal (cross-site forms cannot set it). */
@@ -331,23 +362,143 @@ export function registerPortalRoutes(app: Express) {
     }
   });
 
-  app.post("/api/portal/:orgSlug/cases", requirePortal, async (req, res) => {
+  /** Colleagues at this contact's company who can be added as watchers (never another client's people). */
+  app.get("/api/portal/:orgSlug/colleagues", requirePortal, async (req, res) => {
+    const p = req.portal!;
+    const excludeCaseId = typeof req.query.caseId === "string" ? req.query.caseId : undefined;
+    return res.json(await cases.listColleagues(p.orgId, p.client.id, { excludeContactIds: [p.contact.id], excludeCaseId }));
+  });
+
+  /** Resolves a watcher email: an existing colleague, or a new address on the client's approved domains (provisioned like self-registration). */
+  async function resolveWatcherEmail(p: NonNullable<Request["portal"]>, email: string): Promise<string> {
+    const norm = email.trim().toLowerCase();
+    const known = await findPortalContact(p.orgId, norm);
+    if (known) {
+      if (known.clientId !== p.client.id) throw new Error(`${norm} is not part of your company`);
+      if (await isPortalBlocked(p.orgId, norm)) throw new Error(`${norm} cannot be added`);
+      return known.id;
+    }
+    const [client] = await db.select({ domains: clients.portalEmailDomains }).from(clients).where(eq(clients.id, p.client.id));
+    const domain = emailDomain(norm);
+    if (!domain || !client?.domains?.includes(domain)) throw new Error(`${norm} is not on your company's approved email domains`);
+    const created = await resolveOrProvisionContact(p.orgId, norm, "help-center-invite");
+    if (!created || created.clientId !== p.client.id) throw new Error(`${norm} cannot be added`);
+    return created.id;
+  }
+
+  // Multipart (fields + up to 10 files) or plain JSON. Order: files parsed in memory → fields
+  // validated → replay lookup → colleagues resolved → ONE transaction (case + watchers + events,
+  // contacts re-locked and re-validated) → attachments (each its own idempotent write, errors
+  // reported, never a lost case) → notifications.
+  app.post("/api/portal/:orgSlug/cases", requirePortal, (req, res, next) => {
+    if (!req.is("multipart/form-data")) return next();
+    portalUpload.array("files", 10)(req, res, (err: any) => {
+      if (err) return res.status(400).json({ message: err?.code === "LIMIT_FILE_SIZE" ? "Files must be 15 MB or smaller" : (err?.message || "Upload failed") });
+      next();
+    });
+  }, async (req, res) => {
+    const p = req.portal!;
+    let parsed: ReturnType<typeof parseCreateBody>;
+    try { parsed = parseCreateBody(req); } catch (err: any) { return res.status(400).json({ message: friendly(err) }); }
+    const files = ((req as any).files as Express.Multer.File[] | undefined) ?? [];
+    const fileIds = parsed.clientFileIds ?? [];
+    const attachmentErrors: Array<{ filename: string; clientFileId: string | null; error: string }> = [];
+    const attachmentsOf = async (caseId: string) => (await listAttachments(p.orgId, caseId)).map(a => attachmentView(a, `/api/portal/${p.orgSlug}/attachments`));
+    const storeFiles = async (caseId: string) => {
+      const out = [];
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        try {
+          out.push(await createAttachment({ orgId: p.orgId, caseId, filename: f.originalname, mimeType: f.mimetype, bytes: f.buffer, uploadedByContactId: p.contact.id, source: "PORTAL", clientFileId: fileIds[i] ?? null, authorize: (tx) => cases.customerCanAccessCase(tx, p.orgId, caseId, p.contact.id) }));
+        } catch (err: any) {
+          attachmentErrors.push({ filename: f.originalname, clientFileId: fileIds[i] ?? null, error: friendly(err) });
+        }
+      }
+      return out;
+    };
     try {
-      const parsed = portalCreateCaseSchema.parse(req.body);
-      const p = req.portal!;
-      const row = await cases.createCase(p.orgId, {
-        clientId: p.client.id,
-        typeId: parsed.typeId ?? null,
-        subject: parsed.subject,
-        description: parsed.description || null,
-        priority: parsed.priority,
-        requesterContactId: p.contact.id,
-        requesterName: `${p.contact.firstName} ${p.contact.lastName}`.trim(),
-        requesterEmail: p.contact.email || null,
-        source: "PORTAL",
-      }, null);
-      return res.status(201).json({ id: row.id, caseKey: row.caseKey, subject: row.subject, status: row.status });
+      // Replay: the same authenticated contact already submitted this key → return that case (after the
+      // normal visibility check) and let the client finish its uploads. Never a second case.
+      if (parsed.submissionKey) {
+        const prior = await cases.findSubmission(p.orgId, p.contact.id, parsed.submissionKey);
+        if (prior) {
+          const [visible] = await db.select({ id: supportCases.id }).from(supportCases).where(and(visibleCaseWhere(req), eq(supportCases.id, prior.id)));
+          if (!visible) return res.status(200).json({ id: prior.id, caseKey: prior.caseKey, replay: true });
+          await storeFiles(prior.id);
+          return res.status(200).json({ id: prior.id, caseKey: prior.caseKey, subject: prior.subject, status: prior.status, replay: true, attachments: await attachmentsOf(prior.id), attachmentErrors });
+        }
+      }
+      const watcherIds = new Set(parsed.watcherContactIds ?? []);
+      for (const e of parsed.watcherEmails ?? []) watcherIds.add(await resolveWatcherEmail(p, e));
+      let requesterId = p.contact.id;
+      if (parsed.onBehalfOfContactId && parsed.onBehalfOfContactId !== p.contact.id) {
+        if (p.contact.portalRole !== "admin") return res.status(403).json({ message: "Only a Customer Admin can open a case for a colleague" });
+        requesterId = parsed.onBehalfOfContactId;
+      }
+      watcherIds.delete(requesterId);
+      const [requester] = await db.select().from(clientContacts).where(and(eq(clientContacts.id, requesterId), eq(clientContacts.orgId, p.orgId), eq(clientContacts.clientId, p.client.id), isNull(clientContacts.deletedAt)));
+      if (!requester) return res.status(400).json({ message: "That colleague is not part of your company" });
+      let row;
+      try {
+        row = await cases.createCase(p.orgId, {
+          clientId: p.client.id,
+          typeId: parsed.typeId ?? null,
+          subject: parsed.subject,
+          description: parsed.description || null,
+          priority: parsed.priority,
+          intake: parsed.intake && Object.values(parsed.intake).some(v => v !== undefined && v !== "") ? parsed.intake : null,
+          requesterContactId: requester.id,
+          requesterName: `${requester.firstName} ${requester.lastName}`.trim(),
+          requesterEmail: requester.email || null,
+          openedByName: `${p.contact.firstName} ${p.contact.lastName}`.trim(),
+          source: "PORTAL",
+          portal: { submitterContactId: p.contact.id, submissionKey: parsed.submissionKey ?? null, watcherContactIds: [...watcherIds] },
+        }, null);
+      } catch (err: any) {
+        if (err instanceof cases.CaseReplay) row = err.row;
+        else throw err;
+      }
+      await storeFiles(row.id);
+      return res.status(201).json({ id: row.id, caseKey: row.caseKey, subject: row.subject, status: row.status, attachments: await attachmentsOf(row.id), attachmentErrors });
     } catch (err: any) {
+      if (err instanceof cases.CaseAccessError) return res.status(403).json({ message: err.message });
+      return res.status(400).json({ message: friendly(err) });
+    }
+  });
+
+  // ── Watchers: colleagues following a case ──
+  app.get("/api/portal/:orgSlug/cases/:id/watchers", requirePortal, async (req, res) => {
+    const p = req.portal!;
+    const [row] = await db.select({ id: supportCases.id }).from(supportCases).where(and(visibleCaseWhere(req), eq(supportCases.id, String(req.params.id))));
+    if (!row) return res.status(404).json({ message: "Support case not found" });
+    return res.json(await cases.listWatchers(p.orgId, row.id));
+  });
+  app.post("/api/portal/:orgSlug/cases/:id/watchers", requirePortal, async (req, res) => {
+    try {
+      const p = req.portal!;
+      const body = portalWatcherAddSchema.parse(req.body);
+      const [row] = await db.select({ id: supportCases.id }).from(supportCases).where(and(visibleCaseWhere(req), eq(supportCases.id, String(req.params.id))));
+      if (!row) return res.status(404).json({ message: "Support case not found" });
+      const contactId = body.contactId ?? await resolveWatcherEmail(p, body.email!);
+      const r = await cases.addWatcher(p.orgId, row.id, contactId, { contactId: p.contact.id, name: `${p.contact.firstName} ${p.contact.lastName}`.trim() }, authorizeContact(req));
+      return res.status(r.changed ? 201 : 200).json(r.watchers);
+    } catch (err: any) {
+      if (err instanceof cases.CaseAccessError) return res.status(404).json({ message: "Support case not found" });
+      return res.status(400).json({ message: friendly(err) });
+    }
+  });
+  app.delete("/api/portal/:orgSlug/cases/:id/watchers/:contactId", requirePortal, async (req, res) => {
+    try {
+      const p = req.portal!;
+      const [row] = await db.select({ id: supportCases.id }).from(supportCases).where(and(visibleCaseWhere(req), eq(supportCases.id, String(req.params.id))));
+      if (!row) return res.status(404).json({ message: "Support case not found" });
+      const target = String(req.params.contactId);
+      // A watcher may remove THEMSELVES; removing others is for the requester / Customer Admin.
+      const auth = target === p.contact.id ? authorizeContact(req) : authorizeContactManage(req);
+      const r = await cases.removeWatcher(p.orgId, row.id, target, { contactId: p.contact.id, name: `${p.contact.firstName} ${p.contact.lastName}`.trim() }, auth);
+      return res.json(r.watchers);
+    } catch (err: any) {
+      if (err instanceof cases.CaseAccessError) return res.status(404).json({ message: "Support case not found" });
       return res.status(400).json({ message: friendly(err) });
     }
   });
@@ -360,7 +511,7 @@ export function registerPortalRoutes(app: Express) {
         status: supportCases.status, priority: supportCases.priority, typeName: supportCaseTypes.name,
         requesterName: supportCases.requesterName, createdAt: supportCases.createdAt, updatedAt: supportCases.updatedAt,
         firstResponseAt: supportCases.firstResponseAt, resolvedAt: supportCases.resolvedAt, closedAt: supportCases.closedAt,
-        assigneeUserId: supportCases.assigneeUserId,
+        assigneeUserId: supportCases.assigneeUserId, intake: supportCases.intake, requesterContactId: supportCases.requesterContactId, requesterEmail: supportCases.requesterEmail,
       })
       .from(supportCases)
       .leftJoin(supportCaseTypes, and(eq(supportCases.typeId, supportCaseTypes.id), eq(supportCaseTypes.orgId, p.orgId)))
@@ -380,14 +531,16 @@ export function registerPortalRoutes(app: Express) {
       const t = await cases.listCaseTime(p.orgId, row.id);
       hours = { minutes: t.totals.minutes, billableMinutes: t.totals.billableMinutes };
     }
-    const attachments = await listAttachments(p.orgId, row.id);
-    const { assigneeUserId: _a, ...safe } = row;
+    const [attachments, watchers] = await Promise.all([listAttachments(p.orgId, row.id), cases.listWatchers(p.orgId, row.id)]);
+    const { assigneeUserId: _a, requesterContactId, requesterEmail, ...safe } = row;
     return res.json({
       ...safe,
       assigneeName,
+      isRequester: isOwnCase(p, { requesterContactId, requesterEmail }),
+      watchers,
       attachments: attachments.map(a => attachmentView(a, `/api/portal/${p.orgSlug}/attachments`)),
       messages: messages.map(m => ({ id: m.id, authorName: m.authorName, fromTeam: !!m.authorUserId, body: m.body, createdAt: m.createdAt })),
-      events: events.filter(e => e.kind === "status" || e.kind === "created").map(e => ({ id: e.id, kind: e.kind, toValue: e.toValue, createdAt: e.createdAt })),
+      events: events.filter(e => e.kind === "status" || e.kind === "created" || e.kind === "watcher").map(e => ({ id: e.id, kind: e.kind, fromValue: e.fromValue, toValue: e.toValue, createdAt: e.createdAt })),
       hours,
     });
   });
@@ -401,10 +554,12 @@ export function registerPortalRoutes(app: Express) {
       const result = await cases.addMessage(p.orgId, row.id, {
         body, visibility: "CUSTOMER",
         author: { contactId: p.contact.id, name: `${p.contact.firstName} ${p.contact.lastName}`.trim() },
+        authorize: authorizeContact(req),
       });
       if (!result) return res.status(404).json({ message: "Support case not found" });
       return res.status(201).json({ id: result.message.id, status: result.case.status });
     } catch (err: any) {
+      if (err instanceof cases.CaseAccessError) return res.status(404).json({ message: "Support case not found" });
       return res.status(400).json({ message: friendly(err) });
     }
   });
@@ -421,12 +576,17 @@ export function registerPortalRoutes(app: Express) {
       if (!row) return res.status(404).json({ message: "Support case not found" });
       const files = ((req as any).files as Express.Multer.File[] | undefined) ?? [];
       if (files.length === 0) return res.status(400).json({ message: "No files were uploaded" });
+      const raw = (req.body as any)?.clientFileIds;
+      const ids: string[] = Array.isArray(raw) ? raw : typeof raw === "string" ? (raw.startsWith("[") ? JSON.parse(raw) : [raw]) : [];
       const created = [];
-      for (const f of files) {
-        created.push(await createAttachment({ orgId: p.orgId, caseId: row.id, filename: f.originalname, mimeType: f.mimetype, bytes: f.buffer, uploadedByContactId: p.contact.id, source: "PORTAL" }));
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        created.push(await createAttachment({ orgId: p.orgId, caseId: row.id, filename: f.originalname, mimeType: f.mimetype, bytes: f.buffer, uploadedByContactId: p.contact.id, source: "PORTAL", clientFileId: ids[i] ?? null, authorize: (tx) => cases.customerCanAccessCase(tx, p.orgId, row.id, p.contact.id) }));
       }
       return res.status(201).json(created.map(a => attachmentView(a, `/api/portal/${p.orgSlug}/attachments`)));
     } catch (err: any) {
+      if (err instanceof AttachmentForbiddenError || err instanceof cases.CaseAccessError) return res.status(404).json({ message: "Support case not found" });
+      if (err instanceof AttachmentConflictError) return res.status(409).json({ message: err.message });
       return res.status(400).json({ message: friendly(err) });
     }
   });

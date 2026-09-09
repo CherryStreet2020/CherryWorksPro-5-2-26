@@ -79,7 +79,7 @@ export async function processInboundEmail(input: {
   orgId?: string;
   /** The receiving system verified the sender (SPF/DKIM pass). Unset/false = the From: header is untrusted. */
   senderAuthenticated?: boolean;
-}): Promise<{ outcome: "no_org" | "appended" | "created" | "stored"; caseId?: string; caseKey?: string; orgId?: string }> {
+}): Promise<{ outcome: "no_org" | "appended" | "created" | "stored"; caseId?: string; caseKey?: string; orgId?: string; /** the verified sender's contact — attachments are stored under their authority */ contactId?: string }> {
   const recipients = allAddresses(input.to);
   const sender = parseAddress(input.from);
   if (!sender || (!input.orgId && recipients.length === 0)) return { outcome: "stored" };
@@ -102,24 +102,30 @@ export async function processInboundEmail(input: {
       // Same rule as the Help Center: a verified, authenticated contact OF THIS CASE'S
       // CLIENT who is the requester or a Customer Admin. A bare address match is not
       // enough (an imported case may carry the address of someone at another client).
+      // Same rule as the Help Center (cases.customerCanAccess): requester by id — by address ONLY
+      // when the case has no linked requester — a Customer Admin, or a watcher; and the authority
+      // is re-evaluated INSIDE addMessage under the case row lock, so a colleague removed while
+      // this mail was in flight is still refused.
       const sameClient = !!contact && !!contact.clientId && contact.clientId === row.clientId;
-      const isRequester = sameClient && ((!!row.requesterContactId && contact!.id === row.requesterContactId)
-        || (!!row.requesterEmail && row.requesterEmail.toLowerCase() === sender.email));
-      const isCustomerAdmin = sameClient && contact!.portalRole === "admin";
-      if (!isRequester && !isCustomerAdmin) {
+      const access = sameClient ? await cases.customerCanAccess(db, org.id, row, contact!.id) : { ok: false, role: null };
+      if (!access.ok) {
         // Denied: keep it for triage. Never fall through and open a second case.
         return { outcome: "stored", orgId: org.id };
       }
-      {
+      try {
         const result = await cases.addMessage(org.id, row.id, {
           body, visibility: "CUSTOMER",
-          author: { contactId: contact?.id ?? null, name: authorName },
+          author: { contactId: contact!.id, name: authorName },
           emailMessageId: input.messageId,
+          authorize: (tx, c) => cases.customerCanAccess(tx, org.id, c, contact!.id).then(r => r.ok),
         });
         if (result) {
           // addMessage() already notifies the assignee / managers.
-          return { outcome: "appended", caseId: row.id, caseKey: row.caseKey, orgId: org.id };
+          return { outcome: "appended", caseId: row.id, caseKey: row.caseKey, orgId: org.id, contactId: contact!.id };
         }
+      } catch (err) {
+        if (err instanceof cases.CaseAccessError) return { outcome: "stored", orgId: org.id };
+        throw err;
       }
     }
   }

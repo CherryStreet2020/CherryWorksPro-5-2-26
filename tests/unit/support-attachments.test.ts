@@ -114,6 +114,46 @@ describe("support case attachments", () => {
     expect(gone.status).toBe(404);
   });
 
+  it("agent uploads are idempotent per clientFileId: same id+bytes → same row; same id, different bytes → 409; same name, different ids → two rows", async () => {
+    const k = await api("POST", "/api/support/cases", admin, { clientId, subject: "Retry-safe uploads", requesterContactId: contactId });
+    expect(k.status).toBe(201);
+    const id = (await k.json()).id;
+    const fileId = `agent-file-${stamp}-a`;
+    const send = (files: { name: string; bytes: Buffer; type: string }[], ids: string[]) => {
+      const fd = new FormData();
+      fd.append("clientFileIds", JSON.stringify(ids));
+      for (const f of files) fd.append("files", new Blob([f.bytes], { type: f.type }), f.name);
+      return fetch(`${BASE}/api/support/cases/${id}/attachments`, { method: "POST", headers: { Cookie: admin.cookie, "X-CSRF-Token": admin.csrfToken }, body: fd });
+    };
+    const first = await send([{ name: "retry.png", bytes: PNG, type: "image/png" }], [fileId]);
+    expect(first.status, await first.clone().text()).toBe(201);
+    const a1 = (await first.json())[0];
+    expect(a1.clientFileId).toBe(fileId);
+    const second = await send([{ name: "retry.png", bytes: PNG, type: "image/png" }], [fileId]);
+    expect(second.status, await second.clone().text()).toBe(201);
+    const a2 = (await second.json())[0];
+    expect(a2.id).toBe(a1.id);
+    let detail = await (await api("GET", `/api/support/cases/${id}`, admin)).json();
+    expect(detail.attachments.length).toBe(1);
+
+    const clash = await send([{ name: "retry.png", bytes: Buffer.concat([PNG, Buffer.from("x")]), type: "image/png" }], [fileId]);
+    expect(clash.status, await clash.clone().text()).toBe(409);
+    detail = await (await api("GET", `/api/support/cases/${id}`, admin)).json();
+    expect(detail.attachments.length).toBe(1);
+
+    const twins = await send(
+      [{ name: "same-name.txt", bytes: Buffer.from("one"), type: "text/plain" }, { name: "same-name.txt", bytes: Buffer.from("two"), type: "text/plain" }],
+      [`agent-file-${stamp}-b`, `agent-file-${stamp}-c`],
+    );
+    expect(twins.status, await twins.clone().text()).toBe(201);
+    const rows = await twins.json();
+    expect(rows.length).toBe(2);
+    expect(rows[0].id).not.toBe(rows[1].id);
+    detail = await (await api("GET", `/api/support/cases/${id}`, admin)).json();
+    expect(detail.attachments.length).toBe(3);
+    await api("DELETE", `/api/support/cases/${id}`, admin);
+  });
+
   afterAll(async () => {
     if (caseId) await api("DELETE", `/api/support/cases/${caseId}`, admin).catch(() => {});
     if (contactId) await api("DELETE", `/api/clients/${clientId}/contacts/${contactId}`, admin).catch(() => {});

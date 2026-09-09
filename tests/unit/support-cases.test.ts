@@ -151,6 +151,53 @@ describe("support cases: keys, lifecycle, messages, and hours", () => {
     expect(d.events.some((e: any) => e.kind === "priority" && e.toValue === "HIGH")).toBe(true);
   });
 
+  it("BLOCKED is an open status: counted in open + blocked, listed by view, and customer/agent replies leave it alone", async () => {
+    const stamp = Date.now();
+    const email = `blocked.${stamp}@example.com`;
+    const orgSlug = (await (await api("GET", "/api/support/portal-info", admin)).json()).orgSlug;
+    const ct = await api("POST", `/api/clients/${clientId}/contacts`, admin, { firstName: "Blake", lastName: "Blocked", email });
+    expect(ct.status).toBe(201);
+    const contactId = (await ct.json()).id;
+    const k = await api("POST", "/api/support/cases", admin, { clientId, subject: `Waiting on the vendor ${stamp}`, requesterContactId: contactId });
+    expect(k.status).toBe(201);
+    const id = (await k.json()).id;
+
+    const before = await (await api("GET", "/api/support/summary", admin)).json();
+    const b = await api("PATCH", `/api/support/cases/${id}`, admin, { status: "BLOCKED" });
+    expect(b.ok, await b.clone().text()).toBe(true);
+    expect((await b.json()).status).toBe("BLOCKED");
+    const after = await (await api("GET", "/api/support/summary", admin)).json();
+    expect(after.open).toBe(before.open); // it was open before and is still open
+    const blockedView = await (await api("GET", `/api/support/cases?view=blocked&clientId=${clientId}`, admin)).json();
+    expect(blockedView.map((r: any) => r.id)).toContain(id);
+    const openView = await (await api("GET", `/api/support/cases?view=open&clientId=${clientId}`, admin)).json();
+    expect(openView.map((r: any) => r.id)).toContain(id);
+
+    // Customer reply through the Help Center keeps BLOCKED.
+    const portal = async (method: string, path: string, cookie: string, body?: any) => fetch(`${BASE}/api/portal/${orgSlug}${path}`, {
+      method, headers: { "Content-Type": "application/json", "X-Requested-With": "cwp-portal", ...(cookie ? { Cookie: cookie } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    const { debugLink } = await (await portal("POST", "/auth/request-link", "", { email })).json();
+    const token = new URL(debugLink, "http://localhost").searchParams.get("token")!;
+    const v = await portal("POST", "/auth/verify", "", { token });
+    const cookie = (v.headers.getSetCookie?.() ?? []).find(x => x.startsWith("cwp_portal="))!.split(";")[0];
+    const cm = await portal("POST", `/cases/${id}/messages`, cookie, { body: "Any news from the vendor?" });
+    expect(cm.status, await cm.clone().text()).toBe(201);
+    expect((await cm.json()).status).toBe("BLOCKED");
+    // Agent reply keeps BLOCKED too.
+    const am = await api("POST", `/api/support/cases/${id}/messages`, admin, { body: "Not yet, chasing them.", visibility: "CUSTOMER" });
+    expect(am.status).toBe(201);
+    const d = await (await api("GET", `/api/support/cases/${id}`, admin)).json();
+    expect(d.status).toBe("BLOCKED");
+    expect(d.slaPausedAt).toBeNull();
+    expect(d.events.some((e: any) => e.kind === "status" && e.toValue === "BLOCKED")).toBe(true);
+    await api("DELETE", `/api/support/cases/${id}`, admin);
+    await api("DELETE", `/api/clients/${clientId}/contacts/${contactId}`, admin);
+    // The summary exposes a dedicated `blocked` count (asserted last so the checks above still run).
+    expect(typeof after.blocked, JSON.stringify(after)).toBe("number");
+    expect(after.blocked).toBe((before.blocked ?? 0) + 1);
+  });
+
   it("links time entries to the case and totals them; refuses a project from another client", async () => {
     const ok = await api("POST", "/api/time-entries", admin, { projectId, date: new Date().toISOString().slice(0, 10), minutes: 90, billable: true, notes: "ABS-1 - fixed the PO column", supportCaseId: caseId });
     expect(ok.status).toBe(200);

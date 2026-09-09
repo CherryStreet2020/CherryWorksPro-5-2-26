@@ -9,9 +9,9 @@
  *  - when there is no assignee, every active admin/manager gets the
  *    "new case" and "customer message" alerts so nothing sits unseen.
  */
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "./db";
-import { orgs, users, type SupportCase } from "@shared/schema";
+import { orgs, users, clientContacts, supportCaseWatchers, portalBlockedEmails, type SupportCase } from "@shared/schema";
 import { storage } from "./storage";
 import { sendCaseEmail } from "./email";
 import { createNotification } from "./routes/notification-center-routes";
@@ -44,6 +44,39 @@ async function managers(orgId: string): Promise<Array<{ id: string; email: strin
     .where(and(eq(users.orgId, orgId), eq(users.isActive, true), inArray(users.role, ["ADMIN", "MANAGER"])));
 }
 
+/**
+ * Everyone on the customer side who should hear about this case, resolved AT SEND TIME from live
+ * rows — never from addresses copied onto the case earlier:
+ *  - the requester: with a linked contact → that contact's CURRENT email, only while the contact
+ *    belongs to the case's org + client, is not deleted and not blocked (a stale requester_email is
+ *    never used); with no linked contact (legacy / email-only cases) → requester_email unless blocked;
+ *  - every watcher (live, same client, unblocked);
+ * deduplicated by address. `exclude` drops the person who caused the mail (no echo).
+ */
+export async function customerRecipients(c: Pick<SupportCase, "id" | "orgId" | "clientId" | "requesterContactId" | "requesterEmail">, exclude?: { contactId?: string | null; email?: string | null }): Promise<Array<{ email: string; name: string | null; contactId: string | null }>> {
+  const out = new Map<string, { email: string; name: string | null; contactId: string | null }>();
+  const blocked = new Set((await db.select({ email: portalBlockedEmails.email }).from(portalBlockedEmails).where(eq(portalBlockedEmails.orgId, c.orgId))).map(r => r.email.toLowerCase()));
+  const add = (email: string | null | undefined, name: string | null, contactId: string | null) => {
+    const e = (email || "").trim().toLowerCase();
+    if (!e || blocked.has(e) || out.has(e)) return;
+    if (exclude?.contactId && contactId && exclude.contactId === contactId) return;
+    if (exclude?.email && exclude.email.trim().toLowerCase() === e) return;
+    out.set(e, { email: e, name, contactId });
+  };
+  if (c.requesterContactId) {
+    const [r] = await db.select({ id: clientContacts.id, email: clientContacts.email, firstName: clientContacts.firstName, lastName: clientContacts.lastName }).from(clientContacts)
+      .where(and(eq(clientContacts.id, c.requesterContactId), eq(clientContacts.orgId, c.orgId), eq(clientContacts.clientId, c.clientId), isNull(clientContacts.deletedAt)));
+    if (r) add(r.email, `${r.firstName} ${r.lastName}`.trim() || null, r.id);
+  } else {
+    add(c.requesterEmail, null, null);
+  }
+  const ws = await db.select({ id: clientContacts.id, email: clientContacts.email, firstName: clientContacts.firstName, lastName: clientContacts.lastName }).from(supportCaseWatchers)
+    .innerJoin(clientContacts, eq(clientContacts.id, supportCaseWatchers.contactId))
+    .where(and(eq(supportCaseWatchers.caseId, c.id), eq(supportCaseWatchers.orgId, c.orgId), eq(clientContacts.clientId, c.clientId), isNull(clientContacts.deletedAt)));
+  for (const w of ws) add(w.email, `${w.firstName} ${w.lastName}`.trim() || null, w.id);
+  return [...out.values()];
+}
+
 async function safeEmail(label: string, fn: () => Promise<unknown>) {
   try { await fn(); log("SUPPORT_EMAIL_SENT", { label }); }
   catch (err) { warn("SUPPORT_EMAIL_FAILED", { label, error: (err as Error)?.message }); }
@@ -55,18 +88,26 @@ async function safeNotify(input: Parameters<typeof createNotification>[0]) {
 }
 
 /** A case was opened (by an agent, from the portal, or from an email). */
-export async function notifyCaseCreated(c: SupportCase): Promise<void> {
+export async function notifyCaseCreated(c: SupportCase, opts: { openedBy?: { name: string; contactId?: string | null } } = {}): Promise<void> {
   const ctx = await orgContext(c.orgId);
   if (!ctx) return;
   const { org } = ctx;
 
-  if (c.requesterEmail && c.source !== "AGENT") {
-    await safeEmail("case.created→requester", () => sendCaseEmail({
-      to: c.requesterEmail!, org, orgName: org.name, caseKey: c.caseKey, subject: c.subject,
-      heading: `We've received your request`,
-      intro: `Thanks${c.requesterName ? `, ${c.requesterName.split(" ")[0]}` : ""}. Your case is ${c.caseKey}. We'll reply here and in the Help Center as soon as someone picks it up.`,
-      body: c.description, ctaText: "View your case", ctaUrl: ctx.portalUrl(c.id),
-    }));
+  if (c.source !== "AGENT") {
+    // Requester + watchers, resolved now (a colleague added as a watcher at creation hears too).
+    // "On behalf of": the admin who opened it is a watcher and hears as one; the requester is told who did it.
+    for (const r of await customerRecipients(c)) {
+      const isRequester = c.requesterContactId ? r.contactId === c.requesterContactId : r.email === (c.requesterEmail || "").toLowerCase();
+      const first = (r.name || c.requesterName || "").split(" ")[0];
+      await safeEmail(isRequester ? "case.created→requester" : "case.created→watcher", () => sendCaseEmail({
+        to: r.email, org, orgName: org.name, caseKey: c.caseKey, subject: c.subject,
+        heading: isRequester ? `We've received your request` : `You're following ${c.caseKey}`,
+        intro: isRequester
+          ? `Thanks${first ? `, ${first}` : ""}. ${opts.openedBy && opts.openedBy.contactId !== c.requesterContactId ? `${opts.openedBy.name} opened this case on your behalf. ` : ""}Your case is ${c.caseKey}. We'll reply here and in the Help Center as soon as someone picks it up.`
+          : `${c.requesterName || "A colleague"} opened ${c.caseKey} and added you so you can follow it.`,
+        body: c.description, ctaText: "View the case", ctaUrl: ctx.portalUrl(c.id),
+      }));
+    }
   }
 
   const targets = c.assigneeUserId ? await agentEmails(c.orgId, [c.assigneeUserId]) : await managers(c.orgId);
@@ -92,10 +133,10 @@ export async function notifyCaseMessage(c: SupportCase, msg: { authorUserId: str
   const fromAgent = !!msg.authorUserId;
 
   if (fromAgent) {
-    if (c.requesterEmail) {
-      await safeEmail("case.reply→requester", () => sendCaseEmail({
-        to: c.requesterEmail!, org, orgName: org.name, caseKey: c.caseKey, subject: c.subject,
-        heading: `${msg.authorName} replied`, intro: `There's a new reply on your case ${c.caseKey}.`,
+    for (const r of await customerRecipients(c)) {
+      await safeEmail("case.reply→customer", () => sendCaseEmail({
+        to: r.email, org, orgName: org.name, caseKey: c.caseKey, subject: c.subject,
+        heading: `${msg.authorName} replied`, intro: `There's a new reply on case ${c.caseKey}.`,
         body: msg.body, ctaText: "Reply in the Help Center", ctaUrl: ctx.portalUrl(c.id),
       }));
     }
@@ -151,20 +192,28 @@ export async function notifyCaseUpdated(before: SupportCase, after: SupportCase,
     }
   }
 
-  if (after.status !== before.status && after.requesterEmail) {
-    const to = after.requesterEmail;
-    if (after.status === "RESOLVED") {
-      await safeEmail("case.resolved→requester", () => sendCaseEmail({
-        to, org, orgName: org.name, caseKey: after.caseKey, subject: after.subject,
-        heading: `${after.caseKey} is resolved`, intro: `${actor.name} marked your case resolved. If anything is still wrong, reply and it reopens automatically.`,
-        ctaText: "View the case", ctaUrl: ctx.portalUrl(after.id),
-      }));
-    } else if (after.status === "WAITING_ON_CUSTOMER") {
-      await safeEmail("case.waiting→requester", () => sendCaseEmail({
-        to, org, orgName: org.name, caseKey: after.caseKey, subject: after.subject,
-        heading: `We need something from you on ${after.caseKey}`, intro: `${actor.name} is waiting on your reply to keep this moving.`,
-        ctaText: "Reply in the Help Center", ctaUrl: ctx.portalUrl(after.id),
-      }));
+  if (after.status !== before.status && (after.status === "RESOLVED" || after.status === "WAITING_ON_CUSTOMER" || after.status === "BLOCKED")) {
+    for (const r of await customerRecipients(after)) {
+      const to = r.email;
+      if (after.status === "RESOLVED") {
+        await safeEmail("case.resolved→customer", () => sendCaseEmail({
+          to, org, orgName: org.name, caseKey: after.caseKey, subject: after.subject,
+          heading: `${after.caseKey} is resolved`, intro: `${actor.name} marked this case resolved. If anything is still wrong, reply and it reopens automatically.`,
+          ctaText: "View the case", ctaUrl: ctx.portalUrl(after.id),
+        }));
+      } else if (after.status === "WAITING_ON_CUSTOMER") {
+        await safeEmail("case.waiting→customer", () => sendCaseEmail({
+          to, org, orgName: org.name, caseKey: after.caseKey, subject: after.subject,
+          heading: `We need something from you on ${after.caseKey}`, intro: `${actor.name} is waiting on your reply to keep this moving.`,
+          ctaText: "Reply in the Help Center", ctaUrl: ctx.portalUrl(after.id),
+        }));
+      } else {
+        await safeEmail("case.blocked→customer", () => sendCaseEmail({
+          to, org, orgName: org.name, caseKey: after.caseKey, subject: after.subject,
+          heading: `${after.caseKey} is blocked for now`, intro: `${actor.name} marked this case blocked: we're waiting on something outside the case before work can continue. You'll hear as soon as it moves.`,
+          ctaText: "View the case", ctaUrl: ctx.portalUrl(after.id),
+        }));
+      }
     }
   }
 }

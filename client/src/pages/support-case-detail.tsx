@@ -14,10 +14,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import TimeEntryDialog from "@/components/time/time-entry-dialog";
 import type { ProjectOption, ServiceOption } from "@/components/time/utils";
-import { Clock, MessageSquare, Lock, Send, Trash2, Pencil, Check, X, Building2, User as UserIcon, Paperclip, FileText } from "lucide-react";
+import { Clock, MessageSquare, Lock, Send, Trash2, Pencil, Check, X, Building2, User as UserIcon, Paperclip, FileText, Eye, UserPlus } from "lucide-react";
 import {
-  type CaseDetail, type CaseStatus, type CasePriority, type CaseType,
-  STATUS_LABEL, PRIORITY_LABEL, CASE_STATUS_ORDER, CASE_PRIORITY_ORDER, hoursLabel, relativeTime, fileSizeLabel,
+  type CaseDetail, type CaseStatus, type CasePriority, type CaseType, type CaseColleague, type SupportCaseIntake,
+  STATUS_LABEL, PRIORITY_LABEL, CASE_STATUS_ORDER, CASE_PRIORITY_ORDER, IMPACT_LABEL, INTAKE_FIELD_LABELS, hoursLabel, relativeTime, fileSizeLabel,
 } from "@/lib/support-cases";
 import { useRef } from "react";
 import { StatusChip, PriorityChip, SlaChip } from "@/pages/support-cases";
@@ -111,6 +111,33 @@ export default function SupportCaseDetailPage() {
     onError: (err: Error) => toast({ title: "Could not remove the file", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }),
   });
 
+  // Watchers: colleagues at the client who follow the case. The colleagues
+  // endpoint already excludes the requester and current watchers.
+  const [watcherToAdd, setWatcherToAdd] = useState("");
+  const { data: colleagues } = useQuery<CaseColleague[]>({
+    queryKey: ["/api/support/cases", id, "colleagues"],
+    queryFn: async () => {
+      const res = await fetch(`/api/support/cases/${id}/colleagues`, { credentials: "include" });
+      if (!res.ok) throw new Error(`${res.status}`);
+      return res.json();
+    },
+    enabled: !!id && !!c,
+  });
+  const invalidateWatchers = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/support/cases", id] });
+    queryClient.invalidateQueries({ queryKey: ["/api/support/cases", id, "colleagues"] });
+  };
+  const addWatcher = useMutation({
+    mutationFn: async (contactId: string) => (await apiRequest("POST", `/api/support/cases/${id}/watchers`, { contactId })).json(),
+    onSuccess: () => { setWatcherToAdd(""); invalidateWatchers(); toast({ title: "Watcher added" }); },
+    onError: (err: Error) => toast({ title: "Could not add the watcher", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }),
+  });
+  const removeWatcher = useMutation({
+    mutationFn: async (contactId: string) => (await apiRequest("DELETE", `/api/support/cases/${id}/watchers/${contactId}`)).json(),
+    onSuccess: () => { invalidateWatchers(); toast({ title: "Watcher removed" }); },
+    onError: (err: Error) => toast({ title: "Could not remove the watcher", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }),
+  });
+
   const del = useMutation({
     mutationFn: async () => (await apiRequest("DELETE", `/api/support/cases/${id}`)).json(),
     onSuccess: () => { invalidate(); toast({ title: `${c?.caseKey} deleted` }); navigate("/support/cases"); },
@@ -166,6 +193,8 @@ export default function SupportCaseDetailPage() {
   const muted = { color: "var(--lux-text-muted)" } as const;
   const fieldStyle = { borderColor: "var(--lux-border)", color: "var(--lux-text)" } as const;
   const t = c.time.totals;
+  const intakeRows = intakeEntries(c.intake);
+  const watchers = c.watchers ?? [];
 
   return (
     <div className="px-6 lg:px-8 xl:px-10 py-6 max-w-7xl mx-auto space-y-5">
@@ -228,6 +257,20 @@ export default function SupportCaseDetailPage() {
               </p>
             )}
           </section>
+
+          {intakeRows.length > 0 && (
+            <section className="rounded-2xl p-5 border-0" style={card} data-testid="case-intake-card">
+              <h2 className="text-[11px] font-bold uppercase tracking-wider mb-3" style={muted}>Customer intake</h2>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                {intakeRows.map(([key, label, value]) => (
+                  <div key={key} className={key === "stepsToReproduce" || key === "expected" ? "sm:col-span-2" : ""} data-testid={`case-intake-${key}`}>
+                    <dt className="text-[11px] font-medium mb-0.5" style={muted}>{label}</dt>
+                    <dd className="whitespace-pre-wrap leading-relaxed" style={{ color: "var(--lux-text)" }}>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          )}
 
           <section className="rounded-2xl p-5 border-0" style={card} data-testid="card-case-attachments">
             <div className="flex items-center justify-between mb-3">
@@ -432,6 +475,43 @@ export default function SupportCaseDetailPage() {
             )}
           </section>
 
+          <section className="rounded-2xl p-5 border-0" style={card} data-testid="case-watchers-card">
+            <h2 className="text-[11px] font-bold uppercase tracking-wider mb-2" style={muted}>Watchers{watchers.length ? ` (${watchers.length})` : ""}</h2>
+            {watchers.length === 0 ? (
+              <p className="text-xs" style={muted}>No colleagues are following this case yet.</p>
+            ) : (
+              <ul className="space-y-1.5" data-testid="list-case-watchers">
+                {watchers.map(w => (
+                  <li key={w.id} className="text-xs flex items-center justify-between gap-2" data-testid={`watcher-row-${w.contactId}`}>
+                    <div className="min-w-0 flex items-center gap-1.5">
+                      <Eye className="w-3.5 h-3.5 shrink-0" style={muted} />
+                      <div className="min-w-0">
+                        <p className="font-medium truncate" style={{ color: "var(--lux-text)" }}>{w.firstName} {w.lastName}</p>
+                        {w.email && <p className="truncate" style={muted}>{w.email}</p>}
+                      </div>
+                    </div>
+                    <button className="shrink-0 rounded-md p-1" style={muted} onClick={() => removeWatcher.mutate(w.contactId)} disabled={removeWatcher.isPending} aria-label={`Remove ${w.firstName} ${w.lastName} as a watcher`} data-testid={`watcher-remove-${w.contactId}`}>
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="mt-3 flex items-center gap-2">
+              <Select value={watcherToAdd} onValueChange={setWatcherToAdd} disabled={!colleagues?.length}>
+                <SelectTrigger className="flex-1 text-xs" style={fieldStyle} data-testid="watcher-add-select">
+                  <SelectValue placeholder={colleagues?.length ? "Add colleague" : "No other contacts at this client"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {colleagues?.map(p => <SelectItem key={p.id} value={p.id}>{p.firstName} {p.lastName}{p.email ? ` · ${p.email}` : ""}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Button size="sm" variant="outline" onClick={() => { if (watcherToAdd) addWatcher.mutate(watcherToAdd); }} disabled={!watcherToAdd || addWatcher.isPending} aria-label="Add watcher" data-testid="watcher-add-button">
+                <UserPlus className="w-3.5 h-3.5 mr-1.5" /> {addWatcher.isPending ? "Adding…" : "Add"}
+              </Button>
+            </div>
+          </section>
+
           <section className="rounded-2xl p-5 border-0" style={card} data-testid="card-case-sla">
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Service level</h2>
@@ -522,8 +602,22 @@ function describeEvent(kind: string, from: string | null, to: string | null, age
     case "priority": return `Priority ${from ? PRIORITY_LABEL[from as CasePriority] ?? from : "—"} → ${to ? PRIORITY_LABEL[to as CasePriority] ?? to : "—"}`;
     case "type": return "Type changed";
     case "project": return "Project changed";
+    case "watcher": return `${from === "removed" ? "Removed" : "Added"} ${to || "a colleague"} as a watcher`;
     default: return kind;
   }
+}
+
+/** Filled intake fields as [key, label, display value], in INTAKE_FIELD_LABELS order. */
+function intakeEntries(intake: SupportCaseIntake | null | undefined): [keyof SupportCaseIntake, string, string][] {
+  if (!intake) return [];
+  const out: [keyof SupportCaseIntake, string, string][] = [];
+  for (const key of Object.keys(INTAKE_FIELD_LABELS) as (keyof SupportCaseIntake)[]) {
+    const raw = intake[key];
+    if (raw === undefined || raw === null || raw === "") continue;
+    const value = key === "impact" ? (IMPACT_LABEL[raw as keyof typeof IMPACT_LABEL] ?? String(raw)) : String(raw);
+    out.push([key, INTAKE_FIELD_LABELS[key], value]);
+  }
+  return out;
 }
 
 

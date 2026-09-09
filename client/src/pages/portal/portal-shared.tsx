@@ -44,6 +44,7 @@ export const STATUS_STYLE: Record<CaseStatus, { fg: string; bg: string; label: s
   WAITING_ON_SUPPORT: { fg: T.info, bg: T.infoSoft, label: "With our team" },
   IN_PROGRESS: { fg: T.good, bg: T.goodSoft, label: "In progress" },
   WAITING_ON_CUSTOMER: { fg: T.warn, bg: T.warnSoft, label: "Waiting for you" },
+  BLOCKED: { fg: T.warn, bg: T.warnSoft, label: "Blocked" },
   RESOLVED: { fg: T.good, bg: T.goodSoft, label: "Resolved" },
   CLOSED: { fg: T.muted, bg: T.surface2, label: "Closed" },
 };

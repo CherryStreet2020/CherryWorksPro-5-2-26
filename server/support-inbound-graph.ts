@@ -15,6 +15,7 @@
  */
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { db } from "./db";
+import * as cases from "./support-cases";
 import { inboundEmails, orgs, supportCases } from "@shared/schema";
 import { refreshGraphAccessToken } from "./email/graph-transport";
 import { processInboundEmail, extractCaseKey } from "./inbound-email";
@@ -227,7 +228,13 @@ export async function pollOrg(org: { id: string; supportInboundAddress: string; 
           if (a["@odata.type"] !== "#microsoft.graph.fileAttachment" || (a.size ?? 0) > MAX_ATTACHMENT_BYTES) continue;
           const full = await graphGet<{ contentBytes?: string; name?: string; contentType?: string }>(token, `/me/messages/${msg.id}/attachments/${a.id}`);
           if (!full.contentBytes) continue;
-          await createAttachment({ orgId: org.id, caseId: outcome.caseId, filename: full.name || a.name || "attachment", mimeType: full.contentType || a.contentType || "application/octet-stream", bytes: Buffer.from(full.contentBytes, "base64"), source: "EMAIL", externalRef: `M365:${msg.id}:${a.id}` }).catch(err => console.warn("[support-inbound-graph] attachment failed", (err as Error).message));
+          // Stored under the sender's authority: a customer whose access was revoked between the
+          // message and its files gets the files refused (an agent-created case from a new mail has none to check).
+          await createAttachment({
+            orgId: org.id, caseId: outcome.caseId, filename: full.name || a.name || "attachment", mimeType: full.contentType || a.contentType || "application/octet-stream",
+            bytes: Buffer.from(full.contentBytes, "base64"), source: "EMAIL", externalRef: `M365:${msg.id}:${a.id}`, uploadedByContactId: outcome.contactId ?? null,
+            authorize: outcome.contactId ? (tx) => cases.customerCanAccessCase(tx, org.id, outcome.caseId!, outcome.contactId!) : undefined,
+          }).catch(err => console.warn("[support-inbound-graph] attachment failed", (err as Error).message));
         }
       } catch (err) {
         console.warn("[support-inbound-graph] attachments failed", (err as Error).message);
