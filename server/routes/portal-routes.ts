@@ -429,7 +429,7 @@ export function registerPortalRoutes(app: Express) {
       // restricted response without it, uploads (each authorised under the case lock) with it.
       const replayResponse = async (prior: { id: string; caseKey: string; subject: string; status: string }) => {
         const [visible] = await db.select({ id: supportCases.id }).from(supportCases).where(and(visibleCaseWhere(req), eq(supportCases.id, prior.id)));
-        if (!visible) return res.status(200).json({ id: prior.id, caseKey: prior.caseKey, replay: true });
+        if (!visible) return res.status(404).json({ message: "Support case not found" }); // masked like every other inaccessible case
         await storeFiles(prior.id);
         return res.status(200).json({ id: prior.id, caseKey: prior.caseKey, subject: prior.subject, status: prior.status, replay: true, attachments: await attachmentsOf(prior.id), attachmentErrors });
       };

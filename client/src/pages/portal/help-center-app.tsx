@@ -203,7 +203,8 @@ function NewCaseForm({ slug, me }: { slug: string; me: Me }) {
     if (!list) return;
     // A FileList is live: copy it now, before the input's value is reset.
     const picked: PickedFile[] = Array.from(list).map(f => ({ clientFileId: newId(), file: f, done: false, error: fileProblem(f) }));
-    setFiles(prev => [...prev, ...picked].slice(0, 10));
+    // Never drop a selection silently: anything beyond ten is kept, flagged, and blocks submit until removed.
+    setFiles(prev => [...prev, ...picked].map((f, i) => i >= 10 && !f.error ? { ...f, error: "Only 10 files per case — remove this one or another" } : f));
   };
   const addEmail = () => {
     const e = emailDraft.trim().toLowerCase();
@@ -274,7 +275,7 @@ function NewCaseForm({ slug, me }: { slug: string; me: Me }) {
   });
   const impactOptions: SupportCaseImpact[] = ["ONE_PERSON", "TEAM", "COMPANY", "PRODUCTION_STOPPED"];
   const selectedColleagues = (colleagues ?? []).filter(c => watcherIds.includes(c.id));
-  const canSubmit = !!subject.trim() && !create.isPending && !files.some(f => f.error && !f.done && fileProblem(f.file));
+  const canSubmit = !!subject.trim() && !create.isPending && !files.some(f => f.error && !f.done);
   const inputStyle = { ...field } as React.CSSProperties;
 
   if (result) {
