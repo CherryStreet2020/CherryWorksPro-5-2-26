@@ -16,7 +16,7 @@ interface PortalInfo { orgSlug: string; helpUrl: string; portalUrl: string }
 interface PickerClient { id: string; name: string }
 interface PickerProject { id: string; name: string }
 interface JiraTest { ok: boolean; connectedAs: string; issues: number; firstKey: string | null; lastKey: string | null; statuses: Record<string, number> }
-interface ImportReport { pulled?: number; imported: number; skipped: string[]; contactsCreated: number; unmatchedAssignees: string[]; unmatchedTypes: string[]; timeEntriesLinked: number; nextCaseNumber: number; errors: { key: string; error: string }[]; contactConflicts?: string[] }
+interface ImportReport { pulled?: number; imported: number; skipped: string[]; contactsCreated: number; unmatchedAssignees: string[]; unmatchedTypes: string[]; timeEntriesLinked: number; nextCaseNumber: number; errors: { key: string; error: string }[]; contactConflicts?: string[]; attachmentsImported?: number; attachmentErrors?: { key: string; filename: string; error: string }[] }
 
 export default function SupportSettingsPage() {
   useDocumentTitle("Support settings");
@@ -161,6 +161,8 @@ function JiraImportCard({ card, muted, fieldStyle }: { card: React.CSSProperties
   const { toast } = useToast();
   const { data: saved, isLoading: savedLoading } = useQuery<JiraConnection>({ queryKey: ["/api/support/import/jira-connection"] });
   const [editing, setEditing] = useState(false);
+  // "all" copies attachments on closed cases too — the last run before a Jira site is shut down.
+  const [allAttachments, setAllAttachments] = useState(false);
   const [baseUrl, setBaseUrl] = useState("");
   const [email, setEmail] = useState("");
   const [apiToken, setApiToken] = useState("");
@@ -203,7 +205,7 @@ function JiraImportCard({ card, muted, fieldStyle }: { card: React.CSSProperties
     onError: (err: Error) => { setTest(null); toast({ title: "Could not connect to Jira", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }); },
   });
   const run = useMutation({
-    mutationFn: async (dryRun: boolean) => (await apiRequest("POST", "/api/support/import/jira-fetch", { ...conn, apiToken: conn.apiToken || undefined, clientId, projectId: projectId || null, dryRun, relinkTime: true })).json(),
+    mutationFn: async (dryRun: boolean) => (await apiRequest("POST", "/api/support/import/jira-fetch", { ...conn, apiToken: conn.apiToken || undefined, clientId, projectId: projectId || null, dryRun, relinkTime: true, attachmentsForExisting: allAttachments ? "all" : "open" })).json(),
     onSuccess: (r: ImportReport, dryRun) => {
       setReport(r);
       if (!dryRun) { queryClient.invalidateQueries({ queryKey: ["/api/support/cases"] }); queryClient.invalidateQueries({ queryKey: ["/api/support/summary"] }); queryClient.invalidateQueries({ queryKey: ["/api/support/import/jira-connection"] }); toast({ title: `Imported ${r.imported} cases` }); }
@@ -261,6 +263,10 @@ function JiraImportCard({ card, muted, fieldStyle }: { card: React.CSSProperties
               </select>
             </div>
           </div>
+          <label className="flex items-start gap-2 text-xs cursor-pointer" style={{ color: "var(--lux-text)" }}>
+            <input type="checkbox" className="mt-0.5" checked={allAttachments} onChange={e => setAllAttachments(e.target.checked)} data-testid="checkbox-jira-all-attachments" />
+            <span>Copy attachments on closed cases too. Normal runs only copy attachments for open cases; tick this for the final run before you shut the Jira site down, so every file is kept in CherryWorks Pro.</span>
+          </label>
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => run.mutate(true)} disabled={!clientId || run.isPending} data-testid="button-jira-dry-run">Preview (dry run)</Button>
             <Button className="text-white" onClick={() => run.mutate(false)} disabled={!clientId || run.isPending} style={{ background: "var(--gradient-brand)" }} data-testid="button-jira-import">{run.isPending ? "Importing…" : "Import now"}</Button>
@@ -269,7 +275,8 @@ function JiraImportCard({ card, muted, fieldStyle }: { card: React.CSSProperties
       )}
       {report && (
         <div className="rounded-lg p-3 text-xs space-y-1" style={{ background: "var(--lux-surface-alt)", border: "1px solid var(--lux-border)", color: "var(--lux-text)" }} data-testid="text-jira-report">
-          <p><strong>{report.imported}</strong> imported{report.pulled !== undefined ? ` of ${report.pulled} pulled` : ""} · {report.skipped.length} already existed · {report.contactsCreated} contacts created · {report.timeEntriesLinked} time entries linked · next key number {report.nextCaseNumber}</p>
+          <p><strong>{report.imported}</strong> imported{report.pulled !== undefined ? ` of ${report.pulled} pulled` : ""} · {report.skipped.length} already existed · {report.contactsCreated} contacts created · {report.timeEntriesLinked} time entries linked · {report.attachmentsImported ?? 0} attachments copied · next key number {report.nextCaseNumber}</p>
+          {(report.attachmentErrors?.length ?? 0) > 0 && <p style={{ color: "#b91c1c" }} data-testid="import-attachment-errors">{report.attachmentErrors!.length} attachments failed: {report.attachmentErrors!.slice(0, 5).map(e => `${e.key} ${e.filename}: ${e.error}`).join("; ")}</p>}
           {report.unmatchedAssignees.length > 0 && <p style={muted}>Assignees left unassigned (no matching team member): {report.unmatchedAssignees.join(", ")}</p>}
           {(report.contactConflicts?.length ?? 0) > 0 && <p style={{ color: "var(--lux-danger, #b91c1c)" }} data-testid="import-contact-conflicts">Requesters who already belong to another client (cases imported without a requester contact — they cannot see these cases until you move them): {report.contactConflicts!.join(", ")}</p>}
           {report.unmatchedTypes.length > 0 && <p style={muted}>Request types with no matching case type (left blank): {report.unmatchedTypes.join(", ")}</p>}
