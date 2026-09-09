@@ -173,7 +173,8 @@ const OnboardingPage = lazy(() => lazyRetry(() => import("@/pages/onboarding")))
 const PublicInvoicePage = lazy(() => lazyRetry(() => import("@/pages/public-invoice")));
 const PublicEstimatePage = lazy(() => lazyRetry(() => import("@/pages/public-estimate")));
 const ClientPortalPage = lazy(() => lazyRetry(() => import("@/pages/client-portal")));
-const PortalApp = lazy(() => lazyRetry(() => import("@/pages/portal/portal-app")));
+const HelpCenterApp = lazy(() => lazyRetry(() => import("@/pages/portal/help-center-app")));
+const CustomerPortalApp = lazy(() => lazyRetry(() => import("@/pages/portal/customer-portal-app")));
 const SupportCasesPage = lazy(() => lazyRetry(() => import("@/pages/support-cases")));
 const SupportCaseDetailPage = lazy(() => lazyRetry(() => import("@/pages/support-case-detail")));
 const SupportSettingsPage = lazy(() => lazyRetry(() => import("@/pages/support-settings")));
@@ -272,7 +273,11 @@ function ClientPortalWrapper() {
   if (/^[0-9a-f]{64}$/i.test(first)) {
     return <Suspense fallback={<LazyFallback />}><ClientPortalPage token={first} /></Suspense>;
   }
-  return <Suspense fallback={<LazyFallback />}><PortalApp /></Suspense>;
+  return <Suspense fallback={<LazyFallback />}><CustomerPortalApp /></Suspense>;
+}
+
+function HelpCenterWrapper() {
+  return <Suspense fallback={<LazyFallback />}><HelpCenterApp /></Suspense>;
 }
 
 function ProjectDetailWrapper() {
@@ -656,6 +661,7 @@ function App() {
             <Route path="/i/:token" component={PublicInvoiceWrapper} />
             <Route path="/e/:token" component={PublicEstimateWrapper} />
             <Route path="/portal/:slug/*?" component={ClientPortalWrapper} />
+            <Route path="/help/:slug/*?" component={HelpCenterWrapper} />
             <Route path="/features">{() => <LazyRoute component={FeaturesPage} />}</Route>
             <Route path="/pricing">{() => <LazyRoute component={PricingPage} />}</Route>
             <Route path="/marketing">{() => <LazyRoute component={MarketingLandingPage} />}</Route>

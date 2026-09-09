@@ -43,6 +43,16 @@ export interface ContactLite {
   email: string | null;
   role: string | null;
   isPrimary: boolean;
+  source?: string | null;
+  billingAccess?: boolean | null;
+  portalPendingAt?: string | null;
+}
+
+/** Mirrors server/email.ts isMoneyRecipient: Help Center self-registrations are support contacts, not billing ones. */
+export function isMoneyRecipient(c: ContactLite): boolean {
+  if (c.portalPendingAt) return false;
+  if ((c.source || "").startsWith("help-center")) return !!c.isPrimary || !!c.billingAccess || (c.role || "").toLowerCase() === "billing";
+  return true;
 }
 
 export interface RecipientOption {
@@ -75,7 +85,7 @@ export function buildRecipientOptions(clientEmail: string, contacts: ContactLite
   // (recipientOptions[0]) aligned with what the server would pick, so the auto-filled
   // To isn't an arbitrary non-billing contact. Array.sort is stable, so within a tier
   // the incoming order (primary desc, last name asc) is preserved.
-  const ordered = [...(contacts || [])].sort((a, b) => {
+  const ordered = [...(contacts || [])].filter(isMoneyRecipient).sort((a, b) => {
     const pa = a.isPrimary ? 0 : 1, pb = b.isPrimary ? 0 : 1;
     if (pa !== pb) return pa - pb;
     const ba = (a.role || "").toLowerCase() === "billing" ? 0 : 1;

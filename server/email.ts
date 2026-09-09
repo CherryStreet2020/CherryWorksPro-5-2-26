@@ -380,6 +380,27 @@ export interface RecipientContact {
   email: string | null;
   role: string | null;
   isPrimary: boolean;
+  /** Help Center self-registration marker (client_contacts.source). */
+  source?: string | null;
+  /** Customer Portal (billing) access. */
+  billingAccess?: boolean | null;
+  /** Self-registered and the sign-in link was never used. */
+  portalPendingAt?: Date | string | null;
+}
+
+/**
+ * May this contact receive money documents (invoices, estimates) by default?
+ * A person who self-registered through the Help Center is a support contact, not a
+ * billing one: they are never an implicit recipient unless a firm user marks them
+ * primary, gives them the Billing role or billing access. Unverified placeholders
+ * never qualify.
+ */
+export function isMoneyRecipient(c: RecipientContact): boolean {
+  if (c.portalPendingAt) return false;
+  if ((c.source || "").startsWith("help-center")) {
+    return !!c.isPrimary || !!c.billingAccess || (c.role || "").toLowerCase() === "billing";
+  }
+  return true;
 }
 
 export interface ResolvedRecipients {
@@ -413,8 +434,8 @@ export function pickRecipients(input: {
     const t = (typeof e === "string" ? e : "").trim();
     return t && validateEmailAddress(t) ? t : null;
   };
-  const contacts = input.contacts || [];
-  const billing = input.billingContacts || [];
+  const contacts = (input.contacts || []).filter(isMoneyRecipient);
+  const billing = (input.billingContacts || []).filter(isMoneyRecipient);
   const ov = input.override || {};
 
   let to: string | null = null;
@@ -1100,18 +1121,34 @@ export async function sendPortalLoginEmail(input: {
   orgName: string;
   link: string;
   org: OrgForTransport | null;
+  /** "help" = Help Center (support cases), "portal" = Customer Portal (billing). */
+  surface?: "help" | "portal";
+  /** The person asked for the Customer Portal but has no billing access; they get a Help Center link instead. */
+  billingDenied?: boolean;
+  /** Set when a Customer Admin invited this person from the Help Center. */
+  invitedBy?: string;
 }): Promise<{ messageId: string; previewUrl?: string }> {
   const smtpConfig = input.org ? getSmtpConfigFromOrg(input.org) : null;
   const transport = await pickTransport(input.org, smtpConfig);
-  const subject = `Your ${input.orgName} portal sign-in link`;
+  const surfaceName = input.surface === "portal" ? "Customer Portal" : "Help Center";
+  const what = input.surface === "portal" ? "invoices, estimates and payments" : "support cases";
+  const subject = input.invitedBy ? `${input.invitedBy} invited you to the ${input.orgName} Help Center` : `Your ${input.orgName} ${surfaceName} sign-in link`;
+  const greeting = input.contactName && !/@/.test(input.contactName) ? input.contactName : "there";
+  const lead = input.invitedBy
+    ? `${escapeHtml(input.invitedBy)} added you to the ${escapeHtml(input.orgName)} Help Center, where you can open and follow support cases. Use the button below to sign in.`
+    : `Hi ${escapeHtml(greeting)}, use the button below to sign in to the ${surfaceName} (${what}).`;
+  const denied = input.billingDenied
+    ? `<p style="font-size:14px;color:${TEXT_SECONDARY};line-height:1.7;margin:0 0 24px;">Billing isn't enabled for your address, so this link opens the Help Center. If you handle invoices for your company, ask ${escapeHtml(input.orgName)} to turn on billing access for you.</p>`
+    : "";
   const innerHtml = `
-    <p style="font-size:20px;font-weight:700;color:${TEXT_PRIMARY};margin:0 0 4px;">Sign in to your portal</p>
-    <p style="font-size:14px;color:${TEXT_MUTED};margin:0 0 28px;">${escapeHtml(input.orgName)} client portal</p>
-    <p style="font-size:15px;color:${TEXT_SECONDARY};line-height:1.7;margin:0 0 24px;">
-      Hi ${escapeHtml(input.contactName || "there")}, use the button below to sign in. The link works once and expires in 15 minutes.
+    <p style="font-size:20px;font-weight:700;color:${TEXT_PRIMARY};margin:0 0 4px;">Sign in to the ${surfaceName}</p>
+    <p style="font-size:14px;color:${TEXT_MUTED};margin:0 0 28px;">${escapeHtml(input.orgName)}</p>
+    <p style="font-size:15px;color:${TEXT_SECONDARY};line-height:1.7;margin:0 0 ${input.billingDenied ? 12 : 24}px;">
+      ${lead} The link works once and expires in 15 minutes.
     </p>
+    ${denied}
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-      <tr><td align="center">${emailButton("Sign in to the portal", input.link)}</td></tr>
+      <tr><td align="center">${emailButton(`Sign in to the ${surfaceName}`, input.link)}</td></tr>
     </table>
     ${emailDivider()}
     <p style="font-size:12px;color:${TEXT_MUTED};margin:0;text-align:center;">
@@ -1123,7 +1160,7 @@ export async function sendPortalLoginEmail(input: {
     to: input.to,
     subject,
     html,
-    text: `Hi ${input.contactName || "there"},\n\nSign in to the ${input.orgName} portal with this one-time link (expires in 15 minutes):\n\n${input.link}\n\nIf you didn't request this, ignore this email.`,
+    text: `Hi ${greeting},\n\n${input.invitedBy ? `${input.invitedBy} added you to the ${input.orgName} Help Center. ` : ""}Sign in to the ${input.orgName} ${surfaceName} with this one-time link (expires in 15 minutes):\n\n${input.link}\n\n${input.billingDenied ? "Billing isn't enabled for your address, so this link opens the Help Center.\n\n" : ""}If you didn't request this, ignore this email.`,
     replyTo: smtpConfig?.replyTo ?? null,
     fromName: smtpConfig?.fromName ?? null,
     fromEmail: smtpConfig?.fromEmail ?? null,

@@ -59,7 +59,7 @@ export function registerSupportCaseRoutes(app: Express) {
   // Test-only: exercises the inbound processor without a mailbox (vitest).
   if (process.env.NODE_ENV === "test") {
     app.post("/api/test/inbound-email", async (req, res) => {
-      const { type, from, to, subject, text, html, messageId } = req.body || {};
+      const { type, from, to, subject, text, html, messageId, senderAuthenticated } = req.body || {};
       if (type && type !== "email.received") return res.status(200).json({ message: "Event type ignored", type });
       const { randomUUID } = await import("crypto");
       const { processInboundEmail } = await import("../inbound-email");
@@ -69,7 +69,7 @@ export function registerSupportCaseRoutes(app: Express) {
       const claimed = await db.insert(inboundEmails).values({ id, from: typeof from === "string" ? from : JSON.stringify(from ?? "unknown"), to: typeof to === "string" ? to : JSON.stringify(to ?? "unknown"), subject: subject || null, bodyText: text || null, bodyHtml: html || null, headers: null, resendMessageId: messageId || null }).onConflictDoNothing().returning({ id: inboundEmails.id });
       if (claimed.length === 0) return res.status(200).json({ success: true, duplicate: true });
       try {
-        const result = await processInboundEmail({ from, to, subject: subject ?? null, text: text ?? null, html: html ?? null, messageId: messageId || null });
+        const result = await processInboundEmail({ from, to, subject: subject ?? null, text: text ?? null, html: html ?? null, messageId: messageId || null, senderAuthenticated: senderAuthenticated !== false });
         return res.status(200).json({ success: true, emailId: id, ...result });
       } catch (err) {
         const { eq } = await import("drizzle-orm");
@@ -96,7 +96,7 @@ export function registerSupportCaseRoutes(app: Express) {
     if (!org) return res.status(404).json({ message: "Organization not found" });
     const configured = (process.env.APP_BASE_URL || process.env.BASE_URL || "").trim().replace(/\/$/, "");
     const base = /^https?:\/\//i.test(configured) ? configured : `${req.protocol}://${req.get("host")}`;
-    return res.json({ orgSlug: org.slug, portalUrl: `${base}/portal/${org.slug}` });
+    return res.json({ orgSlug: org.slug, helpUrl: `${base}/help/${org.slug}`, portalUrl: `${base}/portal/${org.slug}` });
   });
 
   app.get("/api/support/agents", ...gate, async (req, res) => {

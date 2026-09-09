@@ -12,16 +12,25 @@
  *    support_inbound_address matches one of the `to` addresses. No match →
  *    store the raw email and stop. Never guess an org.
  * 3. If the subject carries a case key ([ABS-158] / ABS-158) that belongs
- *    to that org, append the email as a customer message on that case
- *    (the sender must be the requester or a contact of the case's client).
+ *    to that org, append the email as a customer message on that case. The
+ *    sender must be the case's requester or a Customer Admin of the case's
+ *    client — the same rule the Help Center applies. A colleague who is a
+ *    plain member cannot append to (or reopen) someone else's case by mail.
  * 4. Otherwise, if the sender is a known contact of the org, open a case.
  * 5. Anything else is stored for triage only.
+ *
+ * "Known contact" needs two things: the address is on a live, verified contact
+ * (a Help Center placeholder whose link was never used does not count) AND the
+ * receiving mailbox authenticated the sender (`senderAuthenticated`, from the
+ * Authentication-Results header: dkim=pass or spf=pass). Without that evidence
+ * a From: header is just text, so the mail is stored for triage — it never opens,
+ * appends to, or reopens a case.
  */
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "./db";
 import { inboundEmails, orgs, supportCases } from "@shared/schema";
 import * as cases from "./support-cases";
-import { findPortalContact } from "./portal-auth";
+import { findPortalContact, isPortalBlocked } from "./portal-auth";
 
 const CASE_KEY_RE = /\b([A-Z][A-Z0-9]{1,9}-\d{1,7})\b/;
 
@@ -68,6 +77,8 @@ export async function processInboundEmail(input: {
   from: unknown; to: unknown; subject: string | null; text: string | null; html: string | null; messageId: string | null;
   /** Set by the Microsoft 365 poller: the mailbox already belongs to this org, so a reply carrying a case key routes there even when it was not sent to the support address. */
   orgId?: string;
+  /** The receiving system verified the sender (SPF/DKIM pass). Unset/false = the From: header is untrusted. */
+  senderAuthenticated?: boolean;
 }): Promise<{ outcome: "no_org" | "appended" | "created" | "stored"; caseId?: string; caseKey?: string; orgId?: string }> {
   const recipients = allAddresses(input.to);
   const sender = parseAddress(input.from);
@@ -78,16 +89,28 @@ export async function processInboundEmail(input: {
   if (!org) return { outcome: "no_org" };
 
   const body = stripQuotedReply(input.text || "") || (input.html ? input.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "") || "(no text)";
-  const contact = await findPortalContact(org.id, sender.email);
+  const found = await findPortalContact(org.id, sender.email);
+  const blocked = found ? await isPortalBlocked(org.id, sender.email) : false;
+  // A contact for mail purposes = verified (link used), authenticated sender, not shut out.
+  const contact = input.senderAuthenticated && found && !found.portalPendingAt && !blocked ? found : undefined;
   const authorName = contact ? `${contact.firstName} ${contact.lastName}`.trim() : (sender.name || sender.email);
 
   const key = extractCaseKey(input.subject);
   if (key) {
     const [row] = await db.select().from(supportCases).where(and(eq(supportCases.orgId, org.id), eq(supportCases.caseKey, key)));
     if (row) {
-      const isRequester = !!row.requesterEmail && row.requesterEmail.toLowerCase() === sender.email;
-      const isClientContact = !!contact && contact.clientId === row.clientId;
-      if (isRequester || isClientContact) {
+      // Same rule as the Help Center: a verified, authenticated contact OF THIS CASE'S
+      // CLIENT who is the requester or a Customer Admin. A bare address match is not
+      // enough (an imported case may carry the address of someone at another client).
+      const sameClient = !!contact && !!contact.clientId && contact.clientId === row.clientId;
+      const isRequester = sameClient && ((!!row.requesterContactId && contact!.id === row.requesterContactId)
+        || (!!row.requesterEmail && row.requesterEmail.toLowerCase() === sender.email));
+      const isCustomerAdmin = sameClient && contact!.portalRole === "admin";
+      if (!isRequester && !isCustomerAdmin) {
+        // Denied: keep it for triage. Never fall through and open a second case.
+        return { outcome: "stored", orgId: org.id };
+      }
+      {
         const result = await cases.addMessage(org.id, row.id, {
           body, visibility: "CUSTOMER",
           author: { contactId: contact?.id ?? null, name: authorName },

@@ -54,11 +54,14 @@ describe("customer portal: magic link, cases, replies, visibility, billing", () 
     orgSlug = info.orgSlug;
     expect(orgSlug, "org slug").toBeTruthy();
     expect(info.portalUrl).toContain(`/portal/${orgSlug}`);
+    expect(info.helpUrl).toContain(`/help/${orgSlug}`);
 
     const c = await api("POST", "/api/clients", admin, { name: `Portal Client ${stamp}` });
     expect(c.ok).toBe(true);
     clientId = (await c.json()).id;
-    const c1 = await api("POST", `/api/clients/${clientId}/contacts`, admin, { firstName: "Shadi", lastName: "Mohaisen", email: contactEmail, isPrimary: true });
+    // Primary no longer implies anything for the portals: company-wide visibility is the
+    // Customer Admin role, money is billing access. (Prod primaries were backfilled.)
+    const c1 = await api("POST", `/api/clients/${clientId}/contacts`, admin, { firstName: "Shadi", lastName: "Mohaisen", email: contactEmail, isPrimary: true, portalRole: "admin", billingAccess: true });
     expect(c1.ok, await c1.clone().text()).toBe(true);
     contactId = (await c1.json()).id;
     const c2 = await api("POST", `/api/clients/${clientId}/contacts`, admin, { firstName: "Andrew", lastName: "Mendes", email: otherEmail, isPrimary: false });

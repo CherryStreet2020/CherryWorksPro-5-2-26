@@ -8756,6 +8756,8 @@ export class DatabaseStorage {
       marketingConvertedAt: now,
       ...(opts.clientOverrides ?? {}),
     };
+    // Server-owned, whatever the caller sent: tenant and Help Center access.
+    Object.assign(baseClient, { orgId, portalEmailDomains: null, portalToken: undefined });
     const client = await this.createClient(baseClient);
 
     await db
@@ -8800,6 +8802,20 @@ export class DatabaseStorage {
     const prospect = await this.getProspect(prospectId, orgId);
     if (!prospect) throw new Error("marketing_prospect not found");
     if (prospect.deletedAt) throw new Error("marketing_prospect is deleted");
+
+    // An address names ONE live client contact per workspace (ux_client_contacts_org_email_live).
+    // Refuse before any write so a conflict never leaves a half-converted prospect. A
+    // prospect already converted is served by the idempotent branch below, never refused
+    // because of its own contact.
+    {
+      const email = (opts.clientContactOverrides?.email ?? prospect.email ?? "").trim().toLowerCase();
+      if (email && !prospect.convertedToClientContactId) {
+        const [dup] = await db.select({ id: clientContacts.id }).from(clientContacts)
+          .where(and(eq(clientContacts.orgId, orgId), sql`lower(${clientContacts.email}) = ${email}`, isNotNull(clientContacts.clientId), isNull(clientContacts.deletedAt)))
+          .limit(1);
+        if (dup) { const e: any = new Error("A client contact with this email address already exists"); e.code = "CONTACT_EMAIL_CONFLICT"; throw e; }
+      }
+    }
 
     if (prospect.convertedToClientContactId) {
       const [existing] = await db
@@ -8866,6 +8882,8 @@ export class DatabaseStorage {
       marketingConvertedAt: now,
       ...(opts.clientContactOverrides ?? {}),
     };
+    // Server-owned, whatever the caller sent: tenant, client and portal access.
+    Object.assign(baseContact, { orgId, clientId: client?.id ?? null, portalRole: "member", billingAccess: false, portalPendingAt: null });
     const [clientContact] = await db.insert(clientContacts).values(baseContact).returning();
 
     await db

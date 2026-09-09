@@ -86,11 +86,29 @@ const listQuery = z.object({
   offset: z.coerce.number().int().min(0).optional(),
 });
 
+// Overrides are a WHITELIST: identity, ownership and portal-access fields (orgId,
+// clientId, portalRole, billingAccess, isPrimary, portalEmailDomains, …) are never
+// caller-supplied — the server decides tenant and access.
 const convertBody = z
   .object({
     createClient: z.boolean().optional(),
-    clientOverrides: z.record(z.unknown()).optional(),
-    clientContactOverrides: z.record(z.unknown()).optional(),
+    clientOverrides: z.object({
+      name: z.string().min(1).max(200).optional(),
+      email: z.string().email().max(200).nullable().optional(),
+      phone: z.string().max(200).nullable().optional(),
+      address: z.string().max(5000).nullable().optional(),
+      website: z.string().max(2000).nullable().optional(),
+      currency: z.string().length(3).optional(),
+    }).strict().optional(),
+    clientContactOverrides: z.object({
+      firstName: z.string().max(200).optional(),
+      lastName: z.string().max(200).optional(),
+      email: z.string().email().max(320).nullable().optional(),
+      phone: z.string().max(200).nullable().optional(),
+      role: z.string().max(200).nullable().optional(),
+      title: z.string().max(200).nullable().optional(),
+      notes: z.string().max(5000).nullable().optional(),
+    }).strict().optional(),
   })
   .optional();
 
@@ -195,6 +213,9 @@ export function registerProspectRoutes(app: Express): void {
         const out = await storage.convertProspectToCustomer(orgId, id, body);
         return res.status(200).json(out);
       } catch (err: any) {
+        if (err?.code === "CONTACT_EMAIL_CONFLICT" || ((err?.cause ?? err)?.code === "23505" && String((err?.cause ?? err)?.constraint || "").includes("ux_client_contacts_org_email_live"))) {
+          return res.status(409).json({ message: "A client contact with this email address already exists" });
+        }
         const msg = err instanceof Error ? err.message : String(err);
         if (msg.includes("not found")) return res.status(404).json({ message: msg });
         return res.status(400).json({ message: errMsg(err) });

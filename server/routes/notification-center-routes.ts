@@ -23,7 +23,7 @@ export interface NotificationView {
 
 export const VALID_TYPES = [
   "invoice.paid", "timesheet.submitted", "mention", "system", "payment.failed", "budget.alert",
-  "case.new", "case.assigned", "case.customer_message", "case.status", "case.sla",
+  "case.new", "case.assigned", "case.customer_message", "case.customer_update", "case.status", "case.sla",
 ];
 
 const userSockets = new Map<string, Set<WebSocket>>();

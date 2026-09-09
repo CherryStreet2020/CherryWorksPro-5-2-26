@@ -351,6 +351,14 @@ app.use((req, res, next) => {
       startPendingAdminNotificationProcessor();
       startSupportSlaProcessor(() => runSlaAlertPass().then(() => undefined));
       startInboundGraphProcessor();
+      // Help Center placeholders (self-registered, link never used) are swept daily.
+      {
+        const { sweepPendingPortalContacts } = await import("./portal-auth");
+        const sweep = () => sweepPendingPortalContacts().then(n => { if (n) console.log(`[help-center] swept ${n} unverified contact(s)`); }).catch(e => console.error("[help-center] pending sweep failed", e));
+        void sweep();
+        const t = setInterval(sweep, 24 * 60 * 60 * 1000);
+        t.unref?.();
+      }
 
       const { cleanupStaleImportRuns } = await import("./routes/import-routes");
       cleanupStaleImportRuns().catch(e => console.error("[import-cleanup] Boot backfill failed:", e));

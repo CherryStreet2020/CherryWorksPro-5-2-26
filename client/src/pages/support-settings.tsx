@@ -12,11 +12,11 @@ import { Settings2, Copy, Check } from "lucide-react";
 
 interface Policy { firstResponseHours: number; resolutionHours: number; businessHoursOnly: boolean; businessStartHour: number; businessEndHour: number; timezone: string }
 interface SlaResponse { policy: Policy; isDefault: boolean; supportInboundAddress: string | null; mailbox?: { provider: string; connected: boolean; status: string; canReadInbox: boolean; requiredScope: string; senderAddress: string | null } }
-interface PortalInfo { orgSlug: string; portalUrl: string }
+interface PortalInfo { orgSlug: string; helpUrl: string; portalUrl: string }
 interface PickerClient { id: string; name: string }
 interface PickerProject { id: string; name: string }
 interface JiraTest { ok: boolean; connectedAs: string; issues: number; firstKey: string | null; lastKey: string | null; statuses: Record<string, number> }
-interface ImportReport { pulled?: number; imported: number; skipped: string[]; contactsCreated: number; unmatchedAssignees: string[]; unmatchedTypes: string[]; timeEntriesLinked: number; nextCaseNumber: number; errors: { key: string; error: string }[] }
+interface ImportReport { pulled?: number; imported: number; skipped: string[]; contactsCreated: number; unmatchedAssignees: string[]; unmatchedTypes: string[]; timeEntriesLinked: number; nextCaseNumber: number; errors: { key: string; error: string }[]; contactConflicts?: string[] }
 
 export default function SupportSettingsPage() {
   useDocumentTitle("Support settings");
@@ -25,7 +25,7 @@ export default function SupportSettingsPage() {
   const { data: portal } = useQuery<PortalInfo>({ queryKey: ["/api/support/portal-info"] });
   const [p, setP] = useState<Policy | null>(null);
   const [inbound, setInbound] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"help" | "portal" | null>(null);
   useEffect(() => { if (data) { setP(data.policy); setInbound(data.supportInboundAddress ?? ""); } }, [data]);
 
   const savePolicy = useMutation({
@@ -57,18 +57,30 @@ export default function SupportSettingsPage() {
         </div>
         <div>
           <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--lux-text)" }}>Support settings</h1>
-          <p className="text-sm mt-0.5" style={muted}>Service levels, the customer portal link, and the mailbox that turns emails into cases.</p>
+          <p className="text-sm mt-0.5" style={muted}>Service levels, the Help Center and Customer Portal links, and the mailbox that turns emails into cases.</p>
         </div>
       </div>
 
-      <section className="rounded-2xl p-5 border-0 space-y-3" style={card}>
-        <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Customer portal</h2>
-        <p className="text-sm" style={{ color: "var(--lux-text-secondary)" }}>Send clients this link. They sign in with a one-time email link; you can also send it from any case with a saved requester.</p>
-        <div className="flex items-center gap-2">
-          <Input readOnly value={portal?.portalUrl ?? ""} style={fieldStyle} data-testid="input-portal-url" />
-          <Button variant="outline" onClick={() => { if (portal?.portalUrl) { navigator.clipboard.writeText(portal.portalUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); } }} data-testid="button-copy-portal-url">
-            {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-          </Button>
+      <section className="rounded-2xl p-5 border-0 space-y-4" style={card}>
+        <div>
+          <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Help Center</h2>
+          <p className="text-sm mt-1" style={{ color: "var(--lux-text-secondary)" }}>Support cases only — never invoices. Share this one link with a customer's whole team: anyone whose address is on that client's approved email domains signs in with a one-time link and is added as a contact automatically. Customer admins (set per contact on the client) see every case for their company, set priority, close and reopen, and invite colleagues.</p>
+          <div className="flex items-center gap-2 mt-2">
+            <Input readOnly value={portal?.helpUrl ?? ""} style={fieldStyle} data-testid="input-help-url" />
+            <Button variant="outline" onClick={() => { if (portal?.helpUrl) { navigator.clipboard.writeText(portal.helpUrl); setCopied("help"); setTimeout(() => setCopied(null), 1500); } }} data-testid="button-copy-help-url">
+              {copied === "help" ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+            </Button>
+          </div>
+        </div>
+        <div>
+          <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Customer Portal</h2>
+          <p className="text-sm mt-1" style={{ color: "var(--lux-text-secondary)" }}>Invoices, estimates and payments. Only contacts with billing access (per contact on the client) can sign in here; send it from the client's Contacts tab.</p>
+          <div className="flex items-center gap-2 mt-2">
+            <Input readOnly value={portal?.portalUrl ?? ""} style={fieldStyle} data-testid="input-portal-url" />
+            <Button variant="outline" onClick={() => { if (portal?.portalUrl) { navigator.clipboard.writeText(portal.portalUrl); setCopied("portal"); setTimeout(() => setCopied(null), 1500); } }} data-testid="button-copy-portal-url">
+              {copied === "portal" ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+            </Button>
+          </div>
         </div>
       </section>
 

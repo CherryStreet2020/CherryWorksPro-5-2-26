@@ -47,6 +47,53 @@ interface GraphMessage {
   ccRecipients?: { emailAddress?: { address?: string; name?: string } }[];
   body?: { contentType?: string; content?: string };
   bodyPreview?: string;
+  internetMessageHeaders?: { name?: string; value?: string }[];
+}
+
+/**
+ * Did the receiving mailbox authenticate the sender for the address it claims?
+ *
+ * Ingestion contract (Exchange Online, the only mailbox provider CWP reads):
+ *  - EXO stamps its own `Authentication-Results` on every message it accepts. Its
+ *    value starts directly with a method (`spf=… smtp.mailfrom=…; dkim=… header.d=…;
+ *    dmarc=… header.from=…; compauth=…`) — there is NO authserv-id prefix, whereas a
+ *    foreign header carries one (`mx.google.com; dkim=pass …`). Foreign headers are
+ *    not removed by EXO, so provenance is decided by SHAPE, not position.
+ *  - EXO also stamps `X-MS-Exchange-Organization-AuthSource` on mail it processed;
+ *    organization headers are stripped from anything arriving from outside, so their
+ *    presence proves the message went through this tenant's EXO.
+ * Fail closed: no AuthSource header, or anything other than EXACTLY ONE EXO-shaped
+ * Authentication-Results (a second one means the sender injected a look-alike, or the
+ * mail hopped through another tenant — provenance is ambiguous either way) → false.
+ * Then, from the EXO header only, the sender is authenticated for the claimed From:
+ * domain when dmarc=pass carries header.from= aligned with it, or dkim=pass has
+ * header.d= aligned, or spf=pass has smtp.mailfrom= aligned. A pass for an unrelated
+ * domain is ignored; compauth alone never counts.
+ */
+export function senderAuthenticatedFromHeaders(headers: { name?: string; value?: string }[] | undefined, fromAddress: string | null | undefined): boolean {
+  if (!headers || !fromAddress) return false;
+  const at = fromAddress.lastIndexOf("@");
+  const fromDomain = at < 0 ? "" : fromAddress.slice(at + 1).trim().toLowerCase().replace(/>.*$/, "");
+  if (!fromDomain) return false;
+  const lower = (n?: string) => (n || "").toLowerCase();
+  if (!headers.some(h => lower(h.name) === "x-ms-exchange-organization-authsource" && (h.value || "").trim())) return false;
+  // Provenance: EXO writes exactly one header of its own shape. A message that carries
+  // two (one injected by the sender, or a hop through another tenant) is ambiguous and
+  // fails closed — syntax alone cannot tell the receiver's verdict from a forged one.
+  const exoShaped = headers.filter(h => lower(h.name) === "authentication-results" && /^\s*(spf|dkim|dmarc|compauth)=/i.test(h.value || ""));
+  if (exoShaped.length !== 1) return false;
+  const exo = exoShaped[0];
+  const aligned = (d: string) => !!d && (d === fromDomain || fromDomain.endsWith("." + d) || d.endsWith("." + fromDomain));
+  // Structured parse: one clause per method, split on ';', properties as key=value.
+  for (const clause of (exo.value || "").split(";")) {
+    const m = clause.trim().toLowerCase().match(/^(spf|dkim|dmarc)=(\w+)/);
+    if (!m || m[2] !== "pass") continue;
+    const prop = (k: string) => clause.toLowerCase().match(new RegExp(`\\b${k}=(?:[^\\s@;]+@)?([a-z0-9.-]+)`))?.[1] ?? "";
+    if (m[1] === "dmarc" && aligned(prop("header.from"))) return true;
+    if (m[1] === "dkim" && aligned(prop("header.d"))) return true;
+    if (m[1] === "spf" && aligned(prop("smtp.mailfrom"))) return true;
+  }
+  return false;
 }
 
 /** `path` is relative to GRAPH, or an absolute Graph URL (e.g. an @odata.nextLink). */
@@ -101,7 +148,7 @@ export async function pollOrg(org: { id: string; supportInboundAddress: string; 
   // same old messages every pass and never reach newer support mail. Walk the
   // unread set newest-first through @odata.nextLink, bounded by MAX_PAGES.
   const relevant: GraphMessage[] = [];
-  let next: string | null = `/me/mailFolders/inbox/messages?$filter=isRead eq false&$top=50&$orderby=receivedDateTime desc&$select=id,subject,internetMessageId,receivedDateTime,hasAttachments,from,toRecipients,ccRecipients,body,bodyPreview`;
+  let next: string | null = `/me/mailFolders/inbox/messages?$filter=isRead eq false&$top=50&$orderby=receivedDateTime desc&$select=id,subject,internetMessageId,receivedDateTime,hasAttachments,from,toRecipients,ccRecipients,body,bodyPreview,internetMessageHeaders`;
   for (let pages = 0; next && pages < MAX_PAGES; pages++) {
     const page: { value?: GraphMessage[]; "@odata.nextLink"?: string } = await graphGet(token, next);
     for (const msg of page.value || []) {
@@ -120,7 +167,7 @@ export async function pollOrg(org: { id: string; supportInboundAddress: string; 
     const search = encodeURIComponent(`"recipients:${org.supportInboundAddress}"`);
     // $search needs ConsistencyLevel: eventual, cannot be combined with $filter,
     // and returns read mail too; so page through it (bounded) and keep the unread.
-    let next: string | null = `/me/messages?$search=${search}&$top=100&$select=id,subject,internetMessageId,receivedDateTime,hasAttachments,isRead,from,toRecipients,ccRecipients,body,bodyPreview`;
+    let next: string | null = `/me/messages?$search=${search}&$top=100&$select=id,subject,internetMessageId,receivedDateTime,hasAttachments,isRead,from,toRecipients,ccRecipients,body,bodyPreview,internetMessageHeaders`;
     for (let pages = 0; next && pages < MAX_SEARCH_PAGES; pages++) {
       const targeted: { value?: GraphMessage[]; "@odata.nextLink"?: string } = await graphGet(token, next, { ConsistencyLevel: "eventual" });
       for (const msg of targeted.value || []) {
@@ -149,7 +196,7 @@ export async function pollOrg(org: { id: string; supportInboundAddress: string; 
     const claimed = await db.insert(inboundEmails).values({
       id: emailId, from, to: JSON.stringify(to), subject: msg.subject || null, bodyText: text || null,
       bodyHtml: msg.body?.contentType?.toLowerCase() === "html" ? (msg.body.content || null) : null,
-      headers: { source: "m365-graph", graphId: msg.id, receivedDateTime: msg.receivedDateTime ?? null }, resendMessageId: messageId,
+      headers: { source: "m365-graph", graphId: msg.id, receivedDateTime: msg.receivedDateTime ?? null, senderAuthenticated: senderAuthenticatedFromHeaders(msg.internetMessageHeaders, msg.from?.emailAddress?.address) }, resendMessageId: messageId,
     }).onConflictDoNothing({ target: inboundEmails.resendMessageId, where: sql`resend_message_id IS NOT NULL` }).returning({ id: inboundEmails.id });
     if (claimed.length === 0) {
       // Lost the claim. A pass still in flight marks the mail read itself (and
@@ -164,7 +211,7 @@ export async function pollOrg(org: { id: string; supportInboundAddress: string; 
 
     let outcome: Awaited<ReturnType<typeof processInboundEmail>>;
     try {
-      outcome = await processInboundEmail({ from, to, subject: msg.subject ?? null, text, html: null, messageId, orgId: org.id });
+      outcome = await processInboundEmail({ from, to, subject: msg.subject ?? null, text, html: null, messageId, orgId: org.id, senderAuthenticated: senderAuthenticatedFromHeaders(msg.internetMessageHeaders, msg.from?.emailAddress?.address) });
     } catch (err) {
       // Leave the mail unread and drop the ledger row so the next pass can retry it.
       await db.delete(inboundEmails).where(eq(inboundEmails.id, emailId)).catch(() => {});

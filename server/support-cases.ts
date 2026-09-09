@@ -41,7 +41,10 @@ export interface ListCasesFilter {
 }
 
 export interface Actor {
-  userId: string;
+  /** null when the actor is a customer (Customer Admin acting from the Help Center). */
+  userId: string | null;
+  /** Set when the actor is a portal contact. */
+  contactId?: string | null;
   name: string;
 }
 
@@ -296,15 +299,17 @@ export async function listCaseTime(orgId: string, caseId: string) {
   return { entries: rows, totals };
 }
 
-async function writeEvent(orgId: string, caseId: string, kind: string, from: string | null, to: string | null, actor: Actor | null) {
-  await db.insert(supportCaseEvents).values({
+type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function writeEvent(orgId: string, caseId: string, kind: string, from: string | null, to: string | null, actor: Actor | null, tx: DbOrTx = db) {
+  await tx.insert(supportCaseEvents).values({
     orgId, caseId, kind, fromValue: from, toValue: to,
     actorUserId: actor?.userId ?? null, actorName: actor?.name ?? null,
   });
 }
 
-async function writeActivity(orgId: string, clientId: string, actor: Actor | null, type: string, title: string, description: string | null, caseId: string, metadata: Record<string, unknown> = {}) {
-  await db.insert(clientActivities).values({
+async function writeActivity(orgId: string, clientId: string, actor: Actor | null, type: string, title: string, description: string | null, caseId: string, metadata: Record<string, unknown> = {}, tx: DbOrTx = db) {
+  await tx.insert(clientActivities).values({
     orgId, clientId, userId: actor?.userId ?? null, type, title, description,
     linkUrl: `/support/cases/${caseId}`, metadata: { caseId, ...metadata },
   });
@@ -385,7 +390,11 @@ export async function createCase(orgId: string, input: CreateCaseInput, actor: A
   return row;
 }
 
+export class CaseTransitionError extends Error {}
+
 export interface UpdateCaseInput {
+  /** Help Center (Customer Admin) intent, resolved against the LOCKED row inside the transaction. */
+  customerAction?: "close" | "reopen";
   projectId?: string | null;
   typeId?: string | null;
   subject?: string;
@@ -399,56 +408,73 @@ export interface UpdateCaseInput {
 }
 
 export async function updateCase(orgId: string, id: string, input: UpdateCaseInput, actor: Actor) {
-  const existing = await getCaseRaw(orgId, id);
-  if (!existing) return undefined;
+  // One transaction: the case row is locked (FOR UPDATE) so concurrent transitions
+  // serialise and the "existing" snapshot is the truth the events are written against;
+  // the update, its events and the client activity commit together or not at all.
+  // Notifications go out only after commit.
+  const committed = await db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(supportCases).where(and(eq(supportCases.id, id), eq(supportCases.orgId, orgId))).for("update");
+    if (!existing) return undefined;
 
-  if (input.projectId) {
-    const [p] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.orgId, orgId), eq(projects.clientId, existing.clientId)));
-    if (!p) throw new Error("Project does not belong to this client");
-  }
-  if (input.typeId) {
-    const [t] = await db.select({ id: supportCaseTypes.id }).from(supportCaseTypes).where(and(eq(supportCaseTypes.id, input.typeId), eq(supportCaseTypes.orgId, orgId)));
-    if (!t) throw new Error("Case type not found");
-  }
-  if (input.assigneeUserId) {
-    const [u] = await db.select({ id: users.id }).from(users).where(and(eq(users.id, input.assigneeUserId), eq(users.orgId, orgId)));
-    if (!u) throw new Error("Assignee not found");
-  }
+    if (input.projectId) {
+      const [p] = await tx.select({ id: projects.id }).from(projects).where(and(eq(projects.id, input.projectId), eq(projects.orgId, orgId), eq(projects.clientId, existing.clientId)));
+      if (!p) throw new Error("Project does not belong to this client");
+    }
+    if (input.typeId) {
+      const [t] = await tx.select({ id: supportCaseTypes.id }).from(supportCaseTypes).where(and(eq(supportCaseTypes.id, input.typeId), eq(supportCaseTypes.orgId, orgId)));
+      if (!t) throw new Error("Case type not found");
+    }
+    if (input.assigneeUserId) {
+      const [u] = await tx.select({ id: users.id }).from(users).where(and(eq(users.id, input.assigneeUserId), eq(users.orgId, orgId)));
+      if (!u) throw new Error("Assignee not found");
+    }
 
-  const patch: Partial<SupportCase> = { updatedAt: new Date() };
-  const now = new Date();
-  for (const k of ["projectId", "typeId", "subject", "description", "priority", "requesterContactId", "requesterName", "requesterEmail"] as const) {
-    if (input[k] !== undefined) (patch as any)[k] = input[k];
-  }
-  if (input.assigneeUserId !== undefined) patch.assigneeUserId = input.assigneeUserId;
-  if (input.status !== undefined && input.status !== existing.status) {
-    patch.status = input.status;
-    if (input.status === "RESOLVED") { patch.resolvedAt = now; patch.closedAt = null; }
-    else if (input.status === "CLOSED") { patch.closedAt = now; if (!existing.resolvedAt) patch.resolvedAt = now; }
-    else { patch.resolvedAt = null; patch.closedAt = null; }
-    Object.assign(patch, clockPatchForStatus(existing, input.status, now));
-  }
+    if (input.customerAction === "close") {
+      if (existing.status === "CLOSED") throw new CaseTransitionError("This case is already closed");
+      input = { ...input, status: "CLOSED" };
+    } else if (input.customerAction === "reopen") {
+      if (existing.status !== "RESOLVED" && existing.status !== "CLOSED") throw new CaseTransitionError("Only a resolved or closed case can be reopened");
+      input = { ...input, status: "WAITING_ON_SUPPORT" };
+    }
 
-  const [row] = await db.update(supportCases).set(patch).where(and(eq(supportCases.id, id), eq(supportCases.orgId, orgId))).returning();
-  void notifyCaseUpdated(existing, row, actor).catch(err => console.warn("[support] notifyCaseUpdated failed", (err as Error)?.message));
+    const patch: Partial<SupportCase> = { updatedAt: new Date() };
+    const now = new Date();
+    for (const k of ["projectId", "typeId", "subject", "description", "priority", "requesterContactId", "requesterName", "requesterEmail"] as const) {
+      if (input[k] !== undefined) (patch as any)[k] = input[k];
+    }
+    if (input.assigneeUserId !== undefined) patch.assigneeUserId = input.assigneeUserId;
+    if (input.status !== undefined && input.status !== existing.status) {
+      patch.status = input.status;
+      if (input.status === "RESOLVED") { patch.resolvedAt = now; patch.closedAt = null; }
+      else if (input.status === "CLOSED") { patch.closedAt = now; if (!existing.resolvedAt) patch.resolvedAt = now; }
+      else { patch.resolvedAt = null; patch.closedAt = null; }
+      if (!actor.userId && (existing.status === "RESOLVED" || existing.status === "CLOSED")) patch.lastCustomerMessageAt = now;
+      Object.assign(patch, clockPatchForStatus(existing, input.status, now));
+    }
 
-  if (patch.status && patch.status !== existing.status) {
-    await writeEvent(orgId, id, "status", existing.status, patch.status, actor);
-    await writeActivity(orgId, row.clientId, actor, "SUPPORT_CASE_STATUS", `${row.caseKey} ${labelStatus(patch.status)}`, row.subject, id, { caseKey: row.caseKey, status: patch.status });
-  }
-  if (input.assigneeUserId !== undefined && input.assigneeUserId !== existing.assigneeUserId) {
-    await writeEvent(orgId, id, "assignee", existing.assigneeUserId, input.assigneeUserId ?? null, actor);
-  }
-  if (input.priority !== undefined && input.priority !== existing.priority) {
-    await writeEvent(orgId, id, "priority", existing.priority, input.priority, actor);
-  }
-  if (input.typeId !== undefined && input.typeId !== existing.typeId) {
-    await writeEvent(orgId, id, "type", existing.typeId, input.typeId ?? null, actor);
-  }
-  if (input.projectId !== undefined && input.projectId !== existing.projectId) {
-    await writeEvent(orgId, id, "project", existing.projectId, input.projectId ?? null, actor);
-  }
-  return row;
+    const [row] = await tx.update(supportCases).set(patch).where(and(eq(supportCases.id, id), eq(supportCases.orgId, orgId))).returning();
+
+    if (patch.status && patch.status !== existing.status) {
+      await writeEvent(orgId, id, "status", existing.status, patch.status, actor, tx);
+      await writeActivity(orgId, row.clientId, actor, "SUPPORT_CASE_STATUS", `${row.caseKey} ${labelStatus(patch.status)}`, row.subject, id, { caseKey: row.caseKey, status: patch.status, by: actor.name }, tx);
+    }
+    if (input.assigneeUserId !== undefined && input.assigneeUserId !== existing.assigneeUserId) {
+      await writeEvent(orgId, id, "assignee", existing.assigneeUserId, input.assigneeUserId ?? null, actor, tx);
+    }
+    if (input.priority !== undefined && input.priority !== existing.priority) {
+      await writeEvent(orgId, id, "priority", existing.priority, input.priority, actor, tx);
+    }
+    if (input.typeId !== undefined && input.typeId !== existing.typeId) {
+      await writeEvent(orgId, id, "type", existing.typeId, input.typeId ?? null, actor, tx);
+    }
+    if (input.projectId !== undefined && input.projectId !== existing.projectId) {
+      await writeEvent(orgId, id, "project", existing.projectId, input.projectId ?? null, actor, tx);
+    }
+    return { existing, row };
+  });
+  if (!committed) return undefined;
+  void notifyCaseUpdated(committed.existing, committed.row, actor).catch(err => console.warn("[support] notifyCaseUpdated failed", (err as Error)?.message));
+  return committed.row;
 }
 
 export function labelStatus(s: string): string {
@@ -476,44 +502,52 @@ export interface AddMessageInput {
  * was waiting on them. Internal notes never touch the customer-facing clocks.
  */
 export async function addMessage(orgId: string, caseId: string, input: AddMessageInput) {
-  const existing = await getCaseRaw(orgId, caseId);
-  if (!existing) return undefined;
   const isAgent = !!input.author.userId;
-  const [msg] = await db.insert(supportCaseMessages).values({
-    orgId, caseId,
-    authorUserId: input.author.userId ?? null,
-    authorContactId: input.author.contactId ?? null,
-    authorName: input.author.name,
-    visibility: input.visibility,
-    body: input.body,
-    emailMessageId: input.emailMessageId ?? null,
-  }).returning();
+  // Same discipline as updateCase: lock the row, derive the transition from the locked
+  // truth, and commit message + case + event + activity together. A customer reply that
+  // races an admin close therefore sees CLOSED and leaves the status alone.
+  const committed = await db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(supportCases).where(and(eq(supportCases.id, caseId), eq(supportCases.orgId, orgId))).for("update");
+    if (!existing) return undefined;
+    const [msg] = await tx.insert(supportCaseMessages).values({
+      orgId, caseId,
+      authorUserId: input.author.userId ?? null,
+      authorContactId: input.author.contactId ?? null,
+      authorName: input.author.name,
+      visibility: input.visibility,
+      body: input.body,
+      emailMessageId: input.emailMessageId ?? null,
+    }).returning();
 
-  const patch: Partial<SupportCase> = { updatedAt: new Date() };
-  const now = new Date();
-  if (isAgent && input.visibility === "CUSTOMER") {
-    patch.lastAgentMessageAt = now;
-    if (!existing.firstResponseAt) patch.firstResponseAt = now;
-    if (existing.status === "NEW" || existing.status === "WAITING_ON_SUPPORT") patch.status = "IN_PROGRESS";
-  } else if (!isAgent) {
-    patch.lastCustomerMessageAt = now;
-    if (existing.status === "WAITING_ON_CUSTOMER" || existing.status === "RESOLVED") patch.status = "WAITING_ON_SUPPORT";
-    if (existing.status === "RESOLVED") { patch.resolvedAt = null; }
-  }
-  if (patch.status && patch.status !== existing.status) Object.assign(patch, clockPatchForStatus(existing, patch.status, now));
-  const [row] = await db.update(supportCases).set(patch).where(eq(supportCases.id, caseId)).returning();
-  if (patch.status && patch.status !== existing.status) {
-    await writeEvent(orgId, caseId, "status", existing.status, patch.status, isAgent ? { userId: input.author.userId!, name: input.author.name } : null);
-  }
-  void notifyCaseMessage(row, { authorUserId: input.author.userId ?? null, authorName: input.author.name, body: input.body, visibility: input.visibility })
+    const patch: Partial<SupportCase> = { updatedAt: new Date() };
+    const now = new Date();
+    if (isAgent && input.visibility === "CUSTOMER") {
+      patch.lastAgentMessageAt = now;
+      if (!existing.firstResponseAt) patch.firstResponseAt = now;
+      if (existing.status === "NEW" || existing.status === "WAITING_ON_SUPPORT") patch.status = "IN_PROGRESS";
+    } else if (!isAgent) {
+      patch.lastCustomerMessageAt = now;
+      if (existing.status === "WAITING_ON_CUSTOMER" || existing.status === "RESOLVED") patch.status = "WAITING_ON_SUPPORT";
+      if (existing.status === "RESOLVED") { patch.resolvedAt = null; }
+    }
+    if (patch.status && patch.status !== existing.status) Object.assign(patch, clockPatchForStatus(existing, patch.status, now));
+    const [row] = await tx.update(supportCases).set(patch).where(eq(supportCases.id, caseId)).returning();
+    const actor: Actor | null = isAgent ? { userId: input.author.userId!, name: input.author.name } : null;
+    if (patch.status && patch.status !== existing.status) {
+      await writeEvent(orgId, caseId, "status", existing.status, patch.status, actor, tx);
+    }
+    if (input.visibility === "CUSTOMER") {
+      await writeActivity(orgId, row.clientId, actor,
+        isAgent ? "SUPPORT_CASE_REPLY" : "SUPPORT_CASE_CUSTOMER_MESSAGE",
+        `${row.caseKey} ${isAgent ? "reply from" : "message from"} ${input.author.name}`,
+        input.body.length > 200 ? input.body.slice(0, 200) + "…" : input.body, caseId, { caseKey: row.caseKey }, tx);
+    }
+    return { msg, row };
+  });
+  if (!committed) return undefined;
+  void notifyCaseMessage(committed.row, { authorUserId: input.author.userId ?? null, authorName: input.author.name, body: input.body, visibility: input.visibility })
     .catch(err => console.warn("[support] notifyCaseMessage failed", (err as Error)?.message));
-  if (input.visibility === "CUSTOMER") {
-    await writeActivity(orgId, row.clientId, isAgent ? { userId: input.author.userId!, name: input.author.name } : null,
-      isAgent ? "SUPPORT_CASE_REPLY" : "SUPPORT_CASE_CUSTOMER_MESSAGE",
-      `${row.caseKey} ${isAgent ? "reply from" : "message from"} ${input.author.name}`,
-      input.body.length > 200 ? input.body.slice(0, 200) + "…" : input.body, caseId, { caseKey: row.caseKey });
-  }
-  return { message: msg, case: row };
+  return { message: committed.msg, case: committed.row };
 }
 
 export async function deleteCase(orgId: string, id: string) {
