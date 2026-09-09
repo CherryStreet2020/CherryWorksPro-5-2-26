@@ -159,6 +159,18 @@ export async function resolveOrProvisionContact(orgId: string, email: string, so
   if (known) return known;
   const domain = emailDomain(norm);
   if (!domain || isSharedMailDomain(domain)) return undefined;
+  try {
+    return await provisionUnderLock(orgId, norm, domain, source);
+  } catch (err: any) {
+    // A writer that does not take the advisory lock (firm-side "Add contact") can win the
+    // unique index between our lookup and insert: the person exists now — use them.
+    const e = err?.cause ?? err;
+    if (e?.code === "23505") return findPortalContact(orgId, norm);
+    throw err;
+  }
+}
+
+async function provisionUnderLock(orgId: string, norm: string, domain: string, source: ProvisionSource) {
   return withContactEmailLock(orgId, norm, async (tx) => {
     // Re-read under the lock (ON THIS CONNECTION — nested reads on the pool would hold a
     // second connection per request and can exhaust the pool under load): a racing

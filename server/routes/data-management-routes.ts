@@ -187,6 +187,7 @@ export function registerDataManagementRoutes(app: Express) {
           `UPDATE clients SET
             name = $1, email = $2, phone = NULL, address = NULL,
             website = NULL, logo_url = NULL, portal_token = NULL,
+            portal_email_domains = NULL,
             updated_at = NOW()
           WHERE id = $3 AND org_id = $4`,
           [redactedName, redactedEmail, clientId, orgId]

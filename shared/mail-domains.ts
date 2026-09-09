@@ -5,9 +5,9 @@
  */
 export const SHARED_MAIL_DOMAINS: ReadonlySet<string> = new Set([
   "gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "msn.com",
-  "yahoo.com", "ymail.com", "icloud.com", "me.com", "mac.com", "aol.com", "proton.me",
-  "protonmail.com", "pm.me", "gmx.com", "gmx.net", "zoho.com", "mail.com", "fastmail.com",
-  "hey.com", "yandex.com",
+  "yahoo.com", "ymail.com", "rocketmail.com", "icloud.com", "me.com", "mac.com", "aol.com",
+  "proton.me", "protonmail.com", "pm.me", "gmx.com", "gmx.net", "gmx.us", "zoho.com",
+  "mail.com", "fastmail.com", "hey.com", "duck.com", "yandex.com",
 ]);
 
 const DOMAIN_RE = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;

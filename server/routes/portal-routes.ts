@@ -299,29 +299,33 @@ export function registerPortalRoutes(app: Express) {
       const [owner] = await db.select({ id: clients.id }).from(clients)
         .where(and(eq(clients.orgId, p.orgId), ne(clients.id, p.client.id), sql`${domain} = ANY(${clients.portalEmailDomains})`)).limit(1);
       if (owner) return res.status(400).json({ message: "That address belongs to another company's Help Center. Ask them to invite their colleague." });
-      const created = await withContactEmailLock(p.orgId, norm, async (tx) => {
+      // Create the contact, or — when the same person was invited before and has not used
+      // their link yet — re-send to that pending contact (a failed delivery can be retried).
+      const target = await withContactEmailLock(p.orgId, norm, async (tx) => {
         const existing = await findPortalContact(p.orgId, norm, tx);
-        if (existing) return null;
+        if (existing) return existing.portalPendingAt && existing.clientId === p.client.id ? { id: existing.id, resend: true } : null;
         const [row] = await tx.insert(clientContacts).values({
           orgId: p.orgId, clientId: p.client.id, firstName, lastName, email: norm,
-          portalRole: "member", billingAccess: false, isPrimary: false, source: "help-center-invite", lifecycleStage: "customer",
+          portalRole: "member", billingAccess: false, isPrimary: false, source: "help-center-invite", lifecycleStage: "customer", portalPendingAt: new Date(),
         }).returning({ id: clientContacts.id });
-        return row;
+        return { id: row.id, resend: false };
       });
-      if (!created) return res.status(400).json({ message: "Someone with that email address is already set up" });
+      if (!target) return res.status(400).json({ message: "Someone with that email address is already set up" });
       const org = await storage.getOrg(p.orgId);
-      const { token, email: boundEmail } = await issueLoginLink(p.orgId, created.id, null);
+      const { token, email: boundEmail } = await issueLoginLink(p.orgId, target.id, null);
       const link = loginLinkFor(p.orgSlug, token, "help");
       try {
         await sendPortalLoginEmail({ to: boundEmail, contactName: `${firstName} ${lastName}`.trim(), orgName: p.orgName, link, org: org ?? null, surface: "help", invitedBy: `${p.contact.firstName} ${p.contact.lastName}`.trim() });
       } catch (err) {
-        console.error("[help-center] invite email failed", { orgId: p.orgId, contactId: created.id, err: (err as Error)?.message });
+        console.error("[help-center] invite email failed", { orgId: p.orgId, contactId: target.id, err: (err as Error)?.message });
+        // The contact stays (pending); the admin is told the truth and can send again.
+        return res.status(502).json({ message: "We couldn't deliver the invitation email. Try again in a moment — the invitation is saved.", id: target.id });
       }
       await db.insert(clientActivities).values({
         orgId: p.orgId, clientId: p.client.id, userId: null, type: "PORTAL_INVITE_SENT",
-        title: `${p.contact.firstName} ${p.contact.lastName} invited ${firstName} ${lastName} to the Help Center`, description: norm, linkUrl: null, metadata: { contactId: created.id },
+        title: `${p.contact.firstName} ${p.contact.lastName} ${target.resend ? "re-invited" : "invited"} ${firstName} ${lastName} to the Help Center`, description: norm, linkUrl: null, metadata: { contactId: target.id },
       });
-      return res.status(201).json({ id: created.id, ...(isTestEnv ? { debugLink: link } : {}) });
+      return res.status(target.resend ? 200 : 201).json({ id: target.id, resent: target.resend, ...(isTestEnv ? { debugLink: link } : {}) });
     } catch (err: any) {
       return res.status(400).json({ message: friendly(err) });
     }

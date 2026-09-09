@@ -248,6 +248,12 @@ describe("Help Center: approved domains, self-registration, Customer Admin, bill
     expect(me.contact.firstName).toBe("Nate"); expect(me.contact.needsName).toBe(false); expect(me.contact.portalRole).toBe("member");
 
     expect((await portal("POST", "/team", adminCookie, { firstName: "Nate", lastName: "Again", email: `nate.${stamp}@${domain}` })).status).toBe(400);
+    // An invitee who has NOT used their link yet can be re-invited (the link is re-sent).
+    const pendEmail = `pend.${stamp}@${domain}`;
+    expect((await portal("POST", "/team", adminCookie, { firstName: "Pen", lastName: "Ding", email: pendEmail })).status).toBe(201);
+    const re = await portal("POST", "/team", adminCookie, { firstName: "Pen", lastName: "Ding", email: pendEmail });
+    expect(re.status).toBe(200);
+    expect((await re.json()).resent).toBe(true);
     expect((await portal("POST", "/team", adminCookie, { firstName: "G", lastName: "Mail", email: `g.${stamp}@gmail.com` })).status).toBe(400);
     expect((await portal("POST", "/team", adminCookie, { firstName: "O", lastName: "Ther", email: `o.${stamp}@not-approved-${stamp}.example` })).status).toBe(400);
     expect((await portal("POST", "/team", memberCookie, { firstName: "X", lastName: "Y", email: `x.${stamp}@${domain}` })).status).toBe(403);
