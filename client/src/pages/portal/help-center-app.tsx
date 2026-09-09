@@ -78,6 +78,7 @@ function CasesList({ slug, me }: { slug: string; me: Me }) {
   qs.set("limit", String(PAGE));
   if (priority) qs.set("priority", priority);
   if (requester) qs.set("requester", requester);
+  if (onlyMine) qs.set("mine", "1");
   const q = qs.toString();
   // Pages accumulate by offset until the server says there is no more — an old open case
   // is always reachable, however many newer ones sit above it.
@@ -89,7 +90,7 @@ function CasesList({ slug, me }: { slug: string; me: Me }) {
   });
   const all = data?.pages.flatMap(p => p.cases) ?? [];
   const counts = data?.pages[0]?.counts;
-  const rows = all.filter(r => !onlyMine || r.mine);
+  const rows = all; // every filter (priority, requester, mine) is applied by the server before paging
   // Requester options come from the company's people (unfiltered), so the selector stays
   // usable — and clearable — after someone is picked.
   const { data: team } = useQuery<Team>({ queryKey: ["help-team", slug, me.contact.id, me.contact.portalRole], queryFn: () => api("GET", `/api/portal/${slug}/team`), enabled: isAdmin });

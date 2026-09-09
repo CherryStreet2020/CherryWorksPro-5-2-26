@@ -387,6 +387,7 @@ export default function ClientDetailPage() {
     mutationFn: async (contactId: string) => { await apiRequest("DELETE", `/api/clients/${clientId}/contacts/${contactId}`); },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/support/clients", clientId, "portal-blocked"] });
       toast({ title: "Contact deleted" });
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),

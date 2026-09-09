@@ -171,6 +171,8 @@ describe("Help Center: approved domains, self-registration, Customer Admin, bill
     // Filters
     const byReq = await (await portal("GET", `/cases?requester=${memberContactId}`, adminCookie)).json();
     expect(byReq.cases.map((c: any) => c.id)).toEqual([memberCaseId]);
+    const mine = await (await portal("GET", "/cases?mine=1", adminCookie)).json();
+    expect(mine.cases.map((c: any) => c.id)).toEqual([adminCaseId]);
     expect((await portal("GET", `/cases/${otherClientCaseId}`, adminCookie)).status).toBe(404);
     expect((await portal("GET", `/cases/${adminCaseId}`, memberCookie)).status).toBe(404);
   });

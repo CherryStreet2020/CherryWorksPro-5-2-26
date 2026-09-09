@@ -271,6 +271,7 @@ function JiraImportCard({ card, muted, fieldStyle }: { card: React.CSSProperties
         <div className="rounded-lg p-3 text-xs space-y-1" style={{ background: "var(--lux-surface-alt)", border: "1px solid var(--lux-border)", color: "var(--lux-text)" }} data-testid="text-jira-report">
           <p><strong>{report.imported}</strong> imported{report.pulled !== undefined ? ` of ${report.pulled} pulled` : ""} · {report.skipped.length} already existed · {report.contactsCreated} contacts created · {report.timeEntriesLinked} time entries linked · next key number {report.nextCaseNumber}</p>
           {report.unmatchedAssignees.length > 0 && <p style={muted}>Assignees left unassigned (no matching team member): {report.unmatchedAssignees.join(", ")}</p>}
+          {(report.contactConflicts?.length ?? 0) > 0 && <p style={{ color: "var(--lux-danger, #b91c1c)" }} data-testid="import-contact-conflicts">Requesters who already belong to another client (cases imported without a requester contact — they cannot see these cases until you move them): {report.contactConflicts!.join(", ")}</p>}
           {report.unmatchedTypes.length > 0 && <p style={muted}>Request types with no matching case type (left blank): {report.unmatchedTypes.join(", ")}</p>}
           {report.errors.length > 0 && <p style={{ color: "#b91c1c" }}>{report.errors.length} errors: {report.errors.slice(0, 5).map(e => `${e.key}: ${e.error}`).join("; ")}</p>}
         </div>

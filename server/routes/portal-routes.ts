@@ -193,6 +193,7 @@ export function registerPortalRoutes(app: Express) {
     const requester = typeof req.query.requester === "string" ? req.query.requester : "";
     const priority = typeof req.query.priority === "string" ? req.query.priority.toUpperCase() : "";
     if (requester) filters.push(eq(supportCases.requesterContactId, requester));
+    if (req.query.mine === "1") filters.push(eq(supportCases.requesterContactId, p.contact.id));
     if ((SUPPORT_CASE_PRIORITIES as readonly string[]).includes(priority)) filters.push(eq(supportCases.priority, priority));
     // Status is filtered in SQL and counts are aggregated over the whole authorised set,
     // so an old open case never hides behind newer resolved ones and totals are exact.
