@@ -8,7 +8,7 @@
  * billingAccess), not by which door they came in through.
  *
  * Deliberately single-theme: a dark ground with the firm's accent, a display
- * serif for the few large headings, generous type. It composites its own
+ * Inter throughout, matching the app (heavier, tighter headings), generous type. It composites its own
  * background so it never inherits the app's light theme.
  */
 import { useEffect, useMemo, useState } from "react";
@@ -38,8 +38,13 @@ export const T = {
   warn: "#E9A94A", warnSoft: "#33260f",
   info: "#8AB4F8", infoSoft: "#15233a",
 };
-export const display = { fontFamily: "Fraunces, Georgia, 'Times New Roman', serif", fontWeight: 600, letterSpacing: "-0.01em" } as const;
-export const mono = { fontFamily: "'JetBrains Mono', ui-monospace, Menlo, monospace" } as const;
+// Same type as the app: Inter for everything (headings are heavier and tighter, keys are tabular).
+const APP_FONT = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+export const display = { fontFamily: APP_FONT, fontWeight: 700, letterSpacing: "-0.02em" } as const;
+/** Case keys and other short identifiers: Inter, semibold, tabular figures. */
+export const keyText = { fontFamily: APP_FONT, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "0.01em" } as const;
+/** @deprecated use `keyText` — kept as an alias for existing call sites. */
+export const mono = keyText;
 
 export const STATUS_STYLE: Record<CaseStatus, { fg: string; bg: string; label: string }> = {
   NEW: { fg: T.info, bg: T.infoSoft, label: "Received" },
