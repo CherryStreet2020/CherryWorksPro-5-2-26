@@ -53,28 +53,35 @@ async function managers(orgId: string): Promise<Array<{ id: string; email: strin
  *  - every watcher (live, same client, unblocked);
  * deduplicated by address. `exclude` drops the person who caused the mail (no echo).
  */
-export async function customerRecipients(c: Pick<SupportCase, "id" | "orgId" | "clientId" | "requesterContactId" | "requesterEmail">, exclude?: { contactId?: string | null; email?: string | null }): Promise<Array<{ email: string; name: string | null; contactId: string | null }>> {
-  const out = new Map<string, { email: string; name: string | null; contactId: string | null }>();
+export type CustomerRecipient = { email: string; name: string | null; contactId: string | null; role: "requester" | "watcher" | "reviewer" };
+export async function customerRecipients(c: Pick<SupportCase, "id" | "orgId" | "clientId" | "requesterContactId" | "requesterEmail">, exclude?: { contactId?: string | null; email?: string | null }): Promise<CustomerRecipient[]> {
+  const out = new Map<string, CustomerRecipient>();
   const blocked = new Set((await db.select({ email: portalBlockedEmails.email }).from(portalBlockedEmails).where(eq(portalBlockedEmails.orgId, c.orgId))).map(r => r.email.toLowerCase()));
-  const add = (email: string | null | undefined, name: string | null, contactId: string | null) => {
+  const add = (email: string | null | undefined, name: string | null, contactId: string | null, role: CustomerRecipient["role"]) => {
     const e = (email || "").trim().toLowerCase();
     if (!e || blocked.has(e) || out.has(e)) return;
     if (exclude?.contactId && contactId && exclude.contactId === contactId) return;
     if (exclude?.email && exclude.email.trim().toLowerCase() === e) return;
-    out.set(e, { email: e, name, contactId });
+    out.set(e, { email: e, name, contactId, role });
   };
   if (c.requesterContactId) {
     const [r] = await db.select({ id: clientContacts.id, email: clientContacts.email, firstName: clientContacts.firstName, lastName: clientContacts.lastName }).from(clientContacts)
       .where(and(eq(clientContacts.id, c.requesterContactId), eq(clientContacts.orgId, c.orgId), eq(clientContacts.clientId, c.clientId), isNull(clientContacts.deletedAt)));
-    if (r) add(r.email, `${r.firstName} ${r.lastName}`.trim() || null, r.id);
+    if (r) add(r.email, `${r.firstName} ${r.lastName}`.trim() || null, r.id, "requester");
   } else {
-    add(c.requesterEmail, null, null);
+    add(c.requesterEmail, null, null, "requester");
   }
-  const ws = await db.select({ id: clientContacts.id, email: clientContacts.email, firstName: clientContacts.firstName, lastName: clientContacts.lastName }).from(supportCaseWatchers)
+  const ws = await db.select({ id: clientContacts.id, email: clientContacts.email, firstName: clientContacts.firstName, lastName: clientContacts.lastName, role: supportCaseWatchers.role }).from(supportCaseWatchers)
     .innerJoin(clientContacts, eq(clientContacts.id, supportCaseWatchers.contactId))
     .where(and(eq(supportCaseWatchers.caseId, c.id), eq(supportCaseWatchers.orgId, c.orgId), eq(clientContacts.clientId, c.clientId), isNull(clientContacts.deletedAt)));
-  for (const w of ws) add(w.email, `${w.firstName} ${w.lastName}`.trim() || null, w.id);
+  for (const w of ws) add(w.email, `${w.firstName} ${w.lastName}`.trim() || null, w.id, w.role === "reviewer" ? "reviewer" : "watcher");
   return [...out.values()];
+}
+
+/** Reviewers are review only: their mails never invite a reply (an emailed reply would be stored, not added). */
+const REVIEWER_FOOTER = "You're reviewing this case (review only). Replies to this email are not added to the case.";
+function ctaFor(r: CustomerRecipient, replyText: string) {
+  return r.role === "reviewer" ? { ctaText: "View the case", footer: REVIEWER_FOOTER } : { ctaText: replyText };
 }
 
 /**
@@ -122,7 +129,7 @@ export async function notifyCaseCreated(c: SupportCase, opts: { openedBy?: { nam
         intro: isRequester
           ? `Thanks${first ? `, ${first}` : ""}. ${opts.openedBy && opts.openedBy.contactId !== c.requesterContactId ? `${opts.openedBy.name} opened this case on your behalf. ` : ""}Your case is ${c.caseKey}. We'll reply here and in the Help Center as soon as someone picks it up.`
           : `${c.requesterName || "A colleague"} opened ${c.caseKey} and added you so you can follow it.`,
-        body: c.description, ctaText: "View the case", ctaUrl: ctx.portalUrl(c.id),
+        body: c.description, ctaUrl: ctx.portalUrl(c.id), ...ctaFor(r, "View your case"),
       }));
     }
   }
@@ -155,7 +162,7 @@ export async function notifyCaseMessage(c: SupportCase, msg: { authorUserId: str
       await safeEmail("case.reply→customer", () => sendCaseEmail({
         to: r.email, org, orgName: org.name, caseKey: c.caseKey, subject: c.subject,
         heading: `${msg.authorName} replied`, intro: `There's a new reply on case ${c.caseKey}.`,
-        body: msg.body, ctaText: "Reply in the Help Center", ctaUrl: ctx.portalUrl(c.id),
+        body: msg.body, ctaUrl: ctx.portalUrl(c.id), ...ctaFor(r, "Reply in the Help Center"),
       }));
     }
     return;
@@ -217,20 +224,20 @@ export async function notifyCaseUpdated(before: SupportCase, after: SupportCase,
       if (after.status === "RESOLVED") {
         await safeEmail("case.resolved→customer", () => sendCaseEmail({
           to, org, orgName: org.name, caseKey: after.caseKey, subject: after.subject,
-          heading: `${after.caseKey} is resolved`, intro: `${actor.name} marked this case resolved. If anything is still wrong, reply and it reopens automatically.`,
-          ctaText: "View the case", ctaUrl: ctx.portalUrl(after.id),
+          heading: `${after.caseKey} is resolved`, intro: r.role === "reviewer" ? `${actor.name} marked this case resolved.` : `${actor.name} marked this case resolved. If anything is still wrong, reply and it reopens automatically.`,
+          ctaUrl: ctx.portalUrl(after.id), ...ctaFor(r, "View the case"),
         }));
       } else if (after.status === "WAITING_ON_CUSTOMER") {
         await safeEmail("case.waiting→customer", () => sendCaseEmail({
           to, org, orgName: org.name, caseKey: after.caseKey, subject: after.subject,
-          heading: `We need something from you on ${after.caseKey}`, intro: `${actor.name} is waiting on your reply to keep this moving.`,
-          ctaText: "Reply in the Help Center", ctaUrl: ctx.portalUrl(after.id),
+          heading: r.role === "reviewer" ? `${after.caseKey} is waiting on the requester` : `We need something from you on ${after.caseKey}`, intro: r.role === "reviewer" ? `${actor.name} is waiting on a reply from the requester.` : `${actor.name} is waiting on your reply to keep this moving.`,
+          ctaUrl: ctx.portalUrl(after.id), ...ctaFor(r, "Reply in the Help Center"),
         }));
       } else {
         await safeEmail("case.blocked→customer", () => sendCaseEmail({
           to, org, orgName: org.name, caseKey: after.caseKey, subject: after.subject,
           heading: `${after.caseKey} is blocked for now`, intro: `${actor.name} marked this case blocked: we're waiting on something outside the case before work can continue. You'll hear as soon as it moves.`,
-          ctaText: "View the case", ctaUrl: ctx.portalUrl(after.id),
+          ctaUrl: ctx.portalUrl(after.id), ...ctaFor(r, "View the case"),
         }));
       }
     }

@@ -215,9 +215,14 @@ function NewCaseForm({ slug, me }: { slug: string; me: Me }) {
     if (!e) return;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return;
     const known = colleagues?.find(c => c.email?.toLowerCase() === e);
-    const [setIds, setEmails, ids, emails] = shareRole === "reviewer" ? [setReviewerIds, setReviewerEmails, reviewerIds, reviewerEmails] : [setWatcherIds, setWatcherEmails, watcherIds, watcherEmails];
-    if (known) { if (!ids.includes(known.id)) setIds(prev => [...prev, known.id]); }
-    else if (!emails.includes(e)) setEmails(prev => [...prev, e]);
+    // One person, one role: adding someone again under the other role MOVES them there.
+    if (known) {
+      setWatcherIds(prev => prev.filter(x => x !== known.id)); setReviewerIds(prev => prev.filter(x => x !== known.id));
+      (shareRole === "reviewer" ? setReviewerIds : setWatcherIds)(prev => [...prev, known.id]);
+    } else {
+      setWatcherEmails(prev => prev.filter(x => x !== e)); setReviewerEmails(prev => prev.filter(x => x !== e));
+      (shareRole === "reviewer" ? setReviewerEmails : setWatcherEmails)(prev => [...prev, e]);
+    }
     setEmailDraft("");
   };
   const post = async (fd: FormData): Promise<CreateResult> => {
@@ -442,7 +447,7 @@ function NewCaseForm({ slug, me }: { slug: string; me: Me }) {
             ))}
           </div>
           {(colleagues?.length ?? 0) > 0 && (
-            <select value="" onChange={e => { const id = e.target.value; if (!id) return; if (shareRole === "reviewer") { if (!reviewerIds.includes(id)) setReviewerIds(prev => [...prev, id]); } else if (!watcherIds.includes(id)) setWatcherIds(prev => [...prev, id]); }} style={{ ...inputStyle, marginBottom: 8 }} data-testid="portal-watcher-select">
+            <select value="" onChange={e => { const id = e.target.value; if (!id) return; setWatcherIds(prev => prev.filter(x => x !== id)); setReviewerIds(prev => prev.filter(x => x !== id)); (shareRole === "reviewer" ? setReviewerIds : setWatcherIds)(prev => [...prev, id]); }} style={{ ...inputStyle, marginBottom: 8 }} data-testid="portal-watcher-select">
               <option value="">Add a colleague…</option>
               {colleagues!.filter(c => !watcherIds.includes(c.id) && !reviewerIds.includes(c.id) && c.id !== onBehalfOf).map(c => <option key={c.id} value={c.id}>{personName(c)}{c.email ? ` · ${c.email}` : ""}</option>)}
             </select>

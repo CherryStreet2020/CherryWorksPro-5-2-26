@@ -559,7 +559,7 @@ export interface WatcherActor { userId?: string | null; contactId?: string | nul
  * authority is re-evaluated under those locks by `authorize` (customer callers) — an agent caller
  * (`actor.userId`) is trusted by the route. Returns the watcher list after the change.
  */
-export async function addWatcher(orgId: string, caseId: string, contactId: string, actor: WatcherActor, authorize?: (tx: DbOrTx, c: SupportCase) => Promise<boolean>, role: "watcher" | "reviewer" = "watcher") {
+export async function addWatcher(orgId: string, caseId: string, contactId: string, actor: WatcherActor, authorize?: (tx: DbOrTx, c: SupportCase) => Promise<boolean>, role: "watcher" | "reviewer" = "watcher", authorizeRoleChange?: (tx: DbOrTx, c: SupportCase) => Promise<boolean>) {
   const changed = await db.transaction(async (tx) => {
     const [c] = await tx.select().from(supportCases).where(and(eq(supportCases.id, caseId), eq(supportCases.orgId, orgId))).for("update");
     if (!c) throw new CaseAccessError("Support case not found");
@@ -577,8 +577,11 @@ export async function addWatcher(orgId: string, caseId: string, contactId: strin
     // Already following with the same role → nothing to do; with a different role → the role changes
     // (a reviewer promoted to watcher, or the reverse); otherwise a new row.
     const [existing] = await tx.select({ id: supportCaseWatchers.id, role: supportCaseWatchers.role }).from(supportCaseWatchers)
-      .where(and(eq(supportCaseWatchers.caseId, caseId), eq(supportCaseWatchers.contactId, contactId))).for("update");
+      .where(and(eq(supportCaseWatchers.orgId, orgId), eq(supportCaseWatchers.caseId, caseId), eq(supportCaseWatchers.contactId, contactId))).for("update");
     if (existing && existing.role === role) return false;
+    // Changing an EXISTING follower's role is a permission change, not an invitation: it needs the
+    // same authority as removing them (requester / Customer Admin), never a fellow watcher's.
+    if (existing && authorizeRoleChange && !(await authorizeRoleChange(tx, c))) throw new CaseAccessError("Support case not found");
     if (existing) await tx.update(supportCaseWatchers).set({ role }).where(eq(supportCaseWatchers.id, existing.id));
     else await tx.insert(supportCaseWatchers).values({ orgId, caseId, contactId, role, addedByContactId: actor.contactId ?? null, addedByUserId: actor.userId ?? null }).onConflictDoNothing();
     const name = `${target.firstName} ${target.lastName}`.trim() || target.email || "colleague";

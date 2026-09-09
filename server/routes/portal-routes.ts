@@ -103,12 +103,20 @@ function visibleCaseWhere(req: Request) {
   )!;
 }
 /** In-transaction re-check of the same authority (for writes: message, upload, watcher changes). */
-/** Writes (reply, upload, add people): anyone with access EXCEPT a reviewer (review only). */
+/**
+ * Authority re-checks run INSIDE the write transaction under the case row lock.
+ * authorizeContact: writes (reply, upload, add people) — anyone with access EXCEPT a reviewer (review only).
+ * authorizeContactAccess: any access, a reviewer included — used for self-removal ("Stop following").
+ * authorizeContactManage: requester or Customer Admin only — removing other people.
+ */
 function authorizeContact(req: Request) {
   const p = req.portal!;
   return async (tx: any, c: any) => { const r = await cases.customerCanAccess(tx, p.orgId, c, p.contact.id, { lock: true }); return r.ok && r.role !== "reviewer"; };
 }
-/** Only the requester or a Customer Admin may remove watchers; anyone with access may add. */
+function authorizeContactAccess(req: Request) {
+  const p = req.portal!;
+  return async (tx: any, c: any) => (await cases.customerCanAccess(tx, p.orgId, c, p.contact.id, { lock: true })).ok;
+}
 function authorizeContactManage(req: Request) {
   const p = req.portal!;
   return async (tx: any, c: any) => { const r = await cases.customerCanAccess(tx, p.orgId, c, p.contact.id, { lock: true }); return r.ok && r.role !== "watcher" && r.role !== "reviewer"; };
@@ -498,7 +506,7 @@ export function registerPortalRoutes(app: Express) {
       const [row] = await db.select({ id: supportCases.id }).from(supportCases).where(and(visibleCaseWhere(req), eq(supportCases.id, String(req.params.id))));
       if (!row) return res.status(404).json({ message: "Support case not found" });
       const contactId = body.contactId ?? await resolveWatcherEmail(p, body.email!);
-      const r = await cases.addWatcher(p.orgId, row.id, contactId, { contactId: p.contact.id, name: `${p.contact.firstName} ${p.contact.lastName}`.trim() }, authorizeContact(req), body.role ?? "watcher");
+      const r = await cases.addWatcher(p.orgId, row.id, contactId, { contactId: p.contact.id, name: `${p.contact.firstName} ${p.contact.lastName}`.trim() }, authorizeContact(req), body.role ?? "watcher", authorizeContactManage(req));
       return res.status(r.changed ? 201 : 200).json(r.watchers);
     } catch (err: any) {
       if (err instanceof cases.CaseAccessError) return res.status(404).json({ message: "Support case not found" });
@@ -512,7 +520,7 @@ export function registerPortalRoutes(app: Express) {
       if (!row) return res.status(404).json({ message: "Support case not found" });
       const target = String(req.params.contactId);
       // A watcher may remove THEMSELVES; removing others is for the requester / Customer Admin.
-      const auth = target === p.contact.id ? authorizeContact(req) : authorizeContactManage(req);
+      const auth = target === p.contact.id ? authorizeContactAccess(req) : authorizeContactManage(req);
       const r = await cases.removeWatcher(p.orgId, row.id, target, { contactId: p.contact.id, name: `${p.contact.firstName} ${p.contact.lastName}`.trim() }, auth);
       return res.json(r.watchers);
     } catch (err: any) {

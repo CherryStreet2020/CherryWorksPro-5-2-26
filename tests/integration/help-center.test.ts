@@ -771,6 +771,10 @@ describe("Help Center request form v2: intake, files, watchers, on-behalf-of, BL
     const key = (await (await api("GET", `/api/support/cases/${id}`, admin)).json()).caseKey;
     const inb = await fetch(`${BASE}/api/test/inbound-email`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from: `Olga <${hOutEmail}>`, to: "support@cwpro.dev", subject: `Re: [${key}] reviewed`, text: "from a reviewer", messageId: `<rv.${stamp}@test>`, senderAuthenticated: true, orgId: hOrgId }) }).then(x => x.json());
     expect(inb.outcome).toBe("stored");
+    // A fellow watcher may invite people but may NOT change an existing follower's role.
+    expect((await portal("POST", `/cases/${id}/watchers`, hReqCookie, { contactId: hW1Id })).status).toBe(201);
+    expect((await portal("POST", `/cases/${id}/watchers`, hW1Cookie, { contactId: hOutId, role: "watcher" })).status).toBe(404);
+    expect((await (await portal("GET", `/cases/${id}/watchers`, hReqCookie)).json()).find((w: any) => w.contactId === hOutId).role).toBe("reviewer");
     // The requester promotes her to a watcher: now she can reply. Then the firm demotes her again.
     expect((await portal("POST", `/cases/${id}/watchers`, hReqCookie, { contactId: hOutId, role: "watcher" })).status).toBe(201);
     expect((await portal("POST", `/cases/${id}/messages`, hOutCookie, { body: "now a watcher" })).status).toBe(201);
@@ -781,6 +785,9 @@ describe("Help Center request form v2: intake, files, watchers, on-behalf-of, BL
     expect(firm.events.filter((e: any) => e.kind === "watcher").map((e: any) => e.toValue)).toEqual(expect.arrayContaining(["Olga Outside (review only)", "Olga Outside"]));
     // A Customer Admin can set BLOCKER too.
     expect((await portal("PATCH", `/cases/${id}`, hAdminCookie, { priority: "BLOCKER" })).status).toBe(200);
+    // A reviewer can still stop following (self-removal), after which the case is gone for her.
+    expect((await portal("DELETE", `/cases/${id}/watchers/${hOutId}`, hOutCookie)).status).toBe(200);
+    expect((await portal("GET", `/cases/${id}`, hOutCookie)).status).toBe(404);
   });
 
   it("inbound mail follows the same authority: watchers append until removed; a reassigned requester's old address is stored; legacy email-only requesters append", async () => {
