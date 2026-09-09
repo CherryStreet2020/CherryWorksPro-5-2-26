@@ -9,11 +9,13 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { randomUUID } from "crypto";
+import { randomUUID, createHash } from "crypto";
 import type { Response } from "express";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "./db";
-import { supportCaseAttachments, type SupportCaseAttachment } from "@shared/schema";
+import { supportCaseAttachments, supportCases, type SupportCaseAttachment } from "@shared/schema";
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type DbOrTx = typeof db | Tx;
 
 export const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
 const BLOCKED_EXT = new Set([".exe", ".bat", ".cmd", ".com", ".scr", ".ps1", ".sh", ".js", ".jar", ".msi", ".dll", ".vbs", ".html", ".htm", ".svg"]);
@@ -56,6 +58,10 @@ async function azure() {
 export function newStorageKey(orgId: string, caseId: string, filename: string): string {
   return `support-cases/${orgId}/${caseId}/${randomUUID()}-${safeFilename(filename)}`;
 }
+/** Deterministic key for the durable upload protocol: a retry of the same file id lands on the same blob. */
+export function stableStorageKey(orgId: string, caseId: string, clientFileId: string, filename: string): string {
+  return `support-cases/${orgId}/${caseId}/${clientFileId}/${safeFilename(filename)}`;
+}
 
 export async function putBytes(key: string, bytes: Buffer, contentType: string): Promise<void> {
   if (useObjectStorage) {
@@ -97,23 +103,92 @@ export interface CreateAttachmentInput {
   filename: string; mimeType: string; bytes: Buffer;
   uploadedByUserId?: string | null; uploadedByContactId?: string | null;
   source?: "AGENT" | "PORTAL" | "IMPORT" | "EMAIL"; externalRef?: string | null;
+  /** Stable id for idempotent retries (the uploader's, or a server uuid when absent). */
+  clientFileId?: string | null;
+  /**
+   * Re-evaluated INSIDE the transaction, under the case row lock, before any byte is written:
+   * a customer whose access was revoked while their upload was in flight must not store a file.
+   * Return false to refuse. Runs on the transaction connection.
+   */
+  authorize?: (tx: Tx) => Promise<boolean>;
 }
 
+export class AttachmentConflictError extends Error {}
+export const CLIENT_FILE_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
+/**
+ * The `clientFileIds` field that travels beside multipart `files`: absent → server ids; present →
+ * one valid id per file, in order, or the whole request is refused (a silently mismatched array
+ * would break the retry contract for some files without the client knowing).
+ */
+export function parseClientFileIds(raw: unknown, fileCount: number): string[] | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  let ids: unknown = raw;
+  if (typeof raw === "string") { try { ids = raw.startsWith("[") ? JSON.parse(raw) : [raw]; } catch { throw new Error("clientFileIds must be a JSON array of ids"); } }
+  if (!Array.isArray(ids) || ids.length !== fileCount || !ids.every(x => typeof x === "string" && CLIENT_FILE_ID_RE.test(x))) {
+    throw new Error(`clientFileIds must list exactly one id (8–64 letters, digits, - or _) per uploaded file (${fileCount})`);
+  }
+  if (new Set(ids as string[]).size !== ids.length) throw new Error("clientFileIds must be unique");
+  return ids as string[];
+}
+export class AttachmentForbiddenError extends Error {}
+
+/**
+ * Durable upload protocol. The row is RESERVED first (deterministic storage key, completed_at
+ * NULL), then the bytes go to that key, then the row is completed — all under the case row lock,
+ * so a crash leaves a pending row whose retry lands on the same key (one row, one blob), a
+ * concurrent retry waits and then sees the completed row, and a different payload under the
+ * same id is refused. Pending rows are invisible everywhere except cleanup.
+ */
 export async function createAttachment(input: CreateAttachmentInput): Promise<SupportCaseAttachment> {
   if (!isAllowedAttachment(input.filename)) throw new Error("That file type is not allowed");
   if (input.bytes.length === 0) throw new Error("The file is empty");
   if (input.bytes.length > MAX_ATTACHMENT_BYTES) throw new Error("Files must be 15 MB or smaller");
   const filename = safeFilename(input.filename);
-  const key = newStorageKey(input.orgId, input.caseId, filename);
+  // A provided id must be valid — replacing a bad one with a random id would make every retry a new file.
+  if (input.clientFileId != null && input.clientFileId !== "" && !CLIENT_FILE_ID_RE.test(input.clientFileId)) throw new Error("Invalid file id");
+  const clientFileId = input.clientFileId && CLIENT_FILE_ID_RE.test(input.clientFileId) ? input.clientFileId : randomUUID();
+  const key = stableStorageKey(input.orgId, input.caseId, clientFileId, filename);
   const mime = input.mimeType && input.mimeType !== "application/octet-stream" ? input.mimeType : guessMime(filename);
-  await putBytes(key, input.bytes, mime);
-  const [row] = await db.insert(supportCaseAttachments).values({
-    orgId: input.orgId, caseId: input.caseId, messageId: input.messageId ?? null,
-    filename, mimeType: mime, size: input.bytes.length, storageKey: key,
-    uploadedByUserId: input.uploadedByUserId ?? null, uploadedByContactId: input.uploadedByContactId ?? null,
-    source: input.source ?? "AGENT", externalRef: input.externalRef ?? null,
-  }).returning();
-  return row;
+  const digest = createHash("sha256").update(input.bytes).digest("hex");
+  const lockCase = async (tx: Tx) => {
+    // Global lock order: case row → (contact rows, checked by `authorize`) → attachment row.
+    const [c] = await tx.select({ id: supportCases.id }).from(supportCases)
+      .where(and(eq(supportCases.id, input.caseId), eq(supportCases.orgId, input.orgId))).for("update");
+    if (!c) throw new Error("Support case not found");
+    if (input.authorize && !(await input.authorize(tx))) throw new AttachmentForbiddenError("You no longer have access to this case");
+  };
+  // Phase 1 — the reservation (with the payload digest) is COMMITTED before any byte is written, so a
+  // crash after the blob store still leaves a row naming the key (cleanup finds it) and the digest
+  // (a different payload under the same id is refused on retry).
+  const reservedId = await db.transaction(async (tx) => {
+    await lockCase(tx);
+    const [reserved] = await tx.insert(supportCaseAttachments).values({
+      orgId: input.orgId, caseId: input.caseId, messageId: input.messageId ?? null,
+      filename, mimeType: mime, size: input.bytes.length, storageKey: key,
+      uploadedByUserId: input.uploadedByUserId ?? null, uploadedByContactId: input.uploadedByContactId ?? null,
+      source: input.source ?? "AGENT", externalRef: input.externalRef ?? null,
+      clientFileId, contentSha256: digest, completedAt: null,
+    }).onConflictDoNothing({ target: [supportCaseAttachments.caseId, supportCaseAttachments.clientFileId], where: sql`client_file_id IS NOT NULL` }).returning({ id: supportCaseAttachments.id });
+    if (reserved) return reserved.id;
+    const [existing] = await tx.select({ id: supportCaseAttachments.id }).from(supportCaseAttachments)
+      .where(and(eq(supportCaseAttachments.caseId, input.caseId), eq(supportCaseAttachments.clientFileId, clientFileId)));
+    if (!existing) throw new Error("Could not reserve the attachment");
+    return existing.id;
+  });
+  // Phase 2 — bytes + completion, serialised per attachment (case lock, then the row lock).
+  return db.transaction(async (tx) => {
+    await lockCase(tx);
+    const [row] = await tx.select().from(supportCaseAttachments).where(eq(supportCaseAttachments.id, reservedId)).for("update");
+    if (!row) throw new Error("Support case not found"); // the case (and its rows) was deleted meanwhile
+    // Digest first — before any completed-row shortcut — so a different payload under the same id
+    // is refused whether the earlier attempt finished or not.
+    if (row.contentSha256 && row.contentSha256 !== digest) throw new AttachmentConflictError("A different file was already uploaded under this id");
+    if (row.completedAt) return row;
+    await putBytes(row.storageKey, input.bytes, mime);
+    const [done] = await tx.update(supportCaseAttachments).set({ completedAt: new Date(), contentSha256: digest, size: input.bytes.length, mimeType: mime })
+      .where(eq(supportCaseAttachments.id, row.id)).returning();
+    return done;
+  });
 }
 
 export function guessMime(filename: string): string {
@@ -128,12 +203,20 @@ export function guessMime(filename: string): string {
   return map[ext] || "application/octet-stream";
 }
 
+/** Completed attachments only — a reservation whose bytes never arrived is not a file. */
 export async function listAttachments(orgId: string, caseId: string): Promise<SupportCaseAttachment[]> {
-  return db.select().from(supportCaseAttachments).where(and(eq(supportCaseAttachments.orgId, orgId), eq(supportCaseAttachments.caseId, caseId))).orderBy(supportCaseAttachments.createdAt);
+  return db.select().from(supportCaseAttachments)
+    .where(and(eq(supportCaseAttachments.orgId, orgId), eq(supportCaseAttachments.caseId, caseId), isNotNull(supportCaseAttachments.completedAt)))
+    .orderBy(supportCaseAttachments.createdAt);
+}
+/** Every row, pending ones included: the case-deletion cleanup must remove blobs a crashed upload left behind. */
+export async function listAttachmentsForCleanup(orgId: string, caseId: string, conn: DbOrTx = db): Promise<SupportCaseAttachment[]> {
+  return conn.select().from(supportCaseAttachments).where(and(eq(supportCaseAttachments.orgId, orgId), eq(supportCaseAttachments.caseId, caseId)));
 }
 
 export async function getAttachment(orgId: string, id: string): Promise<SupportCaseAttachment | undefined> {
-  const [row] = await db.select().from(supportCaseAttachments).where(and(eq(supportCaseAttachments.orgId, orgId), eq(supportCaseAttachments.id, id)));
+  const [row] = await db.select().from(supportCaseAttachments)
+    .where(and(eq(supportCaseAttachments.orgId, orgId), eq(supportCaseAttachments.id, id), isNotNull(supportCaseAttachments.completedAt)));
   return row;
 }
 
@@ -147,8 +230,9 @@ export async function deleteAttachment(orgId: string, id: string): Promise<boole
 
 export async function existingExternalRefs(orgId: string, caseIds: string[]): Promise<Set<string>> {
   if (caseIds.length === 0) return new Set();
+  // Completed only: a reservation whose download failed is retried by the next import.
   const rows = await db.select({ ref: supportCaseAttachments.externalRef }).from(supportCaseAttachments)
-    .where(and(eq(supportCaseAttachments.orgId, orgId), inArray(supportCaseAttachments.caseId, caseIds)));
+    .where(and(eq(supportCaseAttachments.orgId, orgId), inArray(supportCaseAttachments.caseId, caseIds), isNotNull(supportCaseAttachments.completedAt)));
   return new Set(rows.map(r => r.ref).filter((x): x is string => !!x));
 }
 
@@ -157,6 +241,7 @@ export function attachmentView(a: SupportCaseAttachment, urlBase: string) {
   return {
     id: a.id, caseId: a.caseId, messageId: a.messageId, filename: a.filename, mimeType: a.mimeType, size: a.size,
     isImage: a.mimeType.startsWith("image/"), source: a.source, createdAt: a.createdAt,
+    clientFileId: a.clientFileId ?? null,
     url: `${urlBase}/${a.id}`,
   };
 }

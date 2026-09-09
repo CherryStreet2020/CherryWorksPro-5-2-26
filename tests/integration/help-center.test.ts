@@ -6,6 +6,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { TEST_BASE as BASE } from "../helpers/base";
+import { waitForCapturedEmail } from "../helpers/email-capture";
 
 interface Ctx { cookie: string; csrfToken: string }
 let admin: Ctx = { cookie: "", csrfToken: "" };
@@ -404,5 +405,401 @@ describe("Help Center: approved domains, self-registration, Customer Admin, bill
     const src = await import("node:fs").then(fs => fs.readFileSync(new URL("../../server/support-notifications.ts", import.meta.url), "utf8"));
     expect(src).toContain("/help/${org.slug}/cases/${caseId}");
     expect(src).not.toContain("/portal/${org.slug}/cases/");
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Help Center request form v2: intake, multipart + idempotent uploads, watchers,
+// on-behalf-of, requester ownership, BLOCKED, inbound-mail authority, notifications.
+// Self-contained: its own client + approved domain so it never depends on the
+// state the first suite leaves behind.
+// ────────────────────────────────────────────────────────────────────────────
+describe("Help Center request form v2: intake, files, watchers, on-behalf-of, BLOCKED, mail", () => {
+  const dom2 = `helix-${stamp}.example`;
+  const hAdminEmail = `hadmin.${stamp}@${dom2}`;
+  const hReqEmail = `hreq.${stamp}@${dom2}`;
+  const hW1Email = `wanda.${stamp}@${dom2}`;
+  const hW2Email = `walt.${stamp}@${dom2}`;
+  const hOutEmail = `olga.${stamp}@${dom2}`;
+  let hClientId = "";
+  let hOrgId = "";
+  let hOtherClientId = "";
+  let hOtherContactId = "";
+  let hAdminId = ""; let hReqId = ""; let hW1Id = ""; let hW2Id = ""; let hOutId = "";
+  let hAdminCookie = ""; let hReqCookie = ""; let hW1Cookie = ""; let hW2Cookie = ""; let hOutCookie = "";
+  let watchedCaseId = ""; let watchedCaseKey = "";
+  let reassignedCaseId = ""; let reassignedCaseKey = "";
+  let legacyFlagCaseId = "";
+  const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+
+  const firmCases = async () => (await (await api("GET", `/api/support/cases?view=all&clientId=${hClientId}`, admin)).json()) as any[];
+  const firmContacts = async () => (await (await api("GET", `/api/clients/${hClientId}/contacts`, admin)).json()) as any[];
+  function multipart(cookie: string, fields: Record<string, string>, files: { name: string; bytes: Buffer; type: string }[]) {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+    for (const f of files) fd.append("files", new Blob([f.bytes], { type: f.type }), f.name);
+    return fetch(`${BASE}/api/portal/${orgSlug}/cases`, { method: "POST", headers: { Cookie: cookie, "X-Requested-With": "cwp-portal" }, body: fd });
+  }
+  function portalUpload(cookie: string, caseId: string, files: { name: string; bytes: Buffer; type: string }[]) {
+    const fd = new FormData();
+    for (const f of files) fd.append("files", new Blob([f.bytes], { type: f.type }), f.name);
+    return fetch(`${BASE}/api/portal/${orgSlug}/cases/${caseId}/attachments`, { method: "POST", headers: { Cookie: cookie, "X-Requested-With": "cwp-portal" }, body: fd });
+  }
+
+  it("setup: a client with an approved domain, a Customer Admin, a requester, three colleagues, and another client's contact", async () => {
+    admin = await login("admin.test@cwpro.dev", "admin123");
+    orgSlug = (await (await api("GET", "/api/support/portal-info", admin)).json()).orgSlug;
+    hOrgId = (await (await api("GET", "/api/auth/me", admin)).json()).orgId;
+    expect(hOrgId).toBeTruthy();
+    const c = await api("POST", "/api/clients", admin, { name: `Helix Labs ${stamp}` });
+    expect(c.ok).toBe(true);
+    hClientId = (await c.json()).id;
+    const o = await api("POST", "/api/clients", admin, { name: `Quill Co ${stamp}` });
+    hOtherClientId = (await o.json()).id;
+    const dom = await api("PATCH", `/api/clients/${hClientId}`, admin, { portalEmailDomains: [dom2] });
+    expect(dom.ok, await dom.clone().text()).toBe(true);
+    const mk = async (clientId: string, firstName: string, lastName: string, email: string, extra: Record<string, unknown> = {}) => {
+      const r = await api("POST", `/api/clients/${clientId}/contacts`, admin, { firstName, lastName, email, ...extra });
+      expect(r.status, await r.clone().text()).toBe(201);
+      return (await r.json()).id as string;
+    };
+    hAdminId = await mk(hClientId, "Hana", "Admin", hAdminEmail, { portalRole: "admin" });
+    hReqId = await mk(hClientId, "Rex", "Requester", hReqEmail);
+    hW1Id = await mk(hClientId, "Wanda", "One", hW1Email);
+    hW2Id = await mk(hClientId, "Walt", "Two", hW2Email);
+    hOutId = await mk(hClientId, "Olga", "Outside", hOutEmail);
+    hOtherContactId = await mk(hOtherClientId, "Quinn", "Quill", `quinn.${stamp}@quill-${stamp}.example`);
+    hAdminCookie = (await signIn(hAdminEmail)).cookie;
+    hReqCookie = (await signIn(hReqEmail)).cookie;
+    hW1Cookie = (await signIn(hW1Email)).cookie;
+    hW2Cookie = (await signIn(hW2Email)).cookie;
+    hOutCookie = (await signIn(hOutEmail)).cookie;
+    // The org's inbound address (used by the mail tests below).
+    const s = await api("PATCH", "/api/support/settings", admin, { supportInboundAddress: "support@cwpro.dev" });
+    expect(s.ok, await s.clone().text()).toBe(true);
+  });
+
+  it("JSON create with intake round-trips to the customer detail and the firm detail", async () => {
+    const intake = { affectedArea: "Costing report", references: "PO-4471, WO-88", impact: "TEAM", stepsToReproduce: "Open Reports → Costing → run for August", expected: "Totals match the GL", startedAt: "2026-09-01", neededBy: "2026-09-15", environment: "Production" };
+    const r = await portal("POST", "/cases", hReqCookie, { subject: `Costing totals drift ${stamp}`, description: "Off by $412.10", priority: "HIGH", intake });
+    expect(r.status, await r.clone().text()).toBe(201);
+    const j = await r.json();
+    expect(j.id).toBeTruthy(); expect(j.caseKey).toBeTruthy(); expect(j.status).toBe("NEW");
+    expect(j.attachments).toEqual([]); expect(j.attachmentErrors).toEqual([]);
+    const mine = await (await portal("GET", `/cases/${j.id}`, hReqCookie)).json();
+    expect(mine.intake).toEqual(intake);
+    expect(mine.priority).toBe("HIGH");
+    expect(mine.isRequester).toBe(true);
+    expect(mine.requesterName).toBe("Rex Requester");
+    const firm = await (await api("GET", `/api/support/cases/${j.id}`, admin)).json();
+    expect(firm.intake).toEqual(intake);
+    expect(firm.source).toBe("PORTAL");
+    expect(firm.requesterContactId).toBe(hReqId);
+  });
+
+  it("multipart create with two files + clientFileIds; a replay with the same submissionKey returns the same case with no duplicate files", async () => {
+    const subject = `Screenshots attached ${stamp}`;
+    const key = `form-${stamp}-abc`;
+    const ids = [`file-${stamp}-one`, `file-${stamp}-two`];
+    const intake = { affectedArea: "Purchasing", impact: "ONE_PERSON" };
+    const fields = { subject, description: "See files", priority: "MEDIUM", submissionKey: key, clientFileIds: JSON.stringify(ids), intake: JSON.stringify(intake), watcherContactIds: "[]", watcherEmails: "[]" };
+    const files = [{ name: "shot one.png", bytes: PNG, type: "image/png" }, { name: "notes.txt", bytes: Buffer.from("hello from the form"), type: "text/plain" }];
+    const r = await multipart(hReqCookie, fields, files);
+    expect(r.status, await r.clone().text()).toBe(201);
+    const j = await r.json();
+    expect(j.attachmentErrors).toEqual([]);
+    expect(j.attachments.length).toBe(2);
+    expect(j.attachments.map((a: any) => a.clientFileId).sort()).toEqual([...ids].sort());
+    expect(j.attachments.map((a: any) => a.filename).sort()).toEqual(["notes.txt", "shot one.png"]);
+    const firm = await (await api("GET", `/api/support/cases/${j.id}`, admin)).json();
+    expect(firm.attachments.length).toBe(2);
+    expect(firm.attachments.every((a: any) => a.source === "PORTAL")).toBe(true);
+    expect(firm.intake).toEqual(intake);
+
+    const again = await multipart(hReqCookie, fields, files);
+    expect(again.status, await again.clone().text()).toBe(200);
+    const rj = await again.json();
+    expect(rj.replay).toBe(true);
+    expect(rj.id).toBe(j.id);
+    expect(rj.attachments.length).toBe(2);
+    expect(rj.attachments.map((a: any) => a.id).sort()).toEqual(j.attachments.map((a: any) => a.id).sort());
+    const firm2 = await (await api("GET", `/api/support/cases/${j.id}`, admin)).json();
+    expect(firm2.attachments.length).toBe(2);
+    expect((await firmCases()).filter(c => c.subject === subject).length).toBe(1);
+  });
+
+  it("watchers at creation: two colleagues by id + one new approved-domain email; watchers see, list, post and upload; a non-watcher member gets 404", async () => {
+    const newEmail = `newbie.${stamp}@${dom2}`;
+    const r = await portal("POST", "/cases", hReqCookie, { subject: `Loop in the team ${stamp}`, watcherContactIds: [hW1Id, hW2Id], watcherEmails: [newEmail] });
+    expect(r.status, await r.clone().text()).toBe(201);
+    const created = await r.json();
+    watchedCaseId = created.id; watchedCaseKey = created.caseKey;
+    expect(watchedCaseKey).toBeTruthy();
+    const ws = await (await portal("GET", `/cases/${watchedCaseId}/watchers`, hReqCookie)).json();
+    expect(ws.length).toBe(3);
+    expect(ws.map((w: any) => w.email).sort()).toEqual([newEmail, hW1Email, hW2Email].sort());
+    expect(ws.map((w: any) => w.contactId)).toEqual(expect.arrayContaining([hW1Id, hW2Id]));
+    const newbie = (await firmContacts()).find(c => c.email === newEmail);
+    expect(newbie, "the new watcher exists as a contact of this client").toBeTruthy();
+    expect(newbie.portalPendingAt).toBeTruthy();
+    expect(newbie.portalRole).toBe("member");
+
+    // A watching member sees the case, lists it, posts and uploads.
+    const d = await portal("GET", `/cases/${watchedCaseId}`, hW1Cookie);
+    expect(d.status, await d.clone().text()).toBe(200);
+    const dj = await d.json();
+    expect(dj.isRequester).toBe(false);
+    expect(dj.watchers.map((w: any) => w.contactId)).toContain(hW1Id);
+    const list = await (await portal("GET", "/cases", hW1Cookie)).json();
+    expect(list.cases.map((c: any) => c.id)).toContain(watchedCaseId);
+    const m = await portal("POST", `/cases/${watchedCaseId}/messages`, hW1Cookie, { body: "Following this one." });
+    expect(m.status, await m.clone().text()).toBe(201);
+    const up = await portalUpload(hW1Cookie, watchedCaseId, [{ name: "watcher.png", bytes: PNG, type: "image/png" }]);
+    expect(up.status, await up.clone().text()).toBe(201);
+    // A member who is neither requester nor watcher: nothing.
+    expect((await portal("GET", `/cases/${watchedCaseId}`, hOutCookie)).status).toBe(404);
+    const outList = await (await portal("GET", "/cases", hOutCookie)).json();
+    expect(outList.cases.map((c: any) => c.id)).not.toContain(watchedCaseId);
+    expect((await portal("POST", `/cases/${watchedCaseId}/messages`, hOutCookie, { body: "hi" })).status).toBe(404);
+  });
+
+  it("a watcher email off the approved domains, or a colleague of another client, refuses the whole submission (no case)", async () => {
+    const before = (await firmCases()).length;
+    const bad = await portal("POST", "/cases", hReqCookie, { subject: `Bad watcher ${stamp}`, watcherEmails: [`outsider.${stamp}@not-approved-${stamp}.example`] });
+    expect(bad.status, await bad.clone().text()).toBe(400);
+    expect((await bad.json()).message).toMatch(/approved/i);
+    const foreign = await portal("POST", "/cases", hReqCookie, { subject: `Foreign watcher ${stamp}`, watcherContactIds: [hOtherContactId] });
+    expect([400, 403], await foreign.clone().text()).toContain(foreign.status);
+    const shared = await portal("POST", "/cases", hReqCookie, { subject: `Gmail watcher ${stamp}`, watcherEmails: [`someone.${stamp}@gmail.com`] });
+    expect(shared.status).toBe(400);
+    const after = await firmCases();
+    expect(after.length).toBe(before);
+    expect(after.some(c => /Bad watcher|Foreign watcher|Gmail watcher/.test(c.subject))).toBe(false);
+    // And no contact was provisioned for the refused address.
+    expect((await firmContacts()).some(c => c.email.startsWith(`outsider.${stamp}@`))).toBe(false);
+  });
+
+  it("on behalf of: a Customer Admin opens a case for a colleague and keeps watching it; a member may not", async () => {
+    const r = await portal("POST", "/cases", hAdminCookie, { subject: `Opened for Wanda ${stamp}`, onBehalfOfContactId: hW1Id });
+    expect(r.status, await r.clone().text()).toBe(201);
+    const id = (await r.json()).id;
+    const d = await (await portal("GET", `/cases/${id}`, hAdminCookie)).json();
+    expect(d.requesterName).toBe("Wanda One");
+    expect(d.isRequester).toBe(false);
+    expect(d.watchers.map((w: any) => w.contactId)).toContain(hAdminId);
+    const firm = await (await api("GET", `/api/support/cases/${id}`, admin)).json();
+    expect(firm.requesterContactId).toBe(hW1Id);
+    expect(firm.watchers.map((w: any) => w.contactId)).toEqual([hAdminId]);
+    // Wanda owns it.
+    const wd = await portal("GET", `/cases/${id}`, hW1Cookie);
+    expect(wd.status).toBe(200);
+    expect((await wd.json()).isRequester).toBe(true);
+    // A member cannot open for someone else.
+    const denied = await portal("POST", "/cases", hReqCookie, { subject: `Sneaky ${stamp}`, onBehalfOfContactId: hW1Id });
+    expect(denied.status, await denied.clone().text()).toBe(403);
+    expect((await firmCases()).some(c => c.subject === `Sneaky ${stamp}`)).toBe(false);
+  });
+
+  it("customer watcher management: add by id and by approved email; self-removal only for watchers; requester removes anyone; events name the colleague", async () => {
+    const r = await portal("POST", "/cases", hReqCookie, { subject: `Manage watchers ${stamp}`, description: "no watchers yet" });
+    expect(r.status).toBe(201);
+    const id = (await r.json()).id;
+    const add1 = await portal("POST", `/cases/${id}/watchers`, hReqCookie, { contactId: hW1Id });
+    expect(add1.status, await add1.clone().text()).toBe(201);
+    expect((await add1.json()).map((w: any) => w.contactId)).toEqual([hW1Id]);
+    // Idempotent re-add: 200, still one.
+    const addAgain = await portal("POST", `/cases/${id}/watchers`, hReqCookie, { contactId: hW1Id });
+    expect(addAgain.status).toBe(200);
+    expect((await addAgain.json()).length).toBe(1);
+    const fresh = `fresh.${stamp}@${dom2}`;
+    const add2 = await portal("POST", `/cases/${id}/watchers`, hReqCookie, { email: fresh });
+    expect(add2.status, await add2.clone().text()).toBe(201);
+    const ws2 = await add2.json();
+    expect(ws2.length).toBe(2);
+    const freshId = ws2.find((w: any) => w.email === fresh).contactId;
+    expect((await portal("POST", `/cases/${id}/watchers`, hReqCookie, { email: `nope.${stamp}@elsewhere-${stamp}.example` })).status).toBe(400);
+    // Another client's contact: refused (the server masks it as not-found rather than confirming the id exists).
+    const foreignAdd = await portal("POST", `/cases/${id}/watchers`, hReqCookie, { contactId: hOtherContactId });
+    expect([400, 404], await foreignAdd.clone().text()).toContain(foreignAdd.status);
+    expect((await (await portal("GET", `/cases/${id}/watchers`, hReqCookie)).json()).length).toBe(2);
+
+    // Wanda (a watcher) may drop herself, not someone else.
+    const notMine = await portal("DELETE", `/cases/${id}/watchers/${freshId}`, hW1Cookie);
+    expect(notMine.status, await notMine.clone().text()).toBe(404);
+    const self = await portal("DELETE", `/cases/${id}/watchers/${hW1Id}`, hW1Cookie);
+    expect(self.status, await self.clone().text()).toBe(200);
+    expect((await self.json()).map((w: any) => w.contactId)).toEqual([freshId]);
+    expect((await portal("GET", `/cases/${id}`, hW1Cookie)).status).toBe(404);
+    // The requester re-adds and then removes her.
+    expect((await portal("POST", `/cases/${id}/watchers`, hReqCookie, { contactId: hW1Id })).status).toBe(201);
+    expect((await portal("GET", `/cases/${id}`, hW1Cookie)).status).toBe(200);
+    const byReq = await portal("DELETE", `/cases/${id}/watchers/${hW1Id}`, hReqCookie);
+    expect(byReq.status, await byReq.clone().text()).toBe(200);
+    expect((await byReq.json()).map((w: any) => w.contactId)).toEqual([freshId]);
+    expect((await portal("GET", `/cases/${id}`, hW1Cookie)).status).toBe(404);
+    expect((await portal("POST", `/cases/${id}/messages`, hW1Cookie, { body: "still here?" })).status).toBe(404);
+    expect((await portalUpload(hW1Cookie, id, [{ name: "late.png", bytes: PNG, type: "image/png" }])).status).toBe(404);
+    // A member who is not on the case cannot touch its watchers at all.
+    expect((await portal("GET", `/cases/${id}/watchers`, hOutCookie)).status).toBe(404);
+    expect((await portal("POST", `/cases/${id}/watchers`, hOutCookie, { contactId: hOutId })).status).toBe(404);
+
+    const d = await (await portal("GET", `/cases/${id}`, hReqCookie)).json();
+    const we = (d.events as any[]).filter(e => e.kind === "watcher");
+    expect(we.filter(e => e.fromValue === "added" && e.toValue === "Wanda One").length).toBe(2);
+    expect(we.filter(e => e.fromValue === "removed" && e.toValue === "Wanda One").length).toBe(2);
+    const freshRow = ws2.find((w: any) => w.contactId === freshId);
+    const freshName = `${freshRow.firstName ?? ""} ${freshRow.lastName ?? ""}`.trim() || fresh;
+    expect(we.some(e => e.fromValue === "added" && e.toValue === freshName)).toBe(true);
+    // The Customer Admin can also remove a watcher on a case that is not theirs.
+    const byAdmin = await portal("DELETE", `/cases/${id}/watchers/${freshId}`, hAdminCookie);
+    expect(byAdmin.status, await byAdmin.clone().text()).toBe(200);
+    expect(await byAdmin.json()).toEqual([]);
+  });
+
+  it("firm side: agents add and remove watchers; colleagues exclude current watchers and the requester; detail carries watchers", async () => {
+    const r = await portal("POST", "/cases", hReqCookie, { subject: `Firm-managed watchers ${stamp}` });
+    const id = (await r.json()).id;
+    const add = await api("POST", `/api/support/cases/${id}/watchers`, admin, { contactId: hW2Id });
+    expect(add.status, await add.clone().text()).toBe(201);
+    expect((await add.json()).map((w: any) => w.contactId)).toEqual([hW2Id]);
+    const col = await (await api("GET", `/api/support/cases/${id}/colleagues`, admin)).json();
+    const colIds = col.map((c: any) => c.id);
+    expect(colIds).not.toContain(hW2Id);
+    expect(colIds).not.toContain(hReqId);
+    expect(colIds).toEqual(expect.arrayContaining([hW1Id, hOutId, hAdminId]));
+    expect(colIds).not.toContain(hOtherContactId);
+    const d = await (await api("GET", `/api/support/cases/${id}`, admin)).json();
+    expect(d.watchers.map((w: any) => w.contactId)).toEqual([hW2Id]);
+    expect((await portal("GET", `/cases/${id}`, hW2Cookie)).status).toBe(200);
+    expect((await api("POST", `/api/support/cases/${id}/watchers`, admin, { contactId: hOtherContactId })).status).toBe(404);
+    expect((await api("POST", `/api/support/cases/${id}/watchers`, admin, { contactId: hReqId })).status).toBe(200); // the requester already follows
+    const del = await api("DELETE", `/api/support/cases/${id}/watchers/${hW2Id}`, admin);
+    expect(del.status, await del.clone().text()).toBe(200);
+    expect(await del.json()).toEqual([]);
+    expect((await portal("GET", `/cases/${id}`, hW2Cookie)).status).toBe(404);
+    const d2 = await (await api("GET", `/api/support/cases/${id}`, admin)).json();
+    expect(d2.events.filter((e: any) => e.kind === "watcher").map((e: any) => [e.fromValue, e.toValue])).toEqual([["added", "Walt Two"], ["removed", "Walt Two"]]);
+    expect((await api("GET", `/api/support/cases/${id}/colleagues`, admin)).status).toBe(200);
+    expect((await (await api("GET", `/api/support/cases/${id}/colleagues`, admin)).json()).map((c: any) => c.id)).toContain(hW2Id);
+  });
+
+  it("visibility tightening: an email-only case is the member's until the agent links a different requester contact", async () => {
+    const k = await api("POST", "/api/support/cases", admin, { clientId: hClientId, subject: `Legacy email case ${stamp}`, requesterName: "Wanda One", requesterEmail: hW1Email });
+    expect(k.status, await k.clone().text()).toBe(201);
+    const row = await k.json();
+    reassignedCaseId = row.id; reassignedCaseKey = row.caseKey;
+    expect(row.requesterContactId).toBeNull();
+    const seen = await portal("GET", `/cases/${reassignedCaseId}`, hW1Cookie);
+    expect(seen.status).toBe(200);
+    expect((await (await portal("GET", "/cases", hW1Cookie)).json()).cases.map((c: any) => c.id)).toContain(reassignedCaseId);
+    // The requester flag for the legacy (email-only) shape is asserted separately below so a wrong
+    // flag cannot mask the access rules this test is about.
+    const legacyFlag = await api("POST", "/api/support/cases", admin, { clientId: hClientId, subject: `Legacy flag case ${stamp}`, requesterName: "Wanda One", requesterEmail: hW1Email });
+    legacyFlagCaseId = (await legacyFlag.json()).id;
+
+    const p = await api("PATCH", `/api/support/cases/${reassignedCaseId}`, admin, { requesterContactId: hW2Id });
+    expect(p.ok, await p.clone().text()).toBe(true);
+    const after = await (await api("GET", `/api/support/cases/${reassignedCaseId}`, admin)).json();
+    expect(after.requesterContactId).toBe(hW2Id);
+    expect(after.requesterEmail).toBe(hW1Email); // the stale address stays on the row…
+    expect((await portal("GET", `/cases/${reassignedCaseId}`, hW1Cookie)).status).toBe(404); // …but no longer grants access
+    expect((await (await portal("GET", "/cases", hW1Cookie)).json()).cases.map((c: any) => c.id)).not.toContain(reassignedCaseId);
+    expect((await portal("POST", `/cases/${reassignedCaseId}/messages`, hW1Cookie, { body: "mine?" })).status).toBe(404);
+    expect((await portal("GET", `/cases/${reassignedCaseId}`, hW2Cookie)).status).toBe(200);
+  });
+
+  it("customer detail marks a legacy email-only case as the member's own (isRequester)", async () => {
+    const seen = await portal("GET", `/cases/${legacyFlagCaseId}`, hW1Cookie);
+    expect(seen.status).toBe(200);
+    const d = await seen.json();
+    expect(d.requesterName).toBe("Wanda One");
+    expect(d.isRequester).toBe(true);
+    // The list view agrees.
+    const list = await (await portal("GET", "/cases", hW1Cookie)).json();
+    expect(list.cases.find((c: any) => c.id === legacyFlagCaseId)?.mine).toBe(true);
+  });
+
+  it("requester ownership on update: an agent cannot point a case at another client's contact", async () => {
+    const r = await api("PATCH", `/api/support/cases/${reassignedCaseId}`, admin, { requesterContactId: hOtherContactId });
+    expect(r.status, await r.clone().text()).toBe(400);
+    expect((await r.json()).message).toMatch(/client/i);
+    const d = await (await api("GET", `/api/support/cases/${reassignedCaseId}`, admin)).json();
+    expect(d.requesterContactId).toBe(hW2Id);
+  });
+
+  it("BLOCKED in the Help Center: the customer sees the status; a Customer Admin can still close and reopen", async () => {
+    const r = await portal("POST", "/cases", hReqCookie, { subject: `Vendor holdup ${stamp}` });
+    const id = (await r.json()).id;
+    const b = await api("PATCH", `/api/support/cases/${id}`, admin, { status: "BLOCKED" });
+    expect(b.ok, await b.clone().text()).toBe(true);
+    expect((await (await portal("GET", `/cases/${id}`, hReqCookie)).json()).status).toBe("BLOCKED");
+    const list = await (await portal("GET", "/cases", hReqCookie)).json();
+    expect(list.cases.find((c: any) => c.id === id).status).toBe("BLOCKED");
+    // A customer reply on a BLOCKED case leaves it BLOCKED.
+    const m = await portal("POST", `/cases/${id}/messages`, hReqCookie, { body: "Any update?" });
+    expect(m.status).toBe(201);
+    expect((await m.json()).status).toBe("BLOCKED");
+    expect((await portal("PATCH", `/cases/${id}`, hReqCookie, { action: "close" })).status).toBe(403);
+    expect((await portal("PATCH", `/cases/${id}`, hAdminCookie, { action: "reopen" })).status).toBe(409);
+    const closed = await portal("PATCH", `/cases/${id}`, hAdminCookie, { action: "close" });
+    expect(closed.status, await closed.clone().text()).toBe(200);
+    expect((await closed.json()).status).toBe("CLOSED");
+    const reopened = await portal("PATCH", `/cases/${id}`, hAdminCookie, { action: "reopen" });
+    expect(reopened.status).toBe(200);
+    expect((await reopened.json()).status).toBe("WAITING_ON_SUPPORT");
+    const d = await (await api("GET", `/api/support/cases/${id}`, admin)).json();
+    expect(d.events.filter((e: any) => e.kind === "status").map((e: any) => e.toValue)).toEqual(expect.arrayContaining(["BLOCKED", "CLOSED", "WAITING_ON_SUPPORT"]));
+  });
+
+  it("inbound mail follows the same authority: watchers append until removed; a reassigned requester's old address is stored; legacy email-only requesters append", async () => {
+    const inbound = (from: string, subject: string, extra: Record<string, unknown> = {}) => fetch(`${BASE}/api/test/inbound-email`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to: "support@cwpro.dev", subject, text: `reply from ${from}`, messageId: `<${Math.random()}.${stamp}@test>`, senderAuthenticated: true, orgId: hOrgId, ...extra }),
+    }).then(r => r.json());
+    // Wanda is a verified watcher on the watched case.
+    const ws = await (await portal("GET", `/cases/${watchedCaseId}/watchers`, hReqCookie)).json();
+    expect(ws.map((w: any) => w.contactId)).toContain(hW1Id);
+    expect((await inbound(`Wanda <${hW1Email}>`, `Re: [${watchedCaseKey}] loop`)).outcome).toBe("appended");
+    const rm = await portal("DELETE", `/cases/${watchedCaseId}/watchers/${hW1Id}`, hReqCookie);
+    expect(rm.status, await rm.clone().text()).toBe(200);
+    expect((await inbound(`Wanda <${hW1Email}>`, `Re: [${watchedCaseKey}] loop`)).outcome).toBe("stored");
+    // Walt still watches → appended; Olga never did → stored.
+    expect((await inbound(`Walt <${hW2Email}>`, `Re: [${watchedCaseKey}] loop`)).outcome).toBe("appended");
+    expect((await inbound(`Olga <${hOutEmail}>`, `Re: [${watchedCaseKey}] loop`)).outcome).toBe("stored");
+    // The old requester email on the reassigned case no longer carries authority; the linked contact does.
+    expect((await inbound(`Wanda <${hW1Email}>`, `Re: [${reassignedCaseKey}] legacy`)).outcome).toBe("stored");
+    expect((await inbound(`Walt <${hW2Email}>`, `Re: [${reassignedCaseKey}] legacy`)).outcome).toBe("appended");
+    // A legacy email-only case (no requesterContactId): its requester_email appends.
+    const k = await api("POST", "/api/support/cases", admin, { clientId: hClientId, subject: `Pure email case ${stamp}`, requesterName: "Olga Outside", requesterEmail: hOutEmail });
+    const legacy = await k.json();
+    expect(legacy.requesterContactId).toBeNull();
+    expect((await inbound(`Olga <${hOutEmail}>`, `Re: [${legacy.caseKey}] pure`)).outcome).toBe("appended");
+    expect((await inbound(`Olga <${hOutEmail}>`, `Re: [${legacy.caseKey}] pure`, { senderAuthenticated: false })).outcome).toBe("stored");
+    const d = await (await api("GET", `/api/support/cases/${legacy.id}`, admin)).json();
+    expect(d.messages.length).toBe(1);
+    expect(d.messages[0].authorContactId ?? d.messages[0].authorName).toBeTruthy();
+    // Nothing above opened a second case.
+    expect((await firmCases()).filter(c => /^Re: /.test(c.subject) || /\bloop\b|\blegacy\b|\bpure\b/.test(c.subject)).length).toBe(0);
+  });
+
+  // Captured mail needs EMAIL_CAPTURE_DIR on the test server. `cwp vitest` does not set it (only
+  // `cwp app-bg` / `cwp e2e` do); run `EMAIL_CAPTURE_DIR=/tmp/cherry-e2e-emails cwp vitest tests/integration/help-center.test.ts`
+  // to exercise this test.
+  it.skipIf(!process.env.EMAIL_CAPTURE_DIR)("notifications: an agent's reply on a case with a watcher mails both the requester and the watcher (captured mail)", async () => {
+    const r = await portal("POST", "/cases", hReqCookie, { subject: `Mail fan-out ${stamp}`, watcherContactIds: [hW2Id] });
+    expect(r.status).toBe(201);
+    const { id, caseKey } = await r.json();
+    const since = Date.now();
+    const m = await api("POST", `/api/support/cases/${id}/messages`, admin, { body: "Here is the fix.", visibility: "CUSTOMER" });
+    expect(m.status, await m.clone().text()).toBe(201);
+    // Every case mail carries "[KEY] subject", so match the reply by its body (the "we've received
+    // your request" mail from creation shares the subject line).
+    const subject = `[${caseKey}] Mail fan-out ${stamp}`;
+    const toReq = await waitForCapturedEmail({ to: hReqEmail, subject, htmlIncludes: "Here is the fix." }, { sinceMs: since, timeoutMs: 8000 });
+    const toWatcher = await waitForCapturedEmail({ to: hW2Email, subject, htmlIncludes: "Here is the fix." }, { sinceMs: since, timeoutMs: 8000 });
+    expect(toReq.html).toContain(`/help/${orgSlug}/cases/${id}`);
+    expect(toWatcher.html).toContain(`/help/${orgSlug}/cases/${id}`);
+    // Nobody else on the client is mailed.
+    await expect(waitForCapturedEmail({ to: hOutEmail, subject }, { sinceMs: since, timeoutMs: 1500 })).rejects.toThrow(/Timed out/);
   });
 });

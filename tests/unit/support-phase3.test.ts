@@ -8,6 +8,7 @@ let teamUserId = "";
 let clientId = "";
 let contactId = "";
 let caseId = "";
+let orgIdP3 = ""; // routes test mails by org, like the M365 poller, so parallel files that reset the shared inbound address cannot steal them
 const stamp = Date.now();
 const contactEmail = `ronald.${stamp}@example.com`;
 const inboundAddress = `support.${stamp}@cherryworks-test.example`;
@@ -30,6 +31,8 @@ async function webhook(payload: any) {
 describe("support phase 3: service levels, persisted notifications, email-to-case", () => {
   it("setup", async () => {
     admin = await login("admin.test@cwpro.dev", "admin123");
+    orgIdP3 = (await (await api("GET", "/api/auth/me", admin)).json()).orgId;
+    expect(orgIdP3).toBeTruthy();
     team = await login("team.test@cwpro.dev", "team123");
     teamUserId = (await (await api("GET", "/api/auth/me", team)).json()).id;
     const c = await api("POST", "/api/clients", admin, { name: `SLA Client ${stamp}` });
@@ -93,7 +96,7 @@ describe("support phase 3: service levels, persisted notifications, email-to-cas
 
   it("an email with the case key from the requester becomes a customer message; a fresh email from a contact opens a case; unknown senders are only stored", async () => {
     const key = (await (await api("GET", `/api/support/cases/${caseId}`, admin)).json()).caseKey;
-    const reply = await webhook({ type: "email.received", data: { from: `Ronald Ndanga <${contactEmail}>`, to: [inboundAddress], subject: `Re: [${key}] SLA case`, text: "Here is the screenshot you asked for.\n\nOn Mon Dean wrote:\n> quoted", message_id: `<m1.${stamp}@example.com>` } });
+    const reply = await webhook({ type: "email.received", data: { orgId: orgIdP3, from: `Ronald Ndanga <${contactEmail}>`, to: [inboundAddress], subject: `Re: [${key}] SLA case`, text: "Here is the screenshot you asked for.\n\nOn Mon Dean wrote:\n> quoted", message_id: `<m1.${stamp}@example.com>` } });
     expect(reply.ok, await reply.clone().text()).toBe(true);
     const r1 = await reply.json();
     expect(r1.outcome).toBe("appended");
@@ -104,13 +107,13 @@ describe("support phase 3: service levels, persisted notifications, email-to-cas
     expect(msg.visibility).toBe("CUSTOMER");
 
     // A redelivery of the same message id is claimed once: no second customer message.
-    const again = await webhook({ type: "email.received", data: { from: `Ronald Ndanga <${contactEmail}>`, to: [inboundAddress], subject: `Re: [${key}] SLA case`, text: "Here is the screenshot you asked for.", message_id: `<m1.${stamp}@example.com>` } });
+    const again = await webhook({ type: "email.received", data: { orgId: orgIdP3, from: `Ronald Ndanga <${contactEmail}>`, to: [inboundAddress], subject: `Re: [${key}] SLA case`, text: "Here is the screenshot you asked for.", message_id: `<m1.${stamp}@example.com>` } });
     expect(again.ok).toBe(true);
     expect((await again.json()).duplicate).toBe(true);
     const afterDup = await (await api("GET", `/api/support/cases/${caseId}`, admin)).json();
     expect(afterDup.messages.filter((m: any) => m.authorContactId === contactId).length).toBe(1);
 
-    const fresh = await webhook({ type: "email.received", data: { from: contactEmail, to: inboundAddress, subject: "Fwd: Printer on the shop floor is offline", text: "Since this morning." } });
+    const fresh = await webhook({ type: "email.received", data: { orgId: orgIdP3, from: contactEmail, to: inboundAddress, subject: "Fwd: Printer on the shop floor is offline", text: "Since this morning." } });
     const r2 = await fresh.json();
     expect(r2.outcome).toBe("created");
     const created = await (await api("GET", `/api/support/cases/${r2.caseId}`, admin)).json();
@@ -118,7 +121,7 @@ describe("support phase 3: service levels, persisted notifications, email-to-cas
     expect(created.subject).toBe("Printer on the shop floor is offline");
     expect(created.requesterContactId).toBe(contactId);
 
-    const stranger = await (await webhook({ type: "email.received", data: { from: `nobody.${stamp}@example.com`, to: inboundAddress, subject: "hello", text: "hi" } })).json();
+    const stranger = await (await webhook({ type: "email.received", data: { orgId: orgIdP3, from: `nobody.${stamp}@example.com`, to: inboundAddress, subject: "hello", text: "hi" } })).json();
     expect(stranger.outcome).toBe("stored");
     const wrongOrg = await (await webhook({ type: "email.received", data: { from: contactEmail, to: `unknown.${stamp}@nowhere.example`, subject: "hello", text: "hi" } })).json();
     expect(wrongOrg.outcome).toBe("no_org");

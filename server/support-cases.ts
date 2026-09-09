@@ -8,7 +8,7 @@
  */
 import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { db } from "./db";
-import { listAttachments, deleteBytes } from "./support-attachments";
+import { listAttachmentsForCleanup, deleteBytes } from "./support-attachments";
 import { dueDatesForNewCase, clockPatchForStatus, slaStateFor } from "./support-sla";
 import { notifyCaseCreated, notifyCaseMessage, notifyCaseUpdated } from "./support-notifications";
 import {
@@ -23,12 +23,16 @@ import {
   supportCases,
   timeEntries,
   users,
+  supportCaseWatchers,
+  portalBlockedEmails,
   SUPPORT_CASE_OPEN_STATUSES,
+  SUPPORT_CASE_CLOCK_RUNNING_STATUSES,
   type SupportCase,
   type SupportCaseStatus,
+  type SupportCaseIntake,
 } from "@shared/schema";
 
-export type CaseView = "open" | "mine" | "unassigned" | "waiting" | "breaching" | "resolved" | "all";
+export type CaseView = "open" | "mine" | "unassigned" | "waiting" | "blocked" | "breaching" | "resolved" | "all";
 
 export interface ListCasesFilter {
   view?: CaseView;
@@ -170,7 +174,7 @@ export async function listCases(orgId: string, f: ListCasesFilter) {
       // Timestamps are stored UTC-naive; compare against an explicit UTC string so
       // the driver never re-interprets a Date in the server's local zone.
       const soon = utcNaive(new Date(Date.now() + 3600000));
-      where.push(inArray(supportCases.status, ["NEW", "WAITING_ON_SUPPORT", "IN_PROGRESS"]));
+      where.push(inArray(supportCases.status, [...SUPPORT_CASE_CLOCK_RUNNING_STATUSES]));
       where.push(isNull(supportCases.slaPausedAt));
       where.push(or(
         and(isNull(supportCases.firstResponseAt), sql`${supportCases.firstResponseDueAt} < ${soon}::timestamp`),
@@ -179,6 +183,7 @@ export async function listCases(orgId: string, f: ListCasesFilter) {
       break;
     }
     case "resolved": where.push(inArray(supportCases.status, ["RESOLVED", "CLOSED"])); break;
+    case "blocked": where.push(eq(supportCases.status, "BLOCKED")); break;
     case "all":
     default: break;
   }
@@ -208,14 +213,18 @@ export function utcNaive(d: Date): string {
 
 export async function summary(orgId: string, userId: string) {
   const soon = utcNaive(new Date(Date.now() + 3600000));
+  // Status sets come from the shared constants so a new status can never drop out of a count.
+  const openIn = sql`${supportCases.status} IN (${sql.join(SUPPORT_CASE_OPEN_STATUSES.map(x => sql`${x}`), sql`, `)})`;
+  const runningIn = sql`${supportCases.status} IN (${sql.join(SUPPORT_CASE_CLOCK_RUNNING_STATUSES.map(x => sql`${x}`), sql`, `)})`;
   const [row] = await db
     .select({
-      open: sql<number>`COUNT(*) FILTER (WHERE ${supportCases.status} IN ('NEW','WAITING_ON_SUPPORT','IN_PROGRESS','WAITING_ON_CUSTOMER'))`,
-      mine: sql<number>`COUNT(*) FILTER (WHERE ${supportCases.status} IN ('NEW','WAITING_ON_SUPPORT','IN_PROGRESS','WAITING_ON_CUSTOMER') AND ${supportCases.assigneeUserId} = ${userId})`,
-      unassigned: sql<number>`COUNT(*) FILTER (WHERE ${supportCases.status} IN ('NEW','WAITING_ON_SUPPORT','IN_PROGRESS','WAITING_ON_CUSTOMER') AND ${supportCases.assigneeUserId} IS NULL)`,
+      open: sql<number>`COUNT(*) FILTER (WHERE ${openIn})`,
+      mine: sql<number>`COUNT(*) FILTER (WHERE ${openIn} AND ${supportCases.assigneeUserId} = ${userId})`,
+      unassigned: sql<number>`COUNT(*) FILTER (WHERE ${openIn} AND ${supportCases.assigneeUserId} IS NULL)`,
       waiting: sql<number>`COUNT(*) FILTER (WHERE ${supportCases.status} = 'WAITING_ON_CUSTOMER')`,
+      blocked: sql<number>`COUNT(*) FILTER (WHERE ${supportCases.status} = 'BLOCKED')`,
       resolved: sql<number>`COUNT(*) FILTER (WHERE ${supportCases.status} IN ('RESOLVED','CLOSED'))`,
-      breaching: sql<number>`COUNT(*) FILTER (WHERE ${supportCases.status} IN ('NEW','WAITING_ON_SUPPORT','IN_PROGRESS') AND ${supportCases.slaPausedAt} IS NULL AND ((${supportCases.firstResponseAt} IS NULL AND ${supportCases.firstResponseDueAt} < ${soon}::timestamp) OR ${supportCases.resolutionDueAt} < ${soon}::timestamp))`,
+      breaching: sql<number>`COUNT(*) FILTER (WHERE ${runningIn} AND ${supportCases.slaPausedAt} IS NULL AND ((${supportCases.firstResponseAt} IS NULL AND ${supportCases.firstResponseDueAt} < ${soon}::timestamp) OR ${supportCases.resolutionDueAt} < ${soon}::timestamp))`,
       all: sql<number>`COUNT(*)`,
     })
     .from(supportCases)
@@ -225,6 +234,7 @@ export async function summary(orgId: string, userId: string) {
     mine: Number(row?.mine ?? 0),
     unassigned: Number(row?.unassigned ?? 0),
     waiting: Number(row?.waiting ?? 0),
+    blocked: Number(row?.blocked ?? 0),
     resolved: Number(row?.resolved ?? 0),
     breaching: Number(row?.breaching ?? 0),
     all: Number(row?.all ?? 0),
@@ -233,7 +243,7 @@ export async function summary(orgId: string, userId: string) {
 
 export async function getCase(orgId: string, id: string) {
   const [row] = await db
-    .select({ ...caseListSelect, description: supportCases.description, requesterContactId: supportCases.requesterContactId, createdByUserId: supportCases.createdByUserId, externalRef: supportCases.externalRef })
+    .select({ ...caseListSelect, description: supportCases.description, requesterContactId: supportCases.requesterContactId, createdByUserId: supportCases.createdByUserId, externalRef: supportCases.externalRef, intake: supportCases.intake })
     .from(supportCases)
     .innerJoin(clients, and(eq(supportCases.clientId, clients.id), eq(clients.orgId, orgId)))
     .leftJoin(projects, and(eq(supportCases.projectId, projects.id), eq(projects.orgId, orgId)))
@@ -329,6 +339,41 @@ export interface CreateCaseInput {
   requesterEmail?: string | null;
   source?: "AGENT" | "PORTAL" | "EMAIL" | "IMPORT";
   externalRef?: string | null;
+  /** Help Center form: the customer's structured statement. */
+  intake?: SupportCaseIntake | null;
+  /** Display name of the person who submitted (for "opened on your behalf" mail). */
+  openedByName?: string | null;
+  /**
+   * Help Center submission: the AUTHENTICATED contact (immutable) + a per-form key. Watchers are
+   * colleagues of the same client added at creation. Everything is validated again INSIDE the
+   * transaction under the contact row locks (global order: case row → contacts ascending →
+   * watcher rows), so a demotion, block or deletion that lands while the form is in flight is seen.
+   */
+  portal?: {
+    submitterContactId: string;
+    submissionKey?: string | null;
+    watcherContactIds?: string[];
+  };
+  /** Caller sends the creation notification itself (after the form's files are stored) via `notifyCreated`. */
+  deferNotify?: boolean;
+}
+
+export class CaseAccessError extends Error {}
+/** Thrown when a Help Center submission replays an already-committed one; carries the existing row. */
+export class CaseReplay extends Error {
+  constructor(public row: SupportCase | null, public readonly key: { orgId: string; submitterContactId: string; submissionKey: string }) { super("replay"); }
+  /** The committed winner of the race (read after our own transaction rolled back). */
+  async resolve(): Promise<SupportCase | undefined> {
+    if (this.row) return this.row;
+    return findSubmission(this.key.orgId, this.key.submitterContactId, this.key.submissionKey);
+  }
+}
+
+async function assertNotBlocked(tx: DbOrTx, orgId: string, email: string | null | undefined) {
+  const e = (email || "").trim().toLowerCase();
+  if (!e) return;
+  const [b] = await tx.select({ id: portalBlockedEmails.id }).from(portalBlockedEmails).where(and(eq(portalBlockedEmails.orgId, orgId), sql`lower(${portalBlockedEmails.email}) = ${e}`));
+  if (b) throw new CaseAccessError("That colleague cannot be added");
 }
 
 export async function createCase(orgId: string, input: CreateCaseInput, actor: Actor | null) {
@@ -360,7 +405,12 @@ export async function createCase(orgId: string, input: CreateCaseInput, actor: A
   const { caseKey, caseNumber } = await mintCaseKey(orgId, input.clientId);
   const createdAt = new Date();
   const due = await dueDatesForNewCase(orgId, input.clientId, createdAt);
-  const [row] = await db.insert(supportCases).values({
+  const portal = input.portal;
+  const watcherEvents: Array<{ contactId: string; name: string }> = [];
+  const row = await db.transaction(async (tx) => {
+  let inserted: SupportCase;
+  try {
+    [inserted] = await tx.insert(supportCases).values({
     createdAt,
     firstResponseDueAt: due.firstResponseDueAt,
     resolutionDueAt: due.resolutionDueAt,
@@ -381,13 +431,166 @@ export async function createCase(orgId: string, input: CreateCaseInput, actor: A
     assigneeUserId: input.assigneeUserId ?? null,
     createdByUserId: actor?.userId ?? null,
     externalRef: input.externalRef ?? null,
+    intake: input.intake ?? null,
+    submittedByContactId: portal?.submitterContactId ?? null,
+    submissionKey: portal?.submissionKey ?? null,
   }).returning();
+  } catch (err: any) {
+    // Two first submissions with the same key raced: the other one is the case.
+    const e = err?.cause ?? err;
+    if (portal?.submissionKey && e?.code === "23505" && String(e?.constraint || "").includes("ux_support_cases_submission")) {
+      // The insert failed, so this transaction is aborted: the winner is read on a fresh connection after rollback.
+      throw new CaseReplay(null, { orgId, submitterContactId: portal.submitterContactId, submissionKey: portal.submissionKey });
+    }
+    throw err;
+  }
+  const row = inserted;
 
-  await writeEvent(orgId, row.id, "created", null, row.status, actor);
-  if (row.assigneeUserId) await writeEvent(orgId, row.id, "assignee", null, row.assigneeUserId, actor);
-  await writeActivity(orgId, row.clientId, actor, "SUPPORT_CASE_OPENED", `${caseKey} opened`, row.subject, row.id, { caseKey });
-  void notifyCaseCreated(row).catch(err => console.warn("[support] notifyCaseCreated failed", (err as Error)?.message));
+  if (portal) {
+    // Contacts re-read FOR UPDATE, ascending, after the case row: submitter, requester, watchers.
+    const ids = [...new Set([portal.submitterContactId, ...(input.requesterContactId ? [input.requesterContactId] : []), ...(portal.watcherContactIds ?? [])])].sort();
+    const locked = await tx.select().from(clientContacts)
+      .where(and(eq(clientContacts.orgId, orgId), inArray(clientContacts.id, ids))).orderBy(asc(clientContacts.id)).for("update");
+    const byId = new Map(locked.map(c => [c.id, c]));
+    for (const id of ids) {
+      const c = byId.get(id);
+      if (!c || c.deletedAt || c.clientId !== input.clientId) throw new CaseAccessError(id === portal.submitterContactId ? "Your access to this Help Center has changed. Sign in again." : "That colleague is not part of your company");
+      await assertNotBlocked(tx, orgId, c.email);
+    }
+    const submitter = byId.get(portal.submitterContactId)!;
+    const onBehalf = !!input.requesterContactId && input.requesterContactId !== portal.submitterContactId;
+    if (onBehalf && submitter.portalRole !== "admin") throw new CaseAccessError("Only a Customer Admin can open a case for a colleague");
+    const watcherIds = new Set(portal.watcherContactIds ?? []);
+    if (onBehalf) watcherIds.add(portal.submitterContactId); // the admin keeps seeing what they opened
+    watcherIds.delete(input.requesterContactId ?? "");
+    for (const wid of watcherIds) {
+      const c = byId.get(wid)!;
+      await tx.insert(supportCaseWatchers).values({ orgId, caseId: row.id, contactId: wid, addedByContactId: portal.submitterContactId }).onConflictDoNothing();
+      watcherEvents.push({ contactId: wid, name: `${c.firstName} ${c.lastName}`.trim() || c.email || "colleague" });
+    }
+  }
+
+  await writeEvent(orgId, row.id, "created", null, row.status, actor, tx);
+  if (row.assigneeUserId) await writeEvent(orgId, row.id, "assignee", null, row.assigneeUserId, actor, tx);
+  const watcherActor: Actor | null = portal ? { userId: null, contactId: portal.submitterContactId, name: input.openedByName || input.requesterName || "Customer" } : actor;
+  for (const w of watcherEvents) await writeEvent(orgId, row.id, "watcher", "added", w.name, watcherActor, tx);
+  await writeActivity(orgId, row.clientId, actor, "SUPPORT_CASE_OPENED", `${caseKey} opened`, row.subject, row.id, { caseKey }, tx);
   return row;
+  });
+  const openedBy = portal && input.requesterContactId && input.requesterContactId !== portal.submitterContactId
+    ? { name: input.openedByName || "A colleague", contactId: portal.submitterContactId } : undefined;
+  if (!input.deferNotify) notifyCreated(row, openedBy);
+  return row;
+}
+
+/** Fire-and-forget creation notification (used directly by callers that store attachments first). */
+export function notifyCreated(row: SupportCase, openedBy?: { name: string; contactId?: string | null }) {
+  void notifyCaseCreated(row, { openedBy }).catch(err => console.warn("[support] notifyCaseCreated failed", (err as Error)?.message));
+}
+
+/** A Help Center replay: the same authenticated contact submitted the same key before. */
+export async function findSubmission(orgId: string, submitterContactId: string, submissionKey: string): Promise<SupportCase | undefined> {
+  const [row] = await db.select().from(supportCases).where(and(eq(supportCases.orgId, orgId), eq(supportCases.submittedByContactId, submitterContactId), eq(supportCases.submissionKey, submissionKey)));
+  return row;
+}
+
+// ── Customer authority + watchers ──────────────────────────────────────────
+
+/**
+ * May this contact act on this case from the customer side? Requester (by id; by address ONLY
+ * when the case has no linked requester), Customer Admin of the same client, or a watcher — and
+ * the contact must be live, of the case's client, and not blocked. Evaluated on `conn` so callers
+ * can run it INSIDE a transaction under the case row lock (revocation while a write is in flight).
+ */
+export async function customerCanAccess(conn: DbOrTx, orgId: string, c: Pick<SupportCase, "id" | "clientId" | "requesterContactId" | "requesterEmail">, contactId: string, opts: { lock?: boolean } = {}): Promise<{ ok: boolean; role: "requester" | "admin" | "watcher" | null }> {
+  // Write paths lock the contact row (global order: case → contact): a block or deletion holding
+  // that lock finishes first and its revocation is what this check then sees.
+  const q = conn.select().from(clientContacts).where(and(eq(clientContacts.id, contactId), eq(clientContacts.orgId, orgId)));
+  const [k] = opts.lock ? await q.for("update") : await q;
+  if (!k || k.deletedAt || k.clientId !== c.clientId) return { ok: false, role: null };
+  const email = (k.email || "").trim().toLowerCase();
+  if (email) {
+    const [b] = await conn.select({ id: portalBlockedEmails.id }).from(portalBlockedEmails).where(and(eq(portalBlockedEmails.orgId, orgId), sql`lower(${portalBlockedEmails.email}) = ${email}`));
+    if (b) return { ok: false, role: null };
+  }
+  const isRequester = c.requesterContactId ? c.requesterContactId === k.id : (!!email && !!c.requesterEmail && c.requesterEmail.trim().toLowerCase() === email);
+  if (isRequester) return { ok: true, role: "requester" };
+  if (k.portalRole === "admin") return { ok: true, role: "admin" };
+  const [w] = await conn.select({ id: supportCaseWatchers.id }).from(supportCaseWatchers).where(and(eq(supportCaseWatchers.orgId, orgId), eq(supportCaseWatchers.caseId, c.id), eq(supportCaseWatchers.contactId, k.id)));
+  return w ? { ok: true, role: "watcher" } : { ok: false, role: null };
+}
+
+/** Same check, loading the case row on the given connection (for callers that only hold the id). */
+export async function customerCanAccessCase(conn: DbOrTx, orgId: string, caseId: string, contactId: string, opts: { lock?: boolean } = {}): Promise<boolean> {
+  const [c] = await conn.select({ id: supportCases.id, clientId: supportCases.clientId, requesterContactId: supportCases.requesterContactId, requesterEmail: supportCases.requesterEmail })
+    .from(supportCases).where(and(eq(supportCases.id, caseId), eq(supportCases.orgId, orgId)));
+  return c ? (await customerCanAccess(conn, orgId, c, contactId, opts)).ok : false;
+}
+
+export async function listWatchers(orgId: string, caseId: string) {
+  return db.select({ id: supportCaseWatchers.id, contactId: clientContacts.id, firstName: clientContacts.firstName, lastName: clientContacts.lastName, email: clientContacts.email, addedAt: supportCaseWatchers.createdAt })
+    .from(supportCaseWatchers).innerJoin(clientContacts, eq(clientContacts.id, supportCaseWatchers.contactId))
+    .where(and(eq(supportCaseWatchers.orgId, orgId), eq(supportCaseWatchers.caseId, caseId), isNull(clientContacts.deletedAt)))
+    .orderBy(asc(supportCaseWatchers.createdAt));
+}
+
+/** Live, verified (not pending), unblocked contacts of a client — the people who can be watchers. */
+export async function listColleagues(orgId: string, clientId: string, opts: { excludeContactIds?: string[]; excludeCaseId?: string } = {}) {
+  const rows = await db.select({ id: clientContacts.id, firstName: clientContacts.firstName, lastName: clientContacts.lastName, email: clientContacts.email })
+    .from(clientContacts)
+    .where(and(eq(clientContacts.orgId, orgId), eq(clientContacts.clientId, clientId), isNull(clientContacts.deletedAt), isNull(clientContacts.portalPendingAt), isNotNull(clientContacts.email),
+      sql`NOT EXISTS (SELECT 1 FROM ${portalBlockedEmails} b WHERE b.org_id = ${orgId} AND lower(b.email) = lower(${clientContacts.email}))`,
+      ...(opts.excludeCaseId ? [sql`NOT EXISTS (SELECT 1 FROM ${supportCaseWatchers} w WHERE w.case_id = ${opts.excludeCaseId} AND w.contact_id = ${clientContacts.id})`] : []),
+    ))
+    .orderBy(asc(clientContacts.firstName), asc(clientContacts.lastName));
+  const ex = new Set(opts.excludeContactIds ?? []);
+  return rows.filter(r => !ex.has(r.id));
+}
+
+export interface WatcherActor { userId?: string | null; contactId?: string | null; name: string }
+
+/**
+ * Adds a watcher. Runs under the case row lock, then the contact rows (ascending); the caller's
+ * authority is re-evaluated under those locks by `authorize` (customer callers) — an agent caller
+ * (`actor.userId`) is trusted by the route. Returns the watcher list after the change.
+ */
+export async function addWatcher(orgId: string, caseId: string, contactId: string, actor: WatcherActor, authorize?: (tx: DbOrTx, c: SupportCase) => Promise<boolean>) {
+  const changed = await db.transaction(async (tx) => {
+    const [c] = await tx.select().from(supportCases).where(and(eq(supportCases.id, caseId), eq(supportCases.orgId, orgId))).for("update");
+    if (!c) throw new CaseAccessError("Support case not found");
+    const ids = [...new Set([contactId, ...(actor.contactId ? [actor.contactId] : [])])].sort();
+    const locked = await tx.select().from(clientContacts).where(and(eq(clientContacts.orgId, orgId), inArray(clientContacts.id, ids))).orderBy(asc(clientContacts.id)).for("update");
+    if (authorize && !(await authorize(tx, c))) throw new CaseAccessError("Support case not found");
+    const target = locked.find(x => x.id === contactId);
+    if (!target || target.deletedAt || target.clientId !== c.clientId) throw new CaseAccessError("That colleague is not part of this customer");
+    await assertNotBlocked(tx, orgId, target.email);
+    // The requester already follows their own case — by linked id, or by address on a legacy
+    // email-only case (a watcher row there would outlive a later requester reassignment).
+    const isRequester = c.requesterContactId ? c.requesterContactId === contactId
+      : (!!target.email && !!c.requesterEmail && c.requesterEmail.trim().toLowerCase() === target.email.trim().toLowerCase());
+    if (isRequester) return false;
+    const [ins] = await tx.insert(supportCaseWatchers).values({ orgId, caseId, contactId, addedByContactId: actor.contactId ?? null, addedByUserId: actor.userId ?? null }).onConflictDoNothing().returning();
+    if (!ins) return false;
+    await writeEvent(orgId, caseId, "watcher", "added", `${target.firstName} ${target.lastName}`.trim() || target.email || "colleague", { userId: actor.userId ?? null, contactId: actor.contactId ?? null, name: actor.name }, tx);
+    return true;
+  });
+  return { changed, watchers: await listWatchers(orgId, caseId) };
+}
+
+export async function removeWatcher(orgId: string, caseId: string, contactId: string, actor: WatcherActor, authorize?: (tx: DbOrTx, c: SupportCase) => Promise<boolean>) {
+  const changed = await db.transaction(async (tx) => {
+    const [c] = await tx.select().from(supportCases).where(and(eq(supportCases.id, caseId), eq(supportCases.orgId, orgId))).for("update");
+    if (!c) throw new CaseAccessError("Support case not found");
+    const ids = [...new Set([contactId, ...(actor.contactId ? [actor.contactId] : [])])].sort();
+    const locked = await tx.select().from(clientContacts).where(and(eq(clientContacts.orgId, orgId), inArray(clientContacts.id, ids))).orderBy(asc(clientContacts.id)).for("update");
+    if (authorize && !(await authorize(tx, c))) throw new CaseAccessError("Support case not found");
+    const [gone] = await tx.delete(supportCaseWatchers).where(and(eq(supportCaseWatchers.orgId, orgId), eq(supportCaseWatchers.caseId, caseId), eq(supportCaseWatchers.contactId, contactId))).returning();
+    if (!gone) return false;
+    const target = locked.find(x => x.id === contactId);
+    await writeEvent(orgId, caseId, "watcher", "removed", target ? (`${target.firstName} ${target.lastName}`.trim() || target.email || "colleague") : "colleague", { userId: actor.userId ?? null, contactId: actor.contactId ?? null, name: actor.name }, tx);
+    return true;
+  });
+  return { changed, watchers: await listWatchers(orgId, caseId) };
 }
 
 export class CaseTransitionError extends Error {}
@@ -427,6 +630,12 @@ export async function updateCase(orgId: string, id: string, input: UpdateCaseInp
     if (input.assigneeUserId) {
       const [u] = await tx.select({ id: users.id }).from(users).where(and(eq(users.id, input.assigneeUserId), eq(users.orgId, orgId)));
       if (!u) throw new Error("Assignee not found");
+    }
+    if (input.requesterContactId) {
+      // The requester must be a live contact of THIS case's client (the column has no FK).
+      const [k] = await tx.select({ id: clientContacts.id }).from(clientContacts)
+        .where(and(eq(clientContacts.id, input.requesterContactId), eq(clientContacts.orgId, orgId), eq(clientContacts.clientId, existing.clientId), isNull(clientContacts.deletedAt)));
+      if (!k) throw new Error("Requester must be a contact of this case's client");
     }
 
     if (input.customerAction === "close") {
@@ -483,6 +692,7 @@ export function labelStatus(s: string): string {
     case "WAITING_ON_SUPPORT": return "waiting on support";
     case "IN_PROGRESS": return "in progress";
     case "WAITING_ON_CUSTOMER": return "waiting on customer";
+    case "BLOCKED": return "blocked";
     case "RESOLVED": return "resolved";
     case "CLOSED": return "closed";
     default: return s.toLowerCase();
@@ -493,6 +703,8 @@ export interface AddMessageInput {
   body: string;
   visibility: "CUSTOMER" | "INTERNAL";
   author: { userId?: string | null; contactId?: string | null; name: string };
+  /** Customer callers: re-evaluated under the case row lock (access revoked while the reply was in flight → refused). */
+  authorize?: (tx: DbOrTx, c: SupportCase) => Promise<boolean>;
   emailMessageId?: string | null;
 }
 
@@ -509,6 +721,7 @@ export async function addMessage(orgId: string, caseId: string, input: AddMessag
   const committed = await db.transaction(async (tx) => {
     const [existing] = await tx.select().from(supportCases).where(and(eq(supportCases.id, caseId), eq(supportCases.orgId, orgId))).for("update");
     if (!existing) return undefined;
+    if (input.authorize && !(await input.authorize(tx, existing))) throw new CaseAccessError("Support case not found");
     const [msg] = await tx.insert(supportCaseMessages).values({
       orgId, caseId,
       authorUserId: input.author.userId ?? null,
@@ -551,20 +764,25 @@ export async function addMessage(orgId: string, caseId: string, input: AddMessag
 }
 
 export async function deleteCase(orgId: string, id: string) {
-  const existing = await getCaseRaw(orgId, id);
-  if (!existing) return false;
-  // The rows cascade with the case; the bytes in object storage do not. If a
-  // blob cannot be removed, keep the case (and its rows, which hold the storage
-  // keys) so the delete can be retried instead of orphaning the file.
-  const failed: string[] = [];
-  for (const a of await listAttachments(orgId, id)) {
-    try { await deleteBytes(a.storageKey); } catch (err) { failed.push(a.filename); console.warn("[support-cases] attachment blob not removed", a.id, (err as Error).message); }
-  }
-  if (failed.length) throw new Error(`Could not remove ${failed.length} attachment file(s) (${failed.slice(0, 3).join(", ")}); try again`);
-  // Time stays on the books; it just loses the case link. Only once the delete is certain.
-  await db.update(timeEntries).set({ supportCaseId: null }).where(and(eq(timeEntries.orgId, orgId), eq(timeEntries.supportCaseId, id)));
-  await db.delete(supportCases).where(and(eq(supportCases.id, id), eq(supportCases.orgId, orgId)));
-  return true;
+  // Under the case row lock: an upload in flight (which also locks the case) either finished
+  // before — its row is enumerated below, pending or not — or waits and then fails on the
+  // missing case, so no blob is ever left without a row that names it.
+  return db.transaction(async (tx) => {
+    const [existing] = await tx.select({ id: supportCases.id }).from(supportCases).where(and(eq(supportCases.id, id), eq(supportCases.orgId, orgId))).for("update");
+    if (!existing) return false;
+    // The rows cascade with the case; the bytes in object storage do not. If a
+    // blob cannot be removed, keep the case (and its rows, which hold the storage
+    // keys) so the delete can be retried instead of orphaning the file.
+    const failed: string[] = [];
+    for (const a of await listAttachmentsForCleanup(orgId, id, tx)) {
+      try { await deleteBytes(a.storageKey); } catch (err) { failed.push(a.filename); console.warn("[support-cases] attachment blob not removed", a.id, (err as Error).message); }
+    }
+    if (failed.length) throw new Error(`Could not remove ${failed.length} attachment file(s) (${failed.slice(0, 3).join(", ")}); try again`);
+    // Time stays on the books; it just loses the case link. Only once the delete is certain.
+    await tx.update(timeEntries).set({ supportCaseId: null }).where(and(eq(timeEntries.orgId, orgId), eq(timeEntries.supportCaseId, id)));
+    await tx.delete(supportCases).where(and(eq(supportCases.id, id), eq(supportCases.orgId, orgId)));
+    return true;
+  });
 }
 
 /**

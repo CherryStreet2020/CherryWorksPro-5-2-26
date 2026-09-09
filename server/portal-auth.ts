@@ -11,7 +11,7 @@ import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import type { Request, Response, NextFunction } from "express";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { db } from "./db";
-import { clientContacts, clients, orgs, portalLoginLinks, portalSessions, psoContactActivities, portalBlockedEmails, supportCases, supportCaseMessages } from "@shared/schema";
+import { clientContacts, clients, orgs, portalLoginLinks, portalSessions, psoContactActivities, portalBlockedEmails, supportCases, supportCaseMessages, supportCaseWatchers } from "@shared/schema";
 import { emailDomain, isSharedMailDomain } from "@shared/mail-domains";
 
 export const PORTAL_COOKIE = "cwp_portal";
@@ -144,6 +144,8 @@ export async function blockPortalEmail(input: { orgId: string; clientId: string 
         .where(and(eq(portalSessions.orgId, input.orgId), eq(portalSessions.contactId, input.contactId), isNull(portalSessions.revokedAt)));
       await tx.update(portalLoginLinks).set({ consumedAt: new Date() })
         .where(and(eq(portalLoginLinks.orgId, input.orgId), eq(portalLoginLinks.contactId, input.contactId), isNull(portalLoginLinks.consumedAt)));
+      // A blocked colleague stops following every case at once (the send-time recipient check is the second guard).
+      await tx.delete(supportCaseWatchers).where(and(eq(supportCaseWatchers.orgId, input.orgId), eq(supportCaseWatchers.contactId, input.contactId)));
     }
     if (!norm) return;
     await tx.insert(portalBlockedEmails).values({ orgId: input.orgId, clientId: input.clientId, email: norm, reason: input.reason, blockedByUserId: input.byUserId })
@@ -388,6 +390,7 @@ export async function deleteContactWithPortalCleanup(input: { orgId: string; con
       .where(and(eq(portalSessions.contactId, c.id), isNull(portalSessions.revokedAt)));
     await tx.update(portalLoginLinks).set({ consumedAt: new Date() })
       .where(and(eq(portalLoginLinks.contactId, c.id), isNull(portalLoginLinks.consumedAt)));
+    await tx.delete(supportCaseWatchers).where(eq(supportCaseWatchers.contactId, c.id));
     if (current && locked.clientId) {
       const [client] = await tx.select({ domains: clients.portalEmailDomains }).from(clients).where(eq(clients.id, locked.clientId));
       const d = emailDomain(current);
@@ -458,6 +461,8 @@ export async function sweepPendingPortalContacts(now = new Date()): Promise<numb
     sql`${clientContacts.updatedAt} = ${clientContacts.createdAt}`,
     sql`NOT EXISTS (SELECT 1 FROM ${supportCases} WHERE ${supportCases.requesterContactId} = ${clientContacts.id})`,
     sql`NOT EXISTS (SELECT 1 FROM ${supportCaseMessages} WHERE ${supportCaseMessages.authorContactId} = ${clientContacts.id})`,
+    // A colleague added as a watcher (by a requester, an admin or an agent) is adopted too.
+    sql`NOT EXISTS (SELECT 1 FROM ${supportCaseWatchers} WHERE ${supportCaseWatchers.contactId} = ${clientContacts.id})`,
     // Someone who just asked for a link keeps their placeholder until it expires.
     sql`NOT EXISTS (SELECT 1 FROM ${portalLoginLinks} WHERE ${portalLoginLinks.contactId} = ${clientContacts.id} AND ${portalLoginLinks.consumedAt} IS NULL AND ${portalLoginLinks.expiresAt} > now())`,
   )!;

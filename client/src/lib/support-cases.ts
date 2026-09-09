@@ -1,10 +1,14 @@
 /** Shared labels, colours and types for Support Cases (never "tickets"). */
 
-export type CaseStatus = "NEW" | "WAITING_ON_SUPPORT" | "IN_PROGRESS" | "WAITING_ON_CUSTOMER" | "RESOLVED" | "CLOSED";
-export type CasePriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
-export type CaseView = "open" | "mine" | "unassigned" | "waiting" | "breaching" | "resolved" | "all";
+import type { SupportCaseIntake, SupportCaseImpact } from "@shared/schema";
 
-export const CASE_STATUS_ORDER: CaseStatus[] = ["NEW", "WAITING_ON_SUPPORT", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "RESOLVED", "CLOSED"];
+export type { SupportCaseIntake, SupportCaseImpact };
+
+export type CaseStatus = "NEW" | "WAITING_ON_SUPPORT" | "IN_PROGRESS" | "WAITING_ON_CUSTOMER" | "BLOCKED" | "RESOLVED" | "CLOSED";
+export type CasePriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+export type CaseView = "open" | "mine" | "unassigned" | "waiting" | "blocked" | "breaching" | "resolved" | "all";
+
+export const CASE_STATUS_ORDER: CaseStatus[] = ["NEW", "WAITING_ON_SUPPORT", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "BLOCKED", "RESOLVED", "CLOSED"];
 export const CASE_PRIORITY_ORDER: CasePriority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 
 export const STATUS_LABEL: Record<CaseStatus, string> = {
@@ -12,6 +16,7 @@ export const STATUS_LABEL: Record<CaseStatus, string> = {
   WAITING_ON_SUPPORT: "Waiting on support",
   IN_PROGRESS: "In progress",
   WAITING_ON_CUSTOMER: "Waiting on customer",
+  BLOCKED: "Blocked",
   RESOLVED: "Resolved",
   CLOSED: "Closed",
 };
@@ -29,8 +34,29 @@ export const STATUS_COLOR: Record<CaseStatus, [string, string]> = {
   WAITING_ON_SUPPORT: ["#b45309", "rgba(180,83,9,0.14)"],
   IN_PROGRESS: ["#15803d", "rgba(21,128,61,0.13)"],
   WAITING_ON_CUSTOMER: ["#6d28d9", "rgba(109,40,217,0.12)"],
+  BLOCKED: ["#d97706", "rgba(217,119,6,0.14)"],
   RESOLVED: ["#0f766e", "rgba(15,118,110,0.13)"],
   CLOSED: ["#555b66", "rgba(85,91,102,0.14)"],
+};
+
+/** Customer's own statement of who is affected (intake.impact). */
+export const IMPACT_LABEL: Record<SupportCaseImpact, string> = {
+  ONE_PERSON: "One person",
+  TEAM: "A team",
+  COMPANY: "Whole company",
+  PRODUCTION_STOPPED: "Production stopped",
+};
+
+/** Human labels for the structured intake fields, in display order. */
+export const INTAKE_FIELD_LABELS: Record<keyof SupportCaseIntake, string> = {
+  affectedArea: "Affected area",
+  references: "References",
+  impact: "Impact",
+  stepsToReproduce: "Steps to reproduce",
+  expected: "Expected outcome",
+  startedAt: "Started on",
+  neededBy: "Needed by",
+  environment: "Environment",
 };
 
 export const PRIORITY_COLOR: Record<CasePriority, [string, string]> = {
@@ -127,8 +153,26 @@ export function fileSizeLabel(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+export interface CaseWatcher {
+  id: string;
+  contactId: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  addedAt: string;
+}
+
+export interface CaseColleague {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+}
+
 export interface CaseDetail extends CaseListRow {
   attachments: CaseAttachment[];
+  intake?: SupportCaseIntake | null;
+  watchers?: CaseWatcher[];
   description: string | null;
   requesterContactId: string | null;
   externalRef: string | null;

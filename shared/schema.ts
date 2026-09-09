@@ -1273,11 +1273,31 @@ export const SUPPORT_CASE_STATUSES = [
   "WAITING_ON_SUPPORT",
   "IN_PROGRESS",
   "WAITING_ON_CUSTOMER",
+  // BLOCKED: work cannot progress until something outside the case happens (third party, an
+  // upstream fix, a decision). It is an OPEN status; the resolution clock keeps running.
+  "BLOCKED",
   "RESOLVED",
   "CLOSED",
 ] as const;
 export type SupportCaseStatus = (typeof SUPPORT_CASE_STATUSES)[number];
-export const SUPPORT_CASE_OPEN_STATUSES: readonly SupportCaseStatus[] = ["NEW", "WAITING_ON_SUPPORT", "IN_PROGRESS", "WAITING_ON_CUSTOMER"];
+export const SUPPORT_CASE_OPEN_STATUSES: readonly SupportCaseStatus[] = ["NEW", "WAITING_ON_SUPPORT", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "BLOCKED"];
+/** Open statuses whose SLA clocks are running (everything open except waiting on the customer). */
+export const SUPPORT_CASE_CLOCK_RUNNING_STATUSES: readonly SupportCaseStatus[] = ["NEW", "WAITING_ON_SUPPORT", "IN_PROGRESS", "BLOCKED"];
+export const SUPPORT_CASE_IMPACTS = ["ONE_PERSON", "TEAM", "COMPANY", "PRODUCTION_STOPPED"] as const;
+export type SupportCaseImpact = (typeof SUPPORT_CASE_IMPACTS)[number];
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date (YYYY-MM-DD)");
+/** Structured intake a customer fills in when opening a case (all optional; the customer's own statement). */
+export const supportCaseIntakeSchema = z.object({
+  affectedArea: z.string().trim().max(120).optional(),
+  references: z.string().trim().max(300).optional(),
+  impact: z.enum(SUPPORT_CASE_IMPACTS).optional(),
+  stepsToReproduce: z.string().trim().max(5000).optional(),
+  expected: z.string().trim().max(2000).optional(),
+  startedAt: isoDate.optional(),
+  neededBy: isoDate.optional(),
+  environment: z.string().trim().max(120).optional(),
+}).strict();
+export type SupportCaseIntake = z.infer<typeof supportCaseIntakeSchema>;
 export const SUPPORT_CASE_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 export type SupportCasePriority = (typeof SUPPORT_CASE_PRIORITIES)[number];
 export const SUPPORT_CASE_SOURCES = ["AGENT", "PORTAL", "EMAIL", "IMPORT"] as const;
@@ -1328,10 +1348,17 @@ export const supportCases = pgTable("support_cases", {
   slaPausedAt: timestamp("sla_paused_at"),
   firstResponseAlertedAt: timestamp("first_response_alerted_at"),
   resolutionAlertedAt: timestamp("resolution_alerted_at"),
+  // Structured intake from the Help Center form (supportCaseIntakeSchema). Customer's statement; agents do not edit it.
+  intake: jsonb("intake").$type<SupportCaseIntake>(),
+  // Idempotent Help Center submission: the AUTHENTICATED contact who submitted (immutable — differs from
+  // the requester on "on behalf of") and the per-form-mount key. Same (org, submitter, key) → same case.
+  submittedByContactId: varchar("submitted_by_contact_id", { length: 36 }),
+  submissionKey: varchar("submission_key", { length: 64 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
   orgKeyUnique: uniqueIndex("support_cases_org_key_unique").on(table.orgId, table.caseKey),
+  submissionUnique: uniqueIndex("ux_support_cases_submission").on(table.orgId, table.submittedByContactId, table.submissionKey).where(sql`submission_key IS NOT NULL AND submitted_by_contact_id IS NOT NULL`),
   orgStatusIdx: index("idx_support_cases_org_status").on(table.orgId, table.status),
   orgClientIdx: index("idx_support_cases_org_client").on(table.orgId, table.clientId),
   orgAssigneeIdx: index("idx_support_cases_org_assignee").on(table.orgId, table.assigneeUserId),
@@ -1479,11 +1506,34 @@ export const supportCaseAttachments = pgTable("support_case_attachments", {
   uploadedByContactId: varchar("uploaded_by_contact_id", { length: 36 }),
   source: text("source").notNull().default("AGENT"),
   externalRef: text("external_ref"),
+  // Durable upload protocol: the row is reserved FIRST (client_file_id = the uploader's stable id, or a
+  // server uuid), the blob is written to a key derived from it, then completed_at is stamped. Rows with
+  // completed_at NULL are invisible everywhere except cleanup. Existing rows are backfilled by the
+  // column default at ADD COLUMN time.
+  clientFileId: varchar("client_file_id", { length: 64 }),
+  contentSha256: varchar("content_sha256", { length: 64 }),
+  completedAt: timestamp("completed_at").defaultNow(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   caseIdx: index("idx_support_case_attachments_case").on(table.caseId),
   externalIdx: index("idx_support_case_attachments_external").on(table.orgId, table.externalRef),
+  clientFileUnique: uniqueIndex("ux_support_case_attachments_client_file").on(table.caseId, table.clientFileId).where(sql`client_file_id IS NOT NULL`),
 }));
+
+/** Colleagues who follow a case: they see it in the Help Center and receive every customer-facing update. */
+export const supportCaseWatchers = pgTable("support_case_watchers", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id", { length: 36 }).notNull().references(() => orgs.id),
+  caseId: varchar("case_id", { length: 36 }).notNull().references(() => supportCases.id, { onDelete: "cascade" }),
+  contactId: varchar("contact_id", { length: 36 }).notNull().references(() => clientContacts.id, { onDelete: "cascade" }),
+  addedByContactId: varchar("added_by_contact_id", { length: 36 }),
+  addedByUserId: varchar("added_by_user_id", { length: 36 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  caseContactUnique: uniqueIndex("ux_support_case_watchers_case_contact").on(table.caseId, table.contactId),
+  orgContactIdx: index("idx_support_case_watchers_org_contact").on(table.orgId, table.contactId),
+}));
+export type SupportCaseWatcher = typeof supportCaseWatchers.$inferSelect;
 
 export type SupportCaseAttachment = typeof supportCaseAttachments.$inferSelect;
 
@@ -1769,7 +1819,22 @@ export const portalCreateCaseSchema = z.object({
   subject: z.string().trim().min(1, "Tell us what you need help with").max(300, "Must be at most 300 characters"),
   description: z.string().trim().max(20000, "Must be at most 20000 characters").optional().or(z.literal("")),
   priority: z.enum(SUPPORT_CASE_PRIORITIES).optional(),
+  intake: supportCaseIntakeSchema.optional(),
+  /** Existing colleagues (contact ids of the same client) to add as watchers. */
+  watcherContactIds: z.array(z.string().min(1).max(36)).max(20).optional(),
+  /** New colleagues by email — only on the client's approved domains (self-registration rule). */
+  watcherEmails: z.array(z.string().trim().toLowerCase().email().max(254)).max(20).optional(),
+  /** Customer Admin only: raise the case for a colleague. */
+  onBehalfOfContactId: z.string().min(1).max(36).optional(),
+  /** Per-form-mount key so a lost response never makes a second case. */
+  submissionKey: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/).optional(),
+  /** Parallel to the uploaded files (multipart): a stable id per file for idempotent retries. */
+  clientFileIds: z.array(z.string().regex(/^[A-Za-z0-9_-]{8,64}$/)).max(10).optional(),
 });
+export const portalWatcherAddSchema = z.object({
+  contactId: z.string().min(1).max(36).optional(),
+  email: z.string().trim().toLowerCase().email().max(254).optional(),
+}).refine(v => !!v.contactId || !!v.email, { message: "Pick a colleague or enter an email" });
 export const portalMessageSchema = z.object({
   body: z.string().trim().min(1, "Write a message first").max(20000, "Must be at most 20000 characters"),
 });

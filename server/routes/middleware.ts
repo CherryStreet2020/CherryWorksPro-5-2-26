@@ -131,7 +131,8 @@ export const publicTokenLimiter = rateLimit({
 
 export const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
-  max: 1000,
+  // The full vitest suite fires well over 1000 requests a minute at one server; production keeps the real cap.
+  max: isTestEnv ? 100000 : 1000,
   message: { message: "Too many requests. Please slow down." },
   standardHeaders: true,
   legacyHeaders: false,

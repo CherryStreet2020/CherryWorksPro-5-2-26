@@ -52,6 +52,14 @@ describe("slaStateFor", () => {
     expect(s.firstResponse).toBe("paused");
     expect(s.label).toMatch(/paused/i);
   });
+  it("BLOCKED keeps the clock running: an overdue resolution target is breached, not met or paused", () => {
+    const s = slaStateFor({ ...base, status: "BLOCKED", firstResponseAt: ny("2026-09-08T11:00:00") }, ny("2026-09-11T09:00:00"));
+    expect(s.resolution).toBe("breached");
+    expect(s.firstResponse).toBe("met");
+    expect(s.label).toMatch(/overdue/i);
+    // Still inside the window: ordinary "ok", never "paused".
+    expect(slaStateFor({ ...base, status: "BLOCKED" }, ny("2026-09-08T10:00:00")).firstResponse).toBe("ok");
+  });
   it("closed cases carry no live label", () => {
     expect(slaStateFor({ ...base, status: "CLOSED", resolvedAt: ny("2026-09-09T09:00:00") }, ny("2026-09-12T09:00:00")).label).toBe("");
   });
@@ -69,6 +77,15 @@ describe("clockPatchForStatus", () => {
     expect(p.slaPausedAt).toBeNull();
     expect(p.firstResponseDueAt).toEqual(ny("2026-09-08T19:00:00"));
     expect(p.resolutionDueAt).toEqual(ny("2026-09-10T19:00:00"));
+  });
+  it("WAITING_ON_CUSTOMER → BLOCKED resumes the clock and shifts the unmet due dates", () => {
+    const paused = { ...existing, status: "WAITING_ON_CUSTOMER", slaPausedAt: ny("2026-09-08T12:00:00") };
+    const p = clockPatchForStatus(paused, "BLOCKED", ny("2026-09-08T14:00:00"));
+    expect(p.slaPausedAt).toBeNull();
+    expect(p.firstResponseDueAt).toEqual(ny("2026-09-08T19:00:00"));
+    expect(p.resolutionDueAt).toEqual(ny("2026-09-10T19:00:00"));
+    // Entering BLOCKED from a running status never pauses.
+    expect(clockPatchForStatus(existing, "BLOCKED", ny("2026-09-08T12:00:00"))).toEqual({});
   });
   it("does not move a first-response target that was already met", () => {
     const paused = { ...existing, status: "WAITING_ON_CUSTOMER", slaPausedAt: ny("2026-09-08T12:00:00"), firstResponseAt: ny("2026-09-08T10:00:00") };

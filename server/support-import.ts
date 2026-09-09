@@ -14,8 +14,7 @@
 import { and, eq, ilike, inArray, sql } from "drizzle-orm";
 import { db } from "./db";
 import {
-  clientContacts, clients, projects, supportCaseEvents, supportCaseMessages, supportCaseTypes, supportCases, timeEntries, users,
-} from "@shared/schema";
+  clientContacts, clients, projects, supportCaseEvents, supportCaseMessages, supportCaseTypes, supportCases, timeEntries, users, SUPPORT_CASE_OPEN_STATUSES } from "@shared/schema";
 import { ensureDefaultTypes, ensureUniquePrefix } from "./support-cases";
 import { createAttachment, existingExternalRefs, MAX_ATTACHMENT_BYTES } from "./support-attachments";
 
@@ -76,6 +75,7 @@ export interface ImportReport {
 export function mapStatus(name: string | null | undefined, category?: string | null): string {
   const n = (name || "").trim().toLowerCase();
   if (/waiting for customer|awaiting customer|pending customer/.test(n)) return "WAITING_ON_CUSTOMER";
+  if (/blocked|on hold|impediment/.test(n)) return "BLOCKED";
   if (/waiting for support|open|to do|new/.test(n)) return "WAITING_ON_SUPPORT";
   if (/in progress|work in progress|escalated|under investigation/.test(n)) return "IN_PROGRESS";
   if (/resolved/.test(n)) return "RESOLVED";
@@ -152,7 +152,8 @@ export async function importJiraIssues(opts: ImportOptions): Promise<ImportRepor
       if ((att.size ?? 0) > MAX_ATTACHMENT_BYTES) { report.attachmentErrors.push({ key: item.key, filename: att.filename, error: "larger than 15 MB" }); continue; }
       try {
         const bytes = await opts.downloadAttachment(att);
-        await createAttachment({ orgId: opts.orgId, caseId, filename: att.filename, mimeType: att.mimeType || "application/octet-stream", bytes, source: "IMPORT", externalRef: ref });
+        // Stable id per Jira attachment: a retry after a failed download completes the pending reservation instead of adding another.
+        await createAttachment({ orgId: opts.orgId, caseId, filename: att.filename, mimeType: att.mimeType || "application/octet-stream", bytes, source: "IMPORT", externalRef: ref, clientFileId: `jira-${String(att.id).replace(/[^A-Za-z0-9_-]/g, "_")}`.slice(0, 64).padEnd(8, "_") });
         knownRefs.add(ref);
         report.attachmentsImported++;
       } catch (err) {
@@ -178,7 +179,7 @@ export async function importJiraIssues(opts: ImportOptions): Promise<ImportRepor
     if (existingKeys.has(item.key)) {
       report.skipped.push(item.key);
       const ex = existingByKey.get(item.key)!;
-      const isOpen = ["NEW", "WAITING_ON_SUPPORT", "IN_PROGRESS", "WAITING_ON_CUSTOMER"].includes(ex.status);
+      const isOpen = (SUPPORT_CASE_OPEN_STATUSES as readonly string[]).includes(ex.status);
       await refreshImportedText(ex.id, item);
       if (attachmentsMode === "all" || (attachmentsMode === "open" && isOpen)) await importAttachments(ex.id, item);
       continue;

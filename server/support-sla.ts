@@ -8,9 +8,9 @@
  * paused duration. A processor alerts the assignee shortly before and at
  * breach.
  */
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, eq, isNull, or, sql, inArray } from "drizzle-orm";
 import { db } from "./db";
-import { supportCases, supportSlaPolicies, type SupportSlaPolicy } from "@shared/schema";
+import { supportCases, supportSlaPolicies, type SupportSlaPolicy, SUPPORT_CASE_OPEN_STATUSES, SUPPORT_CASE_CLOCK_RUNNING_STATUSES } from "@shared/schema";
 
 export interface SlaPolicyInput {
   firstResponseHours: number;
@@ -106,7 +106,7 @@ export function slaStateFor(row: {
   resolutionDueAt: Date | string | null; resolvedAt: Date | string | null; slaPausedAt: Date | string | null;
 }, now = new Date()): { firstResponse: SlaState; resolution: SlaState; nextDueAt: string | null; label: string } {
   const t = (v: Date | string | null) => (v ? new Date(v).getTime() : null);
-  const open = ["NEW", "WAITING_ON_SUPPORT", "IN_PROGRESS", "WAITING_ON_CUSTOMER"].includes(row.status);
+  const open = (SUPPORT_CASE_OPEN_STATUSES as readonly string[]).includes(row.status);
   const judge = (dueAt: number | null, doneAt: number | null): SlaState => {
     if (!dueAt) return "none";
     if (doneAt) return doneAt <= dueAt ? "met" : "breached";
@@ -214,7 +214,7 @@ export async function findCasesNeedingAlert(now = new Date()): Promise<Array<{ r
   const soon = new Date(now.getTime() + 3600000);
   const soonSql = utcNaive(soon);
   const rows = await db.select().from(supportCases).where(and(
-    sql`${supportCases.status} IN ('NEW','WAITING_ON_SUPPORT','IN_PROGRESS')`,
+    inArray(supportCases.status, [...SUPPORT_CASE_CLOCK_RUNNING_STATUSES]),
     isNull(supportCases.slaPausedAt),
     or(
       and(isNull(supportCases.firstResponseAt), isNull(supportCases.firstResponseAlertedAt), sql`${supportCases.firstResponseDueAt} < ${soonSql}::timestamp`),

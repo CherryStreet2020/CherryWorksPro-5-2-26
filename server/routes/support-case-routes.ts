@@ -14,7 +14,7 @@ import * as cases from "../support-cases";
 import { importJiraIssues } from "../support-import";
 import { JiraClient, JiraHttpError, pullProject, MAX_ISSUES } from "../support-jira";
 import multer from "multer";
-import { MAX_ATTACHMENT_BYTES, createAttachment, listAttachments, getAttachment, deleteAttachment, streamBytes, attachmentView, isAllowedAttachment } from "../support-attachments";
+import { MAX_ATTACHMENT_BYTES, createAttachment, listAttachments, getAttachment, deleteAttachment, streamBytes, attachmentView, isAllowedAttachment, AttachmentConflictError, parseClientFileIds } from "../support-attachments";
 
 const attachmentUpload = multer({
   storage: multer.memoryStorage(),
@@ -41,7 +41,7 @@ function friendlyError(err: any): string {
 }
 
 const listQuerySchema = z.object({
-  view: z.enum(["open", "mine", "unassigned", "waiting", "breaching", "resolved", "all"]).optional(),
+  view: z.enum(["open", "mine", "unassigned", "waiting", "blocked", "breaching", "resolved", "all"]).optional(),
   clientId: z.string().optional(),
   status: z.enum(SUPPORT_CASE_STATUSES).optional(),
   assigneeUserId: z.string().optional(),
@@ -59,7 +59,9 @@ export function registerSupportCaseRoutes(app: Express) {
   // Test-only: exercises the inbound processor without a mailbox (vitest).
   if (process.env.NODE_ENV === "test") {
     app.post("/api/test/inbound-email", async (req, res) => {
-      const { type, from, to, subject, text, html, messageId, senderAuthenticated } = req.body || {};
+      // `orgId` (test-only) routes the mail like the M365 poller does, so parallel test files that
+      // each set the shared org's inbound address cannot steal one another's replies.
+      const { type, from, to, subject, text, html, messageId, senderAuthenticated, orgId } = req.body || {};
       if (type && type !== "email.received") return res.status(200).json({ message: "Event type ignored", type });
       const { randomUUID } = await import("crypto");
       const { processInboundEmail } = await import("../inbound-email");
@@ -69,7 +71,7 @@ export function registerSupportCaseRoutes(app: Express) {
       const claimed = await db.insert(inboundEmails).values({ id, from: typeof from === "string" ? from : JSON.stringify(from ?? "unknown"), to: typeof to === "string" ? to : JSON.stringify(to ?? "unknown"), subject: subject || null, bodyText: text || null, bodyHtml: html || null, headers: null, resendMessageId: messageId || null }).onConflictDoNothing().returning({ id: inboundEmails.id });
       if (claimed.length === 0) return res.status(200).json({ success: true, duplicate: true });
       try {
-        const result = await processInboundEmail({ from, to, subject: subject ?? null, text: text ?? null, html: html ?? null, messageId: messageId || null, senderAuthenticated: senderAuthenticated !== false });
+        const result = await processInboundEmail({ from, to, subject: subject ?? null, text: text ?? null, html: html ?? null, messageId: messageId || null, orgId: typeof orgId === "string" && orgId ? orgId : undefined, senderAuthenticated: senderAuthenticated !== false });
         return res.status(200).json({ success: true, emailId: id, ...result });
       } catch (err) {
         const { eq } = await import("drizzle-orm");
@@ -163,13 +165,45 @@ export function registerSupportCaseRoutes(app: Express) {
     const id = req.params.id as string;
     const row = await cases.getCase(orgId, id);
     if (!row) return res.status(404).json({ message: "Support case not found" });
-    const [messages, events, time, attachments] = await Promise.all([
+    const [messages, events, time, attachments, watchers] = await Promise.all([
       cases.listMessages(orgId, id, true),
       cases.listEvents(orgId, id),
       cases.listCaseTime(orgId, id),
       listAttachments(orgId, id),
+      cases.listWatchers(orgId, id),
     ]);
-    return res.json({ ...cases.withSla({ ...row, minutesLogged: Number(row.minutesLogged) }), messages, events, time, attachments: attachments.map(a => attachmentView(a, "/api/support/attachments")) });
+    return res.json({ ...cases.withSla({ ...row, minutesLogged: Number(row.minutesLogged) }), messages, events, time, attachments: attachments.map(a => attachmentView(a, "/api/support/attachments")), watchers });
+  });
+
+  // ── Watchers (colleagues of the customer who follow the case) ──
+  app.get("/api/support/cases/:id/colleagues", ...gate, async (req, res) => {
+    const orgId = req.session.orgId!;
+    const row = await cases.getCaseRaw(orgId, req.params.id as string);
+    if (!row) return res.status(404).json({ message: "Support case not found" });
+    return res.json(await cases.listColleagues(orgId, row.clientId, { excludeCaseId: row.id, excludeContactIds: row.requesterContactId ? [row.requesterContactId] : [] }));
+  });
+  app.post("/api/support/cases/:id/watchers", ...gate, async (req, res) => {
+    try {
+      const orgId = req.session.orgId!;
+      const contactId = z.object({ contactId: z.string().min(1).max(36) }).parse(req.body).contactId;
+      const actor = await actorOf(req);
+      const r = await cases.addWatcher(orgId, req.params.id as string, contactId, actor);
+      return res.status(r.changed ? 201 : 200).json(r.watchers);
+    } catch (err: any) {
+      if (err instanceof cases.CaseAccessError) return res.status(404).json({ message: err.message });
+      return res.status(400).json({ message: friendlyError(err) });
+    }
+  });
+  app.delete("/api/support/cases/:id/watchers/:contactId", ...gate, async (req, res) => {
+    try {
+      const orgId = req.session.orgId!;
+      const actor = await actorOf(req);
+      const r = await cases.removeWatcher(orgId, req.params.id as string, req.params.contactId as string, actor);
+      return res.json(r.watchers);
+    } catch (err: any) {
+      if (err instanceof cases.CaseAccessError) return res.status(404).json({ message: err.message });
+      return res.status(400).json({ message: friendlyError(err) });
+    }
   });
 
   app.patch("/api/support/cases/:id", ...gate, async (req, res) => {
@@ -221,12 +255,15 @@ export function registerSupportCaseRoutes(app: Express) {
       const files = ((req as any).files as Express.Multer.File[] | undefined) ?? [];
       if (files.length === 0) return res.status(400).json({ message: "No files were uploaded" });
       const messageId = typeof req.body?.messageId === "string" && req.body.messageId ? req.body.messageId : null;
+      const ids = parseClientFileIds(req.body?.clientFileIds, files.length) ?? [];
       const created = [];
-      for (const f of files) {
-        created.push(await createAttachment({ orgId, caseId: row.id, messageId, filename: f.originalname, mimeType: f.mimetype, bytes: f.buffer, uploadedByUserId: req.session.userId!, source: "AGENT" }));
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        created.push(await createAttachment({ orgId, caseId: row.id, messageId, filename: f.originalname, mimeType: f.mimetype, bytes: f.buffer, uploadedByUserId: req.session.userId!, source: "AGENT", clientFileId: ids[i] ?? null }));
       }
       return res.status(201).json(created.map(a => attachmentView(a, "/api/support/attachments")));
     } catch (err: any) {
+      if (err instanceof AttachmentConflictError) return res.status(409).json({ message: err.message });
       return res.status(400).json({ message: friendlyError(err) });
     }
   });

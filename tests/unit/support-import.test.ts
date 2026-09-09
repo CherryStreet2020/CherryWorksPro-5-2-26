@@ -43,6 +43,10 @@ describe("mapStatus / mapPriority", () => {
     for (const s of ["Closed", "Done", "Canceled"]) expect(mapStatus(s)).toBe("CLOSED");
     expect(mapStatus("Something odd", "done")).toBe("CLOSED");
   });
+  it("maps Jira's blocked / on-hold statuses onto BLOCKED", () => {
+    expect(mapStatus("Blocked")).toBe("BLOCKED");
+    expect(mapStatus("On hold")).toBe("BLOCKED");
+  });
   it("maps priorities", () => {
     expect(mapPriority("Blocker")).toBe("URGENT");
     expect(mapPriority("High")).toBe("HIGH");
