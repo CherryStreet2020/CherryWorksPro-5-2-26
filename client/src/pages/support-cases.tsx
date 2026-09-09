@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { LifeBuoy, Plus, Search, Inbox, UserCircle2, Hourglass, CheckCircle2, Layers, AlarmClock, Settings2 } from "lucide-react";
+import { LifeBuoy, Plus, Search, Inbox, UserCircle2, Hourglass, CheckCircle2, Layers, AlarmClock, Settings2, Ban } from "lucide-react";
 import {
   type CaseListRow, type CaseView, type CaseType, type CasePriority,
   STATUS_LABEL, STATUS_COLOR, PRIORITY_LABEL, PRIORITY_COLOR, CASE_PRIORITY_ORDER, hoursLabel, relativeTime,
@@ -38,17 +38,18 @@ export function PriorityChip({ priority }: { priority: CaseListRow["priority"] }
   );
 }
 
-const VIEWS: { key: CaseView; label: string; icon: any; countKey: "open" | "mine" | "unassigned" | "waiting" | "breaching" | "resolved" | "all" }[] = [
+const VIEWS: { key: CaseView; label: string; icon: any; countKey: "open" | "mine" | "unassigned" | "waiting" | "blocked" | "breaching" | "resolved" | "all" }[] = [
   { key: "open", label: "All open", icon: Inbox, countKey: "open" },
   { key: "mine", label: "Assigned to me", icon: UserCircle2, countKey: "mine" },
   { key: "unassigned", label: "Unassigned", icon: Layers, countKey: "unassigned" },
   { key: "waiting", label: "Waiting on customer", icon: Hourglass, countKey: "waiting" },
+  { key: "blocked", label: "Blocked", icon: Ban, countKey: "blocked" },
   { key: "breaching", label: "Breaching soon", icon: AlarmClock, countKey: "breaching" },
   { key: "resolved", label: "Resolved", icon: CheckCircle2, countKey: "resolved" },
   { key: "all", label: "All", icon: LifeBuoy, countKey: "all" },
 ];
 
-interface Summary { open: number; mine: number; unassigned: number; waiting: number; breaching: number; resolved: number; all: number }
+interface Summary { open: number; mine: number; unassigned: number; waiting: number; blocked: number; breaching: number; resolved: number; all: number }
 
 export function SlaChip({ sla }: { sla?: CaseListRow["sla"] }) {
   if (!sla || !sla.label) return <span className="text-xs" style={{ color: "var(--lux-text-muted)" }}>—</span>;

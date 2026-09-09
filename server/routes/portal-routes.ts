@@ -365,7 +365,13 @@ export function registerPortalRoutes(app: Express) {
   /** Colleagues at this contact's company who can be added as watchers (never another client's people). */
   app.get("/api/portal/:orgSlug/colleagues", requirePortal, async (req, res) => {
     const p = req.portal!;
-    const excludeCaseId = typeof req.query.caseId === "string" ? req.query.caseId : undefined;
+    // The case filter (hide current watchers) only applies to a case this contact may see —
+    // otherwise comparing the two lists would reveal who follows a case they cannot open.
+    let excludeCaseId = typeof req.query.caseId === "string" ? req.query.caseId : undefined;
+    if (excludeCaseId) {
+      const [visible] = await db.select({ id: supportCases.id }).from(supportCases).where(and(visibleCaseWhere(req), eq(supportCases.id, excludeCaseId)));
+      if (!visible) excludeCaseId = undefined;
+    }
     return res.json(await cases.listColleagues(p.orgId, p.client.id, { excludeContactIds: [p.contact.id], excludeCaseId }));
   });
 

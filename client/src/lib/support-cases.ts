@@ -6,7 +6,7 @@ export type { SupportCaseIntake, SupportCaseImpact };
 
 export type CaseStatus = "NEW" | "WAITING_ON_SUPPORT" | "IN_PROGRESS" | "WAITING_ON_CUSTOMER" | "BLOCKED" | "RESOLVED" | "CLOSED";
 export type CasePriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
-export type CaseView = "open" | "mine" | "unassigned" | "waiting" | "breaching" | "resolved" | "all";
+export type CaseView = "open" | "mine" | "unassigned" | "waiting" | "blocked" | "breaching" | "resolved" | "all";
 
 export const CASE_STATUS_ORDER: CaseStatus[] = ["NEW", "WAITING_ON_SUPPORT", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "BLOCKED", "RESOLVED", "CLOSED"];
 export const CASE_PRIORITY_ORDER: CasePriority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
