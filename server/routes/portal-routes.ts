@@ -73,17 +73,24 @@ export function safeReturnPath(raw: unknown, orgSlug: string): string | null {
   return raw;
 }
 
-/** Cases this contact may see: their own, or the whole client when they are a Customer Admin. */
-function visibleCaseWhere(req: Request) {
-  const p = req.portal!;
-  const own = or(
+/** "My case": raised by this contact (by id, or by address for cases recorded before the contact existed). */
+function ownCaseWhere(p: NonNullable<Request["portal"]>) {
+  return or(
     eq(supportCases.requesterContactId, p.contact.id),
     p.contact.email ? sql`lower(${supportCases.requesterEmail}) = ${p.contact.email.toLowerCase()}` : sql`false`,
   )!;
+}
+function isOwnCase(p: NonNullable<Request["portal"]>, r: { requesterContactId: string | null; requesterEmail?: string | null }) {
+  return r.requesterContactId === p.contact.id || (!!p.contact.email && !!r.requesterEmail && r.requesterEmail.toLowerCase() === p.contact.email.toLowerCase());
+}
+
+/** Cases this contact may see: their own, or the whole client when they are a Customer Admin. */
+function visibleCaseWhere(req: Request) {
+  const p = req.portal!;
   return and(
     eq(supportCases.orgId, p.orgId),
     eq(supportCases.clientId, p.client.id),
-    p.contact.portalRole === "admin" ? sql`true` : own,
+    p.contact.portalRole === "admin" ? sql`true` : ownCaseWhere(p),
   )!;
 }
 
@@ -193,7 +200,7 @@ export function registerPortalRoutes(app: Express) {
     const requester = typeof req.query.requester === "string" ? req.query.requester : "";
     const priority = typeof req.query.priority === "string" ? req.query.priority.toUpperCase() : "";
     if (requester) filters.push(eq(supportCases.requesterContactId, requester));
-    if (req.query.mine === "1") filters.push(eq(supportCases.requesterContactId, p.contact.id));
+    if (req.query.mine === "1") filters.push(ownCaseWhere(p));
     if ((SUPPORT_CASE_PRIORITIES as readonly string[]).includes(priority)) filters.push(eq(supportCases.priority, priority));
     // Status is filtered in SQL and counts are aggregated over the whole authorised set,
     // so an old open case never hides behind newer resolved ones and totals are exact.
@@ -208,7 +215,7 @@ export function registerPortalRoutes(app: Express) {
       db.select({
           id: supportCases.id, caseKey: supportCases.caseKey, subject: supportCases.subject, status: supportCases.status,
           priority: supportCases.priority, typeName: supportCaseTypes.name, requesterName: supportCases.requesterName,
-          requesterContactId: supportCases.requesterContactId,
+          requesterContactId: supportCases.requesterContactId, requesterEmail: supportCases.requesterEmail,
           createdAt: supportCases.createdAt, updatedAt: supportCases.updatedAt,
           lastAgentMessageAt: supportCases.lastAgentMessageAt, lastCustomerMessageAt: supportCases.lastCustomerMessageAt,
           resolvedAt: supportCases.resolvedAt,
@@ -230,7 +237,7 @@ export function registerPortalRoutes(app: Express) {
     for (const r of byPrio) byPriority[r.priority] = r.n;
     const page = rows.slice(0, limit);
     return res.json({
-      cases: page.map(r => ({ ...r, mine: r.requesterContactId === p.contact.id, awaitingYou: r.status === "WAITING_ON_CUSTOMER", hasNewReply: !!r.lastAgentMessageAt && (!r.lastCustomerMessageAt || r.lastAgentMessageAt > r.lastCustomerMessageAt) })),
+      cases: page.map(({ requesterEmail: _e, ...r }) => ({ ...r, mine: isOwnCase(p, { requesterContactId: r.requesterContactId, requesterEmail: _e }), awaitingYou: r.status === "WAITING_ON_CUSTOMER", hasNewReply: !!r.lastAgentMessageAt && (!r.lastCustomerMessageAt || r.lastAgentMessageAt > r.lastCustomerMessageAt) })),
       counts: { open: agg?.open ?? 0, waitingOnYou: agg?.waitingOnYou ?? 0, resolved: agg?.resolved ?? 0, byPriority },
       paging: { status, limit, offset, hasMore: rows.length > limit },
       scope: p.contact.portalRole === "admin" ? "client" : "own",

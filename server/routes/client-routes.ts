@@ -285,6 +285,10 @@ app.patch("/api/clients/:clientId/contacts/:id", requireManagerOrAbove, async (r
       const { changeContactEmail } = await import("../portal-auth");
       const { email: newEmail, ...rest } = updates;
       contact = await changeContactEmail({ orgId, contactId, newEmail, patch: rest });
+      // Same post-step storage.updateContact runs: set-only company auto-link by business domain.
+      if (contact && !Object.prototype.hasOwnProperty.call(updates, "companyId")) {
+        contact = (await storage.runContactAutoLink(contactId, orgId)) ?? contact;
+      }
     } else {
       contact = await storage.updateContact(contactId, orgId, updates);
     }

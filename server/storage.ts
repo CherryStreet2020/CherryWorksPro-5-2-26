@@ -8808,7 +8808,10 @@ export class DatabaseStorage {
     // prospect already converted is served by the idempotent branch below, never refused
     // because of its own contact.
     {
-      const email = (opts.clientContactOverrides?.email ?? prospect.email ?? "").trim().toLowerCase();
+      // An explicit `email: null` override means "no address" — only an omitted override falls back to the prospect's.
+      const ov = opts.clientContactOverrides;
+      const chosen = ov && Object.prototype.hasOwnProperty.call(ov, "email") ? ov.email : prospect.email;
+      const email = (chosen ?? "").trim().toLowerCase();
       if (email && !prospect.convertedToClientContactId) {
         const [dup] = await db.select({ id: clientContacts.id }).from(clientContacts)
           .where(and(eq(clientContacts.orgId, orgId), sql`lower(${clientContacts.email}) = ${email}`, isNotNull(clientContacts.clientId), isNull(clientContacts.deletedAt)))
