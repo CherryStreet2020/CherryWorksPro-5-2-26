@@ -117,7 +117,7 @@ export async function processInboundEmail(input: {
           body, visibility: "CUSTOMER",
           author: { contactId: contact!.id, name: authorName },
           emailMessageId: input.messageId,
-          authorize: (tx, c) => cases.customerCanAccess(tx, org.id, c, contact!.id).then(r => r.ok),
+          authorize: (tx, c) => cases.customerCanAccess(tx, org.id, c, contact!.id, { lock: true }).then(r => r.ok),
         });
         if (result) {
           // addMessage() already notifies the assignee / managers.

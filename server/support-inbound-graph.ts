@@ -233,7 +233,7 @@ export async function pollOrg(org: { id: string; supportInboundAddress: string; 
           await createAttachment({
             orgId: org.id, caseId: outcome.caseId, filename: full.name || a.name || "attachment", mimeType: full.contentType || a.contentType || "application/octet-stream",
             bytes: Buffer.from(full.contentBytes, "base64"), source: "EMAIL", externalRef: `M365:${msg.id}:${a.id}`, uploadedByContactId: outcome.contactId ?? null,
-            authorize: outcome.contactId ? (tx) => cases.customerCanAccessCase(tx, org.id, outcome.caseId!, outcome.contactId!) : undefined,
+            authorize: outcome.contactId ? (tx) => cases.customerCanAccessCase(tx, org.id, outcome.caseId!, outcome.contactId!, { lock: true }) : undefined,
           }).catch(err => console.warn("[support-inbound-graph] attachment failed", (err as Error).message));
         }
       } catch (err) {

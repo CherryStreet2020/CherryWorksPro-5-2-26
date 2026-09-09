@@ -460,7 +460,7 @@ export function registerPortalRoutes(app: Express) {
       } catch (err: any) {
         if (!(err instanceof cases.CaseReplay)) throw err;
         const winner = await err.resolve();
-        if (!winner) throw new Error("Could not open the case; please try again");
+        if (!winner) throw new Error("Could not open the case; please try again", { cause: err });
         return replayResponse(winner);
       }
       await storeFiles(row.id);

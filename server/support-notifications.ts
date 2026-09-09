@@ -77,6 +77,11 @@ export async function customerRecipients(c: Pick<SupportCase, "id" | "orgId" | "
   return [...out.values()];
 }
 
+/** Re-resolved immediately before each send: a colleague removed or blocked while an earlier mail went out gets nothing. */
+async function stillRecipient(c: Parameters<typeof customerRecipients>[0], r: { email: string; contactId: string | null }): Promise<boolean> {
+  return (await customerRecipients(c)).some(x => x.email === r.email && x.contactId === r.contactId);
+}
+
 async function safeEmail(label: string, fn: () => Promise<unknown>) {
   try { await fn(); log("SUPPORT_EMAIL_SENT", { label }); }
   catch (err) { warn("SUPPORT_EMAIL_FAILED", { label, error: (err as Error)?.message }); }
@@ -97,6 +102,7 @@ export async function notifyCaseCreated(c: SupportCase, opts: { openedBy?: { nam
     // Requester + watchers, resolved now (a colleague added as a watcher at creation hears too).
     // "On behalf of": the admin who opened it is a watcher and hears as one; the requester is told who did it.
     for (const r of await customerRecipients(c)) {
+      if (!(await stillRecipient(c, r))) continue;
       const isRequester = c.requesterContactId ? r.contactId === c.requesterContactId : r.email === (c.requesterEmail || "").toLowerCase();
       const first = (r.name || c.requesterName || "").split(" ")[0];
       await safeEmail(isRequester ? "case.created→requester" : "case.created→watcher", () => sendCaseEmail({
@@ -134,6 +140,7 @@ export async function notifyCaseMessage(c: SupportCase, msg: { authorUserId: str
 
   if (fromAgent) {
     for (const r of await customerRecipients(c)) {
+      if (!(await stillRecipient(c, r))) continue;
       await safeEmail("case.reply→customer", () => sendCaseEmail({
         to: r.email, org, orgName: org.name, caseKey: c.caseKey, subject: c.subject,
         heading: `${msg.authorName} replied`, intro: `There's a new reply on case ${c.caseKey}.`,
@@ -194,6 +201,7 @@ export async function notifyCaseUpdated(before: SupportCase, after: SupportCase,
 
   if (after.status !== before.status && (after.status === "RESOLVED" || after.status === "WAITING_ON_CUSTOMER" || after.status === "BLOCKED")) {
     for (const r of await customerRecipients(after)) {
+      if (!(await stillRecipient(after, r))) continue;
       const to = r.email;
       if (after.status === "RESOLVED") {
         await safeEmail("case.resolved→customer", () => sendCaseEmail({
