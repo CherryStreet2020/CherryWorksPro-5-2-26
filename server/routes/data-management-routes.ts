@@ -192,6 +192,11 @@ export function registerDataManagementRoutes(app: Express) {
           WHERE id = $3 AND org_id = $4`,
           [redactedName, redactedEmail, clientId, orgId]
         );
+        // Help Center block list holds plaintext addresses of this client's former contacts.
+        await pool.query(
+          `DELETE FROM portal_blocked_emails WHERE client_id = $1 AND org_id = $2`,
+          [clientId, orgId]
+        );
 
         await pool.query(
           `DELETE FROM client_contacts WHERE client_id = $1`,
