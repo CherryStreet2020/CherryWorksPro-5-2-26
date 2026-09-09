@@ -20,7 +20,7 @@ import { inboundEmails, orgs, supportCases } from "@shared/schema";
 import { refreshGraphAccessToken } from "./email/graph-transport";
 import { processInboundEmail, extractCaseKey } from "./inbound-email";
 import { createAttachment, MAX_ATTACHMENT_BYTES } from "./support-attachments";
-import { randomUUID } from "crypto";
+import { randomUUID, createHash } from "crypto";
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
 /** 50 messages × 20 pages = the newest 1000 unread messages are scanned each pass. */
@@ -233,6 +233,8 @@ export async function pollOrg(org: { id: string; supportInboundAddress: string; 
           await createAttachment({
             orgId: org.id, caseId: outcome.caseId, filename: full.name || a.name || "attachment", mimeType: full.contentType || a.contentType || "application/octet-stream",
             bytes: Buffer.from(full.contentBytes, "base64"), source: "EMAIL", externalRef: `M365:${msg.id}:${a.id}`, uploadedByContactId: outcome.contactId ?? null,
+            // Deterministic per mail attachment (Graph ids are too long for the column): a retried poll completes the same reservation.
+            clientFileId: createHash("sha256").update(`M365:${msg.id}:${a.id}`).digest("hex"),
             authorize: outcome.contactId ? (tx) => cases.customerCanAccessCase(tx, org.id, outcome.caseId!, outcome.contactId!, { lock: true }) : undefined,
           }).catch(err => console.warn("[support-inbound-graph] attachment failed", (err as Error).message));
         }

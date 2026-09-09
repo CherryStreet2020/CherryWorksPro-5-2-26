@@ -245,7 +245,9 @@ function NewCaseForm({ slug, me }: { slug: string; me: Me }) {
       // Anything else (e.g. added while the request was in flight) is "Not uploaded" — never dropped silently.
       const next = files.map(f => f.error ? f : stored.has(f.clientFileId) ? { ...f, done: true, error: null } : { ...f, error: failed.get(f.clientFileId) ?? "Not uploaded" });
       setFiles(next);
-      if (next.every(f => f.done)) navigate(`${base(slug)}/cases/${r.id}`);
+      // A replay means the case was already opened by an earlier submit whose response was lost:
+      // anything edited since was NOT applied — say so instead of navigating as if it had been.
+      if (next.every(f => f.done) && !r.replay) navigate(`${base(slug)}/cases/${r.id}`);
       else setResult(r);
     },
   });
@@ -280,6 +282,7 @@ function NewCaseForm({ slug, me }: { slug: string; me: Me }) {
     return (
       <Shell surface={SURFACE} slug={slug} me={me} active="cases">
         <h1 style={{ ...display, fontSize: 28, margin: "10px 0 6px" }}>Case {result.caseKey} is open</h1>
+        {result.replay && <p style={{ ...card, padding: 12, margin: "0 0 14px", fontSize: 13, color: T.text2, borderColor: T.warn }} data-testid="portal-create-replay">This request had already been opened by your earlier submit. Any changes you made to the form after that were not applied — add them as a reply on the case.</p>}
         <p style={{ color: T.text2, margin: "0 0 18px", lineHeight: 1.6 }}>{failed.length ? `${failed.length} file${failed.length === 1 ? "" : "s"} did not upload. You can retry them now or add them from the case later.` : "All files are attached."}</p>
         <section style={{ ...card, display: "grid", gap: 8 }} data-testid="portal-create-partial">
           {files.map(f => (

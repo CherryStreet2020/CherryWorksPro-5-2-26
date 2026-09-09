@@ -152,7 +152,8 @@ export async function importJiraIssues(opts: ImportOptions): Promise<ImportRepor
       if ((att.size ?? 0) > MAX_ATTACHMENT_BYTES) { report.attachmentErrors.push({ key: item.key, filename: att.filename, error: "larger than 15 MB" }); continue; }
       try {
         const bytes = await opts.downloadAttachment(att);
-        await createAttachment({ orgId: opts.orgId, caseId, filename: att.filename, mimeType: att.mimeType || "application/octet-stream", bytes, source: "IMPORT", externalRef: ref });
+        // Stable id per Jira attachment: a retry after a failed download completes the pending reservation instead of adding another.
+        await createAttachment({ orgId: opts.orgId, caseId, filename: att.filename, mimeType: att.mimeType || "application/octet-stream", bytes, source: "IMPORT", externalRef: ref, clientFileId: `jira-${String(att.id).replace(/[^A-Za-z0-9_-]/g, "_")}`.slice(0, 64).padEnd(8, "_") });
         knownRefs.add(ref);
         report.attachmentsImported++;
       } catch (err) {
