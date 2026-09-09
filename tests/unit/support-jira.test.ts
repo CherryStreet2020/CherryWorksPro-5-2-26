@@ -125,6 +125,7 @@ describe("Jira fetcher", () => {
     // Idempotent: the same file is not copied twice.
     const allAgain = await (await api("POST", "/api/support/import/jira-fetch", admin, { baseUrl: fakeUrl, email: "dean@example.com", apiToken: "tok_12345678", projectKey: "ZJR", clientId, attachmentsForExisting: "all" })).json();
     expect(allAgain.attachmentsImported).toBe(0);
+    lateAttachment = false; // keep later tests order-independent
   });
 
   it("refuses bad credentials cleanly", async () => {

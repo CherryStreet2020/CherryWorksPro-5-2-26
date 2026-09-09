@@ -16,7 +16,7 @@ interface PortalInfo { orgSlug: string; helpUrl: string; portalUrl: string }
 interface PickerClient { id: string; name: string }
 interface PickerProject { id: string; name: string }
 interface JiraTest { ok: boolean; connectedAs: string; issues: number; firstKey: string | null; lastKey: string | null; statuses: Record<string, number> }
-interface ImportReport { pulled?: number; imported: number; skipped: string[]; contactsCreated: number; unmatchedAssignees: string[]; unmatchedTypes: string[]; timeEntriesLinked: number; nextCaseNumber: number; errors: { key: string; error: string }[]; contactConflicts?: string[]; attachmentsImported?: number; attachmentErrors?: { key: string; filename: string; error: string }[] }
+interface ImportReport { pulled?: number; imported: number; skipped: string[]; contactsCreated: number; unmatchedAssignees: string[]; unmatchedTypes: string[]; timeEntriesLinked: number; nextCaseNumber: number; errors: { key: string; error: string }[]; contactConflicts?: string[]; attachmentsImported: number; attachmentErrors: { key: string; filename: string; error: string }[] }
 
 export default function SupportSettingsPage() {
   useDocumentTitle("Support settings");
@@ -275,8 +275,8 @@ function JiraImportCard({ card, muted, fieldStyle }: { card: React.CSSProperties
       )}
       {report && (
         <div className="rounded-lg p-3 text-xs space-y-1" style={{ background: "var(--lux-surface-alt)", border: "1px solid var(--lux-border)", color: "var(--lux-text)" }} data-testid="text-jira-report">
-          <p><strong>{report.imported}</strong> imported{report.pulled !== undefined ? ` of ${report.pulled} pulled` : ""} · {report.skipped.length} already existed · {report.contactsCreated} contacts created · {report.timeEntriesLinked} time entries linked · {report.attachmentsImported ?? 0} attachments copied · next key number {report.nextCaseNumber}</p>
-          {(report.attachmentErrors?.length ?? 0) > 0 && <p style={{ color: "#b91c1c" }} data-testid="import-attachment-errors">{report.attachmentErrors!.length} attachments failed: {report.attachmentErrors!.slice(0, 5).map(e => `${e.key} ${e.filename}: ${e.error}`).join("; ")}</p>}
+          <p><strong>{report.imported}</strong> imported{report.pulled !== undefined ? ` of ${report.pulled} pulled` : ""} · {report.skipped.length} already existed · {report.contactsCreated} contacts created · {report.timeEntriesLinked} time entries linked · {report.attachmentsImported} attachments copied · next key number {report.nextCaseNumber}</p>
+          {report.attachmentErrors.length > 0 && <p style={{ color: "#b91c1c" }} data-testid="import-attachment-errors">{report.attachmentErrors.length} attachments failed: {report.attachmentErrors.slice(0, 5).map(e => `${e.key} ${e.filename}: ${e.error}`).join("; ")}</p>}
           {report.unmatchedAssignees.length > 0 && <p style={muted}>Assignees left unassigned (no matching team member): {report.unmatchedAssignees.join(", ")}</p>}
           {(report.contactConflicts?.length ?? 0) > 0 && <p style={{ color: "var(--lux-danger, #b91c1c)" }} data-testid="import-contact-conflicts">Requesters who already belong to another client (cases imported without a requester contact — they cannot see these cases until you move them): {report.contactConflicts!.join(", ")}</p>}
           {report.unmatchedTypes.length > 0 && <p style={muted}>Request types with no matching case type (left blank): {report.unmatchedTypes.join(", ")}</p>}
