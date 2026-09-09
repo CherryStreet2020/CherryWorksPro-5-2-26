@@ -105,12 +105,12 @@ function visibleCaseWhere(req: Request) {
 /** In-transaction re-check of the same authority (for writes: message, upload, watcher changes). */
 function authorizeContact(req: Request) {
   const p = req.portal!;
-  return async (tx: any, c: any) => (await cases.customerCanAccess(tx, p.orgId, c, p.contact.id)).ok;
+  return async (tx: any, c: any) => (await cases.customerCanAccess(tx, p.orgId, c, p.contact.id, { lock: true })).ok;
 }
 /** Only the requester or a Customer Admin may remove watchers; anyone with access may add. */
 function authorizeContactManage(req: Request) {
   const p = req.portal!;
-  return async (tx: any, c: any) => { const r = await cases.customerCanAccess(tx, p.orgId, c, p.contact.id); return r.ok && r.role !== "watcher"; };
+  return async (tx: any, c: any) => { const r = await cases.customerCanAccess(tx, p.orgId, c, p.contact.id, { lock: true }); return r.ok && r.role !== "watcher"; };
 }
 /** Field values arrive as strings in a multipart form; JSON bodies arrive typed. */
 function parseCreateBody(req: Request) {
@@ -409,7 +409,7 @@ export function registerPortalRoutes(app: Express) {
       for (let i = 0; i < files.length; i++) {
         const f = files[i];
         try {
-          out.push(await createAttachment({ orgId: p.orgId, caseId, filename: f.originalname, mimeType: f.mimetype, bytes: f.buffer, uploadedByContactId: p.contact.id, source: "PORTAL", clientFileId: fileIds[i] ?? null, authorize: (tx) => cases.customerCanAccessCase(tx, p.orgId, caseId, p.contact.id) }));
+          out.push(await createAttachment({ orgId: p.orgId, caseId, filename: f.originalname, mimeType: f.mimetype, bytes: f.buffer, uploadedByContactId: p.contact.id, source: "PORTAL", clientFileId: fileIds[i] ?? null, authorize: (tx) => cases.customerCanAccessCase(tx, p.orgId, caseId, p.contact.id, { lock: true }) }));
         } catch (err: any) {
           attachmentErrors.push({ filename: f.originalname, clientFileId: fileIds[i] ?? null, error: friendly(err) });
         }
@@ -419,14 +419,17 @@ export function registerPortalRoutes(app: Express) {
     try {
       // Replay: the same authenticated contact already submitted this key → return that case (after the
       // normal visibility check) and let the client finish its uploads. Never a second case.
+      // One path for every replay (initial lookup AND the unique-conflict race): visibility first,
+      // restricted response without it, uploads (each authorised under the case lock) with it.
+      const replayResponse = async (prior: { id: string; caseKey: string; subject: string; status: string }) => {
+        const [visible] = await db.select({ id: supportCases.id }).from(supportCases).where(and(visibleCaseWhere(req), eq(supportCases.id, prior.id)));
+        if (!visible) return res.status(200).json({ id: prior.id, caseKey: prior.caseKey, replay: true });
+        await storeFiles(prior.id);
+        return res.status(200).json({ id: prior.id, caseKey: prior.caseKey, subject: prior.subject, status: prior.status, replay: true, attachments: await attachmentsOf(prior.id), attachmentErrors });
+      };
       if (parsed.submissionKey) {
         const prior = await cases.findSubmission(p.orgId, p.contact.id, parsed.submissionKey);
-        if (prior) {
-          const [visible] = await db.select({ id: supportCases.id }).from(supportCases).where(and(visibleCaseWhere(req), eq(supportCases.id, prior.id)));
-          if (!visible) return res.status(200).json({ id: prior.id, caseKey: prior.caseKey, replay: true });
-          await storeFiles(prior.id);
-          return res.status(200).json({ id: prior.id, caseKey: prior.caseKey, subject: prior.subject, status: prior.status, replay: true, attachments: await attachmentsOf(prior.id), attachmentErrors });
-        }
+        if (prior) return replayResponse(prior);
       }
       const watcherIds = new Set(parsed.watcherContactIds ?? []);
       for (const e of parsed.watcherEmails ?? []) watcherIds.add(await resolveWatcherEmail(p, e));
@@ -455,8 +458,10 @@ export function registerPortalRoutes(app: Express) {
           portal: { submitterContactId: p.contact.id, submissionKey: parsed.submissionKey ?? null, watcherContactIds: [...watcherIds] },
         }, null);
       } catch (err: any) {
-        if (err instanceof cases.CaseReplay) row = err.row;
-        else throw err;
+        if (!(err instanceof cases.CaseReplay)) throw err;
+        const winner = await err.resolve();
+        if (!winner) throw new Error("Could not open the case; please try again");
+        return replayResponse(winner);
       }
       await storeFiles(row.id);
       return res.status(201).json({ id: row.id, caseKey: row.caseKey, subject: row.subject, status: row.status, attachments: await attachmentsOf(row.id), attachmentErrors });
@@ -581,7 +586,7 @@ export function registerPortalRoutes(app: Express) {
       const created = [];
       for (let i = 0; i < files.length; i++) {
         const f = files[i];
-        created.push(await createAttachment({ orgId: p.orgId, caseId: row.id, filename: f.originalname, mimeType: f.mimetype, bytes: f.buffer, uploadedByContactId: p.contact.id, source: "PORTAL", clientFileId: ids[i] ?? null, authorize: (tx) => cases.customerCanAccessCase(tx, p.orgId, row.id, p.contact.id) }));
+        created.push(await createAttachment({ orgId: p.orgId, caseId: row.id, filename: f.originalname, mimeType: f.mimetype, bytes: f.buffer, uploadedByContactId: p.contact.id, source: "PORTAL", clientFileId: ids[i] ?? null, authorize: (tx) => cases.customerCanAccessCase(tx, p.orgId, row.id, p.contact.id, { lock: true }) }));
       }
       return res.status(201).json(created.map(a => attachmentView(a, `/api/portal/${p.orgSlug}/attachments`)));
     } catch (err: any) {

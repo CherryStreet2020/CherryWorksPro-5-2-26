@@ -358,7 +358,14 @@ export interface CreateCaseInput {
 
 export class CaseAccessError extends Error {}
 /** Thrown when a Help Center submission replays an already-committed one; carries the existing row. */
-export class CaseReplay extends Error { constructor(public readonly row: SupportCase) { super("replay"); } }
+export class CaseReplay extends Error {
+  constructor(public row: SupportCase | null, public readonly key: { orgId: string; submitterContactId: string; submissionKey: string }) { super("replay"); }
+  /** The committed winner of the race (read after our own transaction rolled back). */
+  async resolve(): Promise<SupportCase | undefined> {
+    if (this.row) return this.row;
+    return findSubmission(this.key.orgId, this.key.submitterContactId, this.key.submissionKey);
+  }
+}
 
 async function assertNotBlocked(tx: DbOrTx, orgId: string, email: string | null | undefined) {
   const e = (email || "").trim().toLowerCase();
@@ -430,8 +437,8 @@ export async function createCase(orgId: string, input: CreateCaseInput, actor: A
     // Two first submissions with the same key raced: the other one is the case.
     const e = err?.cause ?? err;
     if (portal?.submissionKey && e?.code === "23505" && String(e?.constraint || "").includes("ux_support_cases_submission")) {
-      const [existing] = await db.select().from(supportCases).where(and(eq(supportCases.orgId, orgId), eq(supportCases.submittedByContactId, portal.submitterContactId), eq(supportCases.submissionKey, portal.submissionKey)));
-      if (existing) throw new CaseReplay(existing);
+      // The insert failed, so this transaction is aborted: the winner is read on a fresh connection after rollback.
+      throw new CaseReplay(null, { orgId, submitterContactId: portal.submitterContactId, submissionKey: portal.submissionKey });
     }
     throw err;
   }
@@ -487,8 +494,11 @@ export async function findSubmission(orgId: string, submitterContactId: string, 
  * the contact must be live, of the case's client, and not blocked. Evaluated on `conn` so callers
  * can run it INSIDE a transaction under the case row lock (revocation while a write is in flight).
  */
-export async function customerCanAccess(conn: DbOrTx, orgId: string, c: Pick<SupportCase, "id" | "clientId" | "requesterContactId" | "requesterEmail">, contactId: string): Promise<{ ok: boolean; role: "requester" | "admin" | "watcher" | null }> {
-  const [k] = await conn.select().from(clientContacts).where(and(eq(clientContacts.id, contactId), eq(clientContacts.orgId, orgId)));
+export async function customerCanAccess(conn: DbOrTx, orgId: string, c: Pick<SupportCase, "id" | "clientId" | "requesterContactId" | "requesterEmail">, contactId: string, opts: { lock?: boolean } = {}): Promise<{ ok: boolean; role: "requester" | "admin" | "watcher" | null }> {
+  // Write paths lock the contact row (global order: case → contact): a block or deletion holding
+  // that lock finishes first and its revocation is what this check then sees.
+  const q = conn.select().from(clientContacts).where(and(eq(clientContacts.id, contactId), eq(clientContacts.orgId, orgId)));
+  const [k] = opts.lock ? await q.for("update") : await q;
   if (!k || k.deletedAt || k.clientId !== c.clientId) return { ok: false, role: null };
   const email = (k.email || "").trim().toLowerCase();
   if (email) {
@@ -503,10 +513,10 @@ export async function customerCanAccess(conn: DbOrTx, orgId: string, c: Pick<Sup
 }
 
 /** Same check, loading the case row on the given connection (for callers that only hold the id). */
-export async function customerCanAccessCase(conn: DbOrTx, orgId: string, caseId: string, contactId: string): Promise<boolean> {
+export async function customerCanAccessCase(conn: DbOrTx, orgId: string, caseId: string, contactId: string, opts: { lock?: boolean } = {}): Promise<boolean> {
   const [c] = await conn.select({ id: supportCases.id, clientId: supportCases.clientId, requesterContactId: supportCases.requesterContactId, requesterEmail: supportCases.requesterEmail })
     .from(supportCases).where(and(eq(supportCases.id, caseId), eq(supportCases.orgId, orgId)));
-  return c ? (await customerCanAccess(conn, orgId, c, contactId)).ok : false;
+  return c ? (await customerCanAccess(conn, orgId, c, contactId, opts)).ok : false;
 }
 
 export async function listWatchers(orgId: string, caseId: string) {

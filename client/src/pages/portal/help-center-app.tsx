@@ -241,9 +241,11 @@ function NewCaseForm({ slug, me }: { slug: string; me: Me }) {
       qc.invalidateQueries({ queryKey: ["help-cases", slug, me.contact.id] });
       const failed = new Map((r.attachmentErrors ?? []).map(e => [e.clientFileId, e.error]));
       const stored = new Set((r.attachments ?? []).map(a => a.clientFileId).filter(Boolean));
-      const next = files.map(f => f.error ? f : stored.has(f.clientFileId) ? { ...f, done: true, error: null } : { ...f, error: failed.get(f.clientFileId) ?? f.error });
+      // Every selected file must be acknowledged: stored, refused client-side, or failed with a reason.
+      // Anything else (e.g. added while the request was in flight) is "Not uploaded" — never dropped silently.
+      const next = files.map(f => f.error ? f : stored.has(f.clientFileId) ? { ...f, done: true, error: null } : { ...f, error: failed.get(f.clientFileId) ?? "Not uploaded" });
       setFiles(next);
-      if (next.every(f => f.done || !f.error) && !next.some(f => f.error)) navigate(`${base(slug)}/cases/${r.id}`);
+      if (next.every(f => f.done)) navigate(`${base(slug)}/cases/${r.id}`);
       else setResult(r);
     },
   });
@@ -252,9 +254,8 @@ function NewCaseForm({ slug, me }: { slug: string; me: Me }) {
     mutationFn: async () => {
       if (!result) return;
       for (const f of files) {
-        if (f.done || (f.error && f.error !== "retry")) { /* skip */ }
         if (f.done) continue;
-        if (f.error && fileProblem(f.file)) continue; // refused client-side, never sent
+        if (fileProblem(f.file)) continue; // refused client-side, never sent
         const fd = new FormData();
         fd.append("clientFileIds", JSON.stringify([f.clientFileId]));
         fd.append("files", f.file, f.file.name);
@@ -397,7 +398,7 @@ function NewCaseForm({ slug, me }: { slug: string; me: Me }) {
           <span style={label}>Files</span>
           <div
             onDragOver={e => { e.preventDefault(); }}
-            onDrop={e => { e.preventDefault(); addFiles(e.dataTransfer.files); }}
+            onDrop={e => { e.preventDefault(); if (!create.isPending) addFiles(e.dataTransfer.files); }}
             style={{ ...card, padding: 14, borderStyle: "dashed", display: "grid", gap: 8 }}
             data-testid="portal-dropzone"
           >
@@ -405,14 +406,14 @@ function NewCaseForm({ slug, me }: { slug: string; me: Me }) {
               <span style={{ fontSize: 13, color: T.text2 }}>Screenshots, exports, PDFs — up to 10 files, 15 MB each. Drop them here or</span>
               <label style={{ ...btnGhost, padding: "7px 12px", fontSize: 13, cursor: "pointer" }}>
                 Choose files
-                <input type="file" multiple style={{ display: "none" }} onChange={e => { addFiles(e.target.files); e.currentTarget.value = ""; }} data-testid="portal-new-file-input" />
+                <input type="file" multiple disabled={create.isPending} style={{ display: "none" }} onChange={e => { addFiles(e.target.files); e.currentTarget.value = ""; }} data-testid="portal-new-file-input" />
               </label>
             </div>
             {files.map(f => (
               <div key={f.clientFileId} style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 13 }} data-testid="portal-new-file-row">
                 <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.file.name} <span style={{ color: T.muted }}>· {sizeLabel(f.file.size)}</span></span>
                 {f.error && <span style={{ color: T.warn }}>{f.error}</span>}
-                <button type="button" onClick={() => setFiles(prev => prev.filter(x => x.clientFileId !== f.clientFileId))} style={{ ...btnGhost, padding: "3px 8px", fontSize: 12 }} aria-label={`Remove ${f.file.name}`}>Remove</button>
+                <button type="button" disabled={create.isPending} onClick={() => setFiles(prev => prev.filter(x => x.clientFileId !== f.clientFileId))} style={{ ...btnGhost, padding: "3px 8px", fontSize: 12 }} aria-label={`Remove ${f.file.name}`}>Remove</button>
               </div>
             ))}
           </div>

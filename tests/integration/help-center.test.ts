@@ -422,6 +422,7 @@ describe("Help Center request form v2: intake, files, watchers, on-behalf-of, BL
   const hW2Email = `walt.${stamp}@${dom2}`;
   const hOutEmail = `olga.${stamp}@${dom2}`;
   let hClientId = "";
+  let hOrgId = "";
   let hOtherClientId = "";
   let hOtherContactId = "";
   let hAdminId = ""; let hReqId = ""; let hW1Id = ""; let hW2Id = ""; let hOutId = "";
@@ -448,6 +449,8 @@ describe("Help Center request form v2: intake, files, watchers, on-behalf-of, BL
   it("setup: a client with an approved domain, a Customer Admin, a requester, three colleagues, and another client's contact", async () => {
     admin = await login("admin.test@cwpro.dev", "admin123");
     orgSlug = (await (await api("GET", "/api/support/portal-info", admin)).json()).orgSlug;
+    hOrgId = (await (await api("GET", "/api/auth/me", admin)).json()).orgId;
+    expect(hOrgId).toBeTruthy();
     const c = await api("POST", "/api/clients", admin, { name: `Helix Labs ${stamp}` });
     expect(c.ok).toBe(true);
     hClientId = (await c.json()).id;
@@ -751,7 +754,7 @@ describe("Help Center request form v2: intake, files, watchers, on-behalf-of, BL
   it("inbound mail follows the same authority: watchers append until removed; a reassigned requester's old address is stored; legacy email-only requesters append", async () => {
     const inbound = (from: string, subject: string, extra: Record<string, unknown> = {}) => fetch(`${BASE}/api/test/inbound-email`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to: "support@cwpro.dev", subject, text: `reply from ${from}`, messageId: `<${Math.random()}.${stamp}@test>`, senderAuthenticated: true, ...extra }),
+      body: JSON.stringify({ from, to: "support@cwpro.dev", subject, text: `reply from ${from}`, messageId: `<${Math.random()}.${stamp}@test>`, senderAuthenticated: true, orgId: hOrgId, ...extra }),
     }).then(r => r.json());
     // Wanda is a verified watcher on the watched case.
     const ws = await (await portal("GET", `/cases/${watchedCaseId}/watchers`, hReqCookie)).json();

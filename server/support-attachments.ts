@@ -132,22 +132,36 @@ export async function createAttachment(input: CreateAttachmentInput): Promise<Su
   const key = stableStorageKey(input.orgId, input.caseId, clientFileId, filename);
   const mime = input.mimeType && input.mimeType !== "application/octet-stream" ? input.mimeType : guessMime(filename);
   const digest = createHash("sha256").update(input.bytes).digest("hex");
-  return db.transaction(async (tx) => {
+  const lockCase = async (tx: Tx) => {
     // Global lock order: case row → (contact rows, checked by `authorize`) → attachment row.
     const [c] = await tx.select({ id: supportCases.id }).from(supportCases)
       .where(and(eq(supportCases.id, input.caseId), eq(supportCases.orgId, input.orgId))).for("update");
     if (!c) throw new Error("Support case not found");
     if (input.authorize && !(await input.authorize(tx))) throw new AttachmentForbiddenError("You no longer have access to this case");
+  };
+  // Phase 1 — the reservation (with the payload digest) is COMMITTED before any byte is written, so a
+  // crash after the blob store still leaves a row naming the key (cleanup finds it) and the digest
+  // (a different payload under the same id is refused on retry).
+  const reservedId = await db.transaction(async (tx) => {
+    await lockCase(tx);
     const [reserved] = await tx.insert(supportCaseAttachments).values({
       orgId: input.orgId, caseId: input.caseId, messageId: input.messageId ?? null,
       filename, mimeType: mime, size: input.bytes.length, storageKey: key,
       uploadedByUserId: input.uploadedByUserId ?? null, uploadedByContactId: input.uploadedByContactId ?? null,
       source: input.source ?? "AGENT", externalRef: input.externalRef ?? null,
       clientFileId, contentSha256: digest, completedAt: null,
-    }).onConflictDoNothing({ target: [supportCaseAttachments.caseId, supportCaseAttachments.clientFileId], where: sql`client_file_id IS NOT NULL` }).returning();
-    const row = reserved ?? (await tx.select().from(supportCaseAttachments)
-      .where(and(eq(supportCaseAttachments.caseId, input.caseId), eq(supportCaseAttachments.clientFileId, clientFileId))).for("update"))[0];
-    if (!row) throw new Error("Could not reserve the attachment");
+    }).onConflictDoNothing({ target: [supportCaseAttachments.caseId, supportCaseAttachments.clientFileId], where: sql`client_file_id IS NOT NULL` }).returning({ id: supportCaseAttachments.id });
+    if (reserved) return reserved.id;
+    const [existing] = await tx.select({ id: supportCaseAttachments.id }).from(supportCaseAttachments)
+      .where(and(eq(supportCaseAttachments.caseId, input.caseId), eq(supportCaseAttachments.clientFileId, clientFileId)));
+    if (!existing) throw new Error("Could not reserve the attachment");
+    return existing.id;
+  });
+  // Phase 2 — bytes + completion, serialised per attachment (case lock, then the row lock).
+  return db.transaction(async (tx) => {
+    await lockCase(tx);
+    const [row] = await tx.select().from(supportCaseAttachments).where(eq(supportCaseAttachments.id, reservedId)).for("update");
+    if (!row) throw new Error("Support case not found"); // the case (and its rows) was deleted meanwhile
     // Digest first — before any completed-row shortcut — so a different payload under the same id
     // is refused whether the earlier attempt finished or not.
     if (row.contentSha256 && row.contentSha256 !== digest) throw new AttachmentConflictError("A different file was already uploaded under this id");

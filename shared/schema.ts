@@ -1358,7 +1358,7 @@ export const supportCases = pgTable("support_cases", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
   orgKeyUnique: uniqueIndex("support_cases_org_key_unique").on(table.orgId, table.caseKey),
-  submissionUnique: uniqueIndex("ux_support_cases_submission").on(table.orgId, table.submittedByContactId, table.submissionKey).where(sql`submission_key IS NOT NULL`),
+  submissionUnique: uniqueIndex("ux_support_cases_submission").on(table.orgId, table.submittedByContactId, table.submissionKey).where(sql`submission_key IS NOT NULL AND submitted_by_contact_id IS NOT NULL`),
   orgStatusIdx: index("idx_support_cases_org_status").on(table.orgId, table.status),
   orgClientIdx: index("idx_support_cases_org_client").on(table.orgId, table.clientId),
   orgAssigneeIdx: index("idx_support_cases_org_assignee").on(table.orgId, table.assigneeUserId),

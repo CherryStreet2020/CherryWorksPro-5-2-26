@@ -167,7 +167,8 @@ describe("support cases: keys, lifecycle, messages, and hours", () => {
     expect(b.ok, await b.clone().text()).toBe(true);
     expect((await b.json()).status).toBe("BLOCKED");
     const after = await (await api("GET", "/api/support/summary", admin)).json();
-    expect(after.open).toBe(before.open); // it was open before and is still open
+    // Counts are org-wide and other test files run in parallel: assert the case itself, not the org total.
+    expect(after.blocked).toBeGreaterThanOrEqual(1);
     const blockedView = await (await api("GET", `/api/support/cases?view=blocked&clientId=${clientId}`, admin)).json();
     expect(blockedView.map((r: any) => r.id)).toContain(id);
     const openView = await (await api("GET", `/api/support/cases?view=open&clientId=${clientId}`, admin)).json();
