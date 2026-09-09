@@ -363,6 +363,7 @@ export async function deleteContactWithPortalCleanup(input: { orgId: string; con
     .where(and(eq(clientContacts.id, input.contactId), eq(clientContacts.orgId, input.orgId)));
   if (!c) return false;
   const email = (c.email || "").trim().toLowerCase();
+  const addrRef = { value: email };
   const run = async (tx: Tx): Promise<boolean | "retry"> => {
     // Row lock, then re-read: the address we took the advisory lock on must still be
     // the contact's address, otherwise an email change slipped in — start over.
@@ -370,7 +371,7 @@ export async function deleteContactWithPortalCleanup(input: { orgId: string; con
       .where(and(eq(clientContacts.id, c.id), eq(clientContacts.orgId, input.orgId))).for("update");
     if (!locked) return false;
     const current = (locked.email || "").trim().toLowerCase();
-    if (current !== email) return "retry";
+    if (current !== addrRef.value) return "retry";
     await tx.update(portalSessions).set({ revokedAt: new Date() })
       .where(and(eq(portalSessions.contactId, c.id), isNull(portalSessions.revokedAt)));
     await tx.update(portalLoginLinks).set({ consumedAt: new Date() })
@@ -385,12 +386,17 @@ export async function deleteContactWithPortalCleanup(input: { orgId: string; con
     const gone = await tx.delete(clientContacts).where(and(eq(clientContacts.id, c.id), eq(clientContacts.orgId, input.orgId))).returning({ id: clientContacts.id });
     return gone.length > 0;
   };
+  // Bounded: if the address keeps changing underneath us, re-resolve and try again up to 3×.
+  let addr = email;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const r = email ? await withContactEmailLock(input.orgId, email, run) : await db.transaction(run);
+    const r = addr ? await withContactEmailLock(input.orgId, addr, run) : await db.transaction(run);
     if (r !== "retry") return r;
-    return deleteContactWithPortalCleanup(input); // address changed underneath us: re-resolve and try again
+    const [again] = await db.select({ email: clientContacts.email }).from(clientContacts).where(eq(clientContacts.id, c.id));
+    if (!again) return false;
+    addr = (again.email || "").trim().toLowerCase();
+    addrRef.value = addr;
   }
-  return false;
+  throw new Error("Contact is being modified concurrently; try again");
 }
 
 /**
@@ -415,6 +421,11 @@ export async function changeContactEmail(input: { orgId: string; contactId: stri
     }
     const [row] = await tx.update(clientContacts).set({ ...(input.patch as any), email: norm, updatedAt: new Date() })
       .where(and(eq(clientContacts.id, input.contactId), eq(clientContacts.orgId, input.orgId))).returning();
+    // Same rule as storage.updateContact: promoting a primary demotes the client's others.
+    if (row?.isPrimary && row.clientId && (input.patch as any).isPrimary === true) {
+      await tx.update(clientContacts).set({ isPrimary: false, updatedAt: new Date() })
+        .where(and(eq(clientContacts.clientId, row.clientId), eq(clientContacts.orgId, input.orgId), sql`${clientContacts.id} <> ${row.id}`, eq(clientContacts.isPrimary, true)));
+    }
     return row;
   };
   return norm ? withContactEmailLock(input.orgId, norm, run) : db.transaction(run);

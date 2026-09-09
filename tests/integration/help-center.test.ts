@@ -249,6 +249,14 @@ describe("Help Center: approved domains, self-registration, Customer Admin, bill
     expect((await portal("POST", "/team", adminCookie, { firstName: "G", lastName: "Mail", email: `g.${stamp}@gmail.com` })).status).toBe(400);
     expect((await portal("POST", "/team", adminCookie, { firstName: "O", lastName: "Ther", email: `o.${stamp}@not-approved-${stamp}.example` })).status).toBe(400);
     expect((await portal("POST", "/team", memberCookie, { firstName: "X", lastName: "Y", email: `x.${stamp}@${domain}` })).status).toBe(403);
+    // A Customer Admin of a client WITHOUT approved domains cannot claim someone from a domain another client owns.
+    const otherAdminEmail = `oadmin.${stamp}@other-${stamp}.example`;
+    const oa = await api("POST", `/api/clients/${otherClientId}/contacts`, admin, { firstName: "Olive", lastName: "Admin", email: otherAdminEmail, portalRole: "admin" });
+    expect(oa.status).toBe(201);
+    const otherAdminCookie = (await signIn(otherAdminEmail)).cookie;
+    const steal = await portal("POST", "/team", otherAdminCookie, { firstName: "Stolen", lastName: "Person", email: `stolen.${stamp}@${domain}` });
+    expect(steal.status).toBe(400);
+    expect((await steal.json()).message).toContain("another company");
 
     const email = `burst2.${stamp}@${domain}`;
     const rs = await Promise.all(Array.from({ length: 6 }, () => portal("POST", "/team", adminCookie, { firstName: "B", lastName: "Urst", email })));
@@ -316,6 +324,10 @@ describe("Help Center: approved domains, self-registration, Customer Admin, bill
     expect(await requestLink(aliceEmail)).toBeUndefined();
     const reinvite = await portal("POST", "/team", adminCookie, { firstName: "Alice", lastName: "Again", email: aliceEmail });
     expect(reinvite.status).toBe(400);
+    // The firm side is told to "Allow again" instead of mailing a link that cannot work.
+    const firmSend = await api("POST", `/api/support/contacts/${aliceContactId}/portal-invite`, admin, {});
+    expect(firmSend.status).toBe(400);
+    expect((await firmSend.json()).message).toContain("Allow again");
 
     const blocked = await (await api("GET", `/api/support/clients/${clientId}/portal-blocked`, admin)).json();
     const row = blocked.find((b: any) => b.email === aliceEmail);

@@ -90,7 +90,10 @@ function CasesList({ slug, me }: { slug: string; me: Me }) {
   const all = data?.pages.flatMap(p => p.cases) ?? [];
   const counts = data?.pages[0]?.counts;
   const rows = all.filter(r => !onlyMine || r.mine);
-  const requesters = Array.from(new Map(all.filter(r => r.requesterContactId && r.requesterName).map(r => [r.requesterContactId!, r.requesterName!])).entries());
+  // Requester options come from the company's people (unfiltered), so the selector stays
+  // usable — and clearable — after someone is picked.
+  const { data: team } = useQuery<Team>({ queryKey: ["help-team", slug, me.contact.id, me.contact.portalRole], queryFn: () => api("GET", `/api/portal/${slug}/team`), enabled: isAdmin });
+  const requesters: [string, string][] = (team?.contacts ?? []).map(c => [c.id, `${c.firstName} ${c.lastName}`.trim() || c.email || c.id]);
   const chip = (on: boolean, text: string, onClick: () => void, testid: string) => (
     <button type="button" onClick={onClick} style={{ ...btnGhost, padding: "6px 12px", fontSize: 13, borderColor: on ? T.accent : T.line, color: on ? T.text : T.text2, background: on ? T.accentSoft : "transparent" }} data-testid={testid}>{text}</button>
   );

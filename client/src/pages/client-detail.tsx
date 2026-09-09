@@ -402,6 +402,7 @@ export default function ClientDetailPage() {
     queryFn: async () => { const r = await fetch(`/api/support/clients/${clientId}/portal-blocked`, { credentials: "include" }); return r.ok ? r.json() : []; },
     enabled: !!clientId && canManage,
   });
+  const isBlocked = (email: string | null) => !!email && !!blocked?.some(b => b.email.toLowerCase() === email.toLowerCase());
   const revokePortal = useMutation({
     mutationFn: async (contactId: string) => (await apiRequest("POST", `/api/support/contacts/${contactId}/portal-revoke`)).json(),
     onSuccess: () => { toast({ title: "Help Center access revoked" }); queryClient.invalidateQueries({ queryKey: ["/api/support/clients", clientId, "portal-blocked"] }); },
@@ -1279,10 +1280,10 @@ export default function ClientDetailPage() {
                               <DropdownMenuItem onClick={() => openEditContact(c)} data-testid={`contact-edit-${c.id}`}>
                                 <Pencil className="w-3.5 h-3.5 mr-2" /> Edit
                               </DropdownMenuItem>
-                              <DropdownMenuItem disabled={!c.email || sendPortalLink.isPending} onClick={() => sendPortalLink.mutate({ contactId: c.id, surface: "help", email: c.email || "" })} data-testid={`contact-send-help-${c.id}`}>
+                              <DropdownMenuItem disabled={!c.email || sendPortalLink.isPending || isBlocked(c.email)} onClick={() => sendPortalLink.mutate({ contactId: c.id, surface: "help", email: c.email || "" })} data-testid={`contact-send-help-${c.id}`}>
                                 <Send className="w-3.5 h-3.5 mr-2" /> Send Help Center link
                               </DropdownMenuItem>
-                              <DropdownMenuItem disabled={!c.email || !c.billingAccess || sendPortalLink.isPending} onClick={() => sendPortalLink.mutate({ contactId: c.id, surface: "portal", email: c.email || "" })} data-testid={`contact-send-portal-${c.id}`}>
+                              <DropdownMenuItem disabled={!c.email || !c.billingAccess || sendPortalLink.isPending || isBlocked(c.email)} onClick={() => sendPortalLink.mutate({ contactId: c.id, surface: "portal", email: c.email || "" })} data-testid={`contact-send-portal-${c.id}`}>
                                 <CreditCard className="w-3.5 h-3.5 mr-2" /> Send Customer Portal link
                               </DropdownMenuItem>
                               <DropdownMenuItem disabled={!c.email || revokePortal.isPending} onClick={() => { if (window.confirm(`Sign ${c.firstName} out of the Help Center and keep ${c.email} out until you allow it again?`)) revokePortal.mutate(c.id); }} data-testid={`contact-revoke-${c.id}`}>

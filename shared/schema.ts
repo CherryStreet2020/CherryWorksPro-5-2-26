@@ -1375,6 +1375,12 @@ export const supportCaseEvents = pgTable("support_case_events", {
  * approved domain; checked before any sign-in link or self-registration. Cleared by
  * "Allow again" on the client's Contacts tab.
  */
+/** One-time data backfills that migrations must not repeat (migrations replay on every boot outside Azure). */
+export const schemaBackfills = pgTable("schema_backfills", {
+  name: text("name").primaryKey(),
+  doneAt: timestamp("done_at").defaultNow().notNull(),
+});
+
 export const portalBlockedEmails = pgTable("portal_blocked_emails", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id", { length: 36 }).notNull().references(() => orgs.id),

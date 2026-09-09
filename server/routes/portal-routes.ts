@@ -17,7 +17,7 @@ import {
   requireBilling, requireCustomerAdmin, readCookie, setSessionCookie, clearSessionCookie, resolveSession, portalBaseUrl, PORTAL_COOKIE,
   type PortalSurface,
 } from "../portal-auth";
-import { isNull } from "drizzle-orm";
+import { isNull, ne } from "drizzle-orm";
 import { sendPortalLoginEmail } from "../email";
 import multer from "multer";
 import { MAX_ATTACHMENT_BYTES, createAttachment, listAttachments, getAttachment, streamBytes, attachmentView, isAllowedAttachment } from "../support-attachments";
@@ -278,6 +278,11 @@ export function registerPortalRoutes(app: Express) {
       const [client] = await db.select({ domains: clients.portalEmailDomains }).from(clients).where(eq(clients.id, p.client.id));
       const approved = client?.domains ?? [];
       if (approved.length > 0 && !approved.includes(domain)) return res.status(400).json({ message: `Colleagues must use an approved address (${approved.map(d => "@" + d).join(", ")})` });
+      // A domain approved for ANOTHER client of this firm belongs to that client's people:
+      // inviting one of them here would file them (and their future cases) under the wrong company.
+      const [owner] = await db.select({ id: clients.id }).from(clients)
+        .where(and(eq(clients.orgId, p.orgId), ne(clients.id, p.client.id), sql`${domain} = ANY(${clients.portalEmailDomains})`)).limit(1);
+      if (owner) return res.status(400).json({ message: "That address belongs to another company's Help Center. Ask them to invite their colleague." });
       const created = await withContactEmailLock(p.orgId, norm, async (tx) => {
         const existing = await findPortalContact(p.orgId, norm, tx);
         if (existing) return null;
@@ -431,6 +436,7 @@ export function registerPortalRoutes(app: Express) {
       if (!contact.email) return res.status(400).json({ message: "This contact has no email address" });
       const surface: PortalSurface = req.body?.surface === "portal" ? "portal" : "help";
       if (surface === "portal" && !contact.billingAccess) return res.status(400).json({ message: "Turn on billing access for this contact before sending a Customer Portal link" });
+      if (await isPortalBlocked(orgId, contact.email)) return res.status(400).json({ message: "This address has been kept out of the Help Center. Use \"Allow again\" on the client's Contacts tab first." });
       const org = await storage.getOrg(orgId);
       if (!org) return res.status(404).json({ message: "Organization not found" });
       const { token, email: boundEmail } = await issueLoginLink(orgId, contact.id, null);
