@@ -533,7 +533,9 @@ const TEXT_MUTED = "#8b8da3";
 const BORDER = "#e6e3dd";
 /** Hosted brand mark (client/public/brand) — email clients need an absolute URL, never an inline SVG. */
 function brandIconUrl(): string {
-  // Same resolution as portalBaseUrl() (not imported: portal-auth already imports this module).
+  // Honours APP_BASE_URL / BASE_URL like portalBaseUrl() (not imported: portal-auth imports this
+  // module). Unlike links, an image must resolve from the RECIPIENT's mail client, so the fallback
+  // is the public site rather than localhost — a dev mail shows the real mark instead of a broken image.
   const base = (process.env.APP_BASE_URL || process.env.BASE_URL || "").trim().replace(/\/$/, "");
   return `${/^https?:\/\//i.test(base) ? base : "https://cherryworkspro.com"}/brand/cherry-icon-red.png`;
 }
@@ -546,7 +548,7 @@ export function wrapEmailLayout(innerHtml: string, opts?: { orgName?: string; pr
   const orgName = opts?.orgName || "CherryWorks Pro";
   // Header: the firm's own logo + name when it has one, otherwise the CherryWorks mark.
   const logo = opts?.orgLogoUrl && /^https?:\/\//i.test(opts.orgLogoUrl) ? escapeHtml(opts.orgLogoUrl) : null;
-  const preheader = opts?.preheader || "";
+  const preheader = escapeHtml(opts?.preheader || ""); // untrusted text (names, subjects) — never raw HTML
   return `<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
 <head>
@@ -1218,7 +1220,7 @@ export async function sendCaseEmail(input: CaseEmailInput): Promise<{ messageId:
       ${escapeHtml(input.footer || `Reply to this email to add to the case. Keep ${input.caseKey} in the subject.`)}
     </p>
   `;
-  const html = wrapEmailLayout(innerHtml, { orgName: input.orgName, preheader: input.intro, orgLogoUrl: (input.org as any)?.logoUrl ?? null });
+  const html = wrapEmailLayout(innerHtml, { orgName: input.orgName, preheader: input.intro, orgLogoUrl: input.org?.logoUrl ?? null });
   const message: SendableMessage = {
     to: input.to,
     subject,
