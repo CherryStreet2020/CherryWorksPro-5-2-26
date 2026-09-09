@@ -11,6 +11,7 @@ let clientId = "";
 let fake: http.Server;
 let fakeUrl = "";
 let authSeen = "";
+let lateAttachment = false; // when set, the resolved issue ZJR-2 carries an attachment added after the first import
 
 const ADF = (text: string) => ({ type: "doc", version: 1, content: [{ type: "paragraph", content: [{ type: "text", text }] }] });
 const issue = (n: number, extra: any = {}) => ({
@@ -21,7 +22,8 @@ const issue = (n: number, extra: any = {}) => ({
     reporter: { displayName: "Shadi Mohaisen", emailAddress: `shadi.${stamp}@abs.example`, accountType: "customer" },
     assignee: { displayName: "Ada Adminson", emailAddress: "admin.test@cwpro.dev", accountType: "atlassian" },
     priority: { name: "High" }, issuetype: { name: "Support" }, customfield_10010: { requestType: { name: "ERP Support Requests" } }, components: [],
-    attachment: n === 1 ? [{ id: "9001", filename: "shot.png", mimeType: "image/png", size: 4, content: `${fakeUrl}/rest/api/3/attachment/content/9001` }] : [],
+    attachment: n === 1 ? [{ id: "9001", filename: "shot.png", mimeType: "image/png", size: 4, content: `${fakeUrl}/rest/api/3/attachment/content/9001` }]
+      : n === 2 && lateAttachment ? [{ id: "9002", filename: "closed.pdf", mimeType: "application/pdf", size: 4, content: `${fakeUrl}/rest/api/3/attachment/content/9002` }] : [],
     ...extra,
   },
   changelog: { histories: [{ created: "2026-08-11T09:00:00.000-0400", author: { displayName: "Ada Adminson" }, items: [{ field: "status", fromString: "Open", toString: "Waiting for support" }] }] },
@@ -40,6 +42,7 @@ describe("Jira fetcher", () => {
         return json({ issues: [issue(3)], isLast: true });
       }
       if (url.pathname === "/rest/api/3/attachment/content/9001") { res.setHeader("Content-Type", "image/png"); res.end(Buffer.from("PNG!")); return; }
+      if (url.pathname === "/rest/api/3/attachment/content/9002") { res.setHeader("Content-Type", "application/pdf"); res.end(Buffer.from("PDF!")); return; }
       const m = url.pathname.match(/^\/rest\/api\/3\/issue\/([^/]+)\/comment$/);
       if (m) {
         return json({ total: 2, comments: [
@@ -107,6 +110,22 @@ describe("Jira fetcher", () => {
     const again = await (await api("POST", "/api/support/import/jira-fetch", admin, { baseUrl: fakeUrl, email: "dean@example.com", apiToken: "tok_12345678", projectKey: "ZJR", clientId, attachmentsForExisting: "open" })).json();
     expect(again.imported).toBe(0);
     expect(again.attachmentsImported).toBe(0);
+
+    // A file added later to the RESOLVED issue: the default ("open") run leaves it in Jira,
+    // the final "all" run (before the Jira site is shut down) copies it.
+    lateAttachment = true;
+    const openOnly = await (await api("POST", "/api/support/import/jira-fetch", admin, { baseUrl: fakeUrl, email: "dean@example.com", apiToken: "tok_12345678", projectKey: "ZJR", clientId, attachmentsForExisting: "open" })).json();
+    expect(openOnly.attachmentsImported).toBe(0);
+    const all = await (await api("POST", "/api/support/import/jira-fetch", admin, { baseUrl: fakeUrl, email: "dean@example.com", apiToken: "tok_12345678", projectKey: "ZJR", clientId, attachmentsForExisting: "all" })).json();
+    expect(all.imported).toBe(0);
+    expect(all.attachmentsImported).toBe(1);
+    expect(all.attachmentErrors).toEqual([]);
+    const closed = await (await api("GET", `/api/support/cases/${list.find((r: any) => r.caseKey === "ZJR-2").id}`, admin)).json();
+    expect(closed.attachments.map((a: any) => a.filename)).toEqual(["closed.pdf"]);
+    // Idempotent: the same file is not copied twice.
+    const allAgain = await (await api("POST", "/api/support/import/jira-fetch", admin, { baseUrl: fakeUrl, email: "dean@example.com", apiToken: "tok_12345678", projectKey: "ZJR", clientId, attachmentsForExisting: "all" })).json();
+    expect(allAgain.attachmentsImported).toBe(0);
+    lateAttachment = false; // keep later tests order-independent
   });
 
   it("refuses bad credentials cleanly", async () => {
