@@ -8803,23 +8803,6 @@ export class DatabaseStorage {
     if (!prospect) throw new Error("marketing_prospect not found");
     if (prospect.deletedAt) throw new Error("marketing_prospect is deleted");
 
-    // An address names ONE live client contact per workspace (ux_client_contacts_org_email_live).
-    // Refuse before any write so a conflict never leaves a half-converted prospect. A
-    // prospect already converted is served by the idempotent branch below, never refused
-    // because of its own contact.
-    {
-      // An explicit `email: null` override means "no address" — only an omitted override falls back to the prospect's.
-      const ov = opts.clientContactOverrides;
-      const chosen = ov && Object.prototype.hasOwnProperty.call(ov, "email") ? ov.email : prospect.email;
-      const email = (chosen ?? "").trim().toLowerCase();
-      if (email && !prospect.convertedToClientContactId) {
-        const [dup] = await db.select({ id: clientContacts.id }).from(clientContacts)
-          .where(and(eq(clientContacts.orgId, orgId), sql`lower(${clientContacts.email}) = ${email}`, isNotNull(clientContacts.clientId), isNull(clientContacts.deletedAt)))
-          .limit(1);
-        if (dup) { const e: any = new Error("A client contact with this email address already exists"); e.code = "CONTACT_EMAIL_CONFLICT"; throw e; }
-      }
-    }
-
     if (prospect.convertedToClientContactId) {
       const [existing] = await db
         .select()
@@ -8863,6 +8846,21 @@ export class DatabaseStorage {
           client = out.client;
           reusedExistingClient = out.alreadyConverted;
         }
+      }
+    }
+
+    // An address names ONE live CLIENT contact per workspace (ux_client_contacts_org_email_live;
+    // unparented contacts are outside the index). Refuse before the contact insert when the
+    // destination is a client — so a conflict never leaves a half-converted prospect.
+    if (client) {
+      const ov = opts.clientContactOverrides;
+      const chosen = ov && Object.prototype.hasOwnProperty.call(ov, "email") ? ov.email : prospect.email;
+      const email = (chosen ?? "").trim().toLowerCase();
+      if (email) {
+        const [dup] = await db.select({ id: clientContacts.id }).from(clientContacts)
+          .where(and(eq(clientContacts.orgId, orgId), sql`lower(${clientContacts.email}) = ${email}`, isNotNull(clientContacts.clientId), isNull(clientContacts.deletedAt)))
+          .limit(1);
+        if (dup) { const e: any = new Error("A client contact with this email address already exists"); e.code = "CONTACT_EMAIL_CONFLICT"; throw e; }
       }
     }
 

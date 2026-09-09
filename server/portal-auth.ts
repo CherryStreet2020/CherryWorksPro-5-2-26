@@ -230,7 +230,7 @@ export async function consumeLoginLink(orgSlug: string, token: string, userAgent
     const [c] = await tx.select({ id: clientContacts.id, email: clientContacts.email, deleted: clientContacts.deletedAt }).from(clientContacts).where(eq(clientContacts.id, link.contactId)).for("update");
     if (!c || c.deleted) return undefined;
     // The link is only good for the mailbox it was sent to.
-    if (link.email && (c.email || "").toLowerCase() !== link.email.toLowerCase()) return undefined;
+    if (link.email && (c.email || "").trim().toLowerCase() !== link.email.trim().toLowerCase()) return undefined;
     if (c.email) {
       const [blocked] = await tx.select({ id: portalBlockedEmails.id }).from(portalBlockedEmails)
         .where(and(eq(portalBlockedEmails.orgId, org.id), sql`lower(${portalBlockedEmails.email}) = ${c.email.toLowerCase()}`)).limit(1);
