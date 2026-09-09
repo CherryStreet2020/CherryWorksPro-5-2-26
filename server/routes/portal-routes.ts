@@ -53,7 +53,7 @@ function friendly(err: any): string {
 }
 
 async function orgBySlug(slug: string) {
-  const [org] = await db.select({ id: orgs.id, name: orgs.name, slug: orgs.slug, logoUrl: orgs.logoUrl, email: orgs.email, phone: orgs.phone, website: orgs.website })
+  const [org] = await db.select({ id: orgs.id, name: orgs.name, slug: orgs.slug, logoUrl: orgs.logoUrl, email: orgs.email, phone: orgs.phone, website: orgs.website, supportInboundAddress: orgs.supportInboundAddress })
     .from(orgs).where(eq(orgs.slug, slug));
   return org;
 }
@@ -212,7 +212,8 @@ export function registerPortalRoutes(app: Express) {
   // ── Signed-in ─────────────────────────────────────────────────────────
   app.get("/api/portal/:orgSlug/me", requirePortal, async (req, res) => {
     const org = await orgBySlug(req.portal!.orgSlug);
-    return res.json({ ...publicIdentity(req.portal!), org: org ? { name: org.name, logoUrl: org.logoUrl, email: org.email, phone: org.phone, website: org.website } : null });
+    // supportEmail: what the Help Center shows customers (the support mailbox, not the firm's general address).
+    return res.json({ ...publicIdentity(req.portal!), org: org ? { name: org.name, logoUrl: org.logoUrl, email: org.email, phone: org.phone, website: org.website, supportEmail: org.supportInboundAddress || org.email } : null });
   });
 
   // A self-registered contact tells us their name once; firm users edit names after that.

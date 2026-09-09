@@ -155,8 +155,9 @@ export function fileSizeLabel(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export interface CaseWatcher { role: "watcher" | "reviewer";
+export interface CaseWatcher {
   id: string;
+  role: "watcher" | "reviewer";
   contactId: string;
   firstName: string;
   lastName: string;
