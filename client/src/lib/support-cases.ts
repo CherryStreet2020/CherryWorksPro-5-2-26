@@ -5,11 +5,11 @@ import type { SupportCaseIntake, SupportCaseImpact } from "@shared/schema";
 export type { SupportCaseIntake, SupportCaseImpact };
 
 export type CaseStatus = "NEW" | "WAITING_ON_SUPPORT" | "IN_PROGRESS" | "WAITING_ON_CUSTOMER" | "BLOCKED" | "RESOLVED" | "CLOSED";
-export type CasePriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+export type CasePriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT" | "BLOCKER";
 export type CaseView = "open" | "mine" | "unassigned" | "waiting" | "blocked" | "breaching" | "resolved" | "all";
 
 export const CASE_STATUS_ORDER: CaseStatus[] = ["NEW", "WAITING_ON_SUPPORT", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "BLOCKED", "RESOLVED", "CLOSED"];
-export const CASE_PRIORITY_ORDER: CasePriority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
+export const CASE_PRIORITY_ORDER: CasePriority[] = ["LOW", "MEDIUM", "HIGH", "URGENT", "BLOCKER"];
 
 export const STATUS_LABEL: Record<CaseStatus, string> = {
   NEW: "New",
@@ -26,6 +26,7 @@ export const PRIORITY_LABEL: Record<CasePriority, string> = {
   MEDIUM: "Medium",
   HIGH: "High",
   URGENT: "Urgent",
+  BLOCKER: "Blocker",
 };
 
 /** Colour pairs as [foreground, background]; semantic, separate from the accent. */
@@ -64,6 +65,7 @@ export const PRIORITY_COLOR: Record<CasePriority, [string, string]> = {
   MEDIUM: ["#1d4ed8", "rgba(29,78,216,0.10)"],
   HIGH: ["#b45309", "rgba(180,83,9,0.14)"],
   URGENT: ["#b91c1c", "rgba(185,28,28,0.14)"],
+  BLOCKER: ["#7f1d1d", "rgba(127,29,29,0.22)"],
 };
 
 export interface CaseListRow {
@@ -155,6 +157,7 @@ export function fileSizeLabel(bytes: number): string {
 
 export interface CaseWatcher {
   id: string;
+  role: "watcher" | "reviewer";
   contactId: string;
   firstName: string;
   lastName: string;

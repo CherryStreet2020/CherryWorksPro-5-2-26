@@ -53,7 +53,7 @@ function friendly(err: any): string {
 }
 
 async function orgBySlug(slug: string) {
-  const [org] = await db.select({ id: orgs.id, name: orgs.name, slug: orgs.slug, logoUrl: orgs.logoUrl, email: orgs.email, phone: orgs.phone, website: orgs.website })
+  const [org] = await db.select({ id: orgs.id, name: orgs.name, slug: orgs.slug, logoUrl: orgs.logoUrl, email: orgs.email, phone: orgs.phone, website: orgs.website, supportInboundAddress: orgs.supportInboundAddress })
     .from(orgs).where(eq(orgs.slug, slug));
   return org;
 }
@@ -103,14 +103,23 @@ function visibleCaseWhere(req: Request) {
   )!;
 }
 /** In-transaction re-check of the same authority (for writes: message, upload, watcher changes). */
+/**
+ * Authority re-checks run INSIDE the write transaction under the case row lock.
+ * authorizeContact: writes (reply, upload, add people) — anyone with access EXCEPT a reviewer (review only).
+ * authorizeContactAccess: any access, a reviewer included — used for self-removal ("Stop following").
+ * authorizeContactManage: requester or Customer Admin only — removing other people.
+ */
 function authorizeContact(req: Request) {
+  const p = req.portal!;
+  return async (tx: any, c: any) => { const r = await cases.customerCanAccess(tx, p.orgId, c, p.contact.id, { lock: true }); return r.ok && r.role !== "reviewer"; };
+}
+function authorizeContactAccess(req: Request) {
   const p = req.portal!;
   return async (tx: any, c: any) => (await cases.customerCanAccess(tx, p.orgId, c, p.contact.id, { lock: true })).ok;
 }
-/** Only the requester or a Customer Admin may remove watchers; anyone with access may add. */
 function authorizeContactManage(req: Request) {
   const p = req.portal!;
-  return async (tx: any, c: any) => { const r = await cases.customerCanAccess(tx, p.orgId, c, p.contact.id, { lock: true }); return r.ok && r.role !== "watcher"; };
+  return async (tx: any, c: any) => { const r = await cases.customerCanAccess(tx, p.orgId, c, p.contact.id, { lock: true }); return r.ok && r.role !== "watcher" && r.role !== "reviewer"; };
 }
 /** Field values arrive as strings in a multipart form; JSON bodies arrive typed. */
 function parseCreateBody(req: Request) {
@@ -118,7 +127,7 @@ function parseCreateBody(req: Request) {
   const asArr = (v: unknown) => v === undefined ? undefined : Array.isArray(v) ? v : typeof v === "string" && v.startsWith("[") ? JSON.parse(v) : [v];
   const body = { ...b };
   if (typeof b.intake === "string") body.intake = b.intake ? JSON.parse(b.intake) : undefined;
-  for (const k of ["watcherContactIds", "watcherEmails", "clientFileIds"]) body[k] = asArr(b[k]);
+  for (const k of ["watcherContactIds", "watcherEmails", "reviewerContactIds", "reviewerEmails", "clientFileIds"]) body[k] = asArr(b[k]);
   if (body.typeId === "") body.typeId = null;
   if (body.onBehalfOfContactId === "") delete body.onBehalfOfContactId;
   if (body.submissionKey === "") delete body.submissionKey;
@@ -203,7 +212,8 @@ export function registerPortalRoutes(app: Express) {
   // ── Signed-in ─────────────────────────────────────────────────────────
   app.get("/api/portal/:orgSlug/me", requirePortal, async (req, res) => {
     const org = await orgBySlug(req.portal!.orgSlug);
-    return res.json({ ...publicIdentity(req.portal!), org: org ? { name: org.name, logoUrl: org.logoUrl, email: org.email, phone: org.phone, website: org.website } : null });
+    // supportEmail: what the Help Center shows customers (the support mailbox, not the firm's general address).
+    return res.json({ ...publicIdentity(req.portal!), org: org ? { name: org.name, logoUrl: org.logoUrl, email: org.email, phone: org.phone, website: org.website, supportEmail: org.supportInboundAddress || org.email } : null });
   });
 
   // A self-registered contact tells us their name once; firm users edit names after that.
@@ -416,7 +426,7 @@ export function registerPortalRoutes(app: Express) {
       for (let i = 0; i < files.length; i++) {
         const f = files[i];
         try {
-          out.push(await createAttachment({ orgId: p.orgId, caseId, filename: f.originalname, mimeType: f.mimetype, bytes: f.buffer, uploadedByContactId: p.contact.id, source: "PORTAL", clientFileId: fileIds[i] ?? null, authorize: (tx) => cases.customerCanAccessCase(tx, p.orgId, caseId, p.contact.id, { lock: true }) }));
+          out.push(await createAttachment({ orgId: p.orgId, caseId, filename: f.originalname, mimeType: f.mimetype, bytes: f.buffer, uploadedByContactId: p.contact.id, source: "PORTAL", clientFileId: fileIds[i] ?? null, authorize: (tx) => cases.customerCanAccessCase(tx, p.orgId, caseId, p.contact.id, { lock: true, write: true }) }));
         } catch (err: any) {
           attachmentErrors.push({ filename: f.originalname, clientFileId: fileIds[i] ?? null, error: friendly(err) });
         }
@@ -440,12 +450,14 @@ export function registerPortalRoutes(app: Express) {
       }
       const watcherIds = new Set(parsed.watcherContactIds ?? []);
       for (const e of parsed.watcherEmails ?? []) watcherIds.add(await resolveWatcherEmail(p, e));
+      const reviewerIds = new Set(parsed.reviewerContactIds ?? []);
+      for (const e of parsed.reviewerEmails ?? []) reviewerIds.add(await resolveWatcherEmail(p, e));
       let requesterId = p.contact.id;
       if (parsed.onBehalfOfContactId && parsed.onBehalfOfContactId !== p.contact.id) {
         if (p.contact.portalRole !== "admin") return res.status(403).json({ message: "Only a Customer Admin can open a case for a colleague" });
         requesterId = parsed.onBehalfOfContactId;
       }
-      watcherIds.delete(requesterId);
+      watcherIds.delete(requesterId); reviewerIds.delete(requesterId);
       const [requester] = await db.select().from(clientContacts).where(and(eq(clientContacts.id, requesterId), eq(clientContacts.orgId, p.orgId), eq(clientContacts.clientId, p.client.id), isNull(clientContacts.deletedAt)));
       if (!requester) return res.status(400).json({ message: "That colleague is not part of your company" });
       let row;
@@ -462,7 +474,7 @@ export function registerPortalRoutes(app: Express) {
           requesterEmail: requester.email || null,
           openedByName: `${p.contact.firstName} ${p.contact.lastName}`.trim(),
           source: "PORTAL",
-          portal: { submitterContactId: p.contact.id, submissionKey: parsed.submissionKey ?? null, watcherContactIds: [...watcherIds] },
+          portal: { submitterContactId: p.contact.id, submissionKey: parsed.submissionKey ?? null, watcherContactIds: [...watcherIds], reviewerContactIds: [...reviewerIds] },
           deferNotify: true,
         }, null);
       } catch (err: any) {
@@ -495,7 +507,7 @@ export function registerPortalRoutes(app: Express) {
       const [row] = await db.select({ id: supportCases.id }).from(supportCases).where(and(visibleCaseWhere(req), eq(supportCases.id, String(req.params.id))));
       if (!row) return res.status(404).json({ message: "Support case not found" });
       const contactId = body.contactId ?? await resolveWatcherEmail(p, body.email!);
-      const r = await cases.addWatcher(p.orgId, row.id, contactId, { contactId: p.contact.id, name: `${p.contact.firstName} ${p.contact.lastName}`.trim() }, authorizeContact(req));
+      const r = await cases.addWatcher(p.orgId, row.id, contactId, { contactId: p.contact.id, name: `${p.contact.firstName} ${p.contact.lastName}`.trim() }, authorizeContact(req), body.role ?? "watcher", authorizeContactManage(req));
       return res.status(r.changed ? 201 : 200).json(r.watchers);
     } catch (err: any) {
       if (err instanceof cases.CaseAccessError) return res.status(404).json({ message: "Support case not found" });
@@ -509,7 +521,7 @@ export function registerPortalRoutes(app: Express) {
       if (!row) return res.status(404).json({ message: "Support case not found" });
       const target = String(req.params.contactId);
       // A watcher may remove THEMSELVES; removing others is for the requester / Customer Admin.
-      const auth = target === p.contact.id ? authorizeContact(req) : authorizeContactManage(req);
+      const auth = target === p.contact.id ? authorizeContactAccess(req) : authorizeContactManage(req);
       const r = await cases.removeWatcher(p.orgId, row.id, target, { contactId: p.contact.id, name: `${p.contact.firstName} ${p.contact.lastName}`.trim() }, auth);
       return res.json(r.watchers);
     } catch (err: any) {
@@ -546,12 +558,13 @@ export function registerPortalRoutes(app: Express) {
       const t = await cases.listCaseTime(p.orgId, row.id);
       hours = { minutes: t.totals.minutes, billableMinutes: t.totals.billableMinutes };
     }
-    const [attachments, watchers] = await Promise.all([listAttachments(p.orgId, row.id), cases.listWatchers(p.orgId, row.id)]);
+    const [attachments, watchers, access] = await Promise.all([listAttachments(p.orgId, row.id), cases.listWatchers(p.orgId, row.id), cases.customerCanAccess(db, p.orgId, { id: row.id, clientId: p.client.id, requesterContactId: row.requesterContactId, requesterEmail: row.requesterEmail }, p.contact.id)]);
     const { assigneeUserId: _a, requesterContactId, requesterEmail, ...safe } = row;
     return res.json({
       ...safe,
       assigneeName,
       isRequester: isOwnCase(p, { requesterContactId, requesterEmail }),
+      myRole: access.role,
       watchers,
       attachments: attachments.map(a => attachmentView(a, `/api/portal/${p.orgSlug}/attachments`)),
       messages: messages.map(m => ({ id: m.id, authorName: m.authorName, fromTeam: !!m.authorUserId, body: m.body, createdAt: m.createdAt })),
@@ -595,7 +608,7 @@ export function registerPortalRoutes(app: Express) {
       const created = [];
       for (let i = 0; i < files.length; i++) {
         const f = files[i];
-        created.push(await createAttachment({ orgId: p.orgId, caseId: row.id, filename: f.originalname, mimeType: f.mimetype, bytes: f.buffer, uploadedByContactId: p.contact.id, source: "PORTAL", clientFileId: ids[i] ?? null, authorize: (tx) => cases.customerCanAccessCase(tx, p.orgId, row.id, p.contact.id, { lock: true }) }));
+        created.push(await createAttachment({ orgId: p.orgId, caseId: row.id, filename: f.originalname, mimeType: f.mimetype, bytes: f.buffer, uploadedByContactId: p.contact.id, source: "PORTAL", clientFileId: ids[i] ?? null, authorize: (tx) => cases.customerCanAccessCase(tx, p.orgId, row.id, p.contact.id, { lock: true, write: true }) }));
       }
       return res.status(201).json(created.map(a => attachmentView(a, `/api/portal/${p.orgSlug}/attachments`)));
     } catch (err: any) {

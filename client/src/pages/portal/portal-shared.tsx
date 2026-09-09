@@ -85,7 +85,7 @@ export interface Me {
   orgSlug: string; orgName: string; orgLogoUrl: string | null;
   contact: { id: string; firstName: string; lastName: string; email: string; isPrimary: boolean; portalRole: "member" | "admin"; billingAccess: boolean; needsName: boolean };
   client: { id: string; name: string; showHours: boolean };
-  org: { name: string; logoUrl: string | null; email: string | null; phone: string | null; website: string | null } | null;
+  org: { name: string; logoUrl: string | null; email: string | null; phone: string | null; website: string | null; supportEmail?: string | null } | null;
 }
 
 export function useMe(slug: string) {
@@ -167,7 +167,10 @@ export function Shell({ surface, slug, me, children, active }: { surface: Surfac
       </header>
       <main style={{ maxWidth: 920, margin: "0 auto", padding: "28px 20px 64px" }}>{children}</main>
       <footer style={{ maxWidth: 920, margin: "0 auto", padding: "0 20px 32px", fontSize: 12, color: T.muted }}>
-        {me?.org && <p style={{ margin: 0 }}>{me.org.name}{me.org.email ? ` · ${me.org.email}` : ""}{me.org.phone ? ` · ${me.org.phone}` : ""}</p>}
+        {/* Help Center: the support mailbox, no phone. Customer Portal (billing): the firm's general contact. */}
+        {me?.org && (surface === "help"
+          ? <p style={{ margin: 0 }}>{me.org.name}{me.org.supportEmail ? ` · ${me.org.supportEmail}` : ""}</p>
+          : <p style={{ margin: 0 }}>{me.org.name}{me.org.email ? ` · ${me.org.email}` : ""}{me.org.phone ? ` · ${me.org.phone}` : ""}</p>)}
       </footer>
     </div>
   );

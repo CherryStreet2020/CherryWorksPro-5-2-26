@@ -127,8 +127,9 @@ export default function SupportCaseDetailPage() {
     queryClient.invalidateQueries({ queryKey: ["/api/support/cases", id] });
     queryClient.invalidateQueries({ queryKey: ["/api/support/cases", id, "colleagues"] });
   };
+  const [watcherRole, setWatcherRole] = useState<"watcher" | "reviewer">("watcher");
   const addWatcher = useMutation({
-    mutationFn: async (contactId: string) => (await apiRequest("POST", `/api/support/cases/${id}/watchers`, { contactId })).json(),
+    mutationFn: async (contactId: string) => (await apiRequest("POST", `/api/support/cases/${id}/watchers`, { contactId, role: watcherRole })).json(),
     onSuccess: () => { setWatcherToAdd(""); invalidateWatchers(); toast({ title: "Watcher added" }); },
     onError: (err: Error) => toast({ title: "Could not add the watcher", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }),
   });
@@ -486,7 +487,7 @@ export default function SupportCaseDetailPage() {
                     <div className="min-w-0 flex items-center gap-1.5">
                       <Eye className="w-3.5 h-3.5 shrink-0" style={muted} />
                       <div className="min-w-0">
-                        <p className="font-medium truncate" style={{ color: "var(--lux-text)" }}>{w.firstName} {w.lastName}</p>
+                        <p className="font-medium truncate" style={{ color: "var(--lux-text)" }}>{w.firstName} {w.lastName}{w.role === "reviewer" && <span className="font-normal" style={muted}> · review only</span>}</p>
                         {w.email && <p className="truncate" style={muted}>{w.email}</p>}
                       </div>
                     </div>
@@ -498,6 +499,13 @@ export default function SupportCaseDetailPage() {
               </ul>
             )}
             <div className="mt-3 flex items-center gap-2">
+              <Select value={watcherRole} onValueChange={v => setWatcherRole(v as "watcher" | "reviewer")}>
+                <SelectTrigger className="w-[128px] text-xs" style={fieldStyle} data-testid="watcher-add-role"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="watcher">Can reply</SelectItem>
+                  <SelectItem value="reviewer">Review only</SelectItem>
+                </SelectContent>
+              </Select>
               <Select value={watcherToAdd} onValueChange={setWatcherToAdd} disabled={!colleagues?.length}>
                 <SelectTrigger className="flex-1 text-xs" style={fieldStyle} data-testid="watcher-add-select">
                   <SelectValue placeholder={colleagues?.length ? "Add colleague" : "No other contacts at this client"} />

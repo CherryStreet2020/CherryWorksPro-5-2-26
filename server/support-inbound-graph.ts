@@ -235,7 +235,7 @@ export async function pollOrg(org: { id: string; supportInboundAddress: string; 
             bytes: Buffer.from(full.contentBytes, "base64"), source: "EMAIL", externalRef: `M365:${msg.id}:${a.id}`, uploadedByContactId: outcome.contactId ?? null,
             // Deterministic per mail attachment (Graph ids are too long for the column): a retried poll completes the same reservation.
             clientFileId: createHash("sha256").update(`M365:${msg.id}:${a.id}`).digest("hex"),
-            authorize: outcome.contactId ? (tx) => cases.customerCanAccessCase(tx, org.id, outcome.caseId!, outcome.contactId!, { lock: true }) : undefined,
+            authorize: outcome.contactId ? (tx) => cases.customerCanAccessCase(tx, org.id, outcome.caseId!, outcome.contactId!, { lock: true, write: true }) : undefined,
           }).catch(err => console.warn("[support-inbound-graph] attachment failed", (err as Error).message));
         }
       } catch (err) {

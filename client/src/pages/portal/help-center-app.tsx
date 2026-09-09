@@ -12,7 +12,7 @@
 import { Fragment, useState } from "react";
 import { Link, Route, Switch, useLocation, useParams } from "wouter";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { PRIORITY_LABEL, IMPACT_LABEL, INTAKE_FIELD_LABELS, hoursLabel, relativeTime, type CaseStatus, type CasePriority, type SupportCaseIntake, type SupportCaseImpact } from "@/lib/support-cases";
+import { PRIORITY_LABEL, CASE_PRIORITY_ORDER, IMPACT_LABEL, INTAKE_FIELD_LABELS, hoursLabel, relativeTime, type CaseStatus, type CasePriority, type SupportCaseIntake, type SupportCaseImpact } from "@/lib/support-cases";
 import {
   T, display, mono, STATUS_STYLE, Chip, btnPrimary, btnGhost, field, card, label, eyebrow,
   api, type Me, Shell, LoginPage, VerifyPage, Gate, relDate,
@@ -24,9 +24,9 @@ const base = (slug: string) => `/help/${slug}`;
 interface CaseRow { id: string; caseKey: string; subject: string; status: CaseStatus; priority: CasePriority; typeName: string | null; requesterName: string | null; requesterContactId: string | null; createdAt: string; updatedAt: string; mine: boolean; awaitingYou: boolean; hasNewReply: boolean; resolvedAt: string | null }
 interface CaseList { cases: CaseRow[]; counts: { open: number; waitingOnYou: number; resolved: number; byPriority: Record<string, number> }; paging: { status: string; limit: number; offset: number; hasMore: boolean }; scope: "client" | "own" }
 interface Attachment { id: string; filename: string; mimeType: string; size: number; isImage: boolean; url: string; createdAt: string; clientFileId?: string | null }
-interface Watcher { id: string; contactId: string; firstName: string; lastName: string; email: string | null; addedAt: string }
+interface Watcher { id: string; contactId: string; firstName: string; lastName: string; email: string | null; role: "watcher" | "reviewer"; addedAt: string }
 interface Colleague { id: string; firstName: string; lastName: string; email: string | null }
-interface CaseDetail { id: string; caseKey: string; subject: string; description: string | null; status: CaseStatus; priority: CasePriority; typeName: string | null; requesterName: string | null; assigneeName: string | null; createdAt: string; firstResponseAt: string | null; resolvedAt: string | null; intake: SupportCaseIntake | null; isRequester: boolean; watchers: Watcher[]; attachments: Attachment[]; messages: { id: string; authorName: string; fromTeam: boolean; body: string; createdAt: string }[]; events: { id: string; kind: string; fromValue: string | null; toValue: string | null; createdAt: string }[]; hours: { minutes: number; billableMinutes: number } | null }
+interface CaseDetail { id: string; caseKey: string; subject: string; description: string | null; status: CaseStatus; priority: CasePriority; typeName: string | null; requesterName: string | null; assigneeName: string | null; createdAt: string; firstResponseAt: string | null; resolvedAt: string | null; intake: SupportCaseIntake | null; isRequester: boolean; myRole: "requester" | "admin" | "watcher" | "reviewer" | null; watchers: Watcher[]; attachments: Attachment[]; messages: { id: string; authorName: string; fromTeam: boolean; body: string; createdAt: string }[]; events: { id: string; kind: string; fromValue: string | null; toValue: string | null; createdAt: string }[]; hours: { minutes: number; billableMinutes: number } | null }
 interface CreateResult { id: string; caseKey: string; replay?: boolean; attachments?: Attachment[]; attachmentErrors?: { filename: string; clientFileId: string | null; error: string }[] }
 interface PickedFile { clientFileId: string; file: File; done: boolean; error: string | null }
 const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
@@ -39,7 +39,7 @@ interface CaseType { id: string; name: string; description: string | null }
 interface TeamMember { id: string; firstName: string; lastName: string; email: string | null; portalRole: "member" | "admin"; isPrimary: boolean; createdAt: string; pending: boolean }
 interface Team { contacts: TeamMember[]; approvedDomains: string[] }
 
-const PRIORITY_COLOR: Record<CasePriority, string> = { LOW: T.muted, MEDIUM: T.text2, HIGH: T.warn, URGENT: T.accent };
+const PRIORITY_COLOR: Record<CasePriority, string> = { LOW: T.muted, MEDIUM: T.text2, HIGH: T.warn, URGENT: T.accent, BLOCKER: T.accent };
 
 // ─── First sign-in: the self-registered contact tells us their name ─────────
 function NameGate({ slug, me, children }: { slug: string; me: Me; children: React.ReactNode }) {
@@ -123,7 +123,7 @@ function CasesList({ slug, me }: { slug: string; me: Me }) {
 
       {isAdmin && counts && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }} data-testid="portal-admin-filters">
-          {(["URGENT", "HIGH", "MEDIUM", "LOW"] as CasePriority[]).map(p => chip(priority === p, `${PRIORITY_LABEL[p]}${counts.byPriority[p] ? ` · ${counts.byPriority[p]}` : ""}`, () => setPriority(priority === p ? "" : p), `portal-filter-priority-${p}`))}
+          {[...CASE_PRIORITY_ORDER].reverse().map(p => chip(priority === p, `${PRIORITY_LABEL[p]}${counts.byPriority[p] ? ` · ${counts.byPriority[p]}` : ""}`, () => setPriority(priority === p ? "" : p), `portal-filter-priority-${p}`))}
           {chip(onlyMine, "Mine", () => setOnlyMine(v => !v), "portal-filter-mine")}
           {requesters.length > 1 && (
             <select value={requester} onChange={e => setRequester(e.target.value)} style={{ ...field, width: "auto", padding: "6px 10px", fontSize: 13 }} aria-label="Requester" data-testid="portal-filter-requester">
@@ -195,6 +195,9 @@ function NewCaseForm({ slug, me }: { slug: string; me: Me }) {
   const [files, setFiles] = useState<PickedFile[]>([]);
   const [watcherIds, setWatcherIds] = useState<string[]>([]);
   const [watcherEmails, setWatcherEmails] = useState<string[]>([]);
+  const [reviewerIds, setReviewerIds] = useState<string[]>([]);
+  const [reviewerEmails, setReviewerEmails] = useState<string[]>([]);
+  const [shareRole, setShareRole] = useState<"watcher" | "reviewer">("watcher");
   const [emailDraft, setEmailDraft] = useState("");
   const [onBehalfOf, setOnBehalfOf] = useState("");
   const [result, setResult] = useState<CreateResult | null>(null);
@@ -212,8 +215,16 @@ function NewCaseForm({ slug, me }: { slug: string; me: Me }) {
     if (!e) return;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return;
     const known = colleagues?.find(c => c.email?.toLowerCase() === e);
-    if (known) { if (!watcherIds.includes(known.id)) setWatcherIds(prev => [...prev, known.id]); }
-    else if (!watcherEmails.includes(e)) setWatcherEmails(prev => [...prev, e]);
+    // One person, one role: adding someone again under the other role MOVES them there.
+    // Clear every representation of this person (id AND email, both roles) before placing them.
+    setWatcherEmails(prev => prev.filter(x => x !== e)); setReviewerEmails(prev => prev.filter(x => x !== e));
+    if (known) {
+      setWatcherIds(prev => prev.filter(x => x !== known.id)); setReviewerIds(prev => prev.filter(x => x !== known.id));
+      (shareRole === "reviewer" ? setReviewerIds : setWatcherIds)(prev => [...prev, known.id]);
+    } else {
+      setWatcherEmails(prev => prev.filter(x => x !== e)); setReviewerEmails(prev => prev.filter(x => x !== e));
+      (shareRole === "reviewer" ? setReviewerEmails : setWatcherEmails)(prev => [...prev, e]);
+    }
     setEmailDraft("");
   };
   const post = async (fd: FormData): Promise<CreateResult> => {
@@ -233,6 +244,8 @@ function NewCaseForm({ slug, me }: { slug: string; me: Me }) {
       if (Object.keys(intake).length) fd.append("intake", JSON.stringify(intake));
       fd.append("watcherContactIds", JSON.stringify(watcherIds));
       fd.append("watcherEmails", JSON.stringify(watcherEmails));
+      fd.append("reviewerContactIds", JSON.stringify(reviewerIds));
+      fd.append("reviewerEmails", JSON.stringify(reviewerEmails));
       if (isAdmin && onBehalfOf) fd.append("onBehalfOfContactId", onBehalfOf);
       const pending = files.filter(f => !f.done && !f.error);
       fd.append("clientFileIds", JSON.stringify(pending.map(f => f.clientFileId)));
@@ -276,6 +289,7 @@ function NewCaseForm({ slug, me }: { slug: string; me: Me }) {
   });
   const impactOptions: SupportCaseImpact[] = ["ONE_PERSON", "TEAM", "COMPANY", "PRODUCTION_STOPPED"];
   const selectedColleagues = (colleagues ?? []).filter(c => watcherIds.includes(c.id));
+  const selectedReviewers = (colleagues ?? []).filter(c => reviewerIds.includes(c.id));
   const MAX_FILES = 10;
   const canSubmit = !!subject.trim() && !create.isPending && files.length <= MAX_FILES && !files.some(f => f.error && !f.done);
   const inputStyle = { ...field } as React.CSSProperties;
@@ -363,9 +377,10 @@ function NewCaseForm({ slug, me }: { slug: string; me: Me }) {
 
         <div>
           <span style={label}>How urgent is it?</span>
+          <p style={{ margin: "0 0 8px", fontSize: 12, color: T.muted }}>Blocker means you are down: nobody can work until this is fixed.</p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} role="radiogroup" aria-label="Urgency">
-            {(["LOW", "MEDIUM", "HIGH", "URGENT"] as CasePriority[]).map(p => (
-              <button type="button" key={p} role="radio" aria-checked={priority === p} onClick={() => setPriority(p)} style={{ ...btnGhost, padding: "8px 14px", borderColor: priority === p ? T.accent : T.line, color: priority === p ? T.text : T.text2, background: priority === p ? T.accentSoft : "transparent" }} data-testid={`portal-priority-${p}`}>{PRIORITY_LABEL[p]}</button>
+            {CASE_PRIORITY_ORDER.map(p => (
+              <button type="button" key={p} role="radio" aria-checked={priority === p} onClick={() => setPriority(p)} title={p === "BLOCKER" ? "We are down — nobody can work until this is fixed" : undefined} style={{ ...btnGhost, padding: "8px 14px", borderColor: priority === p ? T.accent : T.line, color: priority === p ? T.text : T.text2, background: priority === p ? T.accentSoft : "transparent" }} data-testid={`portal-priority-${p}`}>{PRIORITY_LABEL[p]}</button>
             ))}
           </div>
         </div>
@@ -427,21 +442,28 @@ function NewCaseForm({ slug, me }: { slug: string; me: Me }) {
 
         <div>
           <span style={label}>Share with colleagues</span>
-          <p style={{ margin: "0 0 8px", fontSize: 12, color: T.muted }}>They'll see this case in the Help Center and get every update by email.</p>
+          <p style={{ margin: "0 0 8px", fontSize: 12, color: T.muted }}>They'll see this case in the Help Center and get every update by email. A reviewer only follows along; a watcher can also reply and add files.</p>
+          <div role="radiogroup" aria-label="Add as" style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            {(["watcher", "reviewer"] as const).map(r => (
+              <button type="button" key={r} role="radio" aria-checked={shareRole === r} onClick={() => setShareRole(r)} style={{ ...btnGhost, padding: "6px 12px", fontSize: 12, borderColor: shareRole === r ? T.accent : T.line, background: shareRole === r ? T.accentSoft : "transparent" }} data-testid={`portal-share-role-${r}`}>{r === "watcher" ? "Can reply (watcher)" : "Review only (reviewer)"}</button>
+            ))}
+          </div>
           {(colleagues?.length ?? 0) > 0 && (
-            <select value="" onChange={e => { const id = e.target.value; if (id && !watcherIds.includes(id)) setWatcherIds(prev => [...prev, id]); }} style={{ ...inputStyle, marginBottom: 8 }} data-testid="portal-watcher-select">
+            <select value="" onChange={e => { const id = e.target.value; if (!id) return; const em = colleagues?.find(c => c.id === id)?.email?.toLowerCase(); if (em) { setWatcherEmails(prev => prev.filter(x => x !== em)); setReviewerEmails(prev => prev.filter(x => x !== em)); } setWatcherIds(prev => prev.filter(x => x !== id)); setReviewerIds(prev => prev.filter(x => x !== id)); (shareRole === "reviewer" ? setReviewerIds : setWatcherIds)(prev => [...prev, id]); }} style={{ ...inputStyle, marginBottom: 8 }} data-testid="portal-watcher-select">
               <option value="">Add a colleague…</option>
-              {colleagues!.filter(c => !watcherIds.includes(c.id) && c.id !== onBehalfOf).map(c => <option key={c.id} value={c.id}>{personName(c)}{c.email ? ` · ${c.email}` : ""}</option>)}
+              {colleagues!.filter(c => !watcherIds.includes(c.id) && !reviewerIds.includes(c.id) && c.id !== onBehalfOf).map(c => <option key={c.id} value={c.id}>{personName(c)}{c.email ? ` · ${c.email}` : ""}</option>)}
             </select>
           )}
           <div style={{ display: "flex", gap: 8 }}>
             <input value={emailDraft} onChange={e => setEmailDraft(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addEmail(); } }} placeholder="Or type a work email and press Enter" style={field} data-testid="portal-watcher-email" />
             <button type="button" onClick={addEmail} style={{ ...btnGhost, whiteSpace: "nowrap" }} data-testid="portal-watcher-add">Add</button>
           </div>
-          {(selectedColleagues.length > 0 || watcherEmails.length > 0) && (
+          {(selectedColleagues.length + watcherEmails.length + selectedReviewers.length + reviewerEmails.length) > 0 && (
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }} data-testid="portal-watcher-chips">
               {selectedColleagues.map(c => <span key={c.id} style={{ ...btnGhost, padding: "4px 10px", fontSize: 12, display: "inline-flex", gap: 6, alignItems: "center" }}>{personName(c)}<button type="button" onClick={() => setWatcherIds(prev => prev.filter(x => x !== c.id))} aria-label={`Remove ${personName(c)}`} style={{ border: 0, background: "transparent", cursor: "pointer", color: T.muted }}>×</button></span>)}
               {watcherEmails.map(e => <span key={e} style={{ ...btnGhost, padding: "4px 10px", fontSize: 12, display: "inline-flex", gap: 6, alignItems: "center" }}>{e}<button type="button" onClick={() => setWatcherEmails(prev => prev.filter(x => x !== e))} aria-label={`Remove ${e}`} style={{ border: 0, background: "transparent", cursor: "pointer", color: T.muted }}>×</button></span>)}
+              {selectedReviewers.map(c => <span key={`r-${c.id}`} style={{ ...btnGhost, padding: "4px 10px", fontSize: 12, display: "inline-flex", gap: 6, alignItems: "center", color: T.text2 }}>{personName(c)} · review only<button type="button" onClick={() => setReviewerIds(prev => prev.filter(x => x !== c.id))} aria-label={`Remove ${personName(c)}`} style={{ border: 0, background: "transparent", cursor: "pointer", color: T.muted }}>×</button></span>)}
+              {reviewerEmails.map(e => <span key={`r-${e}`} style={{ ...btnGhost, padding: "4px 10px", fontSize: 12, display: "inline-flex", gap: 6, alignItems: "center", color: T.text2 }}>{e} · review only<button type="button" onClick={() => setReviewerEmails(prev => prev.filter(x => x !== e))} aria-label={`Remove ${e}`} style={{ border: 0, background: "transparent", cursor: "pointer", color: T.muted }}>×</button></span>)}
             </div>
           )}
         </div>
@@ -489,8 +511,9 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
   });
   const { data: colleagues } = useQuery<Colleague[]>({ queryKey: ["help-colleagues", slug, me.contact.id, id], queryFn: () => api("GET", `/api/portal/${slug}/colleagues?caseId=${id}`) });
   const [watcherEmail, setWatcherEmail] = useState("");
+  const [addRole, setAddRole] = useState<"watcher" | "reviewer">("watcher");
   const addWatcher = useMutation({
-    mutationFn: (body: { contactId?: string; email?: string }) => api("POST", `/api/portal/${slug}/cases/${id}/watchers`, body),
+    mutationFn: (body: { contactId?: string; email?: string }) => api("POST", `/api/portal/${slug}/cases/${id}/watchers`, { ...body, role: addRole }),
     onSuccess: () => { setWatcherEmail(""); qc.invalidateQueries({ queryKey: key }); qc.invalidateQueries({ queryKey: ["help-colleagues", slug, me.contact.id, id] }); },
   });
   const removeWatcher = useMutation({
@@ -505,6 +528,8 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
   ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
   const closedOrResolved = c.status === "RESOLVED" || c.status === "CLOSED";
   const canManageWatchers = isAdmin || c.isRequester;
+  const reviewOnly = c.myRole === "reviewer";
+  const canWrite = !reviewOnly && c.status !== "CLOSED";
   const intakeRows = (Object.keys(INTAKE_FIELD_LABELS) as (keyof SupportCaseIntake)[]).map(k => ({ k, label: INTAKE_FIELD_LABELS[k], v: c.intake?.[k] })).filter(r => !!r.v).map(r => ({ ...r, v: r.k === "impact" ? IMPACT_LABEL[r.v as SupportCaseImpact] : String(r.v) }));
   return (
     <Shell surface={SURFACE} slug={slug} me={me} active="cases">
@@ -520,6 +545,11 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
         Opened {relativeTime(c.createdAt)}{c.requesterName ? ` by ${c.requesterName}` : ""}{c.assigneeName ? ` · ${c.assigneeName} is on it` : " · waiting to be picked up"}
         {c.hours && ` · ${hoursLabel(c.hours.minutes)} logged`}
       </p>
+      {reviewOnly && (
+        <p style={{ ...card, padding: 12, margin: "0 0 16px", fontSize: 13, color: T.text2 }} data-testid="portal-review-only-note">
+          You're reviewing this case. You'll see every update here and by email; replies and files are for the requester and watchers.
+        </p>
+      )}
       {c.status === "BLOCKED" && (
         <p style={{ ...card, padding: 12, margin: "0 0 16px", fontSize: 13, color: T.text2, borderColor: T.warn }} data-testid="portal-blocked-note">
           <strong style={{ color: T.text }}>Blocked.</strong> We're waiting on something outside this case before work can continue. You'll hear here and by email as soon as it moves.
@@ -532,7 +562,7 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
           <label style={{ fontSize: 13, color: T.text2, display: "flex", alignItems: "center", gap: 8 }}>
             Priority
             <select value={c.priority} onChange={e => admin.mutate({ priority: e.target.value as CasePriority })} disabled={admin.isPending || c.status === "CLOSED"} style={{ ...field, width: "auto", padding: "6px 10px", fontSize: 13 }} data-testid="portal-admin-priority">
-              {(["LOW", "MEDIUM", "HIGH", "URGENT"] as CasePriority[]).map(p => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
+              {CASE_PRIORITY_ORDER.map(p => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
             </select>
           </label>
           <span style={{ flex: 1 }} />
@@ -577,7 +607,7 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
             <ul style={{ listStyle: "none", padding: 0, margin: "0 0 10px", display: "grid", gap: 6 }}>
               {c.watchers.map(w => (
                 <li key={w.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14 }} data-testid={`portal-watcher-${w.contactId}`}>
-                  <span style={{ flex: 1 }}>{personName(w)}{w.email ? <span style={{ color: T.muted }}> · {w.email}</span> : null}</span>
+                  <span style={{ flex: 1 }}>{personName(w)}{w.email ? <span style={{ color: T.muted }}> · {w.email}</span> : null}{w.role === "reviewer" ? <span style={{ color: T.muted }}> · review only</span> : null}</span>
                   {(canManageWatchers || w.contactId === me.contact.id) && c.status !== "CLOSED" && (
                     <button type="button" onClick={() => removeWatcher.mutate(w.contactId)} disabled={removeWatcher.isPending} style={{ ...btnGhost, padding: "3px 8px", fontSize: 12 }} data-testid={`portal-watcher-remove-${w.contactId}`}>{w.contactId === me.contact.id ? "Stop following" : "Remove"}</button>
                   )}
@@ -585,8 +615,13 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
               ))}
             </ul>
           )}
-          {c.status !== "CLOSED" && (
+          {canWrite && (
             <div style={{ display: "grid", gap: 8 }}>
+              <div role="radiogroup" aria-label="Add as" style={{ display: "flex", gap: 8 }}>
+                {(["watcher", "reviewer"] as const).map(r => (
+                  <button type="button" key={r} role="radio" aria-checked={addRole === r} onClick={() => setAddRole(r)} style={{ ...btnGhost, padding: "5px 10px", fontSize: 12, borderColor: addRole === r ? T.accent : T.line, background: addRole === r ? T.accentSoft : "transparent" }} data-testid={`portal-add-role-${r}`}>{r === "watcher" ? "Can reply" : "Review only"}</button>
+                ))}
+              </div>
               {(colleagues?.length ?? 0) > 0 && (
                 <select value="" onChange={e => { if (e.target.value) addWatcher.mutate({ contactId: e.target.value }); }} disabled={addWatcher.isPending} style={{ ...field, fontSize: 13 }} data-testid="portal-watcher-select">
                   <option value="">Add a colleague…</option>
@@ -605,7 +640,7 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
         <section style={card} data-testid="portal-attachments">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
             <p style={{ ...eyebrow, margin: 0 }}>Files{c.attachments.length ? ` (${c.attachments.length})` : ""}</p>
-            {c.status !== "CLOSED" && (
+            {canWrite && (
               <label style={{ ...btnGhost, padding: "7px 12px", fontSize: 13, cursor: upload.isPending ? "wait" : "pointer" }}>
                 {upload.isPending ? "Uploading…" : "Add files"}
                 <input type="file" multiple style={{ display: "none" }} onChange={e => { if (e.target.files?.length) upload.mutate(e.target.files); e.currentTarget.value = ""; }} data-testid="portal-file-input" />
@@ -649,7 +684,7 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
               ))}
             </ol>
           )}
-          {c.status !== "CLOSED" && (
+          {canWrite && (
             <form onSubmit={e => { e.preventDefault(); if (body.trim()) post.mutate(); }} style={{ marginTop: 16 }}>
               <textarea value={body} onChange={e => setBody(e.target.value)} rows={4} placeholder={c.status === "RESOLVED" ? "Still having trouble? Reply here to reopen the case." : c.status === "BLOCKED" ? "Add anything that might unblock this…" : "Add details or reply to the team…"} style={{ ...field, resize: "vertical", lineHeight: 1.5 }} data-testid="portal-reply" />
               {post.isError && <p style={{ color: T.warn, fontSize: 13, margin: "8px 0 0" }}>{(post.error as Error).message}</p>}

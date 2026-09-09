@@ -43,12 +43,17 @@ describe("mapStatus / mapPriority", () => {
     for (const s of ["Closed", "Done", "Canceled"]) expect(mapStatus(s)).toBe("CLOSED");
     expect(mapStatus("Something odd", "done")).toBe("CLOSED");
   });
+  it("maps Jira's Blocker priority onto BLOCKER and Highest onto URGENT", () => {
+    expect(mapPriority("Blocker")).toBe("BLOCKER");
+    expect(mapPriority("Highest")).toBe("URGENT");
+  });
+
   it("maps Jira's blocked / on-hold statuses onto BLOCKED", () => {
     expect(mapStatus("Blocked")).toBe("BLOCKED");
     expect(mapStatus("On hold")).toBe("BLOCKED");
   });
   it("maps priorities", () => {
-    expect(mapPriority("Blocker")).toBe("URGENT");
+    expect(mapPriority("Blocker")).toBe("BLOCKER");
     expect(mapPriority("High")).toBe("HIGH");
     expect(mapPriority("Low")).toBe("LOW");
     expect(mapPriority(null)).toBe("MEDIUM");
@@ -95,7 +100,7 @@ describe("Jira import", () => {
     expect(byKey["ZZQ-152"].assigneeName).toBe("Ada Adminson");
     expect(byKey["ZZQ-152"].minutesLogged).toBe(45);
     expect(byKey["ZZQ-157"].status).toBe("RESOLVED");
-    expect(byKey["ZZQ-157"].priority).toBe("URGENT");
+    expect(byKey["ZZQ-157"].priority).toBe("BLOCKER");
     expect(new Date(byKey["ZZQ-100"].createdAt).getFullYear()).toBe(2025);
 
     const d = await (await api("GET", `/api/support/cases/${byKey["ZZQ-100"].id}`, admin)).json();

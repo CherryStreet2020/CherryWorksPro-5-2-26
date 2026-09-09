@@ -88,7 +88,8 @@ export function mapStatus(name: string | null | undefined, category?: string | n
 export function mapPriority(name: string | null | undefined): string {
   const n = (name || "").trim().toLowerCase();
   if (/lowest|low|minor|trivial/.test(n)) return "LOW";
-  if (/highest|urgent|critical|blocker/.test(n)) return "URGENT";
+  if (/blocker/.test(n)) return "BLOCKER";
+  if (/highest|urgent|critical/.test(n)) return "URGENT";
   if (/high|major/.test(n)) return "HIGH";
   return "MEDIUM";
 }
