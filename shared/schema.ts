@@ -1298,7 +1298,8 @@ export const supportCaseIntakeSchema = z.object({
   environment: z.string().trim().max(120).optional(),
 }).strict();
 export type SupportCaseIntake = z.infer<typeof supportCaseIntakeSchema>;
-export const SUPPORT_CASE_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
+// BLOCKER: the top level — the customer is down / cannot work.
+export const SUPPORT_CASE_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT", "BLOCKER"] as const;
 export type SupportCasePriority = (typeof SUPPORT_CASE_PRIORITIES)[number];
 export const SUPPORT_CASE_SOURCES = ["AGENT", "PORTAL", "EMAIL", "IMPORT"] as const;
 export const SUPPORT_MESSAGE_VISIBILITIES = ["CUSTOMER", "INTERNAL"] as const;
@@ -1526,6 +1527,8 @@ export const supportCaseWatchers = pgTable("support_case_watchers", {
   orgId: varchar("org_id", { length: 36 }).notNull().references(() => orgs.id),
   caseId: varchar("case_id", { length: 36 }).notNull().references(() => supportCases.id, { onDelete: "cascade" }),
   contactId: varchar("contact_id", { length: 36 }).notNull().references(() => clientContacts.id, { onDelete: "cascade" }),
+  // "watcher" may reply and upload; "reviewer" only sees the case and receives updates (review only).
+  role: text("role").notNull().default("watcher"),
   addedByContactId: varchar("added_by_contact_id", { length: 36 }),
   addedByUserId: varchar("added_by_user_id", { length: 36 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -1824,6 +1827,9 @@ export const portalCreateCaseSchema = z.object({
   watcherContactIds: z.array(z.string().min(1).max(36)).max(20).optional(),
   /** New colleagues by email — only on the client's approved domains (self-registration rule). */
   watcherEmails: z.array(z.string().trim().toLowerCase().email().max(254)).max(20).optional(),
+  /** Reviewers: same rules, but review only (no replies, uploads or invites). */
+  reviewerContactIds: z.array(z.string().min(1).max(36)).max(20).optional(),
+  reviewerEmails: z.array(z.string().trim().toLowerCase().email().max(254)).max(20).optional(),
   /** Customer Admin only: raise the case for a colleague. */
   onBehalfOfContactId: z.string().min(1).max(36).optional(),
   /** Per-form-mount key so a lost response never makes a second case. */
@@ -1831,9 +1837,12 @@ export const portalCreateCaseSchema = z.object({
   /** Parallel to the uploaded files (multipart): a stable id per file for idempotent retries. */
   clientFileIds: z.array(z.string().regex(/^[A-Za-z0-9_-]{8,64}$/)).max(10).optional(),
 });
+export const SUPPORT_WATCHER_ROLES = ["watcher", "reviewer"] as const;
+export type SupportWatcherRole = (typeof SUPPORT_WATCHER_ROLES)[number];
 export const portalWatcherAddSchema = z.object({
   contactId: z.string().min(1).max(36).optional(),
   email: z.string().trim().toLowerCase().email().max(254).optional(),
+  role: z.enum(SUPPORT_WATCHER_ROLES).optional(),
 }).refine(v => !!v.contactId || !!v.email, { message: "Pick a colleague or enter an email" });
 export const portalMessageSchema = z.object({
   body: z.string().trim().min(1, "Write a message first").max(20000, "Must be at most 20000 characters"),

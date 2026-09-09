@@ -353,6 +353,7 @@ export interface CreateCaseInput {
     submitterContactId: string;
     submissionKey?: string | null;
     watcherContactIds?: string[];
+    reviewerContactIds?: string[];
   };
   /** Caller sends the creation notification itself (after the form's files are stored) via `notifyCreated`. */
   deferNotify?: boolean;
@@ -448,7 +449,7 @@ export async function createCase(orgId: string, input: CreateCaseInput, actor: A
 
   if (portal) {
     // Contacts re-read FOR UPDATE, ascending, after the case row: submitter, requester, watchers.
-    const ids = [...new Set([portal.submitterContactId, ...(input.requesterContactId ? [input.requesterContactId] : []), ...(portal.watcherContactIds ?? [])])].sort();
+    const ids = [...new Set([portal.submitterContactId, ...(input.requesterContactId ? [input.requesterContactId] : []), ...(portal.watcherContactIds ?? []), ...(portal.reviewerContactIds ?? [])])].sort();
     const locked = await tx.select().from(clientContacts)
       .where(and(eq(clientContacts.orgId, orgId), inArray(clientContacts.id, ids))).orderBy(asc(clientContacts.id)).for("update");
     const byId = new Map(locked.map(c => [c.id, c]));
@@ -463,10 +464,12 @@ export async function createCase(orgId: string, input: CreateCaseInput, actor: A
     const watcherIds = new Set(portal.watcherContactIds ?? []);
     if (onBehalf) watcherIds.add(portal.submitterContactId); // the admin keeps seeing what they opened
     watcherIds.delete(input.requesterContactId ?? "");
-    for (const wid of watcherIds) {
+    const reviewerIds = new Set((portal.reviewerContactIds ?? []).filter(id => !watcherIds.has(id) && id !== input.requesterContactId));
+    for (const [wid, role] of [...[...watcherIds].map(id => [id, "watcher"] as const), ...[...reviewerIds].map(id => [id, "reviewer"] as const)]) {
       const c = byId.get(wid)!;
-      await tx.insert(supportCaseWatchers).values({ orgId, caseId: row.id, contactId: wid, addedByContactId: portal.submitterContactId }).onConflictDoNothing();
-      watcherEvents.push({ contactId: wid, name: `${c.firstName} ${c.lastName}`.trim() || c.email || "colleague" });
+      await tx.insert(supportCaseWatchers).values({ orgId, caseId: row.id, contactId: wid, role, addedByContactId: portal.submitterContactId }).onConflictDoNothing();
+      const name = `${c.firstName} ${c.lastName}`.trim() || c.email || "colleague";
+      watcherEvents.push({ contactId: wid, name: role === "reviewer" ? `${name} (review only)` : name });
     }
   }
 
@@ -502,7 +505,7 @@ export async function findSubmission(orgId: string, submitterContactId: string, 
  * the contact must be live, of the case's client, and not blocked. Evaluated on `conn` so callers
  * can run it INSIDE a transaction under the case row lock (revocation while a write is in flight).
  */
-export async function customerCanAccess(conn: DbOrTx, orgId: string, c: Pick<SupportCase, "id" | "clientId" | "requesterContactId" | "requesterEmail">, contactId: string, opts: { lock?: boolean } = {}): Promise<{ ok: boolean; role: "requester" | "admin" | "watcher" | null }> {
+export async function customerCanAccess(conn: DbOrTx, orgId: string, c: Pick<SupportCase, "id" | "clientId" | "requesterContactId" | "requesterEmail">, contactId: string, opts: { lock?: boolean } = {}): Promise<{ ok: boolean; role: "requester" | "admin" | "watcher" | "reviewer" | null }> {
   // Write paths lock the contact row (global order: case → contact): a block or deletion holding
   // that lock finishes first and its revocation is what this check then sees.
   const q = conn.select().from(clientContacts).where(and(eq(clientContacts.id, contactId), eq(clientContacts.orgId, orgId)));
@@ -516,19 +519,21 @@ export async function customerCanAccess(conn: DbOrTx, orgId: string, c: Pick<Sup
   const isRequester = c.requesterContactId ? c.requesterContactId === k.id : (!!email && !!c.requesterEmail && c.requesterEmail.trim().toLowerCase() === email);
   if (isRequester) return { ok: true, role: "requester" };
   if (k.portalRole === "admin") return { ok: true, role: "admin" };
-  const [w] = await conn.select({ id: supportCaseWatchers.id }).from(supportCaseWatchers).where(and(eq(supportCaseWatchers.orgId, orgId), eq(supportCaseWatchers.caseId, c.id), eq(supportCaseWatchers.contactId, k.id)));
-  return w ? { ok: true, role: "watcher" } : { ok: false, role: null };
+  const [w] = await conn.select({ id: supportCaseWatchers.id, role: supportCaseWatchers.role }).from(supportCaseWatchers).where(and(eq(supportCaseWatchers.orgId, orgId), eq(supportCaseWatchers.caseId, c.id), eq(supportCaseWatchers.contactId, k.id)));
+  return w ? { ok: true, role: w.role === "reviewer" ? "reviewer" : "watcher" } : { ok: false, role: null };
 }
 
 /** Same check, loading the case row on the given connection (for callers that only hold the id). */
-export async function customerCanAccessCase(conn: DbOrTx, orgId: string, caseId: string, contactId: string, opts: { lock?: boolean } = {}): Promise<boolean> {
+export async function customerCanAccessCase(conn: DbOrTx, orgId: string, caseId: string, contactId: string, opts: { lock?: boolean; write?: boolean } = {}): Promise<boolean> {
   const [c] = await conn.select({ id: supportCases.id, clientId: supportCases.clientId, requesterContactId: supportCases.requesterContactId, requesterEmail: supportCases.requesterEmail })
     .from(supportCases).where(and(eq(supportCases.id, caseId), eq(supportCases.orgId, orgId)));
-  return c ? (await customerCanAccess(conn, orgId, c, contactId, opts)).ok : false;
+  if (!c) return false;
+  const r = await customerCanAccess(conn, orgId, c, contactId, opts);
+  return r.ok && !(opts.write && r.role === "reviewer"); // reviewers are review only
 }
 
 export async function listWatchers(orgId: string, caseId: string) {
-  return db.select({ id: supportCaseWatchers.id, contactId: clientContacts.id, firstName: clientContacts.firstName, lastName: clientContacts.lastName, email: clientContacts.email, addedAt: supportCaseWatchers.createdAt })
+  return db.select({ id: supportCaseWatchers.id, contactId: clientContacts.id, firstName: clientContacts.firstName, lastName: clientContacts.lastName, email: clientContacts.email, role: supportCaseWatchers.role, addedAt: supportCaseWatchers.createdAt })
     .from(supportCaseWatchers).innerJoin(clientContacts, eq(clientContacts.id, supportCaseWatchers.contactId))
     .where(and(eq(supportCaseWatchers.orgId, orgId), eq(supportCaseWatchers.caseId, caseId), isNull(clientContacts.deletedAt)))
     .orderBy(asc(supportCaseWatchers.createdAt));
@@ -554,7 +559,7 @@ export interface WatcherActor { userId?: string | null; contactId?: string | nul
  * authority is re-evaluated under those locks by `authorize` (customer callers) — an agent caller
  * (`actor.userId`) is trusted by the route. Returns the watcher list after the change.
  */
-export async function addWatcher(orgId: string, caseId: string, contactId: string, actor: WatcherActor, authorize?: (tx: DbOrTx, c: SupportCase) => Promise<boolean>) {
+export async function addWatcher(orgId: string, caseId: string, contactId: string, actor: WatcherActor, authorize?: (tx: DbOrTx, c: SupportCase) => Promise<boolean>, role: "watcher" | "reviewer" = "watcher") {
   const changed = await db.transaction(async (tx) => {
     const [c] = await tx.select().from(supportCases).where(and(eq(supportCases.id, caseId), eq(supportCases.orgId, orgId))).for("update");
     if (!c) throw new CaseAccessError("Support case not found");
@@ -569,9 +574,15 @@ export async function addWatcher(orgId: string, caseId: string, contactId: strin
     const isRequester = c.requesterContactId ? c.requesterContactId === contactId
       : (!!target.email && !!c.requesterEmail && c.requesterEmail.trim().toLowerCase() === target.email.trim().toLowerCase());
     if (isRequester) return false;
-    const [ins] = await tx.insert(supportCaseWatchers).values({ orgId, caseId, contactId, addedByContactId: actor.contactId ?? null, addedByUserId: actor.userId ?? null }).onConflictDoNothing().returning();
-    if (!ins) return false;
-    await writeEvent(orgId, caseId, "watcher", "added", `${target.firstName} ${target.lastName}`.trim() || target.email || "colleague", { userId: actor.userId ?? null, contactId: actor.contactId ?? null, name: actor.name }, tx);
+    // Already following with the same role → nothing to do; with a different role → the role changes
+    // (a reviewer promoted to watcher, or the reverse); otherwise a new row.
+    const [existing] = await tx.select({ id: supportCaseWatchers.id, role: supportCaseWatchers.role }).from(supportCaseWatchers)
+      .where(and(eq(supportCaseWatchers.caseId, caseId), eq(supportCaseWatchers.contactId, contactId))).for("update");
+    if (existing && existing.role === role) return false;
+    if (existing) await tx.update(supportCaseWatchers).set({ role }).where(eq(supportCaseWatchers.id, existing.id));
+    else await tx.insert(supportCaseWatchers).values({ orgId, caseId, contactId, role, addedByContactId: actor.contactId ?? null, addedByUserId: actor.userId ?? null }).onConflictDoNothing();
+    const name = `${target.firstName} ${target.lastName}`.trim() || target.email || "colleague";
+    await writeEvent(orgId, caseId, "watcher", "added", role === "reviewer" ? `${name} (review only)` : name, { userId: actor.userId ?? null, contactId: actor.contactId ?? null, name: actor.name }, tx);
     return true;
   });
   return { changed, watchers: await listWatchers(orgId, caseId) };

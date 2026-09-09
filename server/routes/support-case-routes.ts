@@ -185,9 +185,9 @@ export function registerSupportCaseRoutes(app: Express) {
   app.post("/api/support/cases/:id/watchers", ...gate, async (req, res) => {
     try {
       const orgId = req.session.orgId!;
-      const contactId = z.object({ contactId: z.string().min(1).max(36) }).parse(req.body).contactId;
+      const { contactId, role } = z.object({ contactId: z.string().min(1).max(36), role: z.enum(["watcher", "reviewer"]).optional() }).parse(req.body);
       const actor = await actorOf(req);
-      const r = await cases.addWatcher(orgId, req.params.id as string, contactId, actor);
+      const r = await cases.addWatcher(orgId, req.params.id as string, contactId, actor, undefined, role ?? "watcher");
       return res.status(r.changed ? 201 : 200).json(r.watchers);
     } catch (err: any) {
       if (err instanceof cases.CaseAccessError) return res.status(404).json({ message: err.message });

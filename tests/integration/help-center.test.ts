@@ -751,6 +751,38 @@ describe("Help Center request form v2: intake, files, watchers, on-behalf-of, BL
     expect(d.events.filter((e: any) => e.kind === "status").map((e: any) => e.toValue)).toEqual(expect.arrayContaining(["BLOCKED", "CLOSED", "WAITING_ON_SUPPORT"]));
   });
 
+  it("reviewers are review only: they see the case and its updates but cannot reply, upload or add people; a watcher can be re-added as a reviewer and back", async () => {
+    const r = await portal("POST", "/cases", hReqCookie, { subject: `Reviewed ${stamp}`, priority: "BLOCKER", reviewerContactIds: [hOutId] });
+    expect(r.status, await r.clone().text()).toBe(201);
+    const id = (await r.json()).id;
+    // BLOCKER is the top priority and round-trips.
+    const mine = await (await portal("GET", `/cases/${id}`, hReqCookie)).json();
+    expect(mine.priority).toBe("BLOCKER");
+    expect(mine.watchers.map((w: any) => [w.contactId, w.role])).toEqual([[hOutId, "reviewer"]]);
+    // Olga (reviewer) sees it, knows her role, and is refused every write.
+    const d = await portal("GET", `/cases/${id}`, hOutCookie);
+    expect(d.status).toBe(200);
+    expect((await d.json()).myRole).toBe("reviewer");
+    expect((await portal("GET", "/cases", hOutCookie).then(x => x.json())).cases.map((c: any) => c.id)).toContain(id);
+    expect((await portal("POST", `/cases/${id}/messages`, hOutCookie, { body: "reviewer trying to reply" })).status).toBe(404);
+    expect((await portalUpload(hOutCookie, id, [{ name: "r.txt", bytes: Buffer.from("x"), type: "text/plain" }])).status).toBe(404);
+    expect((await portal("POST", `/cases/${id}/watchers`, hOutCookie, { contactId: hW2Id })).status).toBe(404);
+    // A reviewer's email reply is stored, not appended.
+    const key = (await (await api("GET", `/api/support/cases/${id}`, admin)).json()).caseKey;
+    const inb = await fetch(`${BASE}/api/test/inbound-email`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from: `Olga <${hOutEmail}>`, to: "support@cwpro.dev", subject: `Re: [${key}] reviewed`, text: "from a reviewer", messageId: `<rv.${stamp}@test>`, senderAuthenticated: true, orgId: hOrgId }) }).then(x => x.json());
+    expect(inb.outcome).toBe("stored");
+    // The requester promotes her to a watcher: now she can reply. Then the firm demotes her again.
+    expect((await portal("POST", `/cases/${id}/watchers`, hReqCookie, { contactId: hOutId, role: "watcher" })).status).toBe(201);
+    expect((await portal("POST", `/cases/${id}/messages`, hOutCookie, { body: "now a watcher" })).status).toBe(201);
+    expect((await api("POST", `/api/support/cases/${id}/watchers`, admin, { contactId: hOutId, role: "reviewer" })).status).toBe(201);
+    expect((await portal("POST", `/cases/${id}/messages`, hOutCookie, { body: "reviewer again" })).status).toBe(404);
+    const firm = await (await api("GET", `/api/support/cases/${id}`, admin)).json();
+    expect(firm.watchers.find((w: any) => w.contactId === hOutId).role).toBe("reviewer");
+    expect(firm.events.filter((e: any) => e.kind === "watcher").map((e: any) => e.toValue)).toEqual(expect.arrayContaining(["Olga Outside (review only)", "Olga Outside"]));
+    // A Customer Admin can set BLOCKER too.
+    expect((await portal("PATCH", `/cases/${id}`, hAdminCookie, { priority: "BLOCKER" })).status).toBe(200);
+  });
+
   it("inbound mail follows the same authority: watchers append until removed; a reassigned requester's old address is stored; legacy email-only requesters append", async () => {
     const inbound = (from: string, subject: string, extra: Record<string, unknown> = {}) => fetch(`${BASE}/api/test/inbound-email`, {
       method: "POST", headers: { "Content-Type": "application/json" },
