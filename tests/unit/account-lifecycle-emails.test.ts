@@ -36,7 +36,7 @@ describe("emailDetailCard heading rendering", () => {
     const html = emailDetailCard(rows);
     expect(html).not.toContain("<h2");
     expect(html).toMatchInlineSnapshot(`
-      "<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8f9fa;border-radius:8px;margin:24px 0;">
+      "<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f6f3;border-radius:8px;margin:24px 0;">
           <tr><td style="padding:20px 24px;">
             
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
