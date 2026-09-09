@@ -38,8 +38,10 @@ export const T = {
   warn: "#E9A94A", warnSoft: "#33260f",
   info: "#8AB4F8", infoSoft: "#15233a",
 };
-export const display = { fontFamily: "Fraunces, Georgia, 'Times New Roman', serif", fontWeight: 600, letterSpacing: "-0.01em" } as const;
-export const mono = { fontFamily: "'JetBrains Mono', ui-monospace, Menlo, monospace" } as const;
+// Same type as the app: Inter for everything (headings are heavier and tighter, keys are tabular).
+const APP_FONT = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+export const display = { fontFamily: APP_FONT, fontWeight: 700, letterSpacing: "-0.02em" } as const;
+export const mono = { fontFamily: APP_FONT, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "0.01em" } as const;
 
 export const STATUS_STYLE: Record<CaseStatus, { fg: string; bg: string; label: string }> = {
   NEW: { fg: T.info, bg: T.infoSoft, label: "Received" },
