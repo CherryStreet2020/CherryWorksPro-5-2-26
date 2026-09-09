@@ -6,20 +6,13 @@
  * helpers, and contact auto-link MUST go through these helpers).
  */
 
+import { SHARED_MAIL_DOMAINS } from "@shared/mail-domains";
+
 const DOMAIN_RE = /^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 
-const FREE_MAIL_DOMAINS = new Set<string>([
-  "gmail.com", "googlemail.com",
-  "outlook.com", "hotmail.com", "live.com", "msn.com",
-  "yahoo.com", "ymail.com", "rocketmail.com",
-  "icloud.com", "me.com", "mac.com",
-  "aol.com",
-  "proton.me", "protonmail.com", "pm.me",
-  "mail.com",
-  "gmx.com", "gmx.us",
-  "zoho.com", "yandex.com", "fastmail.com",
-  "hey.com", "duck.com",
-]);
+// ONE list for the whole app (shared/mail-domains.ts): the Help Center's approved-domain
+// guard, the demo form and the marketing free-mail check must never disagree.
+const FREE_MAIL_DOMAINS = new Set<string>(SHARED_MAIL_DOMAINS);
 
 // Merge env-supplied additions at module load.
 {

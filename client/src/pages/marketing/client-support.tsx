@@ -7,16 +7,16 @@ import { MarketingFooter } from "@/components/marketing/marketing-footer";
 
 const capabilities = [
   { icon: Inbox, title: "Email becomes a case", desc: "Point your support address at CherryWorks Pro. Every message in that shared Microsoft 365 mailbox becomes a case with a key like ABS-158; replies that carry the key thread onto the same case, attachments included." },
-  { icon: KeyRound, title: "A client portal with no passwords", desc: "Clients sign in with a one-time link sent to their email. They see their open and closed cases, reply, attach files, and read their invoices — in your branding, under your domain." },
+  { icon: KeyRound, title: "A Help Center with no passwords", desc: "One link for a client's whole team. Anyone at an approved email domain signs in with a one-time link, opens cases, replies and attaches files — in your branding. Customer admins see every case for their company, set priority, close and reopen, and invite colleagues. Billing lives in a separate Customer Portal for billing contacts only." },
   { icon: Timer, title: "SLAs per client, business-hours aware", desc: "First-response and resolution targets set per client, counted only inside the hours and timezone you define. The clock pauses when you are waiting on the client. Breaches alert the assignee before they happen." },
   { icon: Receipt, title: "Support time is billable time", desc: "Hours logged on a case are time entries like any other: approved on the timesheet, invoiced to the client, paid out to the person who did the work. No separate export, no reconciliation." },
-  { icon: Paperclip, title: "Attachments, notes and history", desc: "Internal notes stay internal; client-visible replies go out by email and appear in the portal. Every status, priority and assignee change is on the case timeline." },
+  { icon: Paperclip, title: "Attachments, notes and history", desc: "Internal notes stay internal; client-visible replies go out by email and appear in the Help Center. Every status, priority and assignee change is on the case timeline." },
   { icon: Upload, title: "Import from Jira", desc: "Connect a Jira site with an API token and import a project — issues, comments and attachments — into cases. The connection is saved and encrypted, so a re-import is one click." },
 ];
 
 const faqs = [
-  { q: "Do my clients need an account?", a: "No. A client contact you invite receives a one-time sign-in link by email whenever they open the portal. There is nothing to install and no password to reset." },
-  { q: "Which plans include Client Support?", a: "Support Cases, the client portal, SLAs and email-to-case are part of the platform on every plan. Unlimited users applies to your team; client contacts are not users." },
+  { q: "Do my clients need an account?", a: "No. Approve the client's email domain and anyone at the company can sign in to the Help Center with a one-time link sent to their inbox. Nothing to install, no password to reset, no user list to maintain." },
+  { q: "Which plans include Client Support?", a: "Support Cases, the Help Center, SLAs and email-to-case are part of the platform on every plan. Unlimited users applies to your team; client contacts and customer admins are not users." },
   { q: "Can I keep using my existing support email address?", a: "Yes. Connect the Microsoft 365 mailbox that receives it and set it as the support address; CherryWorks Pro reads the inbox and creates or updates cases. Outgoing replies are sent from that mailbox." },
   { q: "How does support time reach the invoice?", a: "Time logged on a case is a normal time entry attached to the client and project. It goes through the same approval and invoicing flow as project time, and the payout to the team member is computed from it." },
   { q: "What is imported from Jira?", a: "Issues with their summary, description, status, priority, reporter, comments and attachments, into cases that keep a reference to the original key." },
@@ -35,7 +35,7 @@ export default function ClientSupportPage() {
             <p className="text-xs font-bold uppercase tracking-[0.2em] mb-4" style={{ color: "#f87171" }}>Client Support</p>
             <h1 className="text-4xl md:text-6xl font-bold text-white tracking-tight leading-[1.08]" data-testid="client-support-h1">A support desk that bills</h1>
             <p className="mt-6 text-lg md:text-xl leading-relaxed" style={{ color: "rgba(255,255,255,0.65)" }}>
-              Cases, SLAs, a passwordless client portal and email-to-case — built into the same platform that tracks the time, sends the invoice and pays your team. Not a separate tool with a separate login and a separate bill.
+              Cases, SLAs, a passwordless Help Center with customer admins, and email-to-case — built into the same platform that tracks the time, sends the invoice and pays your team. Not a separate tool with a separate login and a separate bill.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row gap-4">
               <Link href="/demo"><span className="inline-flex items-center gap-2 px-7 py-4 text-base font-bold text-white rounded-xl cursor-pointer" style={{ background: "linear-gradient(135deg, #cf3339, #a3282d)" }} data-testid="client-support-cta-demo">Request a demo <ArrowRight className="w-4 h-4" /></span></Link>
@@ -67,7 +67,7 @@ export default function ClientSupportPage() {
             {[
               ["Help desks charge per agent", "CherryWorks Pro has unlimited users on every plan. Your whole team can take a case."],
               ["Help desks don't know your billing", "Here a case belongs to a client with a contract, a project with a budget and a rate card. The hour on the case is the hour on the invoice."],
-              ["Help desks need another portal login", "Your clients already have a portal here for invoices and payments. Cases live in the same one, with the same one-time sign-in link."],
+              ["Help desks need another portal login", "Your clients get one Help Center link for the whole company and a separate Customer Portal for billing contacts — both with the same one-time sign-in, no passwords."],
               ["Help desks report on tickets", "Here support shows up in utilization, profitability and payouts — the reports your firm actually runs on."],
             ].map(([t, d]) => (
               <div key={t} className="rounded-xl p-6 flex gap-3" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>

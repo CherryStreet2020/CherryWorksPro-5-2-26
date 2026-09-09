@@ -145,6 +145,7 @@ export function registerSeoRoutes(app: Express): void {
           "Allow: /",
           "Disallow: /api/",
           "Disallow: /portal/",
+          "Disallow: /help/",
           "Disallow: /i/",
           "Disallow: /e/",
           "Disallow: /verify-email",

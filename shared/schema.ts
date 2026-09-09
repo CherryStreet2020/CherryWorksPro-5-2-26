@@ -296,6 +296,9 @@ export const clients = pgTable("clients", {
   // ── Sprint 2o.0: soft reverse-link to marketing_companies (no FK per HR4) ─
   originatedFromMarketingCompanyId: varchar("originated_from_marketing_company_id", { length: 36 }),
   marketingConvertedAt: timestamp("marketing_converted_at"),
+  // Help Center: lower-cased business domains whose addresses may self-register as
+  // member contacts of this client (never shared mailbox domains; unique per org).
+  portalEmailDomains: text("portal_email_domains").array(),
 }, (table) => ({
   clientsOrgBrandIdx: index("clients_org_brand_idx").on(table.orgId, table.brandId),
   orgIdIdx: index("idx_clients_org_id").on(table.orgId),
@@ -385,6 +388,16 @@ export const clientContacts = pgTable("client_contacts", {
   // ── Sprint 2o.0: soft reverse-link to marketing_prospects (no FK per HR4) ─
   originatedFromProspectId: varchar("originated_from_prospect_id", { length: 36 }),
   marketingConvertedAt: timestamp("marketing_converted_at"),
+  // ── Help Center / Customer Portal access ───────────────────────────────
+  // portal_role: "member" sees only the cases they raised; "admin" (Customer Admin)
+  // sees every case of their client, can set priority, close/reopen, invite colleagues.
+  portalRole: text("portal_role").notNull().default("member"),
+  // billing_access: may sign in to the Customer Portal (invoices / estimates / payments).
+  billingAccess: boolean("billing_access").notNull().default(false),
+  // portal_pending_at: set when the Help Center self-registered this address; cleared the
+  // first time a sign-in link is used. While set the contact is a placeholder — inbound
+  // mail from the address is NOT a known contact, and the row is swept after 7 days.
+  portalPendingAt: timestamp("portal_pending_at"),
 }, (table) => ({
   ccOrgBrandIdx:           index("cc_org_brand_idx").on(table.orgId, table.brandId),
   ccOrgBrandLifecycleIdx:  index("cc_org_brand_lifecycle_idx").on(table.orgId, table.brandId, table.lifecycleStage),
@@ -392,6 +405,13 @@ export const clientContacts = pgTable("client_contacts", {
   ccOrgBrandDeletedIdx:    index("cc_org_brand_deleted_idx").on(table.orgId, table.brandId, table.deletedAt),
   ccOrgCompanyIdx:         index("client_contacts_company_idx").on(table.orgId, table.companyId),
   orgIdIdx:                index("idx_client_contacts_org_id").on(table.orgId),
+  // One live client contact per (org, email): the Help Center signs people in by
+  // address, so an address must name exactly one person. Marketing-only contacts
+  // (client_id NULL) and soft-deleted rows are outside the rule. Prod scanned
+  // 2026-09-08: 0 violators.
+  ccOrgEmailLiveUniq:      uniqueIndex("ux_client_contacts_org_email_live")
+    .on(table.orgId, sql`lower(${table.email})`)
+    .where(sql`${table.email} IS NOT NULL AND ${table.clientId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
 }));
 
 export const projects = pgTable("projects", {
@@ -1349,6 +1369,31 @@ export const supportCaseEvents = pgTable("support_case_events", {
 // ─── Customer portal identity ───────────────────────────────────────────────
 // A contact signs in with a one-time link emailed to them (no passwords).
 // Only hashes of tokens are stored. Sessions are per contact, revocable.
+/**
+ * Addresses a firm has shut out of the Help Center. Written when a firm user revokes
+ * portal access or deletes a contact that could come straight back through an
+ * approved domain; checked before any sign-in link or self-registration. Cleared by
+ * "Allow again" on the client's Contacts tab.
+ */
+/** One-time data backfills that migrations must not repeat (migrations replay on every boot outside Azure). */
+export const schemaBackfills = pgTable("schema_backfills", {
+  name: text("name").primaryKey(),
+  doneAt: timestamp("done_at").defaultNow().notNull(),
+});
+
+export const portalBlockedEmails = pgTable("portal_blocked_emails", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id", { length: 36 }).notNull().references(() => orgs.id),
+  clientId: varchar("client_id", { length: 36 }).references(() => clients.id, { onDelete: "set null" }),
+  email: text("email").notNull(),
+  reason: text("reason"),
+  blockedByUserId: varchar("blocked_by_user_id", { length: 36 }).references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  orgEmailUniq: uniqueIndex("ux_portal_blocked_emails_org_email").on(table.orgId, sql`lower(${table.email})`),
+}));
+export type PortalBlockedEmail = typeof portalBlockedEmails.$inferSelect;
+
 export const portalLoginLinks = pgTable("portal_login_links", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id", { length: 36 }).notNull().references(() => orgs.id),
@@ -1357,6 +1402,9 @@ export const portalLoginLinks = pgTable("portal_login_links", {
   expiresAt: timestamp("expires_at").notNull(),
   consumedAt: timestamp("consumed_at"),
   requestedIp: text("requested_ip"),
+  // The mailbox this link was sent to. A link only signs in while the contact still
+  // has that address — an email change orphans links mailed to the old one.
+  email: text("email"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   tokenIdx: uniqueIndex("portal_login_links_token_unique").on(table.tokenHash),
@@ -1685,8 +1733,33 @@ export const upsertSupportCaseTypeSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+export const PORTAL_ROLES = ["member", "admin"] as const;
+export const PORTAL_SURFACES = ["help", "portal"] as const;
 export const portalRequestLinkSchema = z.object({
   email: z.string().trim().email("Enter a valid email").max(320),
+  surface: z.enum(PORTAL_SURFACES).optional(),
+  /** Where to land after sign-in (validated server-side: same org, same surface). */
+  next: z.string().max(500).optional(),
+});
+export const portalSetNameSchema = z.object({
+  firstName: z.string().trim().min(1, "Enter your first name").max(80),
+  lastName: z.string().trim().min(1, "Enter your last name").max(80),
+});
+export const portalAdminCaseUpdateSchema = z.object({
+  priority: z.enum(SUPPORT_CASE_PRIORITIES).optional(),
+  action: z.enum(["close", "reopen"]).optional(),
+}).refine(v => v.priority !== undefined || v.action !== undefined, { message: "Nothing to change" });
+export const portalInviteColleagueSchema = z.object({
+  firstName: z.string().trim().min(1, "Enter a first name").max(80),
+  lastName: z.string().trim().min(1, "Enter a last name").max(80),
+  email: z.string().trim().email("Enter a valid email").max(320),
+});
+export const contactPortalAccessSchema = z.object({
+  portalRole: z.enum(PORTAL_ROLES).optional(),
+  billingAccess: z.boolean().optional(),
+});
+export const clientPortalDomainsSchema = z.object({
+  portalEmailDomains: z.array(z.string().trim().min(1).max(253)).max(20),
 });
 export const portalVerifySchema = z.object({
   token: z.string().min(20).max(200),

@@ -50,7 +50,7 @@ import type { Client, ClientContact } from "@shared/schema";
 import { format, differenceInDays } from "date-fns";
 import { useDocumentTitle } from "@/lib/use-document-title";
 import {
-  Plus, Pencil, Trash2, Mail, Phone, Globe, Star, UserPlus, MoreHorizontal,
+  Plus, Pencil, Trash2, Mail, Phone, Globe, Star, UserPlus, MoreHorizontal, ShieldOff,
   Contact, TrendingUp, AlertCircle, DollarSign, Briefcase, FileText, Clock,
   CreditCard, Send, Download, Eye, Copy, Link as LinkIcon, LayoutDashboard, Receipt,
   Timer, CheckCircle2, XCircle, Activity as ActivityIcon, StickyNote, Pin,
@@ -60,6 +60,7 @@ import {
 interface ClientDetailData {
   id: string;
   name: string;
+  portalEmailDomains?: string[] | null;
   email: string | null;
   phone: string | null;
   address: string | null;
@@ -278,6 +279,9 @@ export default function ClientDetailPage() {
   const [contactPhone, setContactPhone] = useState("");
   const [contactRole, setContactRole] = useState("");
   const [contactIsPrimary, setContactIsPrimary] = useState(false);
+  const [contactPortalRole, setContactPortalRole] = useState<"member" | "admin">("member");
+  const [contactBillingAccess, setContactBillingAccess] = useState(false);
+  const [editDomains, setEditDomains] = useState("");
   const [contactNotes, setContactNotes] = useState("");
 
   const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false);
@@ -320,6 +324,7 @@ export default function ClientDetailPage() {
         address: editAddress || null,
         website: editWebsite || null,
         currency: editCurrency,
+        portalEmailDomains: editDomains.split(/[,\s]+/).map(d => d.trim()).filter(Boolean),
       });
     },
     onSuccess: () => {
@@ -360,6 +365,7 @@ export default function ClientDetailPage() {
         firstName: contactFirstName, lastName: contactLastName,
         email: contactEmail || null, phone: contactPhone || null,
         role: contactRole || null, isPrimary: contactIsPrimary, notes: contactNotes || null,
+        portalRole: contactPortalRole, billingAccess: contactBillingAccess,
       };
       if (editingContact) {
         await apiRequest("PATCH", `/api/clients/${clientId}/contacts/${editingContact.id}`, payload);
@@ -381,15 +387,38 @@ export default function ClientDetailPage() {
     mutationFn: async (contactId: string) => { await apiRequest("DELETE", `/api/clients/${clientId}/contacts/${contactId}`); },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/support/clients", clientId, "portal-blocked"] });
       toast({ title: "Contact deleted" });
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const sendPortalLink = useMutation({
+    mutationFn: async ({ contactId, surface }: { contactId: string; surface: "help" | "portal"; email: string }) => (await apiRequest("POST", `/api/support/contacts/${contactId}/portal-invite`, { surface })).json(),
+    onSuccess: (_r, v) => toast({ title: `${v.surface === "portal" ? "Customer Portal" : "Help Center"} link sent to ${v.email}` }),
+    onError: (err: Error) => toast({ title: "Could not send the link", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }),
+  });
+  const { data: blocked } = useQuery<{ id: string; email: string; reason: string | null; createdAt: string }[]>({
+    queryKey: ["/api/support/clients", clientId, "portal-blocked"],
+    queryFn: async () => { const r = await fetch(`/api/support/clients/${clientId}/portal-blocked`, { credentials: "include" }); return r.ok ? r.json() : []; },
+    enabled: !!clientId && canManage,
+  });
+  const isBlocked = (email: string | null) => !!email && !!blocked?.some(b => b.email.toLowerCase() === email.toLowerCase());
+  const revokePortal = useMutation({
+    mutationFn: async (contactId: string) => (await apiRequest("POST", `/api/support/contacts/${contactId}/portal-revoke`)).json(),
+    onSuccess: () => { toast({ title: "Help Center access revoked" }); queryClient.invalidateQueries({ queryKey: ["/api/support/clients", clientId, "portal-blocked"] }); },
+    onError: (err: Error) => toast({ title: "Could not revoke", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" }),
+  });
+  const unblock = useMutation({
+    mutationFn: async (id: string) => (await apiRequest("DELETE", `/api/support/portal-blocked/${id}`)).json(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/support/clients", clientId, "portal-blocked"] }),
   });
 
   function resetContactForm() {
     setEditingContact(null);
     setContactFirstName(""); setContactLastName(""); setContactEmail("");
     setContactPhone(""); setContactRole(""); setContactIsPrimary(false); setContactNotes("");
+    setContactPortalRole("member"); setContactBillingAccess(false);
   }
   function openAddContact() { resetContactForm(); setContactDialogOpen(true); }
   function openEditContact(c: ClientContact) {
@@ -397,6 +426,7 @@ export default function ClientDetailPage() {
     setContactFirstName(c.firstName); setContactLastName(c.lastName);
     setContactEmail(c.email || ""); setContactPhone(c.phone || "");
     setContactRole(c.role || ""); setContactIsPrimary(c.isPrimary); setContactNotes(c.notes || "");
+    setContactPortalRole(c.portalRole === "admin" ? "admin" : "member"); setContactBillingAccess(!!c.billingAccess);
     setContactDialogOpen(true);
   }
   function startEditing() {
@@ -406,6 +436,7 @@ export default function ClientDetailPage() {
     setEditPhone(clientDetail.phone || "");
     setEditAddress(clientDetail.address || "");
     setEditWebsite(clientDetail.website || "");
+    setEditDomains((clientDetail.portalEmailDomains ?? []).join(", "));
     setEditCurrency(clientDetail.currency || "USD");
     setIsEditing(true);
   }
@@ -1230,6 +1261,13 @@ export default function ClientDetailPage() {
                             {c.email && <span className="flex items-center gap-1" data-testid={`contact-email-${c.id}`}><Mail className="w-3 h-3" />{c.email}</span>}
                             {c.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{c.phone}</span>}
                           </div>
+                          {(c.portalRole === "admin" || c.billingAccess || c.portalPendingAt) && (
+                            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                              {c.portalRole === "admin" && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: "rgba(var(--lux-accent-rgb), 0.1)", color: "var(--lux-accent)" }} data-testid={`contact-customer-admin-${c.id}`}>Customer admin</span>}
+                              {c.billingAccess && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: "rgba(var(--lux-gold-rgb),0.15)", color: "var(--lux-text-secondary)" }} data-testid={`contact-billing-access-${c.id}`}>Billing access</span>}
+                              {c.portalPendingAt && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: "rgba(245,158,11,0.12)", color: "#b45309" }} title="Signed up through the Help Center; hasn't used the sign-in link yet" data-testid={`contact-pending-${c.id}`}>Pending sign-in</span>}
+                            </div>
+                          )}
                           {c.notes && <p className="text-[10px] mt-1" style={{ color: "var(--lux-text-muted)" }}>{c.notes}</p>}
                         </div>
                         {canManage && (
@@ -1242,6 +1280,15 @@ export default function ClientDetailPage() {
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => openEditContact(c)} data-testid={`contact-edit-${c.id}`}>
                                 <Pencil className="w-3.5 h-3.5 mr-2" /> Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem disabled={!c.email || sendPortalLink.isPending || isBlocked(c.email)} onClick={() => sendPortalLink.mutate({ contactId: c.id, surface: "help", email: c.email || "" })} data-testid={`contact-send-help-${c.id}`}>
+                                <Send className="w-3.5 h-3.5 mr-2" /> Send Help Center link
+                              </DropdownMenuItem>
+                              <DropdownMenuItem disabled={!c.email || !c.billingAccess || sendPortalLink.isPending || isBlocked(c.email)} onClick={() => sendPortalLink.mutate({ contactId: c.id, surface: "portal", email: c.email || "" })} data-testid={`contact-send-portal-${c.id}`}>
+                                <CreditCard className="w-3.5 h-3.5 mr-2" /> Send Customer Portal link
+                              </DropdownMenuItem>
+                              <DropdownMenuItem disabled={!c.email || revokePortal.isPending} onClick={() => { if (window.confirm(`Sign ${c.firstName} out of the Help Center and keep ${c.email} out until you allow it again?`)) revokePortal.mutate(c.id); }} data-testid={`contact-revoke-${c.id}`}>
+                                <ShieldOff className="w-3.5 h-3.5 mr-2" /> Revoke Help Center access
                               </DropdownMenuItem>
                               <DropdownMenuItem disabled={deleteContactMutation.isPending} onClick={() => { setDeleteContactId(c.id); setDeleteContactOpen(true); }} className="text-red-600" data-testid={`contact-delete-${c.id}`}>
                                 <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete
@@ -1264,6 +1311,20 @@ export default function ClientDetailPage() {
                   )}
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === "contacts" && canManage && blocked && blocked.length > 0 && (
+            <div className="rounded-lg border p-3 mt-3" style={{ background: "var(--lux-bg)", borderColor: "var(--lux-border)" }} data-testid="portal-blocked-list">
+              <p className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: "var(--lux-text-muted)" }}>Kept out of the Help Center</p>
+              <div className="space-y-1.5">
+                {blocked.map(b => (
+                  <div key={b.id} className="flex items-center justify-between gap-3 text-xs" data-testid={`portal-blocked-${b.id}`}>
+                    <span style={{ color: "var(--lux-text)" }}>{b.email} <span style={{ color: "var(--lux-text-muted)" }}>· {b.reason === "deleted" ? "contact deleted" : "access revoked"}</span></span>
+                    <Button variant="outline" size="sm" className="h-6 text-[11px]" disabled={unblock.isPending} onClick={() => unblock.mutate(b.id)} data-testid={`portal-unblock-${b.id}`}>Allow again</Button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -1509,6 +1570,13 @@ export default function ClientDetailPage() {
             </FormSection>
             <FormSection title="Address">
               <AddressInput value={editAddress} onChange={setEditAddress} />
+            </FormSection>
+            <FormSection title="Help Center">
+              <div className="space-y-1">
+                <label className="text-xs font-medium" style={{ color: "var(--lux-text-secondary)" }}>Approved email domains</label>
+                <Input value={editDomains} onChange={(e) => setEditDomains(e.target.value)} placeholder="absmachining.com, abs-group.com" data-testid="input-edit-client-domains" />
+                <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>Anyone with an address at these domains can sign in to the Help Center on their own and is added here as a contact. Shared providers like gmail.com are refused; a domain can belong to one client.</p>
+              </div>
             </FormSection>
             <div className="flex gap-2">
               <Button type="submit" className="flex-1 text-white" disabled={editMutation.isPending} data-testid="button-save-edit" style={{ background: "var(--gradient-brand)" }}>
@@ -1791,6 +1859,20 @@ export default function ClientDetailPage() {
             <div className="flex items-center gap-2">
               <input type="checkbox" id="contact-primary" checked={contactIsPrimary} onChange={(e) => setContactIsPrimary(e.target.checked)} className="rounded" data-testid="checkbox-contact-primary" />
               <label htmlFor="contact-primary" className="text-sm" style={{ color: "var(--lux-text-secondary)" }}>Primary contact</label>
+            </div>
+            <div className="rounded-lg border p-3 space-y-2" style={{ borderColor: "var(--lux-border)" }} data-testid="contact-portal-access">
+              <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Help Center &amp; Customer Portal</p>
+              <div className="space-y-1">
+                <label className="text-xs font-medium" style={{ color: "var(--lux-text-secondary)" }}>Help Center role</label>
+                <select value={contactPortalRole} onChange={(e) => setContactPortalRole(e.target.value as "member" | "admin")} className="flex h-10 w-full rounded-md border px-3 py-2 text-sm" style={{ background: "var(--color-surface-1)", borderColor: "var(--color-border-1)", color: "var(--color-text-1)" }} data-testid="select-contact-portal-role">
+                  <option value="member">Member — sees the cases they raise</option>
+                  <option value="admin">Customer admin — sees every case for the company, sets priority, closes and reopens, invites colleagues</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="contact-billing-access" checked={contactBillingAccess} onChange={(e) => setContactBillingAccess(e.target.checked)} className="rounded" data-testid="checkbox-contact-billing-access" />
+                <label htmlFor="contact-billing-access" className="text-sm" style={{ color: "var(--lux-text-secondary)" }}>Billing access — can sign in to the Customer Portal (invoices, estimates, payments)</label>
+              </div>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium" style={{ color: "var(--lux-text-secondary)" }}>Notes</label>

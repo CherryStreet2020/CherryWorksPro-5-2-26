@@ -1,11 +1,18 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { randomBytes } from "crypto";
-import { clients, createClientSchema, projects, projectMembers } from "@shared/schema";
+import { clients, createClientSchema, projects, projectMembers, contactPortalAccessSchema, clientPortalDomainsSchema } from "@shared/schema";
+import { normalizeDomain, isSharedMailDomain } from "@shared/mail-domains";
 import { db } from "../db";
 import { sanitizeErrorMessage, requireAdmin, requireManagerOrAbove, requireAuth, fetchClientLogo, stripCostFieldsForRole } from "./middleware";
 import { fireWebhookEvent } from "../webhooks";
+
+const CONTACT_EMAIL_CONFLICT = "Another contact in your workspace already uses that email address";
+function isContactEmailConflict(err: any): boolean {
+  const e = err?.cause ?? err;
+  return e?.code === "23505" && String(e?.constraint || e?.message || "").includes("ux_client_contacts_org_email_live");
+}
 
 export function registerClientRoutes(app: Express) {
 app.get("/api/clients", requireManagerOrAbove, async (req, res) => {
@@ -147,6 +154,30 @@ app.patch("/api/clients/:id", requireManagerOrAbove, async (req, res) => {
   try {
     const parsed = createClientSchema.partial().parse(req.body);
     const updates: any = { ...parsed };
+    if (req.body?.portalEmailDomains !== undefined) {
+      const { portalEmailDomains } = clientPortalDomainsSchema.parse({ portalEmailDomains: req.body.portalEmailDomains });
+      const normalised: string[] = [];
+      for (const raw of portalEmailDomains) {
+        const d = normalizeDomain(raw);
+        if (!d) return res.status(400).json({ message: `"${raw}" is not a valid domain` });
+        if (isSharedMailDomain(d)) return res.status(400).json({ message: `${d} is a shared mailbox provider — anyone with an address there would get in. List your customer's own domain instead.` });
+        if (!normalised.includes(d)) normalised.push(d);
+      }
+      // One domain names one client within a firm; lock the org row so two edits cannot both claim it.
+      const clash = await db.transaction(async (tx) => {
+        await tx.execute(sql`select 1 from orgs where id = ${req.session.orgId!} for update`);
+        if (normalised.length === 0) return null;
+        const [other] = await tx.select({ name: clients.name })
+          .from(clients)
+          .where(and(eq(clients.orgId, req.session.orgId!), ne(clients.id, req.params.id as string), sql`${clients.portalEmailDomains} && ARRAY[${sql.join(normalised.map(d => sql`${d}`), sql`, `)}]::text[]`))
+          .limit(1);
+        if (other) return other.name;
+        await tx.update(clients).set({ portalEmailDomains: normalised, updatedAt: new Date() }).where(and(eq(clients.id, req.params.id as string), eq(clients.orgId, req.session.orgId!)));
+        return null;
+      });
+      if (clash) return res.status(409).json({ message: `That domain is already approved for ${clash}` });
+      if (normalised.length === 0) updates.portalEmailDomains = null;
+    }
     if (parsed.website !== undefined) {
       const existing = await storage.getClientById(req.params.id as string, req.session.orgId!);
       if (parsed.website && parsed.website !== existing?.website) {
@@ -155,7 +186,9 @@ app.patch("/api/clients/:id", requireManagerOrAbove, async (req, res) => {
         updates.logoUrl = null;
       }
     }
-    const client = await storage.updateClient(req.params.id as string, req.session.orgId!, updates);
+    const client = Object.keys(updates).length > 0
+      ? await storage.updateClient(req.params.id as string, req.session.orgId!, updates)
+      : await storage.getClient(req.params.id as string, req.session.orgId!);
     if (!client) return res.status(404).json({ message: "Client not found" });
     return res.json(client);
   } catch (err: any) {
@@ -190,6 +223,7 @@ app.post("/api/clients/:clientId/contacts", requireManagerOrAbove, async (req, r
 
     const { firstName, lastName, email, phone, role, isPrimary, notes } = req.body;
     if (!firstName || !lastName) return res.status(400).json({ message: "First name and last name are required" });
+    const access = contactPortalAccessSchema.parse(req.body);
 
     const contact = await storage.createContact({
       orgId,
@@ -201,6 +235,8 @@ app.post("/api/clients/:clientId/contacts", requireManagerOrAbove, async (req, r
       role: role || null,
       isPrimary: isPrimary ?? false,
       notes: notes || null,
+      portalRole: access.portalRole ?? "member",
+      billingAccess: access.billingAccess ?? false,
     });
     await storage.createClientActivity({
       orgId,
@@ -214,6 +250,7 @@ app.post("/api/clients/:clientId/contacts", requireManagerOrAbove, async (req, r
     });
     return res.status(201).json(contact);
   } catch (err: any) {
+    if (isContactEmailConflict(err)) return res.status(409).json({ message: CONTACT_EMAIL_CONFLICT });
     return res.status(400).json({ message: sanitizeErrorMessage(err) });
   }
 });
@@ -234,11 +271,31 @@ app.patch("/api/clients/:clientId/contacts/:id", requireManagerOrAbove, async (r
     if (role !== undefined) updates.role = role || null;
     if (isPrimary !== undefined) updates.isPrimary = isPrimary;
     if (notes !== undefined) updates.notes = notes || null;
+    const access = contactPortalAccessSchema.parse(req.body);
+    if (access.portalRole !== undefined) updates.portalRole = access.portalRole;
+    if (access.billingAccess !== undefined) updates.billingAccess = access.billingAccess;
+    // A firm user who edits a self-registered placeholder in any way has adopted it.
+    if (existing.portalPendingAt) updates.portalPendingAt = null;
 
-    const contact = await storage.updateContact(contactId, orgId, updates);
+    let contact;
+    if (updates.email !== undefined) {
+      // Any PATCH that carries an address is decided under the contact's row lock: the
+      // CURRENT address (not the one read above) is compared, and credentials are revoked
+      // only when it really changes — so a stale "keep A" cannot undo a concurrent A→B.
+      const { changeContactEmail } = await import("../portal-auth");
+      const { email: newEmail, ...rest } = updates;
+      contact = await changeContactEmail({ orgId, contactId, newEmail, patch: rest });
+      // Same post-step storage.updateContact runs: set-only company auto-link by business domain.
+      if (contact && !Object.prototype.hasOwnProperty.call(updates, "companyId")) {
+        contact = (await storage.runContactAutoLink(contactId, orgId)) ?? contact;
+      }
+    } else {
+      contact = await storage.updateContact(contactId, orgId, updates);
+    }
     if (!contact) return res.status(404).json({ message: "Contact not found" });
     return res.json(contact);
   } catch (err: any) {
+    if (isContactEmailConflict(err)) return res.status(409).json({ message: CONTACT_EMAIL_CONFLICT });
     return res.status(400).json({ message: sanitizeErrorMessage(err) });
   }
 });
@@ -250,7 +307,10 @@ app.delete("/api/clients/:clientId/contacts/:id", requireManagerOrAbove, async (
     if (!existing || existing.clientId !== req.params.clientId) {
       return res.status(404).json({ message: "Contact not found" });
     }
-    const deleted = await storage.deleteContact(contactId, orgId);
+    // Sessions, links, the row and — when the address could walk straight back in
+    // through an approved Help Center domain — the block, in ONE transaction.
+    const { deleteContactWithPortalCleanup } = await import("../portal-auth");
+    const deleted = await deleteContactWithPortalCleanup({ orgId, contactId, byUserId: req.session.userId ?? null });
     if (!deleted) return res.status(404).json({ message: "Contact not found" });
     return res.json({ success: true });
   } catch (err: any) {

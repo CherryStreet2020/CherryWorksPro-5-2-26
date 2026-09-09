@@ -187,9 +187,15 @@ export function registerDataManagementRoutes(app: Express) {
           `UPDATE clients SET
             name = $1, email = $2, phone = NULL, address = NULL,
             website = NULL, logo_url = NULL, portal_token = NULL,
+            portal_email_domains = NULL,
             updated_at = NOW()
           WHERE id = $3 AND org_id = $4`,
           [redactedName, redactedEmail, clientId, orgId]
+        );
+        // Help Center block list holds plaintext addresses of this client's former contacts.
+        await pool.query(
+          `DELETE FROM portal_blocked_emails WHERE client_id = $1 AND org_id = $2`,
+          [clientId, orgId]
         );
 
         await pool.query(

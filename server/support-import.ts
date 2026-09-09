@@ -69,6 +69,8 @@ export interface ImportReport {
   attachmentErrors: { key: string; filename: string; error: string }[];
   nextCaseNumber: number;
   errors: { key: string; error: string }[];
+  /** Reporter addresses that already belong to a contact of ANOTHER client: cases were imported without a requester contact. */
+  contactConflicts: string[];
 }
 
 export function mapStatus(name: string | null | undefined, category?: string | null): string {
@@ -101,7 +103,7 @@ function parseKey(key: string): { prefix: string; number: number } | null {
 }
 
 export async function importJiraIssues(opts: ImportOptions): Promise<ImportReport> {
-  const report: ImportReport = { imported: 0, skipped: [], contactsCreated: 0, unmatchedAssignees: [], unmatchedTypes: [], timeEntriesLinked: 0, attachmentsImported: 0, attachmentErrors: [], nextCaseNumber: 0, errors: [] };
+  const report: ImportReport = { imported: 0, skipped: [], contactsCreated: 0, unmatchedAssignees: [], unmatchedTypes: [], timeEntriesLinked: 0, attachmentsImported: 0, attachmentErrors: [], nextCaseNumber: 0, errors: [], contactConflicts: [] };
   const [client] = await db.select().from(clients).where(and(eq(clients.id, opts.clientId), eq(clients.orgId, opts.orgId)));
   if (!client) throw new Error("Client not found");
   if (opts.projectId) {
@@ -202,13 +204,25 @@ export async function importJiraIssues(opts: ImportOptions): Promise<ImportRepor
       if (reporterEmail && !item.reporterIsAgent) {
         requesterContactId = contactByEmail.get(reporterEmail) ?? null;
         if (!requesterContactId && !opts.dryRun) {
-          const [first, ...rest] = (item.reporterName || reporterEmail.split("@")[0]).split(" ");
-          const [c] = await db.insert(clientContacts).values({
-            orgId: opts.orgId, clientId: opts.clientId, firstName: first || "Contact", lastName: rest.join(" ") || "", email: reporterEmail, source: "import",
-          }).returning({ id: clientContacts.id });
-          requesterContactId = c.id;
-          contactByEmail.set(reporterEmail, c.id);
-          report.contactsCreated++;
+          // An address names one live contact per firm (ux_client_contacts_org_email_live):
+          // reuse a contact that already exists on another client rather than inserting.
+          const [elsewhere] = await db.select({ id: clientContacts.id }).from(clientContacts)
+            .where(and(eq(clientContacts.orgId, opts.orgId), sql`lower(${clientContacts.email}) = ${reporterEmail}`, sql`${clientContacts.clientId} IS NOT NULL`, sql`${clientContacts.deletedAt} IS NULL`)).limit(1);
+          if (elsewhere) {
+            // A portal identity belongs to ONE client; borrowing this person would give
+            // them a case they can never open. Import the case with the address only
+            // and tell the operator to resolve the association.
+            requesterContactId = null;
+            if (!report.contactConflicts.includes(reporterEmail)) report.contactConflicts.push(reporterEmail);
+          } else {
+            const [first, ...rest] = (item.reporterName || reporterEmail.split("@")[0]).split(" ");
+            const [c] = await db.insert(clientContacts).values({
+              orgId: opts.orgId, clientId: opts.clientId, firstName: first || "Contact", lastName: rest.join(" ") || "", email: reporterEmail, source: "import",
+            }).returning({ id: clientContacts.id });
+            requesterContactId = c.id;
+            contactByEmail.set(reporterEmail, c.id);
+            report.contactsCreated++;
+          }
         }
       }
 

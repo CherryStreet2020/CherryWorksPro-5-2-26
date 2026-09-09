@@ -1,3 +1,4 @@
+import { SHARED_MAIL_DOMAINS } from "@shared/mail-domains";
 import type { Express, Request, Response, NextFunction } from "express";
 import { checkoutTrialFor } from "../billing-trial";
 import { planInactive } from "../trial-lifecycle";
@@ -586,7 +587,6 @@ app.post("/api/public/contact", apiLimiter, async (req, res) => {
 // team is notified through the platform mailbox. Nothing is acknowledged unless
 // the prospect row exists. Prospects never touch billing clients (Prospect / Client
 // separation).
-const SHARED_MAIL_DOMAINS = new Set(["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "msn.com", "yahoo.com", "ymail.com", "icloud.com", "me.com", "mac.com", "aol.com", "proton.me", "protonmail.com", "pm.me", "gmx.com", "gmx.net", "zoho.com", "mail.com", "fastmail.com", "hey.com", "yandex.com"]);
 app.post("/api/public/demo-request", apiLimiter, async (req, res) => {
   try {
     const { name, email, company, teamSize, message } = req.body ?? {};

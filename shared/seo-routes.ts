@@ -142,7 +142,7 @@ export const APP_ROUTE_PREFIXES = [
 ];
 
 /** Public-but-private pages reached by a token or a portal slug: 200, noindex. */
-export const TOKEN_ROUTE_PREFIXES = ["/i", "/e", "/portal", "/reset-password"];
+export const TOKEN_ROUTE_PREFIXES = ["/i", "/e", "/portal", "/help", "/reset-password"];
 
 export type RouteClass =
   | { kind: "public"; path: string; seo: PublicRouteSeo }

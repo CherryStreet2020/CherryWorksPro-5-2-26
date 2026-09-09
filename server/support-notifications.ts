@@ -28,7 +28,8 @@ async function orgContext(orgId: string) {
   return {
     org,
     agentUrl: (caseId: string) => `${base}/support/cases/${caseId}`,
-    portalUrl: (caseId: string) => `${base}/portal/${org.slug}/cases/${caseId}`,
+    // Customers read and answer cases in the Help Center (support only; never money).
+    portalUrl: (caseId: string) => `${base}/help/${org.slug}/cases/${caseId}`,
   };
 }
 
@@ -63,7 +64,7 @@ export async function notifyCaseCreated(c: SupportCase): Promise<void> {
     await safeEmail("case.created→requester", () => sendCaseEmail({
       to: c.requesterEmail!, org, orgName: org.name, caseKey: c.caseKey, subject: c.subject,
       heading: `We've received your request`,
-      intro: `Thanks${c.requesterName ? `, ${c.requesterName.split(" ")[0]}` : ""}. Your case is ${c.caseKey}. We'll reply here and on the portal as soon as someone picks it up.`,
+      intro: `Thanks${c.requesterName ? `, ${c.requesterName.split(" ")[0]}` : ""}. Your case is ${c.caseKey}. We'll reply here and in the Help Center as soon as someone picks it up.`,
       body: c.description, ctaText: "View your case", ctaUrl: ctx.portalUrl(c.id),
     }));
   }
@@ -95,7 +96,7 @@ export async function notifyCaseMessage(c: SupportCase, msg: { authorUserId: str
       await safeEmail("case.reply→requester", () => sendCaseEmail({
         to: c.requesterEmail!, org, orgName: org.name, caseKey: c.caseKey, subject: c.subject,
         heading: `${msg.authorName} replied`, intro: `There's a new reply on your case ${c.caseKey}.`,
-        body: msg.body, ctaText: "Reply on the portal", ctaUrl: ctx.portalUrl(c.id),
+        body: msg.body, ctaText: "Reply in the Help Center", ctaUrl: ctx.portalUrl(c.id),
       }));
     }
     return;
@@ -113,10 +114,30 @@ export async function notifyCaseMessage(c: SupportCase, msg: { authorUserId: str
 }
 
 /** Assignee or status changed. */
-export async function notifyCaseUpdated(before: SupportCase, after: SupportCase, actor: { userId: string; name: string }): Promise<void> {
+export async function notifyCaseUpdated(before: SupportCase, after: SupportCase, actor: { userId: string | null; name: string }): Promise<void> {
   const ctx = await orgContext(after.orgId);
   if (!ctx) return;
   const { org } = ctx;
+
+  // A Customer Admin changed the case from the Help Center: the customer side already
+  // knows, so tell the team (assignee, else managers) and skip the requester mails.
+  if (!actor.userId) {
+    const changes: string[] = [];
+    if (after.status !== before.status) changes.push(after.status === "CLOSED" ? "closed" : (before.status === "RESOLVED" || before.status === "CLOSED") ? "reopened" : `moved to ${after.status.toLowerCase().replace(/_/g, " ")}`);
+    if (after.priority !== before.priority) changes.push(`set priority to ${after.priority.toLowerCase()}`);
+    if (changes.length === 0) return;
+    const what = changes.join(" and ");
+    const targets = after.assigneeUserId ? await agentEmails(after.orgId, [after.assigneeUserId]) : await managers(after.orgId);
+    for (const u of targets) {
+      await safeNotify({ orgId: after.orgId, userId: u.id, type: "case.customer_update", title: `${after.caseKey}: ${actor.name} ${what}`, message: after.subject, link: `/support/cases/${after.id}`, metadata: { caseId: after.id, caseKey: after.caseKey, by: actor.name } });
+      await safeEmail("case.customer_update→agent", () => sendCaseEmail({
+        to: u.email, org, orgName: org.name, caseKey: after.caseKey, subject: after.subject,
+        heading: `${actor.name} ${what} on ${after.caseKey}`, intro: after.assigneeUserId ? "This case is assigned to you." : "This case isn't assigned yet.",
+        ctaText: "Open the case", ctaUrl: ctx.agentUrl(after.id), footer: "You're receiving this because you're on the support team.",
+      }));
+    }
+    return;
+  }
 
   if (after.assigneeUserId && after.assigneeUserId !== before.assigneeUserId && after.assigneeUserId !== actor.userId) {
     const [u] = await agentEmails(after.orgId, [after.assigneeUserId]);
@@ -142,7 +163,7 @@ export async function notifyCaseUpdated(before: SupportCase, after: SupportCase,
       await safeEmail("case.waiting→requester", () => sendCaseEmail({
         to, org, orgName: org.name, caseKey: after.caseKey, subject: after.subject,
         heading: `We need something from you on ${after.caseKey}`, intro: `${actor.name} is waiting on your reply to keep this moving.`,
-        ctaText: "Reply on the portal", ctaUrl: ctx.portalUrl(after.id),
+        ctaText: "Reply in the Help Center", ctaUrl: ctx.portalUrl(after.id),
       }));
     }
   }

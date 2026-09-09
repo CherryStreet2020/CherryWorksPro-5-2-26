@@ -72,9 +72,18 @@ const listQuery = z.object({
   offset: z.coerce.number().int().min(0).optional(),
 });
 
+// Overrides are a WHITELIST: ownership and Help Center fields (orgId, portalEmailDomains,
+// portalToken, …) are never caller-supplied — the server decides tenant and access.
 const convertBody = z
   .object({
-    clientOverrides: z.record(z.unknown()).optional(),
+    clientOverrides: z.object({
+      name: z.string().min(1).max(200).optional(),
+      email: z.string().email().max(200).nullable().optional(),
+      phone: z.string().max(200).nullable().optional(),
+      address: z.string().max(5000).nullable().optional(),
+      website: z.string().max(2000).nullable().optional(),
+      currency: z.string().length(3).optional(),
+    }).strict().optional(),
   })
   .optional();
 
