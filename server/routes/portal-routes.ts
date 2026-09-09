@@ -199,7 +199,15 @@ export function registerPortalRoutes(app: Express) {
     const filters = [visibleCaseWhere(req)];
     const requester = typeof req.query.requester === "string" ? req.query.requester : "";
     const priority = typeof req.query.priority === "string" ? req.query.priority.toUpperCase() : "";
-    if (requester) filters.push(eq(supportCases.requesterContactId, requester));
+    if (requester) {
+      // The selected person must be a contact of this client; match their cases by id OR by
+      // address (cases recorded before they existed as a contact carry only the email).
+      const [who] = await db.select({ id: clientContacts.id, email: clientContacts.email }).from(clientContacts)
+        .where(and(eq(clientContacts.id, requester), eq(clientContacts.orgId, p.orgId), eq(clientContacts.clientId, p.client.id), isNull(clientContacts.deletedAt)));
+      filters.push(who
+        ? or(eq(supportCases.requesterContactId, who.id), who.email ? sql`lower(${supportCases.requesterEmail}) = ${who.email.trim().toLowerCase()}` : sql`false`)!
+        : sql`false`);
+    }
     if (req.query.mine === "1") filters.push(ownCaseWhere(p));
     if ((SUPPORT_CASE_PRIORITIES as readonly string[]).includes(priority)) filters.push(eq(supportCases.priority, priority));
     // Status is filtered in SQL and counts are aggregated over the whole authorised set,

@@ -8467,6 +8467,17 @@ export class DatabaseStorage {
    * Public hook used by route layer to ensure auto-link runs after create
    * or update. Idempotent — calling twice is a no-op once linked.
    */
+  /** Throws CONTACT_EMAIL_CONFLICT when the address already names a live client contact of the org. An explicit `email: null` override means "no address". */
+  private async refuseDuplicateClientContactEmail(orgId: string, prospectEmail: string | null | undefined, ov: Partial<InsertClientContact> | undefined) {
+    const chosen = ov && Object.prototype.hasOwnProperty.call(ov, "email") ? ov.email : prospectEmail;
+    const email = (chosen ?? "").trim().toLowerCase();
+    if (!email) return;
+    const [dup] = await db.select({ id: clientContacts.id }).from(clientContacts)
+      .where(and(eq(clientContacts.orgId, orgId), sql`lower(${clientContacts.email}) = ${email}`, isNotNull(clientContacts.clientId), isNull(clientContacts.deletedAt)))
+      .limit(1);
+    if (dup) { const e: any = new Error("A client contact with this email address already exists"); e.code = "CONTACT_EMAIL_CONFLICT"; throw e; }
+  }
+
   async runContactAutoLink(
     contactId: string,
     orgId: string,
@@ -8839,6 +8850,11 @@ export class DatabaseStorage {
             reusedExistingClient = true;
           }
         }
+        // The contact will belong to a client (existing, or about to be created): an address
+        // names ONE live client contact per workspace (ux_client_contacts_org_email_live), so
+        // refuse HERE — before the company is converted and a client is written — rather than
+        // after, so a 409 leaves nothing half-done.
+        if (client || createClient) await this.refuseDuplicateClientContactEmail(orgId, prospect.email, opts.clientContactOverrides);
         if (!client && createClient) {
           const out = await this.convertMarketingCompanyToClient(orgId, company.id, {
             clientOverrides: opts.clientOverrides,
@@ -8846,21 +8862,6 @@ export class DatabaseStorage {
           client = out.client;
           reusedExistingClient = out.alreadyConverted;
         }
-      }
-    }
-
-    // An address names ONE live CLIENT contact per workspace (ux_client_contacts_org_email_live;
-    // unparented contacts are outside the index). Refuse before the contact insert when the
-    // destination is a client — so a conflict never leaves a half-converted prospect.
-    if (client) {
-      const ov = opts.clientContactOverrides;
-      const chosen = ov && Object.prototype.hasOwnProperty.call(ov, "email") ? ov.email : prospect.email;
-      const email = (chosen ?? "").trim().toLowerCase();
-      if (email) {
-        const [dup] = await db.select({ id: clientContacts.id }).from(clientContacts)
-          .where(and(eq(clientContacts.orgId, orgId), sql`lower(${clientContacts.email}) = ${email}`, isNotNull(clientContacts.clientId), isNull(clientContacts.deletedAt)))
-          .limit(1);
-        if (dup) { const e: any = new Error("A client contact with this email address already exists"); e.code = "CONTACT_EMAIL_CONFLICT"; throw e; }
       }
     }
 
