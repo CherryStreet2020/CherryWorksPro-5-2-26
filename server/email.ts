@@ -1213,7 +1213,7 @@ export async function sendCaseEmail(input: CaseEmailInput): Promise<{ messageId:
     to: input.to,
     subject,
     html,
-    text: `${input.heading}\n${input.caseKey} — ${input.subject}\n\n${input.intro}\n${input.body ? "\n" + input.body + "\n" : ""}\n${input.ctaText}: ${input.ctaUrl}\n`,
+    text: `${input.heading}\n${input.caseKey} — ${input.subject}\n\n${input.intro}\n${input.body ? "\n" + input.body + "\n" : ""}\n${input.ctaText}: ${input.ctaUrl}\n\n${input.footer || `Reply to this email to add to the case. Keep ${input.caseKey} in the subject.`}\n`,
     replyTo: smtpConfig?.replyTo ?? null,
     fromName: smtpConfig?.fromName ?? null,
     fromEmail: smtpConfig?.fromEmail ?? null,
