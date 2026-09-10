@@ -1,3 +1,4 @@
+import { subscribeCommandPaletteOpen } from "@/lib/command-palette-context";
 import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
@@ -136,7 +137,8 @@ export function CommandPalette() {
       }
     };
     document.addEventListener("keydown", down);
-    return () => document.removeEventListener("keydown", down);
+    const unsubscribe = subscribeCommandPaletteOpen(() => setOpen(true));
+    return () => { document.removeEventListener("keydown", down); unsubscribe(); };
   }, []);
 
   const search = useCallback(async (q: string) => {

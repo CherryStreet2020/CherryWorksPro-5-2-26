@@ -11,22 +11,17 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { BrandProvider } from "@/contexts/BrandContext";
 import { ThemeProvider } from "@/lib/theme";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/app-sidebar";
-import { HelpPanel } from "@/components/help-panel";
-import { CherryAssist } from "@/components/cherry-assist";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Sparkles, HelpCircle, Search, AlertTriangle, X as XIcon } from "lucide-react";
 import { useBillingStatus } from "@/hooks/use-billing-status";
-import { VerifyEmailBanner, TrialCountdownBanner } from "@/components/account-banners";
-import { DeletionBanner } from "@/components/deletion-banner";
+
 import { useEntitlement } from "@/lib/entitlements";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { CommandPalette } from "@/components/command-palette";
-import { NotificationBell } from "@/components/notification-bell";
-import { BrandSwitcher } from "@/components/BrandSwitcher";
-import { AdminSetupGate } from "@/components/admin-setup-gate";
+import { lazyRetry } from "@/lib/lazy";
+import { AppSidebar, HelpPanel, CherryAssist, CommandPalette, NotificationBell, BrandSwitcher, AdminSetupGate, VerifyEmailBanner, TrialCountdownBanner, DeletionBanner, preloadSignedInChrome } from "@/components/signed-in-chrome";
+import { openCommandPalette } from "@/lib/command-palette-context";
 import { ScrollToTop } from "@/components/scroll-to-top";
 import { ScrollToTopButton } from "@/components/marketing/scroll-to-top-button";
 import { openHelpPanel } from "@/lib/help-context";
@@ -35,21 +30,7 @@ import "@/lib/cherry-theme.css";
 
 if (typeof window !== "undefined") ensureCSRFToken();
 
-function lazyRetry<T extends { default: any }>(
-  loader: () => Promise<T>,
-): Promise<T> {
-  return loader().catch((err) => {
-    const key = "chunk_reload_attempted";
-    const attempted = sessionStorage.getItem(key);
-    if (!attempted) {
-      sessionStorage.setItem(key, "1");
-      window.location.reload();
-      return new Promise(() => {});
-    }
-    sessionStorage.removeItem(key);
-    throw err;
-  });
-}
+
 
 function ToastBridge() {
   const { toast } = useToast();
@@ -426,11 +407,13 @@ function AuthenticatedGettingStarted() {
     <div className="cherry-app">
     <SidebarProvider style={style as React.CSSProperties}>
       <div className="flex h-screen w-full" style={{ background: "var(--lux-bg)" }}>
-        <AppSidebar />
+        <Suspense fallback={null}><AppSidebar /></Suspense>
         <div className="flex flex-col flex-1 min-w-0">
-          <DeletionBanner />
-          <VerifyEmailBanner />
-          <TrialCountdownBanner />
+          <Suspense fallback={null}>
+            <DeletionBanner />
+            <VerifyEmailBanner />
+            <TrialCountdownBanner />
+          </Suspense>
           <header
             className="flex items-center justify-between px-4 py-2 border-b flex-shrink-0"
             style={{ background: "var(--lux-surface)", borderColor: "var(--lux-border)" }}
@@ -438,7 +421,7 @@ function AuthenticatedGettingStarted() {
             <SidebarTrigger data-testid="button-sidebar-toggle" />
             <div className="flex items-center gap-2">
               <button
-                onClick={() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
+                onClick={openCommandPalette}
                 className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border transition-colors hover:bg-accent"
                 style={{ borderColor: "var(--lux-border)", color: "var(--lux-text-secondary)" }}
                 title="Search (⌘K)"
@@ -447,8 +430,10 @@ function AuthenticatedGettingStarted() {
                 <span className="hidden md:inline">Search</span>
                 <kbd className="hidden md:inline-flex h-5 items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium">⌘K</kbd>
               </button>
-              <BrandSwitcher />
-              <NotificationBell />
+              <Suspense fallback={null}>
+                <BrandSwitcher />
+                <NotificationBell />
+              </Suspense>
               <button
                 onClick={openHelpPanel}
                 className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all hover:scale-110"
@@ -464,16 +449,18 @@ function AuthenticatedGettingStarted() {
           </main>
         </div>
       </div>
-      <HelpPanel />
-      <CherryAssist />
-      <CommandPalette />
+      <Suspense fallback={null}>
+        <HelpPanel />
+        <CherryAssist />
+        <CommandPalette />
+      </Suspense>
     </SidebarProvider>
     </div>
   );
 }
 
 function AuthenticatedLayout() {
-  useEffect(() => { preloadRouteChunks(); }, []);
+  useEffect(() => { preloadSignedInChrome(); preloadRouteChunks(); }, []);
   const style = {
     "--sidebar-width": "16rem",
     "--sidebar-width-icon": "3rem",
@@ -483,11 +470,13 @@ function AuthenticatedLayout() {
     <div className="cherry-app">
     <SidebarProvider style={style as React.CSSProperties}>
       <div className="flex h-screen w-full" style={{ background: "var(--lux-bg)" }}>
-        <AppSidebar />
+        <Suspense fallback={null}><AppSidebar /></Suspense>
         <div className="flex flex-col flex-1 min-w-0">
-          <DeletionBanner />
-          <VerifyEmailBanner />
-          <TrialCountdownBanner />
+          <Suspense fallback={null}>
+            <DeletionBanner />
+            <VerifyEmailBanner />
+            <TrialCountdownBanner />
+          </Suspense>
           <header
             className="flex items-center justify-between px-4 py-2 border-b flex-shrink-0"
             style={{
@@ -498,7 +487,7 @@ function AuthenticatedLayout() {
             <SidebarTrigger data-testid="button-sidebar-toggle" />
             <div className="flex items-center gap-2">
               <button
-                onClick={() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
+                onClick={openCommandPalette}
                 className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border transition-colors hover:bg-accent"
                 style={{ borderColor: "var(--lux-border)", color: "var(--lux-text-secondary)" }}
                 title="Search (⌘K)"
@@ -508,8 +497,10 @@ function AuthenticatedLayout() {
                 <span className="hidden md:inline">Search</span>
                 <kbd className="hidden md:inline-flex h-5 items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium">⌘K</kbd>
               </button>
-              <BrandSwitcher />
-              <NotificationBell />
+              <Suspense fallback={null}>
+                <BrandSwitcher />
+                <NotificationBell />
+              </Suspense>
               <button
                 onClick={openHelpPanel}
                 className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all hover:scale-110"
@@ -532,9 +523,11 @@ function AuthenticatedLayout() {
           </main>
         </div>
       </div>
-          <HelpPanel />
-          <CherryAssist />
-          <CommandPalette />
+          <Suspense fallback={null}>
+            <HelpPanel />
+            <CherryAssist />
+            <CommandPalette />
+          </Suspense>
     </SidebarProvider>
     </div>
   );
@@ -619,6 +612,8 @@ function AppContent() {
 
   if (user.role === "ADMIN") {
     return (
+      <Suspense fallback={<LazyFallback />}>
+      <ChromePreloader />
       <AdminSetupGate>
         <Switch>
           {import.meta.env.DEV && (
@@ -631,10 +626,17 @@ function AppContent() {
           <Route><AuthenticatedLayout /></Route>
         </Switch>
       </AdminSetupGate>
+      </Suspense>
     );
   }
 
   return <AuthenticatedLayout />;
+}
+
+/** Starts fetching the signed-in chrome chunks the moment we know someone is signed in. */
+function ChromePreloader() {
+  useEffect(() => { preloadSignedInChrome(); }, []);
+  return null;
 }
 
 /** Marks <html data-hydrated> once React has committed — the e2e hydration gate waits for it. */
