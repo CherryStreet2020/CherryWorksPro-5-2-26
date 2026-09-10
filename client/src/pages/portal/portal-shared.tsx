@@ -227,26 +227,28 @@ export function VerifyPage({ surface, slug }: { surface: Surface; slug: string }
   const token = useMemo(() => new URLSearchParams(search).get("token") || "", [search]);
   const next = useMemo(() => safeNext(new URLSearchParams(search).get("next"), surface, slug), [search, surface, slug]);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const base = basePath(surface, slug);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!token) { setError("This link is missing its token. Request a new one."); return; }
-      try {
-        clearPortalCaches(qc, slug);
-        qc.removeQueries({ queryKey: ["portal-me", slug] });
-        await api("POST", `/api/portal/${slug}/auth/verify`, { token });
-        if (cancelled) return;
-        clearPortalCaches(qc, slug);
-        qc.removeQueries({ queryKey: ["portal-me", slug] });
-        announceAuthChange(slug);
-        navigate(next ?? base, { replace: true });
-      } catch (e) {
-        if (!cancelled) setError((e as Error).message);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [token, slug, navigate, qc, base, next]);
+  useEffect(() => { if (!token) setError("This link is missing its token. Request a new one."); }, [token]);
+  // The token is exchanged only on a click, never on page load: corporate mail scanners
+  // (Safe Links and friends) open every link in a sandbox first, and a page that signed in by
+  // itself would spend the one-time link before the person ever saw it.
+  const signIn = async () => {
+    if (!token || busy) return;
+    setBusy(true);
+    try {
+      clearPortalCaches(qc, slug);
+      qc.removeQueries({ queryKey: ["portal-me", slug] });
+      await api("POST", `/api/portal/${slug}/auth/verify`, { token });
+      clearPortalCaches(qc, slug);
+      qc.removeQueries({ queryKey: ["portal-me", slug] });
+      announceAuthChange(slug);
+      navigate(next ?? base, { replace: true });
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  };
   return (
     <Shell surface={surface} slug={slug}>
       <div style={{ maxWidth: 440, margin: "60px auto 0", textAlign: "center" }}>
@@ -257,7 +259,11 @@ export function VerifyPage({ surface, slug }: { surface: Surface; slug: string }
             <Link href={`${base}/login`} style={{ ...btnPrimary, display: "inline-block", textDecoration: "none" }}>Request a new link</Link>
           </div>
         ) : (
-          <p style={{ color: T.text2 }}>Signing you in…</p>
+          <div style={card} data-testid="portal-verify-ready">
+            <p style={{ margin: 0, fontWeight: 600, fontSize: 18 }}>You're almost in</p>
+            <p style={{ margin: "6px 0 18px", color: T.text2, fontSize: 14 }}>Click below to finish signing in. This link works once.</p>
+            <button type="button" onClick={signIn} disabled={busy} style={btnPrimary} data-testid="portal-verify-continue">{busy ? "Signing you in…" : surface === "portal" ? "Open the Customer Portal" : "Open the Help Center"}</button>
+          </div>
         )}
       </div>
     </Shell>

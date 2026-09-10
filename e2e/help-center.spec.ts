@@ -37,6 +37,8 @@ async function linkFor(email: string, surface: "help" | "portal" = "help"): Prom
 async function signInInBrowser(page: Page, email: string, surface: "help" | "portal" = "help") {
   const link = await linkFor(email, surface);
   await page.goto(link);
+  // The link is exchanged only on the click (mail scanners must not spend it).
+  await page.getByTestId("portal-verify-continue").click();
   await page.waitForURL(url => !url.pathname.endsWith("/verify"), { timeout: 15000 });
 }
 
@@ -132,6 +134,7 @@ test.describe("Help Center in the browser", () => {
     const link = (mail.text || mail.html || "").match(/https?:\/\/[^\s"'<]+\/help\/[^\s"'<]+verify\?token=[^\s"'<]+/)![0].replace(/^https?:\/\/[^/]+/, BASE).replace(/&amp;/g, "&");
     expect(link).toContain("next=");
     await page.goto(link);
+    await page.getByTestId("portal-verify-continue").click();
     await page.waitForURL(new RegExp(`/help/[^/]+/cases/${memberCaseId}$`), { timeout: 15000 });
     await expect(page.getByTestId("portal-case-subject")).toHaveText(`Mike's printer ${stamp}`);
     // A member cannot reach a colleague's case by URL either.
