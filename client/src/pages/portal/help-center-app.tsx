@@ -9,7 +9,7 @@
  *   /cases/:id         conversation (+ priority / close / reopen for Customer Admins)
  *   /team              Customer Admin: who can use the Help Center, invite a colleague
  */
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link, Route, Switch, useLocation, useParams } from "wouter";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PRIORITY_LABEL, CASE_PRIORITY_ORDER, IMPACT_LABEL, INTAKE_FIELD_LABELS, hoursLabel, relativeTime, type CaseStatus, type CasePriority, type SupportCaseIntake, type SupportCaseImpact } from "@/lib/support-cases";
@@ -21,12 +21,12 @@ import {
 const SURFACE = "help" as const;
 const base = (slug: string) => `/help/${slug}`;
 
-interface CaseRow { id: string; caseKey: string; subject: string; status: CaseStatus; priority: CasePriority; typeName: string | null; requesterName: string | null; requesterContactId: string | null; createdAt: string; updatedAt: string; mine: boolean; awaitingYou: boolean; hasNewReply: boolean; resolvedAt: string | null }
-interface CaseList { cases: CaseRow[]; counts: { open: number; waitingOnYou: number; resolved: number; byPriority: Record<string, number> }; paging: { status: string; limit: number; offset: number; hasMore: boolean }; scope: "client" | "own" }
+interface CaseRow { id: string; caseKey: string; subject: string; status: CaseStatus; priority: CasePriority; typeName: string | null; requesterName: string | null; requesterContactId: string | null; createdAt: string; updatedAt: string; mine: boolean; awaitingYou: boolean; hasNewReply: boolean; unread: boolean; resolvedAt: string | null }
+interface CaseList { cases: CaseRow[]; counts: { open: number; waitingOnYou: number; resolved: number; unread: number; byPriority: Record<string, number> }; paging: { status: string; limit: number; offset: number; hasMore: boolean }; scope: "client" | "own" }
 interface Attachment { id: string; filename: string; mimeType: string; size: number; isImage: boolean; url: string; createdAt: string; clientFileId?: string | null }
 interface Watcher { id: string; contactId: string; firstName: string; lastName: string; email: string | null; role: "watcher" | "reviewer"; addedAt: string }
 interface Colleague { id: string; firstName: string; lastName: string; email: string | null }
-interface CaseDetail { id: string; caseKey: string; subject: string; description: string | null; status: CaseStatus; priority: CasePriority; typeName: string | null; requesterName: string | null; assigneeName: string | null; createdAt: string; firstResponseAt: string | null; resolvedAt: string | null; intake: SupportCaseIntake | null; isRequester: boolean; myRole: "requester" | "admin" | "watcher" | "reviewer" | null; watchers: Watcher[]; attachments: Attachment[]; messages: { id: string; authorName: string; fromTeam: boolean; body: string; createdAt: string }[]; events: { id: string; kind: string; fromValue: string | null; toValue: string | null; createdAt: string }[]; hours: { minutes: number; billableMinutes: number } | null }
+interface CaseDetail { id: string; caseKey: string; subject: string; updatedAt: string; description: string | null; status: CaseStatus; priority: CasePriority; typeName: string | null; requesterName: string | null; assigneeName: string | null; createdAt: string; firstResponseAt: string | null; resolvedAt: string | null; intake: SupportCaseIntake | null; isRequester: boolean; myRole: "requester" | "admin" | "watcher" | "reviewer" | null; watchers: Watcher[]; attachments: Attachment[]; messages: { id: string; authorName: string; fromTeam: boolean; body: string; createdAt: string }[]; events: { id: string; kind: string; fromValue: string | null; toValue: string | null; createdAt: string }[]; hours: { minutes: number; billableMinutes: number } | null }
 interface CreateResult { id: string; caseKey: string; replay?: boolean; attachments?: Attachment[]; attachmentErrors?: { filename: string; clientFileId: string | null; error: string }[] }
 interface PickedFile { clientFileId: string; file: File; done: boolean; error: string | null }
 const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
@@ -115,7 +115,7 @@ function CasesList({ slug, me }: { slug: string; me: Me }) {
           <h1 style={{ ...display, fontSize: 30, margin: 0, lineHeight: 1.1 }} data-testid="portal-title">{isAdmin ? `Support cases at ${me.client.name}` : "Your support cases"}</h1>
           <p style={{ margin: "6px 0 0", color: T.muted, fontSize: 13 }}>
             {isAdmin ? "Customer admin" : "Signed in as"} {me.contact.firstName} {me.contact.lastName}
-            {counts ? ` · ${counts.open} open${counts.waitingOnYou ? ` · ${counts.waitingOnYou} waiting on ${isAdmin ? "your team" : "you"}` : ""}` : ""}
+            {counts ? ` · ${counts.open} open${counts.waitingOnYou ? ` · ${counts.waitingOnYou} waiting on ${isAdmin ? "your team" : "you"}` : ""}${counts.unread ? ` · ${counts.unread} with new activity` : ""}` : ""}
           </p>
         </div>
         <Link href={`${base(slug)}/cases/new`} style={{ ...btnPrimary, textDecoration: "none", display: "inline-block" }} data-testid="portal-new-case">New support case</Link>
@@ -151,7 +151,7 @@ function CasesList({ slug, me }: { slug: string; me: Me }) {
                   <div style={{ minWidth: 0 }}>
                     <p style={{ margin: 0, fontWeight: 500, display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.subject}</span>
-                      {r.hasNewReply && !["RESOLVED", "CLOSED"].includes(r.status) && <span title="New reply" style={{ width: 8, height: 8, borderRadius: 999, background: T.accent, display: "inline-block", flexShrink: 0 }} />}
+                      {r.unread && <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".04em", color: "#fff", background: T.accent, padding: "2px 7px", borderRadius: 999, flexShrink: 0 }} data-testid="portal-unread">NEW</span>}
                     </p>
                     <p style={{ margin: "3px 0 0", fontSize: 12, color: T.muted }}>
                       {isAdmin && <span style={{ color: PRIORITY_COLOR[r.priority], fontWeight: 600 }}>{PRIORITY_LABEL[r.priority]} · </span>}
@@ -488,6 +488,8 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
   const isAdmin = me.contact.portalRole === "admin";
   const key = ["help-case", slug, me.contact.id, me.contact.portalRole, id];
   const { data: c, isLoading, isError } = useQuery<CaseDetail>({ queryKey: key, queryFn: () => api("GET", `/api/portal/${slug}/cases/${id}`), retry: false });
+  // Opening the case marks it read on the server: refresh the list badge and the nav count.
+  useEffect(() => { if (c) { qc.invalidateQueries({ queryKey: ["help-unread", slug] }); qc.invalidateQueries({ queryKey: ["help-cases", slug, me.contact.id] }); } }, [c?.id, c?.updatedAt]);
   const [body, setBody] = useState("");
   const refresh = () => { qc.invalidateQueries({ queryKey: key }); qc.invalidateQueries({ queryKey: ["help-cases", slug, me.contact.id] }); };
   const post = useMutation({

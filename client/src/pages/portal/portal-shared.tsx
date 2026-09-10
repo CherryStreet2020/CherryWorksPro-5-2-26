@@ -134,6 +134,12 @@ export function clearPortalCaches(qc: QueryClient, slug: string) {
 
 // ─── Shell ────────────────────────────────────────────────────────────────
 export function Shell({ surface, slug, me, children, active }: { surface: Surface; slug: string; me?: Me | null; children: React.ReactNode; active?: "cases" | "team" | "billing" }) {
+  // Per-person unread count for the Cases tab (kept fresh while the tab is open).
+  const { data: unread } = useQuery<{ unread: number }>({
+    queryKey: ["help-unread", slug, me?.contact?.id],
+    queryFn: () => api("GET", `/api/portal/${slug}/cases/unread-count`),
+    enabled: surface === "help" && !!me?.contact, refetchInterval: 60000,
+  });
   const [, navigate] = useLocation();
   const qc = useQueryClient();
   const base = basePath(surface, slug);
@@ -162,7 +168,7 @@ export function Shell({ surface, slug, me, children, active }: { surface: Surfac
           </div>
           {me?.contact && (
             <nav style={{ display: "flex", alignItems: "center", gap: 18, fontSize: 13 }} aria-label={surfaceName}>
-              {surface === "help" && tab(base, active === "cases", "Cases", "portal-nav-cases")}
+              {surface === "help" && tab(base, active === "cases", unread?.unread ? `Cases (${unread.unread})` : "Cases", "portal-nav-cases")}
               {surface === "help" && me.contact.portalRole === "admin" && tab(`${base}/team`, active === "team", "Team", "portal-nav-team")}
               {surface === "help" && me.contact.billingAccess && tab(`/portal/${slug}`, false, "Billing →", "portal-nav-billing")}
               {surface === "portal" && tab(`/portal/${slug}`, active === "billing", "Billing", "portal-nav-billing")}

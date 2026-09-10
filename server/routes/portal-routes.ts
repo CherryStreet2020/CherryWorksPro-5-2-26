@@ -6,7 +6,7 @@ import { db } from "../db";
 import { storage } from "../storage";
 import {
   orgs, clients, clientContacts, supportCases, supportCaseTypes, clientActivities, portalBlockedEmails,
-  portalRequestLinkSchema, portalVerifySchema, portalCreateCaseSchema, portalMessageSchema, portalWatcherAddSchema, supportCaseWatchers,
+  portalRequestLinkSchema, portalVerifySchema, portalCreateCaseSchema, portalMessageSchema, portalWatcherAddSchema, supportCaseWatchers, portalCaseReads,
   portalSetNameSchema, portalAdminCaseUpdateSchema, portalInviteColleagueSchema,
   SUPPORT_CASE_OPEN_STATUSES, SUPPORT_CASE_PRIORITIES,
 } from "@shared/schema";
@@ -121,6 +121,9 @@ function authorizeContactManage(req: Request) {
   const p = req.portal!;
   return async (tx: any, c: any) => { const r = await cases.customerCanAccess(tx, p.orgId, c, p.contact.id, { lock: true }); return r.ok && r.role !== "watcher" && r.role !== "reviewer"; };
 }
+/** The latest customer-visible moment on a case (see the unread rule in the list route). */
+const customerActivitySql = sql`GREATEST(${supportCases.createdAt}, COALESCE(${supportCases.lastAgentMessageAt}, ${supportCases.createdAt}), COALESCE(${supportCases.lastCustomerMessageAt}, ${supportCases.createdAt}), COALESCE((SELECT max(e.created_at) FROM support_case_events e WHERE e.case_id = ${supportCases.id} AND e.kind IN ('status', 'watcher')), ${supportCases.createdAt}))`;
+
 /** Field values arrive as strings in a multipart form; JSON bodies arrive typed. */
 function parseCreateBody(req: Request) {
   const b: any = req.body ?? {};
@@ -260,6 +263,11 @@ export function registerPortalRoutes(app: Express) {
     const authorised = and(...filters)!;
     const statusWhere = status === "open" ? sql`${supportCases.status} IN (${sql.join(openStatuses.map(x => sql`${x}`), sql`, `)})`
       : status === "resolved" ? sql`${supportCases.status} NOT IN (${sql.join(openStatuses.map(x => sql`${x}`), sql`, `)})` : sql`true`;
+    // "Unread" is per person: customer-VISIBLE activity since THIS contact last opened the case
+    // (never opened = unread). Internal notes and firm-only edits bump updated_at but must not
+    // flag a customer, so activity = creation, customer-visible messages, status/follower events.
+    const unreadSql = sql`(${portalCaseReads.lastReadAt} IS NULL OR ${customerActivitySql} > ${portalCaseReads.lastReadAt})`;
+    const readJoin = and(eq(portalCaseReads.caseId, supportCases.id), eq(portalCaseReads.contactId, p.contact.id))!;
     const [rows, [agg], byPrio] = await Promise.all([
       db.select({
           id: supportCases.id, caseKey: supportCases.caseKey, subject: supportCases.subject, status: supportCases.status,
@@ -267,10 +275,11 @@ export function registerPortalRoutes(app: Express) {
           requesterContactId: supportCases.requesterContactId, requesterEmail: supportCases.requesterEmail,
           createdAt: supportCases.createdAt, updatedAt: supportCases.updatedAt,
           lastAgentMessageAt: supportCases.lastAgentMessageAt, lastCustomerMessageAt: supportCases.lastCustomerMessageAt,
-          resolvedAt: supportCases.resolvedAt,
+          resolvedAt: supportCases.resolvedAt, unread: sql<boolean>`${unreadSql}`.mapWith(Boolean),
         })
         .from(supportCases)
         .leftJoin(supportCaseTypes, and(eq(supportCases.typeId, supportCaseTypes.id), eq(supportCaseTypes.orgId, p.orgId)))
+        .leftJoin(portalCaseReads, readJoin)
         .where(and(authorised, statusWhere))
         .orderBy(sql`${supportCases.updatedAt} desc`, sql`${supportCases.id} desc`)
         .limit(limit + 1).offset(offset),
@@ -278,7 +287,8 @@ export function registerPortalRoutes(app: Express) {
           open: sql<number>`count(*) filter (where ${supportCases.status} IN (${sql.join(openStatuses.map(x => sql`${x}`), sql`, `)}))`.mapWith(Number),
           waitingOnYou: sql<number>`count(*) filter (where ${supportCases.status} = 'WAITING_ON_CUSTOMER')`.mapWith(Number),
           resolved: sql<number>`count(*) filter (where ${supportCases.status} NOT IN (${sql.join(openStatuses.map(x => sql`${x}`), sql`, `)}))`.mapWith(Number),
-        }).from(supportCases).where(authorised),
+          unread: sql<number>`count(*) filter (where ${unreadSql})`.mapWith(Number),
+        }).from(supportCases).leftJoin(portalCaseReads, readJoin).where(authorised),
       db.select({ priority: supportCases.priority, n: sql<number>`count(*)`.mapWith(Number) }).from(supportCases)
         .where(and(authorised, sql`${supportCases.status} IN (${sql.join(openStatuses.map(x => sql`${x}`), sql`, `)})`)).groupBy(supportCases.priority),
     ]);
@@ -287,10 +297,19 @@ export function registerPortalRoutes(app: Express) {
     const page = rows.slice(0, limit);
     return res.json({
       cases: page.map(({ requesterEmail: _e, ...r }) => ({ ...r, mine: isOwnCase(p, { requesterContactId: r.requesterContactId, requesterEmail: _e }), awaitingYou: r.status === "WAITING_ON_CUSTOMER", hasNewReply: !!r.lastAgentMessageAt && (!r.lastCustomerMessageAt || r.lastAgentMessageAt > r.lastCustomerMessageAt) })),
-      counts: { open: agg?.open ?? 0, waitingOnYou: agg?.waitingOnYou ?? 0, resolved: agg?.resolved ?? 0, byPriority },
+      counts: { open: agg?.open ?? 0, waitingOnYou: agg?.waitingOnYou ?? 0, resolved: agg?.resolved ?? 0, unread: agg?.unread ?? 0, byPriority },
       paging: { status, limit, offset, hasMore: rows.length > limit },
       scope: p.contact.portalRole === "admin" ? "client" : "own",
     });
+  });
+
+  /** Unread cases for the nav badge — cheap enough to poll. */
+  app.get("/api/portal/:orgSlug/cases/unread-count", requirePortal, async (req, res) => {
+    const p = req.portal!;
+    const [row] = await db.select({ n: sql<number>`count(*)`.mapWith(Number) }).from(supportCases)
+      .leftJoin(portalCaseReads, and(eq(portalCaseReads.caseId, supportCases.id), eq(portalCaseReads.contactId, p.contact.id)))
+      .where(and(visibleCaseWhere(req), sql`(${portalCaseReads.lastReadAt} IS NULL OR ${customerActivitySql} > ${portalCaseReads.lastReadAt})`));
+    return res.json({ unread: row?.n ?? 0 });
   });
 
   // Customer Admin: prioritise, close, reopen. Never a raw status from the customer.
@@ -559,6 +578,9 @@ export function registerPortalRoutes(app: Express) {
       hours = { minutes: t.totals.minutes, billableMinutes: t.totals.billableMinutes };
     }
     const [attachments, watchers, access] = await Promise.all([listAttachments(p.orgId, row.id), cases.listWatchers(p.orgId, row.id), cases.customerCanAccess(db, p.orgId, { id: row.id, clientId: p.client.id, requesterContactId: row.requesterContactId, requesterEmail: row.requesterEmail }, p.contact.id)]);
+    // Opening the case is reading it: clear this person's "New" badge.
+    await db.insert(portalCaseReads).values({ orgId: p.orgId, caseId: row.id, contactId: p.contact.id, lastReadAt: new Date() })
+      .onConflictDoUpdate({ target: [portalCaseReads.caseId, portalCaseReads.contactId], set: { lastReadAt: new Date() } }).catch(() => {});
     const { assigneeUserId: _a, requesterContactId, requesterEmail, ...safe } = row;
     return res.json({
       ...safe,

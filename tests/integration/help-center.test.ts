@@ -790,6 +790,45 @@ describe("Help Center request form v2: intake, files, watchers, on-behalf-of, BL
     expect((await portal("GET", `/cases/${id}`, hOutCookie)).status).toBe(404);
   });
 
+  it("everyone on the case hears about every change: per-person unread badges, and a customer's reply reaches the other followers", async () => {
+    const r = await portal("POST", "/cases", hReqCookie, { subject: `Everyone hears ${stamp}`, watcherContactIds: [hW2Id] });
+    expect(r.status, await r.clone().text()).toBe(201);
+    const id = (await r.json()).id;
+    // Walt (watcher) has never opened it → unread for him, and counted in his nav badge.
+    let list = await (await portal("GET", "/cases", hW2Cookie)).json();
+    expect(list.cases.find((c: any) => c.id === id).unread).toBe(true);
+    expect((await (await portal("GET", "/cases/unread-count", hW2Cookie)).json()).unread).toBeGreaterThanOrEqual(1);
+    // Opening it clears his badge; the requester's own view is independent.
+    expect((await portal("GET", `/cases/${id}`, hW2Cookie)).status).toBe(200);
+    list = await (await portal("GET", "/cases", hW2Cookie)).json();
+    expect(list.cases.find((c: any) => c.id === id).unread).toBe(false);
+    // An agent reply makes it unread again for Walt.
+    expect((await api("POST", `/api/support/cases/${id}/messages`, admin, { body: "On it.", visibility: "CUSTOMER" })).status).toBe(201);
+    list = await (await portal("GET", "/cases", hW2Cookie)).json();
+    expect(list.cases.find((c: any) => c.id === id).unread).toBe(true);
+    // Internal notes never touch the customer side.
+    expect((await portal("GET", `/cases/${id}`, hW2Cookie)).status).toBe(200);
+    expect((await api("POST", `/api/support/cases/${id}/messages`, admin, { body: "private", visibility: "INTERNAL" })).status).toBe(201);
+    list = await (await portal("GET", "/cases", hW2Cookie)).json();
+    expect(list.cases.find((c: any) => c.id === id).unread).toBe(false);
+  });
+
+  it.skipIf(!process.env.EMAIL_CAPTURE_DIR)("a customer's reply is mailed to the other followers but not to the author", async () => {
+    const { waitForCapturedEmail, clearCapturedEmails } = await import("../helpers/email-capture");
+    const dir = process.env.EMAIL_CAPTURE_DIR!;
+    const r = await portal("POST", "/cases", hReqCookie, { subject: `Fan-out ${stamp}`, watcherContactIds: [hW2Id], reviewerContactIds: [hW1Id] });
+    const id = (await r.json()).id;
+    await new Promise(res => setTimeout(res, 1500)); // let the creation mails land before clearing
+    await clearCapturedEmails(dir).catch(() => {});
+    const at = Date.now();
+    expect((await portal("POST", `/cases/${id}/messages`, hReqCookie, { body: "Any news?" })).status).toBe(201);
+    const walt = await waitForCapturedEmail({ to: hW2Email, subject: new RegExp(`Fan-out ${stamp}`) }, { dir, sinceMs: at - 5, timeoutMs: 8000 });
+    expect(walt.text || walt.html).toContain("Any news?");
+    const wanda = await waitForCapturedEmail({ to: hW1Email, subject: new RegExp(`Fan-out ${stamp}`) }, { dir, sinceMs: at - 5, timeoutMs: 8000 });
+    expect(wanda.text || "").toContain("review only");
+    await expect(waitForCapturedEmail({ to: hReqEmail, subject: new RegExp(`Fan-out ${stamp}`) }, { dir, sinceMs: at - 5, timeoutMs: 2500 })).rejects.toThrow();
+  });
+
   it("inbound mail follows the same authority: watchers append until removed; a reassigned requester's old address is stored; legacy email-only requesters append", async () => {
     const inbound = (from: string, subject: string, extra: Record<string, unknown> = {}) => fetch(`${BASE}/api/test/inbound-email`, {
       method: "POST", headers: { "Content-Type": "application/json" },

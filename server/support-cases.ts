@@ -772,7 +772,7 @@ export async function addMessage(orgId: string, caseId: string, input: AddMessag
     return { msg, row };
   });
   if (!committed) return undefined;
-  void notifyCaseMessage(committed.row, { authorUserId: input.author.userId ?? null, authorName: input.author.name, body: input.body, visibility: input.visibility })
+  void notifyCaseMessage(committed.row, { authorUserId: input.author.userId ?? null, authorContactId: input.author.contactId ?? null, authorName: input.author.name, body: input.body, visibility: input.visibility })
     .catch(err => console.warn("[support] notifyCaseMessage failed", (err as Error)?.message));
   return { message: committed.msg, case: committed.row };
 }
