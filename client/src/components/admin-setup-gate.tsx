@@ -1,15 +1,10 @@
 import { Suspense, lazy, type ReactNode } from "react";
-import { VerifyEmailBanner, TrialCountdownBanner } from "@/components/account-banners";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Sparkles, HelpCircle, Search } from "lucide-react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/app-sidebar";
-import { HelpPanel } from "@/components/help-panel";
-import { CherryAssist } from "@/components/cherry-assist";
-import { CommandPalette } from "@/components/command-palette";
-import { NotificationBell } from "@/components/notification-bell";
-import { BrandSwitcher } from "@/components/BrandSwitcher";
+import { AppSidebar, HelpPanel, CherryAssist, CommandPalette, NotificationBell, BrandSwitcher, VerifyEmailBanner, TrialCountdownBanner } from "@/components/signed-in-chrome";
+import { openCommandPalette } from "@/lib/command-palette-context";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEntitlement } from "@/lib/entitlements";
 import { openHelpPanel } from "@/lib/help-context";
@@ -86,7 +81,7 @@ export function AdminSetupGate({ children }: { children: ReactNode }) {
       <div className="cherry-app">
         <SidebarProvider style={style as React.CSSProperties}>
           <div className="flex h-screen w-full" style={{ background: "var(--lux-bg)" }}>
-            <AppSidebar />
+            <Suspense fallback={null}><AppSidebar /></Suspense>
             <div className="flex flex-col flex-1 min-w-0">
               <header
                 className="flex items-center justify-between px-4 py-2 border-b flex-shrink-0"
@@ -95,11 +90,7 @@ export function AdminSetupGate({ children }: { children: ReactNode }) {
                 <SidebarTrigger data-testid="button-sidebar-toggle" />
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() =>
-                      document.dispatchEvent(
-                        new KeyboardEvent("keydown", { key: "k", metaKey: true }),
-                      )
-                    }
+                    onClick={openCommandPalette}
                     className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border transition-colors hover:bg-accent"
                     style={{
                       borderColor: "var(--lux-border)",
@@ -113,8 +104,10 @@ export function AdminSetupGate({ children }: { children: ReactNode }) {
                       ⌘K
                     </kbd>
                   </button>
-                  <BrandSwitcher />
-                  <NotificationBell />
+                  <Suspense fallback={null}>
+                    <BrandSwitcher />
+                    <NotificationBell />
+                  </Suspense>
                   <button
                     onClick={openHelpPanel}
                     className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all hover:scale-110"
@@ -136,8 +129,10 @@ export function AdminSetupGate({ children }: { children: ReactNode }) {
                   <GettingStartedPage />
                 </Suspense>
               </main>
-              <VerifyEmailBanner />
-              <TrialCountdownBanner />
+              <Suspense fallback={null}>
+                <VerifyEmailBanner />
+                <TrialCountdownBanner />
+              </Suspense>
               <div
                 className="flex items-center gap-2 px-4 py-2.5 border-t"
                 style={{
@@ -153,9 +148,11 @@ export function AdminSetupGate({ children }: { children: ReactNode }) {
               </div>
             </div>
           </div>
-          <HelpPanel />
-          <CherryAssist />
-          <CommandPalette />
+          <Suspense fallback={null}>
+            <HelpPanel />
+            <CherryAssist />
+            <CommandPalette />
+          </Suspense>
         </SidebarProvider>
       </div>
     );

@@ -9,7 +9,7 @@ import {
   ChevronDown, ChevronUp, Minus, ThumbsUp, ThumbsDown, Sparkles,
   ArrowLeft, Lightbulb, Landmark, Megaphone, Lock,
 } from "lucide-react";
-import { HELP_PANEL_OPEN_EVENT } from "@/lib/help-context";
+import { subscribeHelpPanelOpen } from "@/lib/help-context";
 import { useBillingStatus } from "@/hooks/use-billing-status";
 
 import { HELP_ARTICLES, type HelpArticle } from "@/lib/help-articles";
@@ -611,11 +611,7 @@ export function HelpPanel() {
     return () => document.removeEventListener("keydown", handleKeyboardShortcut);
   }, [handleKeyboardShortcut]);
 
-  useEffect(() => {
-    const handler = () => setOpen(true);
-    document.addEventListener(HELP_PANEL_OPEN_EVENT, handler);
-    return () => document.removeEventListener(HELP_PANEL_OPEN_EVENT, handler);
-  }, []);
+  useEffect(() => subscribeHelpPanelOpen(() => setOpen(true)), []);
 
   useEffect(() => {
     if (open && searchRef.current) {

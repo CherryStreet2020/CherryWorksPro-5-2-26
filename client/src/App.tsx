@@ -19,20 +19,9 @@ import { useBillingStatus } from "@/hooks/use-billing-status";
 import { useEntitlement } from "@/lib/entitlements";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-// Signed-in chrome is loaded only once someone is signed in: an anonymous visitor on a
-// marketing page must not download the sidebar, the help articles and their markdown
-// renderer, Cherry Assist, the command palette or the notification bell. Each is a
-// separate chunk fetched inside the authenticated layouts (see lazyNamed).
-const AppSidebar = lazyNamed(() => import("@/components/app-sidebar"), "AppSidebar");
-const HelpPanel = lazyNamed(() => import("@/components/help-panel"), "HelpPanel");
-const CherryAssist = lazyNamed(() => import("@/components/cherry-assist"), "CherryAssist");
-const CommandPalette = lazyNamed(() => import("@/components/command-palette"), "CommandPalette");
-const NotificationBell = lazyNamed(() => import("@/components/notification-bell"), "NotificationBell");
-const BrandSwitcher = lazyNamed(() => import("@/components/BrandSwitcher"), "BrandSwitcher");
-const AdminSetupGate = lazyNamed(() => import("@/components/admin-setup-gate"), "AdminSetupGate");
-const VerifyEmailBanner = lazyNamed(() => import("@/components/account-banners"), "VerifyEmailBanner");
-const TrialCountdownBanner = lazyNamed(() => import("@/components/account-banners"), "TrialCountdownBanner");
-const DeletionBanner = lazyNamed(() => import("@/components/deletion-banner"), "DeletionBanner");
+import { lazyRetry } from "@/lib/lazy";
+import { AppSidebar, HelpPanel, CherryAssist, CommandPalette, NotificationBell, BrandSwitcher, AdminSetupGate, VerifyEmailBanner, TrialCountdownBanner, DeletionBanner, preloadSignedInChrome } from "@/components/signed-in-chrome";
+import { openCommandPalette } from "@/lib/command-palette-context";
 import { ScrollToTop } from "@/components/scroll-to-top";
 import { ScrollToTopButton } from "@/components/marketing/scroll-to-top-button";
 import { openHelpPanel } from "@/lib/help-context";
@@ -41,26 +30,7 @@ import "@/lib/cherry-theme.css";
 
 if (typeof window !== "undefined") ensureCSRFToken();
 
-/** React.lazy for a NAMED export, with the same chunk-retry as the pages. */
-function lazyNamed<M extends Record<string, any>, K extends keyof M>(load: () => Promise<M>, name: K) {
-  return lazy(() => lazyRetry(() => load().then(m => ({ default: m[name] as React.ComponentType<any> }))));
-}
 
-function lazyRetry<T extends { default: any }>(
-  loader: () => Promise<T>,
-): Promise<T> {
-  return loader().catch((err) => {
-    const key = "chunk_reload_attempted";
-    const attempted = sessionStorage.getItem(key);
-    if (!attempted) {
-      sessionStorage.setItem(key, "1");
-      window.location.reload();
-      return new Promise(() => {});
-    }
-    sessionStorage.removeItem(key);
-    throw err;
-  });
-}
 
 function ToastBridge() {
   const { toast } = useToast();
@@ -451,7 +421,7 @@ function AuthenticatedGettingStarted() {
             <SidebarTrigger data-testid="button-sidebar-toggle" />
             <div className="flex items-center gap-2">
               <button
-                onClick={() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
+                onClick={openCommandPalette}
                 className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border transition-colors hover:bg-accent"
                 style={{ borderColor: "var(--lux-border)", color: "var(--lux-text-secondary)" }}
                 title="Search (⌘K)"
@@ -490,7 +460,7 @@ function AuthenticatedGettingStarted() {
 }
 
 function AuthenticatedLayout() {
-  useEffect(() => { preloadRouteChunks(); }, []);
+  useEffect(() => { preloadSignedInChrome(); preloadRouteChunks(); }, []);
   const style = {
     "--sidebar-width": "16rem",
     "--sidebar-width-icon": "3rem",
@@ -517,7 +487,7 @@ function AuthenticatedLayout() {
             <SidebarTrigger data-testid="button-sidebar-toggle" />
             <div className="flex items-center gap-2">
               <button
-                onClick={() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
+                onClick={openCommandPalette}
                 className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border transition-colors hover:bg-accent"
                 style={{ borderColor: "var(--lux-border)", color: "var(--lux-text-secondary)" }}
                 title="Search (⌘K)"
@@ -643,6 +613,7 @@ function AppContent() {
   if (user.role === "ADMIN") {
     return (
       <Suspense fallback={<LazyFallback />}>
+      <ChromePreloader />
       <AdminSetupGate>
         <Switch>
           {import.meta.env.DEV && (
@@ -660,6 +631,12 @@ function AppContent() {
   }
 
   return <AuthenticatedLayout />;
+}
+
+/** Starts fetching the signed-in chrome chunks the moment we know someone is signed in. */
+function ChromePreloader() {
+  useEffect(() => { preloadSignedInChrome(); }, []);
+  return null;
 }
 
 /** Marks <html data-hydrated> once React has committed — the e2e hydration gate waits for it. */
