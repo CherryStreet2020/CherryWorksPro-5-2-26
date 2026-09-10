@@ -563,6 +563,9 @@ export function registerPortalRoutes(app: Express) {
       .leftJoin(supportCaseTypes, and(eq(supportCases.typeId, supportCaseTypes.id), eq(supportCaseTypes.orgId, p.orgId)))
       .where(and(visibleCaseWhere(req), eq(supportCases.id, String(req.params.id))));
     if (!row) return res.status(404).json({ message: "Support case not found" });
+    // Read watermark taken BEFORE the snapshot is loaded: a reply landing while these queries run is
+    // not in the response, so it must stay unread.
+    const readAt = new Date();
     const [messages, events] = await Promise.all([
       cases.listMessages(p.orgId, row.id, false),
       cases.listEvents(p.orgId, row.id),
@@ -579,8 +582,8 @@ export function registerPortalRoutes(app: Express) {
     }
     const [attachments, watchers, access] = await Promise.all([listAttachments(p.orgId, row.id), cases.listWatchers(p.orgId, row.id), cases.customerCanAccess(db, p.orgId, { id: row.id, clientId: p.client.id, requesterContactId: row.requesterContactId, requesterEmail: row.requesterEmail }, p.contact.id)]);
     // Opening the case is reading it: clear this person's "New" badge.
-    await db.insert(portalCaseReads).values({ orgId: p.orgId, caseId: row.id, contactId: p.contact.id, lastReadAt: new Date() })
-      .onConflictDoUpdate({ target: [portalCaseReads.caseId, portalCaseReads.contactId], set: { lastReadAt: new Date() } }).catch(() => {});
+    await db.insert(portalCaseReads).values({ orgId: p.orgId, caseId: row.id, contactId: p.contact.id, lastReadAt: readAt })
+      .onConflictDoUpdate({ target: [portalCaseReads.caseId, portalCaseReads.contactId], set: { lastReadAt: readAt } }).catch(() => {});
     const { assigneeUserId: _a, requesterContactId, requesterEmail, ...safe } = row;
     return res.json({
       ...safe,
@@ -603,7 +606,7 @@ export function registerPortalRoutes(app: Express) {
       if (!row) return res.status(404).json({ message: "Support case not found" });
       const result = await cases.addMessage(p.orgId, row.id, {
         body, visibility: "CUSTOMER",
-        author: { contactId: p.contact.id, name: `${p.contact.firstName} ${p.contact.lastName}`.trim() },
+        author: { contactId: p.contact.id, email: p.contact.email, name: `${p.contact.firstName} ${p.contact.lastName}`.trim() },
         authorize: authorizeContact(req),
       });
       if (!result) return res.status(404).json({ message: "Support case not found" });

@@ -149,7 +149,7 @@ export async function notifyCaseCreated(c: SupportCase, opts: { openedBy?: { nam
 }
 
 /** Someone posted a customer-visible message. */
-export async function notifyCaseMessage(c: SupportCase, msg: { authorUserId: string | null; authorContactId?: string | null; authorName: string; body: string; visibility: string }): Promise<void> {
+export async function notifyCaseMessage(c: SupportCase, msg: { authorUserId: string | null; authorContactId?: string | null; authorEmail?: string | null; authorName: string; body: string; visibility: string }): Promise<void> {
   if (msg.visibility !== "CUSTOMER") return;
   const ctx = await orgContext(c.orgId);
   if (!ctx) return;
@@ -173,7 +173,8 @@ export async function notifyCaseMessage(c: SupportCase, msg: { authorUserId: str
   }
 
   // The customer's other followers (requester, watchers, reviewers — never the author) hear it too.
-  for (const r of await customerRecipients(c, { contactId: msg.authorContactId ?? null, email: msg.authorContactId ? null : null })) {
+  // Exclude the author by contact id AND by address (a legacy email-only requester has no contact id).
+  for (const r of await customerRecipients(c, { contactId: msg.authorContactId ?? null, email: msg.authorEmail ?? null })) {
     if (!(await stillRecipient(c, r))) continue;
     await safeEmail("case.customer_message→follower", () => sendCaseEmail({
       to: r.email, org, orgName: org.name, caseKey: c.caseKey, subject: c.subject,

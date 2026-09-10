@@ -115,7 +115,7 @@ export async function processInboundEmail(input: {
       try {
         const result = await cases.addMessage(org.id, row.id, {
           body, visibility: "CUSTOMER",
-          author: { contactId: contact!.id, name: authorName },
+          author: { contactId: contact!.id, email: sender.email, name: authorName },
           emailMessageId: input.messageId,
           authorize: (tx, c) => cases.customerCanAccess(tx, org.id, c, contact!.id, { lock: true }).then(r => r.ok && r.role !== "reviewer"),
         });
