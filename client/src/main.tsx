@@ -1,7 +1,6 @@
 import { createRoot, hydrateRoot } from "react-dom/client";
 import { HelmetProvider } from "react-helmet-async";
 import App from "./App";
-import "react-phone-number-input/style.css";
 import "./index.css";
 
 window.addEventListener("error", (event) => {

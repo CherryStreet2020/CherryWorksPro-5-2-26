@@ -11,22 +11,28 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { BrandProvider } from "@/contexts/BrandContext";
 import { ThemeProvider } from "@/lib/theme";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/app-sidebar";
-import { HelpPanel } from "@/components/help-panel";
-import { CherryAssist } from "@/components/cherry-assist";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Sparkles, HelpCircle, Search, AlertTriangle, X as XIcon } from "lucide-react";
 import { useBillingStatus } from "@/hooks/use-billing-status";
-import { VerifyEmailBanner, TrialCountdownBanner } from "@/components/account-banners";
-import { DeletionBanner } from "@/components/deletion-banner";
+
 import { useEntitlement } from "@/lib/entitlements";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { CommandPalette } from "@/components/command-palette";
-import { NotificationBell } from "@/components/notification-bell";
-import { BrandSwitcher } from "@/components/BrandSwitcher";
-import { AdminSetupGate } from "@/components/admin-setup-gate";
+// Signed-in chrome is loaded only once someone is signed in: an anonymous visitor on a
+// marketing page must not download the sidebar, the help articles and their markdown
+// renderer, Cherry Assist, the command palette or the notification bell. Each is a
+// separate chunk fetched inside the authenticated layouts (see lazyNamed).
+const AppSidebar = lazyNamed(() => import("@/components/app-sidebar"), "AppSidebar");
+const HelpPanel = lazyNamed(() => import("@/components/help-panel"), "HelpPanel");
+const CherryAssist = lazyNamed(() => import("@/components/cherry-assist"), "CherryAssist");
+const CommandPalette = lazyNamed(() => import("@/components/command-palette"), "CommandPalette");
+const NotificationBell = lazyNamed(() => import("@/components/notification-bell"), "NotificationBell");
+const BrandSwitcher = lazyNamed(() => import("@/components/BrandSwitcher"), "BrandSwitcher");
+const AdminSetupGate = lazyNamed(() => import("@/components/admin-setup-gate"), "AdminSetupGate");
+const VerifyEmailBanner = lazyNamed(() => import("@/components/account-banners"), "VerifyEmailBanner");
+const TrialCountdownBanner = lazyNamed(() => import("@/components/account-banners"), "TrialCountdownBanner");
+const DeletionBanner = lazyNamed(() => import("@/components/deletion-banner"), "DeletionBanner");
 import { ScrollToTop } from "@/components/scroll-to-top";
 import { ScrollToTopButton } from "@/components/marketing/scroll-to-top-button";
 import { openHelpPanel } from "@/lib/help-context";
@@ -34,6 +40,11 @@ import { NetworkStatusProvider } from "@/components/network-status";
 import "@/lib/cherry-theme.css";
 
 if (typeof window !== "undefined") ensureCSRFToken();
+
+/** React.lazy for a NAMED export, with the same chunk-retry as the pages. */
+function lazyNamed<M extends Record<string, any>, K extends keyof M>(load: () => Promise<M>, name: K) {
+  return lazy(() => lazyRetry(() => load().then(m => ({ default: m[name] as React.ComponentType<any> }))));
+}
 
 function lazyRetry<T extends { default: any }>(
   loader: () => Promise<T>,
@@ -426,11 +437,13 @@ function AuthenticatedGettingStarted() {
     <div className="cherry-app">
     <SidebarProvider style={style as React.CSSProperties}>
       <div className="flex h-screen w-full" style={{ background: "var(--lux-bg)" }}>
-        <AppSidebar />
+        <Suspense fallback={null}><AppSidebar /></Suspense>
         <div className="flex flex-col flex-1 min-w-0">
-          <DeletionBanner />
-          <VerifyEmailBanner />
-          <TrialCountdownBanner />
+          <Suspense fallback={null}>
+            <DeletionBanner />
+            <VerifyEmailBanner />
+            <TrialCountdownBanner />
+          </Suspense>
           <header
             className="flex items-center justify-between px-4 py-2 border-b flex-shrink-0"
             style={{ background: "var(--lux-surface)", borderColor: "var(--lux-border)" }}
@@ -447,8 +460,10 @@ function AuthenticatedGettingStarted() {
                 <span className="hidden md:inline">Search</span>
                 <kbd className="hidden md:inline-flex h-5 items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium">⌘K</kbd>
               </button>
-              <BrandSwitcher />
-              <NotificationBell />
+              <Suspense fallback={null}>
+                <BrandSwitcher />
+                <NotificationBell />
+              </Suspense>
               <button
                 onClick={openHelpPanel}
                 className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all hover:scale-110"
@@ -464,9 +479,11 @@ function AuthenticatedGettingStarted() {
           </main>
         </div>
       </div>
-      <HelpPanel />
-      <CherryAssist />
-      <CommandPalette />
+      <Suspense fallback={null}>
+        <HelpPanel />
+        <CherryAssist />
+        <CommandPalette />
+      </Suspense>
     </SidebarProvider>
     </div>
   );
@@ -483,11 +500,13 @@ function AuthenticatedLayout() {
     <div className="cherry-app">
     <SidebarProvider style={style as React.CSSProperties}>
       <div className="flex h-screen w-full" style={{ background: "var(--lux-bg)" }}>
-        <AppSidebar />
+        <Suspense fallback={null}><AppSidebar /></Suspense>
         <div className="flex flex-col flex-1 min-w-0">
-          <DeletionBanner />
-          <VerifyEmailBanner />
-          <TrialCountdownBanner />
+          <Suspense fallback={null}>
+            <DeletionBanner />
+            <VerifyEmailBanner />
+            <TrialCountdownBanner />
+          </Suspense>
           <header
             className="flex items-center justify-between px-4 py-2 border-b flex-shrink-0"
             style={{
@@ -508,8 +527,10 @@ function AuthenticatedLayout() {
                 <span className="hidden md:inline">Search</span>
                 <kbd className="hidden md:inline-flex h-5 items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium">⌘K</kbd>
               </button>
-              <BrandSwitcher />
-              <NotificationBell />
+              <Suspense fallback={null}>
+                <BrandSwitcher />
+                <NotificationBell />
+              </Suspense>
               <button
                 onClick={openHelpPanel}
                 className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all hover:scale-110"
@@ -532,9 +553,11 @@ function AuthenticatedLayout() {
           </main>
         </div>
       </div>
-          <HelpPanel />
-          <CherryAssist />
-          <CommandPalette />
+          <Suspense fallback={null}>
+            <HelpPanel />
+            <CherryAssist />
+            <CommandPalette />
+          </Suspense>
     </SidebarProvider>
     </div>
   );
@@ -619,6 +642,7 @@ function AppContent() {
 
   if (user.role === "ADMIN") {
     return (
+      <Suspense fallback={<LazyFallback />}>
       <AdminSetupGate>
         <Switch>
           {import.meta.env.DEV && (
@@ -631,6 +655,7 @@ function AppContent() {
           <Route><AuthenticatedLayout /></Route>
         </Switch>
       </AdminSetupGate>
+      </Suspense>
     );
   }
 
