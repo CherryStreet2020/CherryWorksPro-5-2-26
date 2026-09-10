@@ -1409,6 +1409,18 @@ export const schemaBackfills = pgTable("schema_backfills", {
   doneAt: timestamp("done_at").defaultNow().notNull(),
 });
 
+/** When a contact last opened a case in the Help Center — drives the per-person "New" badge and unread count. */
+export const portalCaseReads = pgTable("portal_case_reads", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id", { length: 36 }).notNull().references(() => orgs.id),
+  caseId: varchar("case_id", { length: 36 }).notNull().references(() => supportCases.id, { onDelete: "cascade" }),
+  contactId: varchar("contact_id", { length: 36 }).notNull().references(() => clientContacts.id, { onDelete: "cascade" }),
+  lastReadAt: timestamp("last_read_at").defaultNow().notNull(),
+}, (table) => ({
+  caseContactUnique: uniqueIndex("ux_portal_case_reads_case_contact").on(table.caseId, table.contactId),
+  contactIdx: index("idx_portal_case_reads_contact").on(table.orgId, table.contactId),
+}));
+
 export const portalBlockedEmails = pgTable("portal_blocked_emails", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id", { length: 36 }).notNull().references(() => orgs.id),

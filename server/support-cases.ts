@@ -716,7 +716,7 @@ export function labelStatus(s: string): string {
 export interface AddMessageInput {
   body: string;
   visibility: "CUSTOMER" | "INTERNAL";
-  author: { userId?: string | null; contactId?: string | null; name: string };
+  author: { userId?: string | null; contactId?: string | null; email?: string | null; name: string };
   /** Customer callers: re-evaluated under the case row lock (access revoked while the reply was in flight → refused). */
   authorize?: (tx: DbOrTx, c: SupportCase) => Promise<boolean>;
   emailMessageId?: string | null;
@@ -772,7 +772,7 @@ export async function addMessage(orgId: string, caseId: string, input: AddMessag
     return { msg, row };
   });
   if (!committed) return undefined;
-  void notifyCaseMessage(committed.row, { authorUserId: input.author.userId ?? null, authorName: input.author.name, body: input.body, visibility: input.visibility })
+  void notifyCaseMessage(committed.row, { authorUserId: input.author.userId ?? null, authorContactId: input.author.contactId ?? null, authorEmail: input.author.email ?? null, authorName: input.author.name, body: input.body, visibility: input.visibility })
     .catch(err => console.warn("[support] notifyCaseMessage failed", (err as Error)?.message));
   return { message: committed.msg, case: committed.row };
 }
