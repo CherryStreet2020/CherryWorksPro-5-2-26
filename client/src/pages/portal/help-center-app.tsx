@@ -23,7 +23,7 @@ const base = (slug: string) => `/help/${slug}`;
 
 type SlaState = "none" | "ok" | "warning" | "breached" | "paused" | "met";
 interface Sla { firstResponse: SlaState; resolution: SlaState; nextDueAt: string | null; label: string }
-interface CaseRow { id: string; caseKey: string; subject: string; status: CaseStatus; priority: CasePriority; typeName: string | null; requesterName: string | null; requesterContactId: string | null; assigneeName: string | null; sla: Sla; createdAt: string; updatedAt: string; mine: boolean; awaitingYou: boolean; hasNewReply: boolean; unread: boolean; resolvedAt: string | null }
+interface CaseRow { id: string; caseKey: string; subject: string; status: CaseStatus; priority: CasePriority; typeName: string | null; requesterName: string | null; requesterContactId: string | null; assigneeName: string | null; sla: Sla; firstResponseAt: string | null; createdAt: string; updatedAt: string; mine: boolean; awaitingYou: boolean; hasNewReply: boolean; unread: boolean; resolvedAt: string | null }
 interface CaseList { cases: CaseRow[]; counts: { open: number; waitingOnYou: number; blocked: number; breaching: number; resolved: number; all: number; unread: number; byPriority: Record<string, number> }; paging: { status: string; limit: number; offset: number; hasMore: boolean }; scope: "client" | "own" }
 type ListView = "open" | "waiting" | "blocked" | "breaching" | "resolved" | "all";
 const LIST_VIEWS: { key: ListView; label: string; count: keyof CaseList["counts"] }[] = [
@@ -56,9 +56,11 @@ function PriorityChip({ priority }: { priority: CasePriority }) {
   return <span style={{ color: PRIORITY_COLOR[priority], background: PRIORITY_BG[priority], fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 999, whiteSpace: "nowrap" }} data-testid={`portal-priority-chip-${priority}`}>{PRIORITY_LABEL[priority]}</span>;
 }
 /** Same service-level chip the firm sees on its list: the targets are their commitment to the customer. */
-function SlaChip({ sla }: { sla?: Sla }) {
+function SlaChip({ sla, responded }: { sla?: Sla; responded: boolean }) {
   if (!sla || !sla.label) return <span style={{ fontSize: 12, color: T.muted }}>—</span>;
-  const active = sla.firstResponse === "met" || sla.firstResponse === "none" ? sla.resolution : sla.firstResponse;
+  // The label is chosen by milestone completion (a late first response is still done), so the
+  // chip's state must be too — otherwise a healthy resolution target would wear breach styling.
+  const active = responded || sla.firstResponse === "none" ? sla.resolution : sla.firstResponse;
   const fg = active === "breached" ? "#ff8b8b" : active === "warning" ? T.warn : active === "paused" ? T.muted : T.text2;
   const bg = active === "breached" ? "rgba(207,51,57,0.18)" : active === "warning" ? T.warnSoft : "transparent";
   return <span style={{ color: fg, background: bg, fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 999, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }} data-testid={`portal-sla-${active}`}>{sla.label.replace("waiting on customer", "waiting on you")}</span>;
@@ -224,7 +226,7 @@ function CasesList({ slug, me }: { slug: string; me: Me }) {
                     <td style={td}><PriorityChip priority={r.priority} /></td>
                     <td style={td}><Chip status={r.status} /></td>
                     <td style={{ ...td, fontSize: 13, whiteSpace: "nowrap", color: r.assigneeName ? T.text2 : T.muted }}>{r.assigneeName ?? "Not yet picked up"}</td>
-                    <td style={td}><SlaChip sla={r.sla} /></td>
+                    <td style={td}><SlaChip sla={r.sla} responded={!!r.firstResponseAt} /></td>
                     <td style={{ ...td, fontSize: 12, whiteSpace: "nowrap", color: T.muted }}>{relativeTime(r.updatedAt)}</td>
                   </tr>
                 ))}
@@ -798,7 +800,7 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
         <section style={sideCard} data-testid="portal-sla">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
             <p style={{ ...eyebrow, margin: 0 }}>Service level</p>
-            <SlaChip sla={c.sla} />
+            <SlaChip sla={c.sla} responded={!!c.firstResponseAt} />
           </div>
           <dl style={{ margin: 0, display: "grid", gap: 6 }}>
             <Row k="First response" v={c.firstResponseAt ? `${c.sla.firstResponse === "breached" ? "late" : "met"} ${relativeTime(c.firstResponseAt)}` : c.firstResponseDueAt ? `due ${when(c.firstResponseDueAt)}` : "no target"} />
