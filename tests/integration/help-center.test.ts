@@ -174,6 +174,16 @@ describe("Help Center: approved domains, self-registration, Customer Admin, bill
     expect(byReq.cases.map((c: any) => c.id)).toEqual([memberCaseId]);
     const mineOnly = await (await portal("GET", "/cases?mine=1", adminCookie)).json();
     expect(mineOnly.cases.map((c: any) => c.id)).toEqual([adminCaseId]);
+    // The firm's list, minus hours: views, search, assignee and the service-level state.
+    for (const row of all.cases) { expect(row).toHaveProperty("assigneeName"); expect(row.sla).toHaveProperty("firstResponse"); expect(row).not.toHaveProperty("minutesLogged"); }
+    expect(all.counts).toEqual(expect.objectContaining({ open: expect.any(Number), waitingOnYou: expect.any(Number), blocked: expect.any(Number), breaching: expect.any(Number), resolved: expect.any(Number), all: expect.any(Number) }));
+    const search = await (await portal("GET", "/cases?view=all&q=Costing", adminCookie)).json();
+    expect(search.cases.map((c: any) => c.id)).toEqual([memberCaseId]);
+    const waiting = await (await portal("GET", "/cases?view=waiting", adminCookie)).json();
+    expect(waiting.cases.every((c: any) => c.status === "WAITING_ON_CUSTOMER")).toBe(true);
+    const everything = await (await portal("GET", "/cases?view=all", adminCookie)).json();
+    expect(everything.cases.length).toBe(everything.counts.all);
+    expect((await (await portal("GET", "/cases?view=nonsense", adminCookie)).json()).paging.status).toBe("open");
     expect((await portal("GET", `/cases/${otherClientCaseId}`, adminCookie)).status).toBe(404);
     expect((await portal("GET", `/cases/${adminCaseId}`, memberCookie)).status).toBe(404);
   });
@@ -193,6 +203,21 @@ describe("Help Center: approved domains, self-registration, Customer Admin, bill
 
     const detail = await (await api("GET", `/api/support/cases/${memberCaseId}`, admin)).json();
     expect(detail.status).toBe("WAITING_ON_SUPPORT");
+    // The customer's view of the same case carries the firm's service-level and timeline fields, named
+    // assignment events, and never a user id or an internal note.
+    const portalView = await (await portal("GET", `/cases/${memberCaseId}`, adminCookie)).json();
+    expect(portalView.sla).toHaveProperty("resolution");
+    for (const k of ["firstResponseDueAt", "resolutionDueAt", "lastCustomerMessageAt", "lastAgentMessageAt", "closedAt"]) expect(portalView).toHaveProperty(k);
+    expect(portalView).not.toHaveProperty("assigneeUserId");
+    expect(portalView.events.some((e: any) => e.kind === "priority" && e.toValue === "URGENT" && e.actorName === "Dana Admin")).toBe(true);
+    expect(portalView.events.every((e: any) => ["status", "created", "watcher", "priority", "assignee"].includes(e.kind))).toBe(true);
+    expect(JSON.stringify(portalView.events).includes(memberContactId)).toBe(false);
+    // Reading the case clears NEW; a later priority change (now visible on the timeline) sets it again.
+    let row = (await (await portal("GET", "/cases?view=all", adminCookie)).json()).cases.find((c: any) => c.id === memberCaseId);
+    expect(row.unread).toBe(false);
+    expect((await api("PATCH", `/api/support/cases/${memberCaseId}`, admin, { priority: "LOW" })).ok).toBe(true);
+    row = (await (await portal("GET", "/cases?view=all", adminCookie)).json()).cases.find((c: any) => c.id === memberCaseId);
+    expect(row.unread).toBe(true);
     expect(detail.resolvedAt).toBeNull(); expect(detail.closedAt).toBeNull();
     const events = detail.events as any[];
     const statusEvents = events.filter(e => e.kind === "status");

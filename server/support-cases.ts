@@ -315,6 +315,10 @@ async function writeEvent(orgId: string, caseId: string, kind: string, from: str
   await tx.insert(supportCaseEvents).values({
     orgId, caseId, kind, fromValue: from, toValue: to,
     actorUserId: actor?.userId ?? null, actorName: actor?.name ?? null,
+    // Written from the app clock like every other case timestamp (updatedAt, message
+    // times, the customer's read watermark), so "new activity" comparisons never mix the
+    // database's now() with app-written times.
+    createdAt: new Date(),
   });
 }
 
