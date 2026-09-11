@@ -369,12 +369,19 @@ export default function SupportCaseDetailPage() {
                 value={body}
                 onChange={e => setBody(e.target.value)}
                 rows={4}
-                placeholder={visibility === "CUSTOMER" ? "Write to the customer… (this will be visible on the portal and in email once those ship)" : "Notes for the team only — the customer never sees this"}
+                placeholder={visibility === "CUSTOMER" ? "Write to the customer — they see this in the Help Center and by email" : "Notes for the team only — the customer never sees this"}
                 style={{ ...fieldStyle, ...(visibility === "INTERNAL" ? { background: "rgba(184,148,46,0.06)" } : {}) }}
                 data-testid="input-message-body"
               />
               <div className="flex justify-end">
-                <Button type="submit" className="text-white" disabled={!body.trim() || post.isPending} style={{ background: visibility === "INTERNAL" ? "var(--lux-text)" : "var(--gradient-brand)" }} data-testid="button-post-message">
+                <Button
+                  type="submit"
+                  disabled={!body.trim() || post.isPending}
+                  // Internal notes are amber like their label; the customer reply keeps the brand gradient.
+                  // (The text-colour token was used as a background here — near-white under white text in dark mode.)
+                  style={visibility === "INTERNAL" ? { background: "#b8942e", color: "#0b0f14" } : { background: "var(--gradient-brand)", color: "#fff" }}
+                  data-testid="button-post-message"
+                >
                   <Send className="w-4 h-4 mr-2" /> {visibility === "INTERNAL" ? "Add note" : "Send reply"}
                 </Button>
               </div>
