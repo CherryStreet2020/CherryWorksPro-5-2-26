@@ -21,12 +21,23 @@ import {
 const SURFACE = "help" as const;
 const base = (slug: string) => `/help/${slug}`;
 
-interface CaseRow { id: string; caseKey: string; subject: string; status: CaseStatus; priority: CasePriority; typeName: string | null; requesterName: string | null; requesterContactId: string | null; createdAt: string; updatedAt: string; mine: boolean; awaitingYou: boolean; hasNewReply: boolean; unread: boolean; resolvedAt: string | null }
-interface CaseList { cases: CaseRow[]; counts: { open: number; waitingOnYou: number; resolved: number; unread: number; byPriority: Record<string, number> }; paging: { status: string; limit: number; offset: number; hasMore: boolean }; scope: "client" | "own" }
+type SlaState = "none" | "ok" | "warning" | "breached" | "paused" | "met";
+interface Sla { firstResponse: SlaState; resolution: SlaState; nextDueAt: string | null; label: string }
+interface CaseRow { id: string; caseKey: string; subject: string; status: CaseStatus; priority: CasePriority; typeName: string | null; requesterName: string | null; requesterContactId: string | null; assigneeName: string | null; sla: Sla; createdAt: string; updatedAt: string; mine: boolean; awaitingYou: boolean; hasNewReply: boolean; unread: boolean; resolvedAt: string | null }
+interface CaseList { cases: CaseRow[]; counts: { open: number; waitingOnYou: number; blocked: number; breaching: number; resolved: number; all: number; unread: number; byPriority: Record<string, number> }; paging: { status: string; limit: number; offset: number; hasMore: boolean }; scope: "client" | "own" }
+type ListView = "open" | "waiting" | "blocked" | "breaching" | "resolved" | "all";
+const LIST_VIEWS: { key: ListView; label: string; count: keyof CaseList["counts"] }[] = [
+  { key: "open", label: "All open", count: "open" },
+  { key: "waiting", label: "Waiting on you", count: "waitingOnYou" },
+  { key: "blocked", label: "Blocked", count: "blocked" },
+  { key: "breaching", label: "Breaching soon", count: "breaching" },
+  { key: "resolved", label: "Resolved", count: "resolved" },
+  { key: "all", label: "All", count: "all" },
+];
 interface Attachment { id: string; filename: string; mimeType: string; size: number; isImage: boolean; url: string; createdAt: string; clientFileId?: string | null }
 interface Watcher { id: string; contactId: string; firstName: string; lastName: string; email: string | null; role: "watcher" | "reviewer"; addedAt: string }
 interface Colleague { id: string; firstName: string; lastName: string; email: string | null }
-interface CaseDetail { id: string; caseKey: string; subject: string; updatedAt: string; description: string | null; status: CaseStatus; priority: CasePriority; typeName: string | null; requesterName: string | null; assigneeName: string | null; createdAt: string; firstResponseAt: string | null; resolvedAt: string | null; intake: SupportCaseIntake | null; isRequester: boolean; myRole: "requester" | "admin" | "watcher" | "reviewer" | null; watchers: Watcher[]; attachments: Attachment[]; messages: { id: string; authorName: string; fromTeam: boolean; body: string; createdAt: string }[]; events: { id: string; kind: string; fromValue: string | null; toValue: string | null; createdAt: string }[]; hours: { minutes: number; billableMinutes: number } | null }
+interface CaseDetail { id: string; caseKey: string; subject: string; updatedAt: string; description: string | null; status: CaseStatus; priority: CasePriority; typeName: string | null; requesterName: string | null; assigneeName: string | null; createdAt: string; firstResponseAt: string | null; firstResponseDueAt: string | null; resolutionDueAt: string | null; slaPausedAt: string | null; lastCustomerMessageAt: string | null; lastAgentMessageAt: string | null; resolvedAt: string | null; closedAt: string | null; sla: Sla; intake: SupportCaseIntake | null; isRequester: boolean; myRole: "requester" | "admin" | "watcher" | "reviewer" | null; watchers: Watcher[]; attachments: Attachment[]; messages: { id: string; authorName: string; fromTeam: boolean; body: string; createdAt: string }[]; events: { id: string; kind: string; fromValue: string | null; toValue: string | null; actorName: string | null; createdAt: string }[]; hours: { minutes: number; billableMinutes: number } | null }
 interface CreateResult { id: string; caseKey: string; replay?: boolean; attachments?: Attachment[]; attachmentErrors?: { filename: string; clientFileId: string | null; error: string }[] }
 interface PickedFile { clientFileId: string; file: File; done: boolean; error: string | null }
 const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
@@ -40,6 +51,27 @@ interface TeamMember { id: string; firstName: string; lastName: string; email: s
 interface Team { contacts: TeamMember[]; approvedDomains: string[] }
 
 const PRIORITY_COLOR: Record<CasePriority, string> = { LOW: T.muted, MEDIUM: T.text2, HIGH: T.warn, URGENT: T.accent, BLOCKER: T.accent };
+const PRIORITY_BG: Record<CasePriority, string> = { LOW: T.surface2, MEDIUM: T.surface2, HIGH: T.warnSoft, URGENT: T.accentSoft, BLOCKER: T.accentSoft };
+function PriorityChip({ priority }: { priority: CasePriority }) {
+  return <span style={{ color: PRIORITY_COLOR[priority], background: PRIORITY_BG[priority], fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 999, whiteSpace: "nowrap" }} data-testid={`portal-priority-chip-${priority}`}>{PRIORITY_LABEL[priority]}</span>;
+}
+/** Same service-level chip the firm sees on its list: the targets are their commitment to the customer. */
+function SlaChip({ sla }: { sla?: Sla }) {
+  if (!sla || !sla.label) return <span style={{ fontSize: 12, color: T.muted }}>—</span>;
+  const active = sla.firstResponse === "met" || sla.firstResponse === "none" ? sla.resolution : sla.firstResponse;
+  const fg = active === "breached" ? "#ff8b8b" : active === "warning" ? T.warn : active === "paused" ? T.muted : T.text2;
+  const bg = active === "breached" ? "rgba(207,51,57,0.18)" : active === "warning" ? T.warnSoft : "transparent";
+  return <span style={{ color: fg, background: bg, fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 999, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }} data-testid={`portal-sla-${active}`}>{sla.label.replace("waiting on customer", "waiting on you")}</span>;
+}
+const when = (iso: string) => new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+function Row({ k, v }: { k: string; v: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13 }}>
+      <dt style={{ color: T.muted }}>{k}</dt>
+      <dd style={{ margin: 0, textAlign: "right", color: T.text2 }}>{v}</dd>
+    </div>
+  );
+}
 
 // ─── First sign-in: the self-registered contact tells us their name ─────────
 function NameGate({ slug, me, children }: { slug: string; me: Me; children: React.ReactNode }) {
@@ -78,53 +110,79 @@ function CasesPage({ slug }: { slug: string }) {
 
 function CasesList({ slug, me }: { slug: string; me: Me }) {
   const isAdmin = me.contact.portalRole === "admin";
-  const [showResolved, setShowResolved] = useState(false);
+  const [, navigate] = useLocation();
+  const [view, setView] = useState<ListView>("open");
   const [priority, setPriority] = useState<string>("");
   const [requester, setRequester] = useState<string>("");
   const [onlyMine, setOnlyMine] = useState(false);
+  const [q, setQ] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
+  useEffect(() => { const t = setTimeout(() => setDebouncedQ(q.trim()), 250); return () => clearTimeout(t); }, [q]);
   const PAGE = 100;
   const qs = new URLSearchParams();
-  qs.set("status", showResolved ? "all" : "open");
+  qs.set("view", view);
   qs.set("limit", String(PAGE));
   if (priority) qs.set("priority", priority);
   if (requester) qs.set("requester", requester);
   if (onlyMine) qs.set("mine", "1");
-  const q = qs.toString();
+  if (debouncedQ) qs.set("q", debouncedQ);
+  const query = qs.toString();
   // Pages accumulate by offset until the server says there is no more — an old open case
   // is always reachable, however many newer ones sit above it.
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery<CaseList>({
-    queryKey: ["help-cases", slug, me.contact.id, me.contact.portalRole, q],
-    queryFn: ({ pageParam }) => api("GET", `/api/portal/${slug}/cases?${q}&offset=${pageParam as number}`),
+    queryKey: ["help-cases", slug, me.contact.id, me.contact.portalRole, query],
+    queryFn: ({ pageParam }) => api("GET", `/api/portal/${slug}/cases?${query}&offset=${pageParam as number}`),
     initialPageParam: 0,
     getNextPageParam: (last) => (last.paging.hasMore ? last.paging.offset + last.paging.limit : undefined),
   });
-  const all = data?.pages.flatMap(p => p.cases) ?? [];
+  const rows = data?.pages.flatMap(p => p.cases) ?? []; // every filter is applied by the server before paging
   const counts = data?.pages[0]?.counts;
-  const rows = all; // every filter (priority, requester, mine) is applied by the server before paging
   // Requester options come from the company's people (unfiltered), so the selector stays
   // usable — and clearable — after someone is picked.
   const { data: team } = useQuery<Team>({ queryKey: ["help-team", slug, me.contact.id, me.contact.portalRole], queryFn: () => api("GET", `/api/portal/${slug}/team`), enabled: isAdmin });
   const requesters: [string, string][] = (team?.contacts ?? []).map(c => [c.id, `${c.firstName} ${c.lastName}`.trim() || c.email || c.id]);
-  const chip = (on: boolean, text: string, onClick: () => void, testid: string) => (
-    <button type="button" onClick={onClick} style={{ ...btnGhost, padding: "6px 12px", fontSize: 13, borderColor: on ? T.accent : T.line, color: on ? T.text : T.text2, background: on ? T.accentSoft : "transparent" }} data-testid={testid}>{text}</button>
+  const pill = (on: boolean, text: string, onClick: () => void, testid: string, count?: number) => (
+    <button type="button" role="tab" aria-selected={on} onClick={onClick} style={{ ...btnGhost, padding: "6px 12px", fontSize: 13, borderColor: on ? T.accent : T.line, color: on ? T.text : T.text2, background: on ? T.accentSoft : "transparent", display: "inline-flex", gap: 6, alignItems: "center" }} data-testid={testid}>
+      {text}{count !== undefined && <span style={{ opacity: 0.7, fontVariantNumeric: "tabular-nums" }}>{count}</span>}
+    </button>
   );
+  const th: React.CSSProperties = { textAlign: "left", fontSize: 11, color: T.muted, letterSpacing: ".08em", textTransform: "uppercase", padding: "10px 12px", borderBottom: `1px solid ${T.line}`, fontWeight: 700, whiteSpace: "nowrap" };
+  const td: React.CSSProperties = { padding: "12px", borderBottom: `1px solid ${T.line}`, fontSize: 14, verticalAlign: "top" };
   return (
-    <Shell surface={SURFACE} slug={slug} me={me} active="cases">
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
+    <Shell surface={SURFACE} slug={slug} me={me} active="cases" wide>
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 18 }}>
         <div>
           <h1 style={{ ...display, fontSize: 30, margin: 0, lineHeight: 1.1 }} data-testid="portal-title">{isAdmin ? `Support cases at ${me.client.name}` : "Your support cases"}</h1>
           <p style={{ margin: "6px 0 0", color: T.muted, fontSize: 13 }}>
             {isAdmin ? "Customer admin" : "Signed in as"} {me.contact.firstName} {me.contact.lastName}
-            {counts ? ` · ${counts.open} open${counts.waitingOnYou ? ` · ${counts.waitingOnYou} waiting on ${isAdmin ? "your team" : "you"}` : ""}${counts.unread ? ` · ${counts.unread} with new activity` : ""}` : ""}
+            {isAdmin ? " · every case your company has with " + me.orgName : ""}
           </p>
         </div>
-        <Link href={`${base(slug)}/cases/new`} style={{ ...btnPrimary, textDecoration: "none", display: "inline-block" }} data-testid="portal-new-case">New support case</Link>
+        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+          {counts && (
+            <div style={{ display: "flex", gap: 18 }} data-testid="portal-counts">
+              {([["open", counts.open, "Open"], ["waiting", counts.waitingOnYou, "Waiting on you"], ["unread", counts.unread, "New activity"]] as const).map(([k, n, label]) => (
+                <div key={k} style={{ textAlign: "center" }}>
+                  <p style={{ margin: 0, fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums" }} data-testid={`portal-count-${k}`}>{n}</p>
+                  <p style={{ margin: 0, fontSize: 10, color: T.muted, letterSpacing: ".1em", textTransform: "uppercase", fontWeight: 700 }}>{label}</p>
+                </div>
+              ))}
+            </div>
+          )}
+          <Link href={`${base(slug)}/cases/new`} style={{ ...btnPrimary, textDecoration: "none", display: "inline-block" }} data-testid="portal-new-case">New support case</Link>
+        </div>
       </div>
 
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <div role="tablist" aria-label="Case views" style={{ display: "flex", gap: 6, flexWrap: "wrap" }} data-testid="portal-views">
+          {LIST_VIEWS.map(v => pill(view === v.key, v.label, () => setView(v.key), `portal-view-${v.key}`, counts?.[v.count] as number | undefined))}
+        </div>
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search key, subject, requester" style={{ ...field, width: 260, padding: "8px 12px", fontSize: 13 }} aria-label="Search cases" data-testid="portal-search" />
+      </div>
       {isAdmin && counts && (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }} data-testid="portal-admin-filters">
-          {[...CASE_PRIORITY_ORDER].reverse().map(p => chip(priority === p, `${PRIORITY_LABEL[p]}${counts.byPriority[p] ? ` · ${counts.byPriority[p]}` : ""}`, () => setPriority(priority === p ? "" : p), `portal-filter-priority-${p}`))}
-          {chip(onlyMine, "Mine", () => setOnlyMine(v => !v), "portal-filter-mine")}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }} data-testid="portal-admin-filters">
+          {[...CASE_PRIORITY_ORDER].reverse().map(p => pill(priority === p, PRIORITY_LABEL[p], () => setPriority(priority === p ? "" : p), `portal-filter-priority-${p}`, counts.byPriority[p] || undefined))}
+          {pill(onlyMine, "Mine", () => setOnlyMine(v => !v), "portal-filter-mine")}
           {requesters.length > 1 && (
             <select value={requester} onChange={e => setRequester(e.target.value)} style={{ ...field, width: "auto", padding: "6px 10px", fontSize: 13 }} aria-label="Requester" data-testid="portal-filter-requester">
               <option value="">Everyone</option>
@@ -134,41 +192,52 @@ function CasesList({ slug, me }: { slug: string; me: Me }) {
         </div>
       )}
 
-      {isLoading ? (
-        <p style={{ color: T.muted }}>Loading…</p>
-      ) : rows.length === 0 ? (
-        <div style={{ ...card, textAlign: "center", padding: "40px 20px" }}>
-          <p style={{ margin: 0, fontWeight: 600 }}>{showResolved ? "No cases yet" : "Nothing open right now"}</p>
-          <p style={{ margin: "6px 0 0", color: T.text2, fontSize: 14 }}>When you need something, open a case and we'll get right on it.</p>
-        </div>
-      ) : (
-        <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 10 }} data-testid="portal-case-list">
-          {rows.map(r => (
-            <li key={r.id}>
-              <Link href={`${base(slug)}/cases/${r.id}`} style={{ textDecoration: "none", color: "inherit" }}>
-                <div style={{ ...card, padding: "14px 16px", display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 14, alignItems: "center", borderColor: r.awaitingYou ? T.warn : T.line }} data-testid={`portal-case-${r.caseKey}`}>
-                  <span style={{ ...mono, fontSize: 12, color: T.accent, background: T.surface2, padding: "3px 8px", borderRadius: 6, whiteSpace: "nowrap" }}>{r.caseKey}</span>
-                  <div style={{ minWidth: 0 }}>
-                    <p style={{ margin: 0, fontWeight: 500, display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.subject}</span>
-                      {r.unread && <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".04em", color: "#fff", background: T.accent, padding: "2px 7px", borderRadius: 999, flexShrink: 0 }} data-testid="portal-unread">NEW</span>}
-                    </p>
-                    <p style={{ margin: "3px 0 0", fontSize: 12, color: T.muted }}>
-                      {isAdmin && <span style={{ color: PRIORITY_COLOR[r.priority], fontWeight: 600 }}>{PRIORITY_LABEL[r.priority]} · </span>}
-                      {r.requesterName ?? ""}{r.typeName ? ` · ${r.typeName}` : ""} · updated {relativeTime(r.updatedAt)}
-                    </p>
-                  </div>
-                  <Chip status={r.status} />
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div style={{ marginTop: 16, display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <button style={btnGhost} onClick={() => setShowResolved(v => !v)} data-testid="portal-toggle-resolved">{showResolved ? "Hide resolved" : `Show resolved${counts ? ` (${counts.resolved})` : ""}`}</button>
-        {hasNextPage && <button style={btnGhost} onClick={() => fetchNextPage()} disabled={isFetchingNextPage} data-testid="portal-load-more">{isFetchingNextPage ? "Loading…" : "Show more"}</button>}
+      <div style={{ ...card, padding: 0, overflow: "hidden" }}>
+        {isLoading ? (
+          <p style={{ color: T.muted, padding: 20, margin: 0 }}>Loading…</p>
+        ) : rows.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "40px 20px" }} data-testid="portal-case-list">
+            <p style={{ margin: 0, fontWeight: 600 }}>{debouncedQ ? "No cases match that search" : view === "open" ? "Nothing open right now" : "No cases in this view"}</p>
+            <p style={{ margin: "6px 0 0", color: T.text2, fontSize: 14 }}>When you need something, open a case and we'll get right on it.</p>
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }} data-testid="portal-case-list">
+              <thead>
+                <tr style={{ background: T.surface2 }}>
+                  <th style={th}>Key</th><th style={th}>Subject</th><th style={th}>Priority</th><th style={th}>Status</th><th style={th}>Assignee</th><th style={th}>Service level</th><th style={th}>Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(r => (
+                  <tr key={r.id} onClick={() => navigate(`${base(slug)}/cases/${r.id}`)} style={{ cursor: "pointer", borderLeft: r.awaitingYou ? `3px solid ${T.warn}` : "3px solid transparent" }}
+                    onMouseEnter={e => (e.currentTarget.style.background = T.surface2)} onMouseLeave={e => (e.currentTarget.style.background = "")}
+                    data-testid={`portal-case-${r.caseKey}`}>
+                    <td style={{ ...td, whiteSpace: "nowrap" }}><span style={{ ...mono, fontSize: 12, color: T.accent }}>{r.caseKey}</span></td>
+                    <td style={{ ...td, minWidth: 260 }}>
+                      <p style={{ margin: 0, fontWeight: 500, display: "flex", alignItems: "center", gap: 8 }}>
+                        <span>{r.subject}</span>
+                        {r.unread && <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".04em", color: "#fff", background: T.accent, padding: "2px 7px", borderRadius: 999, flexShrink: 0 }} data-testid="portal-unread">NEW</span>}
+                      </p>
+                      <p style={{ margin: "3px 0 0", fontSize: 12, color: T.muted }}>{r.requesterName ?? ""}{r.typeName ? `${r.requesterName ? " · " : ""}${r.typeName}` : ""}</p>
+                    </td>
+                    <td style={td}><PriorityChip priority={r.priority} /></td>
+                    <td style={td}><Chip status={r.status} /></td>
+                    <td style={{ ...td, fontSize: 13, whiteSpace: "nowrap", color: r.assigneeName ? T.text2 : T.muted }}>{r.assigneeName ?? "Not yet picked up"}</td>
+                    <td style={td}><SlaChip sla={r.sla} /></td>
+                    <td style={{ ...td, fontSize: 12, whiteSpace: "nowrap", color: T.muted }}>{relativeTime(r.updatedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
+      {hasNextPage && (
+        <div style={{ marginTop: 16 }}>
+          <button style={btnGhost} onClick={() => fetchNextPage()} disabled={isFetchingNextPage} data-testid="portal-load-more">{isFetchingNextPage ? "Loading…" : "Show more"}</button>
+        </div>
+      )}
     </Shell>
   );
 }
@@ -526,27 +595,51 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
   if (isError || !c) return <Shell surface={SURFACE} slug={slug} me={me} active="cases"><p>That case isn't available.</p><Link href={base(slug)} style={{ color: T.accent }}>Back to cases</Link></Shell>;
   const thread = [
     ...c.messages.map(m => ({ kind: "message" as const, at: m.createdAt, m })),
-    ...c.events.filter(e => (e.kind === "status" && e.toValue && e.toValue !== "NEW") || e.kind === "watcher").map(e => ({ kind: "event" as const, at: e.createdAt, e })),
+    ...c.events.filter(e => (e.kind === "status" && e.toValue && e.toValue !== "NEW") || e.kind === "watcher" || e.kind === "priority" || e.kind === "assignee").map(e => ({ kind: "event" as const, at: e.createdAt, e })),
   ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
   const closedOrResolved = c.status === "RESOLVED" || c.status === "CLOSED";
   const canManageWatchers = isAdmin || c.isRequester;
   const reviewOnly = c.myRole === "reviewer";
   const canWrite = !reviewOnly && c.status !== "CLOSED";
   const intakeRows = (Object.keys(INTAKE_FIELD_LABELS) as (keyof SupportCaseIntake)[]).map(k => ({ k, label: INTAKE_FIELD_LABELS[k], v: c.intake?.[k] })).filter(r => !!r.v).map(r => ({ ...r, v: r.k === "impact" ? IMPACT_LABEL[r.v as SupportCaseImpact] : String(r.v) }));
+  const describe = (e: CaseDetail["events"][number]): string => {
+    switch (e.kind) {
+      case "status": return `Status ${e.fromValue ? (STATUS_STYLE[e.fromValue as CaseStatus]?.label ?? e.fromValue) : "—"} → ${e.toValue ? (STATUS_STYLE[e.toValue as CaseStatus]?.label ?? e.toValue) : "—"}`;
+      case "priority": return `Priority ${e.fromValue ? PRIORITY_LABEL[e.fromValue as CasePriority] ?? e.fromValue : "—"} → ${e.toValue ? PRIORITY_LABEL[e.toValue as CasePriority] ?? e.toValue : "—"}`;
+      case "assignee": return e.toValue ? `Assigned to ${e.toValue}${e.fromValue ? ` (was ${e.fromValue})` : ""}` : "Unassigned";
+      case "watcher": return `${e.fromValue === "removed" ? "Removed" : "Added"} ${e.toValue || "a colleague"}${e.fromValue === "removed" ? "" : " as a follower"}`;
+      default: return e.kind;
+    }
+  };
+  const sideCard: React.CSSProperties = { ...card, padding: 16 };
   return (
-    <Shell surface={SURFACE} slug={slug} me={me} active="cases">
+    <Shell surface={SURFACE} slug={slug} me={me} active="cases" wide>
       <Link href={base(slug)} style={{ color: T.muted, fontSize: 13, textDecoration: "none" }}>← Cases</Link>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "12px 0 6px" }}>
-        <span style={{ ...mono, fontSize: 13, color: T.accent }} data-testid="portal-case-key">{c.caseKey}</span>
-        <Chip status={c.status} />
-        {c.typeName && <span style={{ fontSize: 12, color: T.muted }}>{c.typeName}</span>}
-        <span style={{ fontSize: 12, color: PRIORITY_COLOR[c.priority], fontWeight: 600 }} data-testid="portal-case-priority">{PRIORITY_LABEL[c.priority]}</span>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", margin: "12px 0 18px" }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+            <span style={{ ...mono, fontSize: 13, color: T.accent }} data-testid="portal-case-key">{c.caseKey}</span>
+            <Chip status={c.status} />
+            <span data-testid="portal-case-priority"><PriorityChip priority={c.priority} /></span>
+            {c.typeName && <span style={{ fontSize: 12, color: T.muted }}>{c.typeName}</span>}
+          </div>
+          <h1 style={{ ...display, fontSize: 28, margin: "0 0 6px", lineHeight: 1.15 }} data-testid="portal-case-subject">{c.subject}</h1>
+          <p style={{ margin: 0, color: T.muted, fontSize: 13 }}>
+            Opened {relativeTime(c.createdAt)}{c.requesterName ? ` by ${c.requesterName}` : ""}{c.assigneeName ? ` · ${c.assigneeName} is on it` : " · waiting to be picked up"}
+            {c.hours && ` · ${hoursLabel(c.hours.minutes)} logged`}
+          </p>
+        </div>
+        {isAdmin && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }} data-testid="portal-admin-actions">
+            {closedOrResolved ? (
+              <button type="button" style={{ ...btnPrimary, padding: "9px 14px", fontSize: 13 }} disabled={admin.isPending} onClick={() => admin.mutate({ action: "reopen" })} data-testid="portal-admin-reopen">Reopen case</button>
+            ) : (
+              <button type="button" style={{ ...btnGhost, padding: "9px 14px", fontSize: 13 }} disabled={admin.isPending} onClick={() => { if (window.confirm(`Close ${c.caseKey}? The team will be told.`)) admin.mutate({ action: "close" }); }} data-testid="portal-admin-close">Close case</button>
+            )}
+          </div>
+        )}
       </div>
-      <h1 style={{ ...display, fontSize: 28, margin: "0 0 6px", lineHeight: 1.15 }} data-testid="portal-case-subject">{c.subject}</h1>
-      <p style={{ margin: "0 0 20px", color: T.muted, fontSize: 13 }}>
-        Opened {relativeTime(c.createdAt)}{c.requesterName ? ` by ${c.requesterName}` : ""}{c.assigneeName ? ` · ${c.assigneeName} is on it` : " · waiting to be picked up"}
-        {c.hours && ` · ${hoursLabel(c.hours.minutes)} logged`}
-      </p>
+      {admin.isError && <p style={{ color: T.warn, fontSize: 13, margin: "0 0 12px" }}>{(admin.error as Error).message}</p>}
       {reviewOnly && (
         <p style={{ ...card, padding: 12, margin: "0 0 16px", fontSize: 13, color: T.text2 }} data-testid="portal-review-only-note">
           You're reviewing this case. You'll see every update here and by email; replies and files are for the requester and watchers.
@@ -558,26 +651,8 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
         </p>
       )}
 
-      {isAdmin && (
-        <section style={{ ...card, padding: 14, marginBottom: 16, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }} data-testid="portal-admin-actions">
-          <span style={{ ...eyebrow, margin: 0 }}>Customer admin</span>
-          <label style={{ fontSize: 13, color: T.text2, display: "flex", alignItems: "center", gap: 8 }}>
-            Priority
-            <select value={c.priority} onChange={e => admin.mutate({ priority: e.target.value as CasePriority })} disabled={admin.isPending || c.status === "CLOSED"} style={{ ...field, width: "auto", padding: "6px 10px", fontSize: 13 }} data-testid="portal-admin-priority">
-              {CASE_PRIORITY_ORDER.map(p => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
-            </select>
-          </label>
-          <span style={{ flex: 1 }} />
-          {closedOrResolved ? (
-            <button type="button" style={{ ...btnGhost, padding: "7px 12px", fontSize: 13 }} disabled={admin.isPending} onClick={() => admin.mutate({ action: "reopen" })} data-testid="portal-admin-reopen">Reopen</button>
-          ) : (
-            <button type="button" style={{ ...btnGhost, padding: "7px 12px", fontSize: 13 }} disabled={admin.isPending} onClick={() => { if (window.confirm(`Close ${c.caseKey}? The team will be told.`)) admin.mutate({ action: "close" }); }} data-testid="portal-admin-close">Close case</button>
-          )}
-          {admin.isError && <p style={{ color: T.warn, fontSize: 13, margin: 0, width: "100%" }}>{(admin.error as Error).message}</p>}
-        </section>
-      )}
-
-      <div style={{ display: "grid", gap: 16 }}>
+      <div style={{ display: "grid", gap: 16, gridTemplateColumns: "minmax(0, 1fr) minmax(280px, 320px)", alignItems: "start" }} className="hc-case-grid">
+      <div style={{ display: "grid", gap: 16, minWidth: 0 }}>
         {c.description && (
           <section style={card}>
             <p style={eyebrow}>{c.requesterName && !c.messages.length ? "What you told us" : "Description"}</p>
@@ -598,46 +673,6 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
             </dl>
           </section>
         )}
-
-        <section style={card} data-testid="portal-watchers">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
-            <p style={{ ...eyebrow, margin: 0 }}>Following this case{c.watchers.length ? ` (${c.watchers.length})` : ""}</p>
-          </div>
-          {c.watchers.length === 0 ? (
-            <p style={{ margin: "0 0 10px", color: T.text2, fontSize: 14 }}>Only {c.requesterName || "the requester"} and the {me.orgName} team see this case. Add colleagues so they can follow it too.</p>
-          ) : (
-            <ul style={{ listStyle: "none", padding: 0, margin: "0 0 10px", display: "grid", gap: 6 }}>
-              {c.watchers.map(w => (
-                <li key={w.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14 }} data-testid={`portal-watcher-${w.contactId}`}>
-                  <span style={{ flex: 1 }}>{personName(w)}{w.email ? <span style={{ color: T.muted }}> · {w.email}</span> : null}{w.role === "reviewer" ? <span style={{ color: T.muted }}> · review only</span> : null}</span>
-                  {(canManageWatchers || w.contactId === me.contact.id) && c.status !== "CLOSED" && (
-                    <button type="button" onClick={() => removeWatcher.mutate(w.contactId)} disabled={removeWatcher.isPending} style={{ ...btnGhost, padding: "3px 8px", fontSize: 12 }} data-testid={`portal-watcher-remove-${w.contactId}`}>{w.contactId === me.contact.id ? "Stop following" : "Remove"}</button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-          {canWrite && (
-            <div style={{ display: "grid", gap: 8 }}>
-              <div role="radiogroup" aria-label="Add as" style={{ display: "flex", gap: 8 }}>
-                {(["watcher", "reviewer"] as const).map(r => (
-                  <button type="button" key={r} role="radio" aria-checked={addRole === r} onClick={() => setAddRole(r)} style={{ ...btnGhost, padding: "5px 10px", fontSize: 12, borderColor: addRole === r ? T.accent : T.line, background: addRole === r ? T.accentSoft : "transparent" }} data-testid={`portal-add-role-${r}`}>{r === "watcher" ? "Can reply" : "Review only"}</button>
-                ))}
-              </div>
-              {(colleagues?.length ?? 0) > 0 && (
-                <select value="" onChange={e => { if (e.target.value) addWatcher.mutate({ contactId: e.target.value }); }} disabled={addWatcher.isPending} style={{ ...field, fontSize: 13 }} data-testid="portal-watcher-select">
-                  <option value="">Add a colleague…</option>
-                  {colleagues!.map(x => <option key={x.id} value={x.id}>{personName(x)}{x.email ? ` · ${x.email}` : ""}</option>)}
-                </select>
-              )}
-              <form onSubmit={e => { e.preventDefault(); if (watcherEmail.trim()) addWatcher.mutate({ email: watcherEmail.trim() }); }} style={{ display: "flex", gap: 8 }}>
-                <input value={watcherEmail} onChange={e => setWatcherEmail(e.target.value)} placeholder="Or a colleague's work email" style={{ ...field, fontSize: 13 }} data-testid="portal-watcher-email" />
-                <button type="submit" style={{ ...btnGhost, whiteSpace: "nowrap", fontSize: 13 }} disabled={!watcherEmail.trim() || addWatcher.isPending} data-testid="portal-watcher-add">Add</button>
-              </form>
-              {(addWatcher.isError || removeWatcher.isError) && <p style={{ color: T.warn, fontSize: 13, margin: 0 }}>{((addWatcher.error || removeWatcher.error) as Error).message}</p>}
-            </div>
-          )}
-        </section>
 
         <section style={card} data-testid="portal-attachments">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
@@ -676,7 +711,7 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
               {thread.map(item => item.kind === "event" ? (
                 <li key={item.e.id} style={{ fontSize: 12, color: T.muted, display: "flex", gap: 8, alignItems: "center" }}>
                   <span style={{ width: 6, height: 6, borderRadius: 999, background: T.line, display: "inline-block" }} />
-                  {item.e.kind === "watcher" ? `${item.e.fromValue === "removed" ? "Removed" : "Added"} ${item.e.toValue || "a colleague"}${item.e.fromValue === "removed" ? "" : " as a follower"}` : item.e.toValue ? `Marked ${STATUS_STYLE[item.e.toValue as CaseStatus]?.label.toLowerCase() ?? item.e.toValue.toLowerCase()}` : "Updated"} · {relativeTime(item.e.createdAt)}
+                  {describe(item.e)}{item.e.actorName ? ` · ${item.e.actorName}` : ""} · {relativeTime(item.e.createdAt)}
                 </li>
               ) : (
                 <li key={item.m.id} style={{ ...card, padding: 14, background: item.m.fromTeam ? T.surface2 : T.accentSoft, borderColor: item.m.fromTeam ? T.line : "rgba(207,51,57,0.35)" }} data-testid={item.m.fromTeam ? "portal-message-team" : "portal-message-you"}>
@@ -697,6 +732,95 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
           )}
         </section>
       </div>
+
+      <aside style={{ display: "grid", gap: 14, minWidth: 0 }}>
+        <section style={sideCard} data-testid="portal-properties">
+          <p style={eyebrow}>Properties</p>
+          <dl style={{ margin: 0, display: "grid", gap: 8 }}>
+            <Row k="Status" v={STATUS_STYLE[c.status]?.label ?? c.status} />
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", fontSize: 13 }}>
+              <dt style={{ color: T.muted }}>Priority</dt>
+              <dd style={{ margin: 0 }}>
+                {isAdmin && c.status !== "CLOSED" ? (
+                  <select value={c.priority} onChange={e => admin.mutate({ priority: e.target.value as CasePriority })} disabled={admin.isPending} style={{ ...field, width: "auto", padding: "4px 8px", fontSize: 13 }} aria-label="Priority" data-testid="portal-admin-priority">
+                    {CASE_PRIORITY_ORDER.map(p => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
+                  </select>
+                ) : <span style={{ color: T.text2 }}>{PRIORITY_LABEL[c.priority]}</span>}
+              </dd>
+            </div>
+            <Row k="Assignee" v={c.assigneeName ?? "Not yet picked up"} />
+            <Row k="Type" v={c.typeName ?? "—"} />
+            <Row k="Requester" v={c.requesterName ?? "—"} />
+          </dl>
+        </section>
+
+        <section style={sideCard} data-testid="portal-watchers">
+          <p style={eyebrow}>Following this case{c.watchers.length ? ` (${c.watchers.length})` : ""}</p>
+          {c.watchers.length === 0 ? (
+            <p style={{ margin: "0 0 10px", color: T.text2, fontSize: 13 }}>Only {c.requesterName || "the requester"} and the {me.orgName} team see this case. Add colleagues so they can follow it too.</p>
+          ) : (
+            <ul style={{ listStyle: "none", padding: 0, margin: "0 0 10px", display: "grid", gap: 6 }}>
+              {c.watchers.map(w => (
+                <li key={w.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }} data-testid={`portal-watcher-${w.contactId}`}>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{personName(w)}{w.role === "reviewer" ? <span style={{ color: T.muted }}> · review only</span> : null}</span>
+                    {w.email && <span style={{ display: "block", fontSize: 12, color: T.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.email}</span>}
+                  </span>
+                  {(canManageWatchers || w.contactId === me.contact.id) && c.status !== "CLOSED" && (
+                    <button type="button" onClick={() => removeWatcher.mutate(w.contactId)} disabled={removeWatcher.isPending} style={{ ...btnGhost, padding: "3px 8px", fontSize: 12 }} data-testid={`portal-watcher-remove-${w.contactId}`}>{w.contactId === me.contact.id ? "Stop following" : "Remove"}</button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {canWrite && (
+            <div style={{ display: "grid", gap: 8 }}>
+              <div role="radiogroup" aria-label="Add as" style={{ display: "flex", gap: 8 }}>
+                {(["watcher", "reviewer"] as const).map(r => (
+                  <button type="button" key={r} role="radio" aria-checked={addRole === r} onClick={() => setAddRole(r)} style={{ ...btnGhost, padding: "5px 10px", fontSize: 12, borderColor: addRole === r ? T.accent : T.line, background: addRole === r ? T.accentSoft : "transparent" }} data-testid={`portal-add-role-${r}`}>{r === "watcher" ? "Can reply" : "Review only"}</button>
+                ))}
+              </div>
+              {(colleagues?.length ?? 0) > 0 && (
+                <select value="" onChange={e => { if (e.target.value) addWatcher.mutate({ contactId: e.target.value }); }} disabled={addWatcher.isPending} style={{ ...field, fontSize: 13 }} data-testid="portal-watcher-select">
+                  <option value="">Add a colleague…</option>
+                  {colleagues!.map(x => <option key={x.id} value={x.id}>{personName(x)}{x.email ? ` · ${x.email}` : ""}</option>)}
+                </select>
+              )}
+              <form onSubmit={e => { e.preventDefault(); if (watcherEmail.trim()) addWatcher.mutate({ email: watcherEmail.trim() }); }} style={{ display: "flex", gap: 8 }}>
+                <input value={watcherEmail} onChange={e => setWatcherEmail(e.target.value)} placeholder="Or a colleague's work email" style={{ ...field, fontSize: 13 }} data-testid="portal-watcher-email" />
+                <button type="submit" style={{ ...btnGhost, whiteSpace: "nowrap", fontSize: 13 }} disabled={!watcherEmail.trim() || addWatcher.isPending} data-testid="portal-watcher-add">Add</button>
+              </form>
+              {(addWatcher.isError || removeWatcher.isError) && <p style={{ color: T.warn, fontSize: 13, margin: 0 }}>{((addWatcher.error || removeWatcher.error) as Error).message}</p>}
+            </div>
+          )}
+        </section>
+
+        <section style={sideCard} data-testid="portal-sla">
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+            <p style={{ ...eyebrow, margin: 0 }}>Service level</p>
+            <SlaChip sla={c.sla} />
+          </div>
+          <dl style={{ margin: 0, display: "grid", gap: 6 }}>
+            <Row k="First response" v={c.firstResponseAt ? `met ${relativeTime(c.firstResponseAt)}` : c.firstResponseDueAt ? `due ${when(c.firstResponseDueAt)}` : "no target"} />
+            <Row k="Resolution" v={c.resolvedAt ? `met ${relativeTime(c.resolvedAt)}` : c.resolutionDueAt ? `due ${when(c.resolutionDueAt)}` : "no target"} />
+            {c.slaPausedAt && <Row k="Clocks" v="paused while waiting on you" />}
+          </dl>
+        </section>
+
+        <section style={sideCard} data-testid="portal-timeline">
+          <p style={eyebrow}>Timeline</p>
+          <dl style={{ margin: 0, display: "grid", gap: 6 }}>
+            <Row k="Opened" v={when(c.createdAt)} />
+            <Row k="First response" v={c.firstResponseAt ? relativeTime(c.firstResponseAt) : "not yet"} />
+            <Row k="Your last message" v={c.lastCustomerMessageAt ? relativeTime(c.lastCustomerMessageAt) : "—"} />
+            <Row k="Last reply" v={c.lastAgentMessageAt ? relativeTime(c.lastAgentMessageAt) : "—"} />
+            {c.resolvedAt && <Row k="Resolved" v={relativeTime(c.resolvedAt)} />}
+            {c.closedAt && <Row k="Closed" v={relativeTime(c.closedAt)} />}
+          </dl>
+        </section>
+      </aside>
+      </div>
+      <style>{`@media (max-width: 860px) { .hc-case-grid { grid-template-columns: minmax(0, 1fr) !important; } }`}</style>
     </Shell>
   );
 }

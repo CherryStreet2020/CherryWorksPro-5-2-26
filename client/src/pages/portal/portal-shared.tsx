@@ -133,7 +133,7 @@ export function clearPortalCaches(qc: QueryClient, slug: string) {
 }
 
 // ─── Shell ────────────────────────────────────────────────────────────────
-export function Shell({ surface, slug, me, children, active }: { surface: Surface; slug: string; me?: Me | null; children: React.ReactNode; active?: "cases" | "team" | "billing" }) {
+export function Shell({ surface, slug, me, children, active, wide }: { surface: Surface; slug: string; me?: Me | null; children: React.ReactNode; active?: "cases" | "team" | "billing"; wide?: boolean }) {
   // Per-person unread count for the Cases tab (kept fresh while the tab is open).
   const { data: unread } = useQuery<{ unread: number }>({
     queryKey: ["help-unread", slug, me?.contact?.id],
@@ -154,7 +154,7 @@ export function Shell({ surface, slug, me, children, active }: { surface: Surfac
   return (
     <div style={{ minHeight: "100vh", background: T.bg, color: T.text, fontFamily: "Inter, -apple-system, 'Segoe UI', sans-serif" }} data-testid="portal-page" data-surface={surface}>
       <header style={{ borderBottom: `1px solid ${T.line}` }}>
-        <div style={{ maxWidth: 920, margin: "0 auto", padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ maxWidth: wide ? 1180 : 920, margin: "0 auto", padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
             {me?.orgLogoUrl || me?.org?.logoUrl ? (
               <img src={me?.orgLogoUrl || me?.org?.logoUrl || ""} alt="" style={{ width: 30, height: 30, borderRadius: 8, objectFit: "contain", background: "#fff" }} />
@@ -178,8 +178,8 @@ export function Shell({ surface, slug, me, children, active }: { surface: Surfac
           )}
         </div>
       </header>
-      <main style={{ maxWidth: 920, margin: "0 auto", padding: "28px 20px 64px" }}>{children}</main>
-      <footer style={{ maxWidth: 920, margin: "0 auto", padding: "0 20px 32px", fontSize: 12, color: T.muted }}>
+      <main style={{ maxWidth: wide ? 1180 : 920, margin: "0 auto", padding: "28px 20px 64px" }}>{children}</main>
+      <footer style={{ maxWidth: wide ? 1180 : 920, margin: "0 auto", padding: "0 20px 32px", fontSize: 12, color: T.muted }}>
         {/* Help Center: the support mailbox, no phone. Customer Portal (billing): the firm's general contact. */}
         {me?.org && (surface === "help"
           ? <p style={{ margin: 0 }}>{me.org.name}{me.org.supportEmail ? ` · ${me.org.supportEmail}` : ""}</p>

@@ -1,14 +1,14 @@
 import type { Express, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
-import { and, eq, or, sql } from "drizzle-orm";
+import { and, eq, ilike, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { storage } from "../storage";
 import {
   orgs, clients, clientContacts, supportCases, supportCaseTypes, clientActivities, portalBlockedEmails,
   portalRequestLinkSchema, portalVerifySchema, portalCreateCaseSchema, portalMessageSchema, portalWatcherAddSchema, supportCaseWatchers, portalCaseReads,
   portalSetNameSchema, portalAdminCaseUpdateSchema, portalInviteColleagueSchema,
-  SUPPORT_CASE_OPEN_STATUSES, SUPPORT_CASE_PRIORITIES,
+  SUPPORT_CASE_OPEN_STATUSES, SUPPORT_CASE_CLOCK_RUNNING_STATUSES, SUPPORT_CASE_PRIORITIES, users,
 } from "@shared/schema";
 import { emailDomain, isSharedMailDomain } from "@shared/mail-domains";
 import * as cases from "../support-cases";
@@ -254,14 +254,29 @@ export function registerPortalRoutes(app: Express) {
     }
     if (req.query.mine === "1") filters.push(ownCaseWhere(p));
     if ((SUPPORT_CASE_PRIORITIES as readonly string[]).includes(priority)) filters.push(eq(supportCases.priority, priority));
-    // Status is filtered in SQL and counts are aggregated over the whole authorised set,
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (q) {
+      const term = `%${q}%`;
+      filters.push(or(ilike(supportCases.subject, term), ilike(supportCases.caseKey, term), ilike(supportCases.requesterName, term))!);
+    }
+    // The view is filtered in SQL and counts are aggregated over the whole authorised set,
     // so an old open case never hides behind newer resolved ones and totals are exact.
-    const status = req.query.status === "resolved" ? "resolved" : req.query.status === "all" ? "all" : "open";
+    // Views mirror the firm's case list (minus "assigned to me"): open · waiting on you ·
+    // blocked · breaching · resolved · all. `status=resolved|all` is the older alias.
     const openStatuses = SUPPORT_CASE_OPEN_STATUSES as readonly string[];
+    const runningStatuses = SUPPORT_CASE_CLOCK_RUNNING_STATUSES as readonly string[];
+    const rawView = typeof req.query.view === "string" ? req.query.view : req.query.status === "resolved" ? "resolved" : req.query.status === "all" ? "all" : "open";
+    const status = (["open", "waiting", "blocked", "breaching", "resolved", "all"] as const).find(v => v === rawView) ?? "open";
     const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
     const authorised = and(...filters)!;
-    const statusWhere = status === "open" ? sql`${supportCases.status} IN (${sql.join(openStatuses.map(x => sql`${x}`), sql`, `)})`
+    const openIn = sql`${supportCases.status} IN (${sql.join(openStatuses.map(x => sql`${x}`), sql`, `)})`;
+    const soon = cases.utcNaive(new Date(Date.now() + 3600000));
+    const breachingSql = sql`(${supportCases.status} IN (${sql.join(runningStatuses.map(x => sql`${x}`), sql`, `)}) AND ${supportCases.slaPausedAt} IS NULL AND ((${supportCases.firstResponseAt} IS NULL AND ${supportCases.firstResponseDueAt} < ${soon}::timestamp) OR ${supportCases.resolutionDueAt} < ${soon}::timestamp))`;
+    const statusWhere = status === "open" ? openIn
+      : status === "waiting" ? sql`${supportCases.status} = 'WAITING_ON_CUSTOMER'`
+      : status === "blocked" ? sql`${supportCases.status} = 'BLOCKED'`
+      : status === "breaching" ? breachingSql
       : status === "resolved" ? sql`${supportCases.status} NOT IN (${sql.join(openStatuses.map(x => sql`${x}`), sql`, `)})` : sql`true`;
     // "Unread" is per person: customer-VISIBLE activity since THIS contact last opened the case
     // (never opened = unread). Internal notes and firm-only edits bump updated_at but must not
@@ -276,17 +291,24 @@ export function registerPortalRoutes(app: Express) {
           createdAt: supportCases.createdAt, updatedAt: supportCases.updatedAt,
           lastAgentMessageAt: supportCases.lastAgentMessageAt, lastCustomerMessageAt: supportCases.lastCustomerMessageAt,
           resolvedAt: supportCases.resolvedAt, unread: sql<boolean>`${unreadSql}`.mapWith(Boolean),
+          assigneeName: users.name,
+          firstResponseAt: supportCases.firstResponseAt, firstResponseDueAt: supportCases.firstResponseDueAt,
+          resolutionDueAt: supportCases.resolutionDueAt, slaPausedAt: supportCases.slaPausedAt,
         })
         .from(supportCases)
         .leftJoin(supportCaseTypes, and(eq(supportCases.typeId, supportCaseTypes.id), eq(supportCaseTypes.orgId, p.orgId)))
+        .leftJoin(users, and(eq(supportCases.assigneeUserId, users.id), eq(users.orgId, p.orgId)))
         .leftJoin(portalCaseReads, readJoin)
         .where(and(authorised, statusWhere))
         .orderBy(sql`${supportCases.updatedAt} desc`, sql`${supportCases.id} desc`)
         .limit(limit + 1).offset(offset),
       db.select({
-          open: sql<number>`count(*) filter (where ${supportCases.status} IN (${sql.join(openStatuses.map(x => sql`${x}`), sql`, `)}))`.mapWith(Number),
+          open: sql<number>`count(*) filter (where ${openIn})`.mapWith(Number),
           waitingOnYou: sql<number>`count(*) filter (where ${supportCases.status} = 'WAITING_ON_CUSTOMER')`.mapWith(Number),
+          blocked: sql<number>`count(*) filter (where ${supportCases.status} = 'BLOCKED')`.mapWith(Number),
+          breaching: sql<number>`count(*) filter (where ${breachingSql})`.mapWith(Number),
           resolved: sql<number>`count(*) filter (where ${supportCases.status} NOT IN (${sql.join(openStatuses.map(x => sql`${x}`), sql`, `)}))`.mapWith(Number),
+          all: sql<number>`count(*)`.mapWith(Number),
           unread: sql<number>`count(*) filter (where ${unreadSql})`.mapWith(Number),
         }).from(supportCases).leftJoin(portalCaseReads, readJoin).where(authorised),
       db.select({ priority: supportCases.priority, n: sql<number>`count(*)`.mapWith(Number) }).from(supportCases)
@@ -296,8 +318,15 @@ export function registerPortalRoutes(app: Express) {
     for (const r of byPrio) byPriority[r.priority] = r.n;
     const page = rows.slice(0, limit);
     return res.json({
-      cases: page.map(({ requesterEmail: _e, ...r }) => ({ ...r, mine: isOwnCase(p, { requesterContactId: r.requesterContactId, requesterEmail: _e }), awaitingYou: r.status === "WAITING_ON_CUSTOMER", hasNewReply: !!r.lastAgentMessageAt && (!r.lastCustomerMessageAt || r.lastAgentMessageAt > r.lastCustomerMessageAt) })),
-      counts: { open: agg?.open ?? 0, waitingOnYou: agg?.waitingOnYou ?? 0, resolved: agg?.resolved ?? 0, unread: agg?.unread ?? 0, byPriority },
+      cases: page.map(({ requesterEmail: _e, firstResponseDueAt: _f, resolutionDueAt: _r, slaPausedAt: _s, ...r }) => ({
+        ...r,
+        // Same service-level state the firm sees on its list — the targets are the firm's commitment to this customer.
+        sla: cases.withSla({ status: r.status, createdAt: r.createdAt, firstResponseAt: r.firstResponseAt, firstResponseDueAt: _f, resolutionDueAt: _r, resolvedAt: r.resolvedAt, slaPausedAt: _s }).sla,
+        mine: isOwnCase(p, { requesterContactId: r.requesterContactId, requesterEmail: _e }),
+        awaitingYou: r.status === "WAITING_ON_CUSTOMER",
+        hasNewReply: !!r.lastAgentMessageAt && (!r.lastCustomerMessageAt || r.lastAgentMessageAt > r.lastCustomerMessageAt),
+      })),
+      counts: { open: agg?.open ?? 0, waitingOnYou: agg?.waitingOnYou ?? 0, blocked: agg?.blocked ?? 0, breaching: agg?.breaching ?? 0, resolved: agg?.resolved ?? 0, all: agg?.all ?? 0, unread: agg?.unread ?? 0, byPriority },
       paging: { status, limit, offset, hasMore: rows.length > limit },
       scope: p.contact.portalRole === "admin" ? "client" : "own",
     });
@@ -557,6 +586,8 @@ export function registerPortalRoutes(app: Express) {
         status: supportCases.status, priority: supportCases.priority, typeName: supportCaseTypes.name,
         requesterName: supportCases.requesterName, createdAt: supportCases.createdAt, updatedAt: supportCases.updatedAt,
         firstResponseAt: supportCases.firstResponseAt, resolvedAt: supportCases.resolvedAt, closedAt: supportCases.closedAt,
+        firstResponseDueAt: supportCases.firstResponseDueAt, resolutionDueAt: supportCases.resolutionDueAt, slaPausedAt: supportCases.slaPausedAt,
+        lastCustomerMessageAt: supportCases.lastCustomerMessageAt, lastAgentMessageAt: supportCases.lastAgentMessageAt,
         assigneeUserId: supportCases.assigneeUserId, intake: supportCases.intake, requesterContactId: supportCases.requesterContactId, requesterEmail: supportCases.requesterEmail,
       })
       .from(supportCases)
@@ -570,11 +601,10 @@ export function registerPortalRoutes(app: Express) {
       cases.listMessages(p.orgId, row.id, false),
       cases.listEvents(p.orgId, row.id),
     ]);
-    let assigneeName: string | null = null;
-    if (row.assigneeUserId) {
-      const agent = (await cases.listAgents(p.orgId)).find(a => a.id === row.assigneeUserId);
-      assigneeName = agent?.name ?? null;
-    }
+    // Agent names for the assignee and for assignment events (ids never leave the server).
+    const agents = await cases.listAgents(p.orgId);
+    const agentName = (id: string | null) => (id ? agents.find(a => a.id === id)?.name ?? "a team member" : null);
+    const assigneeName = agentName(row.assigneeUserId);
     let hours: { minutes: number; billableMinutes: number } | null = null;
     if (p.client.portalShowHours) {
       const t = await cases.listCaseTime(p.orgId, row.id);
@@ -587,13 +617,21 @@ export function registerPortalRoutes(app: Express) {
     const { assigneeUserId: _a, requesterContactId, requesterEmail, ...safe } = row;
     return res.json({
       ...safe,
+      sla: cases.withSla(row).sla,
       assigneeName,
       isRequester: isOwnCase(p, { requesterContactId, requesterEmail }),
       myRole: access.role,
       watchers,
       attachments: attachments.map(a => attachmentView(a, `/api/portal/${p.orgSlug}/attachments`)),
       messages: messages.map(m => ({ id: m.id, authorName: m.authorName, fromTeam: !!m.authorUserId, body: m.body, createdAt: m.createdAt })),
-      events: events.filter(e => e.kind === "status" || e.kind === "created" || e.kind === "watcher").map(e => ({ id: e.id, kind: e.kind, fromValue: e.fromValue, toValue: e.toValue, createdAt: e.createdAt })),
+      // The customer-visible timeline: status, priority, assignment (by name) and followers. Type/project
+      // changes are firm bookkeeping and stay out.
+      events: events.filter(e => ["status", "created", "watcher", "priority", "assignee"].includes(e.kind)).map(e => ({
+        id: e.id, kind: e.kind, createdAt: e.createdAt,
+        fromValue: e.kind === "assignee" ? agentName(e.fromValue) : e.fromValue,
+        toValue: e.kind === "assignee" ? agentName(e.toValue) : e.toValue,
+        actorName: e.actorUserId ? (agentName(e.actorUserId) ?? e.actorName ?? null) : e.actorName ?? null,
+      })),
       hours,
     });
   });
