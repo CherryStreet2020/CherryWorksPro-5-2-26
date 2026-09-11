@@ -212,6 +212,12 @@ describe("Help Center: approved domains, self-registration, Customer Admin, bill
     expect(portalView.events.some((e: any) => e.kind === "priority" && e.toValue === "URGENT" && e.actorName === "Dana Admin")).toBe(true);
     expect(portalView.events.every((e: any) => ["status", "created", "watcher", "priority", "assignee"].includes(e.kind))).toBe(true);
     expect(JSON.stringify(portalView.events).includes(memberContactId)).toBe(false);
+    // Reading the case clears NEW; a later priority change (now visible on the timeline) sets it again.
+    let row = (await (await portal("GET", "/cases?view=all", adminCookie)).json()).cases.find((c: any) => c.id === memberCaseId);
+    expect(row.unread).toBe(false);
+    expect((await api("PATCH", `/api/support/cases/${memberCaseId}`, admin, { priority: "LOW" })).ok).toBe(true);
+    row = (await (await portal("GET", "/cases?view=all", adminCookie)).json()).cases.find((c: any) => c.id === memberCaseId);
+    expect(row.unread).toBe(true);
     expect(detail.resolvedAt).toBeNull(); expect(detail.closedAt).toBeNull();
     const events = detail.events as any[];
     const statusEvents = events.filter(e => e.kind === "status");

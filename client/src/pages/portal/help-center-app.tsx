@@ -213,7 +213,7 @@ function CasesList({ slug, me }: { slug: string; me: Me }) {
                   <tr key={r.id} onClick={() => navigate(`${base(slug)}/cases/${r.id}`)} style={{ cursor: "pointer", borderLeft: r.awaitingYou ? `3px solid ${T.warn}` : "3px solid transparent" }}
                     onMouseEnter={e => (e.currentTarget.style.background = T.surface2)} onMouseLeave={e => (e.currentTarget.style.background = "")}
                     data-testid={`portal-case-${r.caseKey}`}>
-                    <td style={{ ...td, whiteSpace: "nowrap" }}><span style={{ ...mono, fontSize: 12, color: T.accent }}>{r.caseKey}</span></td>
+                    <td style={{ ...td, whiteSpace: "nowrap" }}><Link href={`${base(slug)}/cases/${r.id}`} onClick={e => e.stopPropagation()} style={{ ...mono, fontSize: 12, color: T.accent, textDecoration: "none" }} data-testid={`portal-case-link-${r.caseKey}`}>{r.caseKey}</Link></td>
                     <td style={{ ...td, minWidth: 260 }}>
                       <p style={{ margin: 0, fontWeight: 500, display: "flex", alignItems: "center", gap: 8 }}>
                         <span>{r.subject}</span>
@@ -801,8 +801,8 @@ function CaseView({ slug, id, me }: { slug: string; id: string; me: Me }) {
             <SlaChip sla={c.sla} />
           </div>
           <dl style={{ margin: 0, display: "grid", gap: 6 }}>
-            <Row k="First response" v={c.firstResponseAt ? `met ${relativeTime(c.firstResponseAt)}` : c.firstResponseDueAt ? `due ${when(c.firstResponseDueAt)}` : "no target"} />
-            <Row k="Resolution" v={c.resolvedAt ? `met ${relativeTime(c.resolvedAt)}` : c.resolutionDueAt ? `due ${when(c.resolutionDueAt)}` : "no target"} />
+            <Row k="First response" v={c.firstResponseAt ? `${c.sla.firstResponse === "breached" ? "late" : "met"} ${relativeTime(c.firstResponseAt)}` : c.firstResponseDueAt ? `due ${when(c.firstResponseDueAt)}` : "no target"} />
+            <Row k="Resolution" v={c.resolvedAt ? `${c.sla.resolution === "breached" ? "late" : "met"} ${relativeTime(c.resolvedAt)}` : c.resolutionDueAt ? `due ${when(c.resolutionDueAt)}` : "no target"} />
             {c.slaPausedAt && <Row k="Clocks" v="paused while waiting on you" />}
           </dl>
         </section>

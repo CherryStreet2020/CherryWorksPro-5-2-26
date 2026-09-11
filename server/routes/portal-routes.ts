@@ -122,7 +122,7 @@ function authorizeContactManage(req: Request) {
   return async (tx: any, c: any) => { const r = await cases.customerCanAccess(tx, p.orgId, c, p.contact.id, { lock: true }); return r.ok && r.role !== "watcher" && r.role !== "reviewer"; };
 }
 /** The latest customer-visible moment on a case (see the unread rule in the list route). */
-const customerActivitySql = sql`GREATEST(${supportCases.createdAt}, COALESCE(${supportCases.lastAgentMessageAt}, ${supportCases.createdAt}), COALESCE(${supportCases.lastCustomerMessageAt}, ${supportCases.createdAt}), COALESCE((SELECT max(e.created_at) FROM support_case_events e WHERE e.case_id = ${supportCases.id} AND e.kind IN ('status', 'watcher')), ${supportCases.createdAt}))`;
+const customerActivitySql = sql`GREATEST(${supportCases.createdAt}, COALESCE(${supportCases.lastAgentMessageAt}, ${supportCases.createdAt}), COALESCE(${supportCases.lastCustomerMessageAt}, ${supportCases.createdAt}), COALESCE((SELECT max(e.created_at) FROM support_case_events e WHERE e.case_id = ${supportCases.id} AND e.kind IN ('status', 'watcher', 'priority', 'assignee')), ${supportCases.createdAt}))`;
 
 /** Field values arrive as strings in a multipart form; JSON bodies arrive typed. */
 function parseCreateBody(req: Request) {
@@ -602,7 +602,9 @@ export function registerPortalRoutes(app: Express) {
       cases.listEvents(p.orgId, row.id),
     ]);
     // Agent names for the assignee and for assignment events (ids never leave the server).
-    const agents = await cases.listAgents(p.orgId);
+    // Every org user, active or not: an assignment or an old event can outlive a deactivation,
+    // and the list (which joins users directly) shows the same name.
+    const agents = await db.select({ id: users.id, name: users.name }).from(users).where(eq(users.orgId, p.orgId));
     const agentName = (id: string | null) => (id ? agents.find(a => a.id === id)?.name ?? "a team member" : null);
     const assigneeName = agentName(row.assigneeUserId);
     let hours: { minutes: number; billableMinutes: number } | null = null;
