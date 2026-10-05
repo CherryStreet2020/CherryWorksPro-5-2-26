@@ -145,7 +145,9 @@ function buildDefaultBody(props: {
   return body;
 }
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
+// Same rule as the server (server/email.ts EMAIL_RE), so a contact the server
+// would email (e.g. an IDN TLD like .xn--p1ai) is never dropped here.
+const EMAIL_REGEX = /^[^\s@\r\n\f\v\0]+@[^\s@\r\n\f\v\0]+\.[^\s@\r\n\f\v\0]{2,}$/;
 
 /** The CC the server adds when none is chosen (server/email.ts pickRecipients:
  *  billing-role contacts). Pre-selected so the dialog shows everyone who gets it. */
@@ -214,6 +216,8 @@ export function SendEmailModal({
 
   // Defaults follow the latest contact list until the user edits; any manual change wins.
   const touchedRef = useRef(false);
+  const [edited, setEdited] = useState(false);
+  const markEdited = () => { touchedRef.current = true; setEdited(true); };
 
   // Recipients reset only when the dialog opens or the client changes — not when
   // org settings or totals arrive late, which would drop the billing CCs.
@@ -224,6 +228,7 @@ export function SendEmailModal({
       setDraft("");
       setEmailError("");
       touchedRef.current = false;
+      setEdited(false);
     }
   }, [open, clientId, clientEmail]);
 
@@ -251,7 +256,7 @@ export function SendEmailModal({
   const isSelected = (email: string) => recipients.some((r) => r.toLowerCase() === email.toLowerCase());
 
   const toggle = (email: string) => {
-    touchedRef.current = true;
+    markEdited();
     setEmailError("");
     setRecipients((cur) =>
       cur.some((r) => r.toLowerCase() === email.toLowerCase())
@@ -269,7 +274,7 @@ export function SendEmailModal({
       setEmailError(`"${bad}" isn't a valid email address`);
       return null;
     }
-    touchedRef.current = true;
+    markEdited();
     const merged = addRecipients(recipients, typed);
     setRecipients(merged);
     setDraft("");
@@ -290,7 +295,7 @@ export function SendEmailModal({
       return;
     }
     const [to, ...cc] = list;
-    onSend({ to, cc: contactsFailed && !touchedRef.current ? undefined : cc, subject, body });
+    onSend({ to, cc: contactsFailed && !edited ? undefined : cc, subject, body });
   };
 
   const typeLabel = type === "invoice" ? "Invoice" : "Estimate";
@@ -324,7 +329,8 @@ export function SendEmailModal({
                   <button
                     type="button"
                     onClick={() => toggle(r)}
-                    className="rounded-full p-0.5 hover:opacity-70"
+                    disabled={contactsLoading}
+                    className="rounded-full p-0.5 hover:opacity-70 disabled:opacity-40"
                     aria-label={`Remove ${r}`}
                     data-testid={`button-remove-recipient-${idx}`}
                   >
@@ -336,18 +342,19 @@ export function SendEmailModal({
                 type="text"
                 inputMode="email"
                 value={draft}
+                disabled={contactsLoading}
                 onChange={(e) => { setDraft(e.target.value); if (emailError) setEmailError(""); }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === "," || e.key === ";") {
                     e.preventDefault();
                     commitDraft();
                   } else if (e.key === "Backspace" && !draft && recipients.length > 0) {
-                    touchedRef.current = true;
+                    markEdited();
                     setRecipients((cur) => cur.slice(0, -1));
                   }
                 }}
                 onBlur={() => { if (draft.trim()) commitDraft(); }}
-                placeholder={recipients.length === 0 ? "recipient@example.com" : "Add another email"}
+                placeholder={contactsLoading ? "Loading contacts…" : recipients.length === 0 ? "recipient@example.com" : "Add another email"}
                 className="flex-1 min-w-[10rem] bg-transparent text-sm outline-none py-0.5"
                 style={{ color: "var(--lux-text)" }}
                 aria-label="Add recipient email"
@@ -375,6 +382,7 @@ export function SendEmailModal({
                         role="checkbox"
                         aria-checked={active}
                         onClick={() => toggle(opt.email)}
+                        disabled={contactsLoading}
                         title={opt.email}
                         className={cn("inline-flex items-center gap-1.5 text-left rounded-md px-2.5 py-1 text-xs border transition-colors min-w-0 max-w-full")}
                         style={
@@ -424,7 +432,9 @@ export function SendEmailModal({
           )}
           {contactsFailed && (
             <p className="text-xs" style={{ color: "var(--lux-text-muted)" }} data-testid="text-contacts-failed">
-              Couldn't load this client's contacts. Billing contacts will still be CC'd automatically.
+              {edited
+                ? "Couldn't load this client's contacts. Only the addresses above will receive it, so add any billing contacts by hand."
+                : "Couldn't load this client's contacts. Billing contacts will still be CC'd automatically."}
             </p>
           )}
           <div className="flex justify-end gap-2 pt-2">

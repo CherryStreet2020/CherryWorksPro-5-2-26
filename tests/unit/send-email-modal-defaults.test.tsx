@@ -70,4 +70,31 @@ describe("SendEmailModal default recipients", () => {
     fireEvent.click(ui.getByTestId("button-confirm-send"));
     expect(sends[0].cc).toEqual(["ap@example.com"]);
   });
+
+  it("recipients can't be edited until the contacts load", async () => {
+    let resolve!: (v: unknown) => void;
+    const { ui } = setup(() => new Promise((r) => { resolve = r; }));
+    expect((ui.getByTestId("input-email-to") as HTMLInputElement).disabled).toBe(true);
+    await act(async () => { resolve([{ id: "ap", email: "ap@example.com", role: "billing", isPrimary: false }]); });
+    await flush();
+    expect((ui.getByTestId("input-email-to") as HTMLInputElement).disabled).toBe(false);
+  });
+
+  it("CCs a billing contact on an internationalized domain, like the server would", async () => {
+    const { ui, sends } = setup(async () => [{ id: "ap", email: "ap@example.xn--p1ai", role: "billing", isPrimary: false }]);
+    await flush();
+    fireEvent.click(ui.getByTestId("button-confirm-send"));
+    expect(sends[0].cc).toEqual(["ap@example.xn--p1ai"]);
+  });
+
+  it("after a failed load, editing the list says billing contacts are no longer automatic", async () => {
+    const { ui, sends } = setup(async () => { throw new Error("boom"); });
+    await flush();
+    expect(ui.getByTestId("text-contacts-failed").textContent).toContain("still be CC'd automatically");
+    fireEvent.change(ui.getByTestId("input-email-to"), { target: { value: "x@example.com" } });
+    fireEvent.keyDown(ui.getByTestId("input-email-to"), { key: "Enter" });
+    expect(ui.getByTestId("text-contacts-failed").textContent).toContain("add any billing contacts by hand");
+    fireEvent.click(ui.getByTestId("button-confirm-send"));
+    expect(sends[0].cc).toEqual(["x@example.com"]);
+  });
 });
