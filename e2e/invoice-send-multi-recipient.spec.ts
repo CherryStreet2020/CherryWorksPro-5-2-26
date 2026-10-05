@@ -79,3 +79,51 @@ test("send invoice to several contacts with the PDF attached", async ({ page, is
   expect(attachments[0].contentType).toBe("application/pdf");
   expect(attachments[0].size).toBeGreaterThan(1000);
 });
+
+// The dialog must fit the window: on a short laptop screen with a long contact
+// list, Cancel/Send stay visible without shrinking the page (2026-10-05 report).
+for (const vp of [
+  { name: "laptop-1366x768", width: 1366, height: 768 },
+  { name: "small-1280x650", width: 1280, height: 650 },
+  { name: "phone-390x844", width: 390, height: 844 },
+]) {
+  test(`send dialog fits a ${vp.name} screen with many contacts`, async ({ page, isolatedOrg }) => {
+    const h = { "x-csrf-token": isolatedOrg.csrf };
+    const clientId = await insertClient(isolatedOrg.orgId, `Fit ${vp.name} ${Date.now()}`);
+    const tag = Date.now().toString(36);
+    for (let i = 0; i < 12; i++) {
+      const r = await isolatedOrg.request.post(`/api/clients/${clientId}/contacts`, {
+        headers: h,
+        data: { firstName: `Person${i}`, lastName: "Contactname", email: `p${i}-${tag}@example.com`, role: i < 3 ? "billing" : "other" },
+      });
+      expect(r.ok(), await r.text()).toBe(true);
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const draft = await (
+      await isolatedOrg.request.post("/api/invoices", { headers: h, data: { clientId, issuedDate: today, dueDate: today, currency: "USD" } })
+    ).json();
+    await isolatedOrg.request.post(`/api/invoices/${draft.id}/lines`, { headers: h, data: { description: "Consulting", quantity: 1, unitRate: 100 } });
+
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await loginIsolated(page, isolatedOrg);
+    await gotoWithRetry(page, `/invoices/${draft.id}`);
+    await page.getByTestId("button-send-invoice").click();
+    const modal = page.getByTestId("send-email-modal");
+    await expect(modal).toBeVisible();
+    await expect(modal.getByTestId("recipient-chip-3")).toBeVisible(); // client + 3 billing defaults loaded
+
+    const box = (await modal.boundingBox())!;
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height).toBeLessThanOrEqual(vp.height);
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(vp.width);
+    for (const id of ["button-confirm-send", "button-cancel-send"]) {
+      const b = (await modal.getByTestId(id).boundingBox())!;
+      expect(b.y + b.height, `${id} below the fold`).toBeLessThanOrEqual(vp.height);
+      expect(b.x + b.width, `${id} off the right edge`).toBeLessThanOrEqual(vp.width);
+    }
+    await expect(modal.getByTestId("button-confirm-send")).toBeInViewport();
+    await page.waitForTimeout(400); // let the open animation settle before the screenshot
+    await page.screenshot({ path: `${process.env.E2E_CAPTURE_DIR || "/tmp"}/send-dialog-${vp.name}.png` });
+  });
+}
