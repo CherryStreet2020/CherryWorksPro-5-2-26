@@ -17,7 +17,9 @@ import { Send, X, Check, Plus, Paperclip } from "lucide-react";
 interface SendEmailModalProps {
   open: boolean;
   onClose: () => void;
-  onSend: (emailData: { to: string; cc: string[]; subject: string; body: string }) => void;
+  /** `cc` is omitted only when the contacts failed to load and nobody edited the
+   *  list — the server then CCs the billing contacts itself, as before. */
+  onSend: (emailData: { to: string; cc?: string[]; subject: string; body: string }) => void;
   isPending: boolean;
   type: "invoice" | "estimate";
   number: string;
@@ -197,7 +199,7 @@ export function SendEmailModal({
   const [body, setBody] = useState("");
   const [emailError, setEmailError] = useState("");
 
-  const { data: contacts } = useQuery<ContactLite[]>({
+  const { data: contacts, isError: contactsFailed } = useQuery<ContactLite[]>({
     queryKey: ["/api/clients", clientId, "contacts"],
     enabled: open && !!clientId,
   });
@@ -211,18 +213,25 @@ export function SendEmailModal({
   const touchedRef = useRef(false);
   const defaultsAppliedRef = useRef(false);
 
+  // Recipients reset only when the dialog opens or the client changes — not when
+  // org settings or totals arrive late, which would drop the billing CCs.
   useEffect(() => {
     if (open) {
       const ce = (clientEmail || "").trim();
       setRecipients(ce ? [ce] : []);
       setDraft("");
-      setSubject(buildDefaultSubject(type, number, orgName));
-      setBody(buildDefaultBody({ type, clientName, number, total, currency, dueDate, expiryDate, orgName }));
       setEmailError("");
       touchedRef.current = false;
       defaultsAppliedRef.current = false;
     }
-  }, [open, type, number, clientName, clientEmail, orgName, total, dueDate, expiryDate, currency]);
+  }, [open, clientId, clientEmail]);
+
+  useEffect(() => {
+    if (open) {
+      setSubject(buildDefaultSubject(type, number, orgName));
+      setBody(buildDefaultBody({ type, clientName, number, total, currency, dueDate, expiryDate, orgName }));
+    }
+  }, [open, type, number, clientName, orgName, total, dueDate, expiryDate, currency]);
 
   // Smart default once contacts load: To = client email (else the first contact,
   // matching the server's precedence), CC = billing contacts — exactly who the
@@ -235,6 +244,10 @@ export function SendEmailModal({
       return addRecipients(first, defaultCcEmails(contacts));
     });
   }, [open, contacts, recipientOptions]);
+
+  // Until the contact list has loaded, the default CCs aren't known yet; sending
+  // then would send an explicit empty CC and skip the billing contacts.
+  const contactsLoading = open && !!clientId && contacts === undefined && !contactsFailed;
 
   const isSelected = (email: string) => recipients.some((r) => r.toLowerCase() === email.toLowerCase());
 
@@ -278,7 +291,7 @@ export function SendEmailModal({
       return;
     }
     const [to, ...cc] = list;
-    onSend({ to, cc, subject, body });
+    onSend({ to, cc: contactsFailed && !touchedRef.current ? undefined : cc, subject, body });
   };
 
   const typeLabel = type === "invoice" ? "Invoice" : "Estimate";
@@ -410,13 +423,18 @@ export function SendEmailModal({
               <Paperclip className="w-3.5 h-3.5" /> Invoice-{number.replace(/[^A-Za-z0-9._-]+/g, "-")}.pdf will be attached
             </p>
           )}
+          {contactsFailed && (
+            <p className="text-xs" style={{ color: "var(--lux-text-muted)" }} data-testid="text-contacts-failed">
+              Couldn't load this client's contacts. Billing contacts will still be CC'd automatically.
+            </p>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={onClose} disabled={isPending} style={{ borderColor: "var(--lux-border)", color: "var(--lux-text)" }} data-testid="button-cancel-send">
               <X className="w-4 h-4 mr-2" /> Cancel
             </Button>
             <Button
               onClick={handleSend}
-              disabled={(recipients.length === 0 && !draft.trim()) || isPending}
+              disabled={(recipients.length === 0 && !draft.trim()) || contactsLoading || isPending}
               style={{ background: "var(--gradient-brand)" }}
               className="text-white"
               data-testid="button-confirm-send"

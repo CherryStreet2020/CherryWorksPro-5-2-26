@@ -24,6 +24,10 @@ import {
 import { getMsTokenUrl, MS_GRAPH_SEND_URL } from "../../server/email/graph-transport";
 import { __clearOauthTokenCacheForTests } from "../../server/email/oauth-token-cache";
 import type { OrgForTransport } from "../../server/email/transport-selector";
+import { db } from "../../server/db";
+import { orgs } from "@shared/schema";
+import { eq } from "drizzle-orm";
+import { randomUUID } from "crypto";
 
 const STUB_GRAPH_URL = "https://graph-stub.test.local/v1.0/me/sendMail";
 
@@ -95,8 +99,23 @@ describe("E2 — sendInvoiceEmail() routes through GRAPH_TRANSPORT_TEST_URL_OVER
     expect(body.message.ccRecipients.map((r: any) => r.emailAddress.address)).toEqual(["ap@example.com", "cfo@example.com"]);
   });
 
+  // Rotation is persisted with a compare-and-swap, so these use a real org row.
+  async function m365OrgRow(token: string): Promise<OrgForTransport> {
+    const id = randomUUID();
+    const enc = encryptSmtpPassword(token);
+    await db.insert(orgs).values({
+      id, name: "Rotation Org", slug: `rot-${id.slice(0, 8)}`,
+      emailProviderType: "m365", emailOauthRefreshToken: enc, emailSenderAddress: "ceo@example.com",
+    });
+    return { id, emailProviderType: "m365", emailOauthRefreshToken: enc, emailSenderAddress: "ceo@example.com" };
+  }
+  async function storedToken(id: string): Promise<string | null> {
+    const [row] = await db.select({ t: orgs.emailOauthRefreshToken }).from(orgs).where(eq(orgs.id, id));
+    return row?.t ? decryptSmtpPassword(row.t) : null;
+  }
+
   it("keeps the refresh token Microsoft rotates, so the 90-day inactivity window renews on every send", async () => {
-    const org: OrgForTransport = { ...m365Org, emailOauthRefreshToken: encryptSmtpPassword("rt-original") };
+    const org = await m365OrgRow("rt-original");
     const usedRefreshTokens: string[] = [];
     let n = 0;
     (global as any).__emailTestFetch = vi.fn(async (url: string, init?: RequestInit) => {
@@ -112,12 +131,39 @@ describe("E2 — sendInvoiceEmail() routes through GRAPH_TRANSPORT_TEST_URL_OVER
       throw new Error("unexpected fetch to " + url);
     });
 
-    await sendInvoiceEmail("client@example.com", "s1", "<p>1</p>", undefined, null, undefined, org);
-    expect(decryptSmtpPassword(org.emailOauthRefreshToken!)).toBe("rt-rotated-1");
+    try {
+      await sendInvoiceEmail("client@example.com", "s1", "<p>1</p>", undefined, null, undefined, org);
+      expect(await storedToken(org.id!)).toBe("rt-rotated-1");
 
-    __clearOauthTokenCacheForTests();
-    await sendInvoiceEmail("client@example.com", "s2", "<p>2</p>", undefined, null, undefined, org);
-    expect(usedRefreshTokens).toEqual(["rt-original", "rt-rotated-1"]);
-    expect(decryptSmtpPassword(org.emailOauthRefreshToken!)).toBe("rt-rotated-2");
+      __clearOauthTokenCacheForTests();
+      await sendInvoiceEmail("client@example.com", "s2", "<p>2</p>", undefined, null, undefined, org);
+      expect(usedRefreshTokens).toEqual(["rt-original", "rt-rotated-1"]);
+      expect(await storedToken(org.id!)).toBe("rt-rotated-2");
+    } finally {
+      await db.delete(orgs).where(eq(orgs.id, org.id!));
+    }
+  });
+
+  it("a mailbox reconnected while a refresh is in flight keeps the new credential", async () => {
+    const org = await m365OrgRow("rt-old-mailbox");
+    (global as any).__emailTestFetch = vi.fn(async (url: string) => {
+      if (url === getMsTokenUrl()) {
+        // The user reconnects (new token) while Microsoft is answering the old one.
+        await db.update(orgs).set({ emailOauthRefreshToken: encryptSmtpPassword("rt-new-mailbox") }).where(eq(orgs.id, org.id!));
+        return new Response(
+          JSON.stringify({ access_token: "AT-race", expires_in: 3600, refresh_token: "rt-old-rotated" }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url === STUB_GRAPH_URL) return new Response("", { status: 202 });
+      throw new Error("unexpected fetch to " + url);
+    });
+
+    try {
+      await sendInvoiceEmail("client@example.com", "s", "<p>x</p>", undefined, null, undefined, org);
+      expect(await storedToken(org.id!)).toBe("rt-new-mailbox");
+    } finally {
+      await db.delete(orgs).where(eq(orgs.id, org.id!));
+    }
   });
 });

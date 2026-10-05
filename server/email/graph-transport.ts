@@ -10,7 +10,7 @@ import type { OrgForTransport } from "./transport-selector";
 import { isOauthAuthError, markMailboxNeedsReconnect } from "./mailbox-status";
 import { db } from "../db";
 import { orgs } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 const HEADER_INJECTION_RE = /[\r\n\f\v\0]/;
 const EMAIL_RE = /^[^\s@\r\n\f\v\0]+@[^\s@\r\n\f\v\0]+\.[^\s@\r\n\f\v\0]{2,}$/;
@@ -128,12 +128,23 @@ export async function refreshGraphAccessToken(org: OrgForTransport): Promise<str
   // did) let the mailbox expire even while mail was going out (AADSTS700082,
   // 2026-08-09). Store the rotated one so each send renews the 90-day window.
   // Awaited but non-fatal: the access token is good either way, and the stored
-  // older token stays valid until its own expiry.
+  // older token stays valid until its own expiry. Compare-and-swap on the token
+  // we redeemed (and the provider): if the mailbox was disconnected or
+  // reconnected while this refresh was in flight, the newer state wins.
   if (json.refresh_token && json.refresh_token !== refreshToken && org.id) {
+    const redeemed = org.emailOauthRefreshToken;
     try {
       const encrypted = encryptSmtpPassword(json.refresh_token);
-      await db.update(orgs).set({ emailOauthRefreshToken: encrypted }).where(eq(orgs.id, org.id));
-      org.emailOauthRefreshToken = encrypted;
+      const stored = await db
+        .update(orgs)
+        .set({ emailOauthRefreshToken: encrypted })
+        .where(and(
+          eq(orgs.id, org.id),
+          eq(orgs.emailProviderType, "m365"),
+          eq(orgs.emailOauthRefreshToken, redeemed),
+        ))
+        .returning({ id: orgs.id });
+      if (stored.length > 0) org.emailOauthRefreshToken = encrypted;
     } catch (e) {
       console.error(`[email] failed to store rotated refresh token for org=${org.id}:`, e);
     }
