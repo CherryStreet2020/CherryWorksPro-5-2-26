@@ -2,7 +2,7 @@ import { db, pool } from "./db";
 import { orgHasVerifiedAdmin } from "./email-verification";
 import { invoices, invoiceLines, clients, clientContacts, orgs } from "@shared/schema";
 import { eq, and, lt, inArray, sql, asc } from "drizzle-orm";
-import { sendInvoiceEmail } from "./email";
+import { sendInvoiceEmail, invoicePdfFilename } from "./email";
 import { generateInvoicePdf } from "./pdf";
 import type { OrgBranding } from "./pdf";
 
@@ -139,7 +139,7 @@ export async function processReminders(orgId: string) {
         .set({ lastReminderSentAt: new Date() })
         .where(eq(invoices.id, inv.id));
       try {
-        await sendInvoiceEmail(toEmail, subject, body, pdfBuffer, undefined, ccEmails.length > 0 ? ccEmails : undefined, org);
+        await sendInvoiceEmail(toEmail, subject, body, pdfBuffer, undefined, ccEmails.length > 0 ? ccEmails : undefined, org, invoicePdfFilename(inv.number));
       } catch (emailErr) {
         await db
           .update(invoices)

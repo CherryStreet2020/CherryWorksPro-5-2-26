@@ -16,7 +16,7 @@ process.env.SMTP_ENCRYPTION_KEY =
 process.env.MS_OAUTH_CLIENT_ID = "test-ms-client-id";
 process.env.MS_OAUTH_CLIENT_SECRET = "test-ms-client-secret";
 
-import { sendInvoiceEmail, encryptSmtpPassword } from "../../server/email";
+import { sendInvoiceEmail, encryptSmtpPassword, decryptSmtpPassword } from "../../server/email";
 import {
   __setEmailOauthEnabledForTests,
   __resetEmailOauthFlagForTests,
@@ -71,8 +71,9 @@ describe("E2 — sendInvoiceEmail() routes through GRAPH_TRANSPORT_TEST_URL_OVER
       "<p>Please find attached invoice INV-E2-001.</p>",
       Buffer.from("%PDF-1.4 fake-pdf"),
       null,
-      undefined,
+      ["ap@example.com", "cfo@example.com"],
       m365Org,
+      "Invoice-INV-E2-001.pdf",
     );
 
     expect(result.messageId).toBe("req-e2-stub");
@@ -89,6 +90,34 @@ describe("E2 — sendInvoiceEmail() routes through GRAPH_TRANSPORT_TEST_URL_OVER
     expect(body.message.subject).toBe("Invoice INV-E2-001");
     expect(body.message.toRecipients[0].emailAddress.address).toBe("client@example.com");
     expect(body.message.attachments).toHaveLength(1);
-    expect(body.message.attachments[0].name).toBe("invoice.pdf");
+    expect(body.message.attachments[0].name).toBe("Invoice-INV-E2-001.pdf");
+    expect(body.message.attachments[0].contentType).toBe("application/pdf");
+    expect(body.message.ccRecipients.map((r: any) => r.emailAddress.address)).toEqual(["ap@example.com", "cfo@example.com"]);
+  });
+
+  it("keeps the refresh token Microsoft rotates, so the 90-day inactivity window renews on every send", async () => {
+    const org: OrgForTransport = { ...m365Org, emailOauthRefreshToken: encryptSmtpPassword("rt-original") };
+    const usedRefreshTokens: string[] = [];
+    let n = 0;
+    (global as any).__emailTestFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === getMsTokenUrl()) {
+        usedRefreshTokens.push(new URLSearchParams(String(init?.body)).get("refresh_token") || "");
+        n++;
+        return new Response(
+          JSON.stringify({ access_token: `AT-${n}`, expires_in: 3600, refresh_token: `rt-rotated-${n}` }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url === STUB_GRAPH_URL) return new Response("", { status: 202 });
+      throw new Error("unexpected fetch to " + url);
+    });
+
+    await sendInvoiceEmail("client@example.com", "s1", "<p>1</p>", undefined, null, undefined, org);
+    expect(decryptSmtpPassword(org.emailOauthRefreshToken!)).toBe("rt-rotated-1");
+
+    __clearOauthTokenCacheForTests();
+    await sendInvoiceEmail("client@example.com", "s2", "<p>2</p>", undefined, null, undefined, org);
+    expect(usedRefreshTokens).toEqual(["rt-original", "rt-rotated-1"]);
+    expect(decryptSmtpPassword(org.emailOauthRefreshToken!)).toBe("rt-rotated-2");
   });
 });
