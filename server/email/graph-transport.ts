@@ -1,4 +1,4 @@
-import { decryptSmtpPassword } from "../email";
+import { decryptSmtpPassword, encryptSmtpPassword } from "../email";
 import {
   getCachedAccessToken,
   invalidateCachedAccessToken,
@@ -10,7 +10,7 @@ import type { OrgForTransport } from "./transport-selector";
 import { isOauthAuthError, markMailboxNeedsReconnect } from "./mailbox-status";
 import { db } from "../db";
 import { orgs } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 const HEADER_INJECTION_RE = /[\r\n\f\v\0]/;
 const EMAIL_RE = /^[^\s@\r\n\f\v\0]+@[^\s@\r\n\f\v\0]+\.[^\s@\r\n\f\v\0]{2,}$/;
@@ -116,12 +116,39 @@ export async function refreshGraphAccessToken(org: OrgForTransport): Promise<str
     throw new EmailTransportError("graph", detail);
   }
 
-  const json = (await res.json()) as { access_token?: string; expires_in?: number; scope?: string };
+  const json = (await res.json()) as { access_token?: string; expires_in?: number; scope?: string; refresh_token?: string };
   if (!json.access_token) {
     throw new EmailTransportError("graph", "Token refresh response missing access_token");
   }
 
   setCachedAccessToken(cacheKey, json.access_token, json.expires_in ?? 3600);
+
+  // Microsoft rotates the refresh token on every redemption and a refresh token
+  // dies after 90 days without use. Keeping the one from connect time (as we
+  // did) let the mailbox expire even while mail was going out (AADSTS700082,
+  // 2026-08-09). Store the rotated one so each send renews the 90-day window.
+  // Awaited but non-fatal: the access token is good either way, and the stored
+  // older token stays valid until its own expiry. Compare-and-swap on the token
+  // we redeemed (and the provider): if the mailbox was disconnected or
+  // reconnected while this refresh was in flight, the newer state wins.
+  if (json.refresh_token && json.refresh_token !== refreshToken && org.id) {
+    const redeemed = org.emailOauthRefreshToken;
+    try {
+      const encrypted = encryptSmtpPassword(json.refresh_token);
+      const stored = await db
+        .update(orgs)
+        .set({ emailOauthRefreshToken: encrypted })
+        .where(and(
+          eq(orgs.id, org.id),
+          eq(orgs.emailProviderType, "m365"),
+          eq(orgs.emailOauthRefreshToken, redeemed),
+        ))
+        .returning({ id: orgs.id });
+      if (stored.length > 0) org.emailOauthRefreshToken = encrypted;
+    } catch (e) {
+      console.error(`[email] failed to store rotated refresh token for org=${org.id}:`, e);
+    }
+  }
 
   // Sprint 2g.12 follow-up: opportunistically sync the stored scope string
   // with the live grant returned by Azure AD on each successful refresh.

@@ -7,7 +7,7 @@ import { z } from "zod";
 import { createHash, randomBytes } from "crypto";
 import { invoiceLines, invoices, payments, projectMembers, timeEntries, glJournalEntries, generateInvoiceSchema, addInvoiceLineSchema, updateInvoiceLineSchema, updateInvoiceSchema, round2, resolveCostRate, timeEntryPayoutValue, isPayoutEligibleTeamMember } from "@shared/schema";
 import { sanitizeErrorMessage, requireAdmin, requireManagerOrAbove, publicTokenLimiter, EDITABLE_STATUSES, buildInvoiceSnapshot, saveRevisionIfNeeded, createAutoJournalEntry, isGlPosted, buildInvoiceEmailHtml } from "./middleware";
-import { sendInvoiceEmail, getSmtpConfigFromOrg, pickRecipients } from "../email";
+import { sendInvoiceEmail, getSmtpConfigFromOrg, pickRecipients, invoicePdfFilename } from "../email";
 import { generateInvoicePdf } from "../pdf";
 import { fireWebhookEvent } from "../webhooks";
 import { getExchangeRate } from "../exchange-rates";
@@ -868,7 +868,7 @@ app.post(
             : undefined;
           pdfBuffer = await generateInvoicePdf(fullInvoice, orgData, baseUrl, lineDetails);
         }
-        const sendResult = await sendInvoiceEmail(toEmail, subject, body, pdfBuffer, smtpConfig, recipients.cc.length > 0 ? recipients.cc : undefined, orgData);
+        const sendResult = await sendInvoiceEmail(toEmail, subject, body, pdfBuffer, smtpConfig, recipients.cc.length > 0 ? recipients.cc : undefined, orgData, invoicePdfFilename(invoice.number));
         await storage.updateOutboxEmailStatus(outboxEmail.id, "SENT", undefined, sendResult.messageId);
         emailSent = true;
       } catch (smtpErr: any) {
@@ -1153,7 +1153,7 @@ app.post(
           ? await getInvoiceTimeEntryDetails(invoiceForPdf.id, orgId)
           : undefined;
         const pdfBuffer = await generateInvoicePdf(invoiceForPdf, orgData, baseUrl, lineDetails);
-        const sendResult = await sendInvoiceEmail(toEmail, subject, body, pdfBuffer, smtpConfig, recipients.cc.length > 0 ? recipients.cc : undefined, orgData);
+        const sendResult = await sendInvoiceEmail(toEmail, subject, body, pdfBuffer, smtpConfig, recipients.cc.length > 0 ? recipients.cc : undefined, orgData, invoicePdfFilename(invoice.number));
         await storage.updateOutboxEmailStatus(outboxEmail.id, "SENT", undefined, sendResult.messageId);
         emailSent = true;
       } catch (smtpErr: any) {

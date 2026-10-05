@@ -10,8 +10,10 @@
  */
 import { describe, it, expect } from "vitest";
 import {
+  addRecipients,
   buildRecipientOptions,
   CLIENT_EMAIL_LABEL,
+  defaultCcEmails,
   type ContactLite,
 } from "../../client/src/components/shared/send-email-modal";
 
@@ -90,5 +92,23 @@ describe("buildRecipientOptions", () => {
     ]);
     expect(opts).toHaveLength(1);
     expect(opts[0]).toEqual({ email: "dup@acme.com", label: "First Seen · billing" });
+  });
+});
+
+describe("multi-recipient defaults", () => {
+  it("defaultCcEmails = billing-role money contacts (mirrors server pickRecipients CC)", () => {
+    const cc = defaultCcEmails([
+      contact({ id: "1", email: "ap@acme.com", role: "Billing" }),
+      contact({ id: "2", email: "pm@acme.com", role: "project" }),
+      contact({ id: "3", email: "bad-address", role: "billing" }),
+      contact({ id: "4", email: "pending@acme.com", role: "billing", portalPendingAt: "2026-10-01" }),
+      contact({ id: "5", email: "hc@acme.com", role: "billing", source: "help-center" }),
+    ]);
+    expect(cc).toEqual(["ap@acme.com", "hc@acme.com"]);
+  });
+
+  it("addRecipients dedupes case-insensitively and keeps order + first casing", () => {
+    expect(addRecipients(["Ann@acme.com"], ["ann@ACME.com", "bob@acme.com", " ", "bob@acme.com"]))
+      .toEqual(["Ann@acme.com", "bob@acme.com"]);
   });
 });

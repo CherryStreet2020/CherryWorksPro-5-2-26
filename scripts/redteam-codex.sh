@@ -112,6 +112,7 @@ export CODEX_HOME="$ISO_HOME"
 # makes every run log "Code Mode is unavailable" and fail tool calls closed.
 CODEX=""
 for cand in \
+  "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex" \
   "/Applications/ChatGPT.app/Contents/Resources/codex" \
   "/Applications/Codex.app/Contents/MacOS/codex" \
   "$HOME/.codex/plugins/.plugin-appserver/codex"; do

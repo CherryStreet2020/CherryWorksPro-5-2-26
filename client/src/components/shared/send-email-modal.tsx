@@ -12,12 +12,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Send, X } from "lucide-react";
+import { Send, X, Check, Plus, Paperclip } from "lucide-react";
 
 interface SendEmailModalProps {
   open: boolean;
   onClose: () => void;
-  onSend: (emailData: { to: string; subject: string; body: string }) => void;
+  /** `cc` is omitted only when the contacts failed to load and nobody edited the
+   *  list — the server then CCs the billing contacts itself, as before. */
+  onSend: (emailData: { to: string; cc?: string[]; subject: string; body: string }) => void;
   isPending: boolean;
   type: "invoice" | "estimate";
   number: string;
@@ -143,7 +145,37 @@ function buildDefaultBody(props: {
   return body;
 }
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
+// Same rule as the server (server/email.ts EMAIL_RE), so a contact the server
+// would email (e.g. an IDN TLD like .xn--p1ai) is never dropped here.
+const EMAIL_REGEX = /^[^\s@\r\n\f\v\0]+@[^\s@\r\n\f\v\0]+\.[^\s@\r\n\f\v\0]{2,}$/;
+
+/** The CC the server adds when none is chosen (server/email.ts pickRecipients:
+ *  billing-role contacts). Pre-selected so the dialog shows everyone who gets it. */
+export function defaultCcEmails(contacts: ContactLite[] | undefined): string[] {
+  return (contacts || [])
+    .filter(isMoneyRecipient)
+    .filter((c) => (c.role || "").toLowerCase() === "billing")
+    .map((c) => (c.email || "").trim())
+    .filter((e) => EMAIL_REGEX.test(e));
+}
+
+/** Append emails to a recipient list, deduped case-insensitively, first casing wins. */
+export function addRecipients(list: string[], emails: string[]): string[] {
+  const seen = new Set(list.map((e) => e.toLowerCase()));
+  const out = [...list];
+  for (const raw of emails) {
+    const e = raw.trim();
+    if (!e || seen.has(e.toLowerCase())) continue;
+    seen.add(e.toLowerCase());
+    out.push(e);
+  }
+  return out;
+}
+
+/** Split typed text ("a@x.com, b@y.com; c@z.com") into addresses. */
+function splitTyped(text: string): string[] {
+  return text.split(/[\s,;]+/).map((t) => t.trim()).filter(Boolean);
+}
 
 export function SendEmailModal({
   open,
@@ -162,14 +194,19 @@ export function SendEmailModal({
   clientId,
   isResend = false,
 }: SendEmailModalProps) {
-  const [to, setTo] = useState("");
+  // Everyone who receives the email. The first is the To; the rest are CC'd.
+  const [recipients, setRecipients] = useState<string[]>([]);
+  const [draft, setDraft] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [emailError, setEmailError] = useState("");
 
-  const { data: contacts } = useQuery<ContactLite[]>({
+  // Always refetch on open: a cached list could be missing a contact added
+  // since, and the defaults below must match who the server would email now.
+  const { data: contacts, isError: contactsFailed, isFetching: contactsFetching } = useQuery<ContactLite[]>({
     queryKey: ["/api/clients", clientId, "contacts"],
     enabled: open && !!clientId,
+    staleTime: 0,
   });
 
   const recipientOptions = useMemo(
@@ -177,38 +214,93 @@ export function SendEmailModal({
     [clientEmail, contacts],
   );
 
-  const autofilledRef = useRef(false);
+  // Defaults follow the latest contact list until the user edits; any manual change wins.
+  const touchedRef = useRef(false);
+  const [edited, setEdited] = useState(false);
+  const markEdited = () => { touchedRef.current = true; setEdited(true); };
+
+  // Recipients reset only when the dialog opens or the client changes — not when
+  // org settings or totals arrive late, which would drop the billing CCs.
+  useEffect(() => {
+    if (open) {
+      const ce = (clientEmail || "").trim();
+      setRecipients(ce ? [ce] : []);
+      setDraft("");
+      setEmailError("");
+      touchedRef.current = false;
+      setEdited(false);
+    }
+  }, [open, clientId, clientEmail]);
 
   useEffect(() => {
     if (open) {
-      setTo(clientEmail || "");
       setSubject(buildDefaultSubject(type, number, orgName));
       setBody(buildDefaultBody({ type, clientName, number, total, currency, dueDate, expiryDate, orgName }));
-      setEmailError("");
-      autofilledRef.current = false;
     }
-  }, [open, type, number, clientName, clientEmail, orgName, total, dueDate, expiryDate, currency]);
+  }, [open, type, number, clientName, orgName, total, dueDate, expiryDate, currency]);
 
-  // Smart default: once the client's contacts load, if there is no client email
-  // on file and the To is still blank, pre-address to the first resolved contact
-  // (so a company with contacts but no top-level email isn't sent to nobody).
+  // Smart default once contacts load: To = client email (else the first contact,
+  // matching the server's precedence), CC = billing contacts — exactly who the
+  // server would email if nothing were chosen, now visible and editable.
   useEffect(() => {
-    if (open && !autofilledRef.current && !(clientEmail || "").trim() && !to.trim() && recipientOptions.length > 0) {
-      setTo(recipientOptions[0].email);
-      autofilledRef.current = true;
+    if (!open || touchedRef.current || !contacts) return;
+    const ce = (clientEmail || "").trim();
+    const first = ce ? [ce] : recipientOptions.slice(0, 1).map((o) => o.email);
+    setRecipients(addRecipients(first, defaultCcEmails(contacts)));
+  }, [open, clientEmail, contacts, recipientOptions]);
+
+  // Until the contact list has loaded, the default CCs aren't known yet; sending
+  // then would send an explicit empty CC and skip the billing contacts.
+  const contactsLoading = open && !!clientId && !contactsFailed && (contacts === undefined || contactsFetching);
+
+  const isSelected = (email: string) => recipients.some((r) => r.toLowerCase() === email.toLowerCase());
+
+  const toggle = (email: string) => {
+    markEdited();
+    setEmailError("");
+    setRecipients((cur) =>
+      cur.some((r) => r.toLowerCase() === email.toLowerCase())
+        ? cur.filter((r) => r.toLowerCase() !== email.toLowerCase())
+        : addRecipients(cur, [email]),
+    );
+  };
+
+  /** Commit typed addresses; returns the merged list, or null when one is invalid. */
+  const commitDraft = (): string[] | null => {
+    const typed = splitTyped(draft);
+    if (typed.length === 0) return recipients;
+    const bad = typed.find((t) => !EMAIL_REGEX.test(t));
+    if (bad) {
+      setEmailError(`"${bad}" isn't a valid email address`);
+      return null;
     }
-  }, [open, clientEmail, to, recipientOptions]);
+    markEdited();
+    const merged = addRecipients(recipients, typed);
+    setRecipients(merged);
+    setDraft("");
+    setEmailError("");
+    return merged;
+  };
 
   const handleSend = () => {
-    if (!EMAIL_REGEX.test(to.trim())) {
-      setEmailError("Please enter a valid email address");
+    const list = commitDraft();
+    if (!list) return;
+    if (list.length === 0) {
+      setEmailError("Add at least one recipient");
       return;
     }
-    setEmailError("");
-    onSend({ to: to.trim(), subject, body });
+    const bad = list.find((r) => !EMAIL_REGEX.test(r));
+    if (bad) {
+      setEmailError(`"${bad}" isn't a valid email address`);
+      return;
+    }
+    const [to, ...cc] = list;
+    onSend({ to, cc: contactsFailed && !edited ? undefined : cc, subject, body });
   };
 
   const typeLabel = type === "invoice" ? "Invoice" : "Estimate";
+  const labelFor = (email: string) =>
+    recipientOptions.find((o) => o.email.toLowerCase() === email.toLowerCase())?.label;
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
@@ -219,54 +311,98 @@ export function SendEmailModal({
         <div className="space-y-4 pt-2">
           <div className="space-y-1.5">
             <Label className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>To</Label>
-            <Input
-              type="email"
-              value={to}
-              onChange={(e) => { setTo(e.target.value); if (emailError) setEmailError(""); }}
-              placeholder="recipient@example.com"
-              style={{ borderColor: emailError ? "#ef4444" : "var(--lux-border)", color: "var(--lux-text)" }}
-              data-testid="input-email-to"
-            />
+            <div
+              className="flex flex-wrap items-center gap-1.5 rounded-md border px-2 py-1.5 min-w-0"
+              style={{ borderColor: emailError ? "#ef4444" : "var(--lux-border)", background: "var(--lux-bg)" }}
+              data-testid="recipient-list"
+            >
+              {recipients.map((r, idx) => (
+                <span
+                  key={r.toLowerCase()}
+                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs border min-w-0 max-w-full"
+                  style={{ background: "var(--lux-surface)", color: "var(--lux-text)", borderColor: "var(--lux-border)" }}
+                  title={r}
+                  data-testid={`recipient-chip-${idx}`}
+                >
+                  <span className="text-[10px] font-semibold uppercase" style={{ color: "var(--lux-text-muted)" }}>{idx === 0 ? "To" : "Cc"}</span>
+                  <span className="break-all">{labelFor(r) && labelFor(r) !== CLIENT_EMAIL_LABEL ? `${labelFor(r)!.split(" · ")[0]} <${r}>` : r}</span>
+                  <button
+                    type="button"
+                    onClick={() => toggle(r)}
+                    disabled={contactsLoading}
+                    className="rounded-full p-0.5 hover:opacity-70 disabled:opacity-40"
+                    aria-label={`Remove ${r}`}
+                    data-testid={`button-remove-recipient-${idx}`}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+              <input
+                type="text"
+                inputMode="email"
+                value={draft}
+                disabled={contactsLoading}
+                onChange={(e) => { setDraft(e.target.value); if (emailError) setEmailError(""); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === "," || e.key === ";") {
+                    e.preventDefault();
+                    commitDraft();
+                  } else if (e.key === "Backspace" && !draft && recipients.length > 0) {
+                    markEdited();
+                    setRecipients((cur) => cur.slice(0, -1));
+                  }
+                }}
+                onBlur={() => { if (draft.trim()) commitDraft(); }}
+                placeholder={contactsLoading ? "Loading contacts…" : recipients.length === 0 ? "recipient@example.com" : "Add another email"}
+                className="flex-1 min-w-[10rem] bg-transparent text-sm outline-none py-0.5"
+                style={{ color: "var(--lux-text)" }}
+                aria-label="Add recipient email"
+                data-testid="input-email-to"
+              />
+            </div>
             {emailError && <p className="text-xs mt-1" style={{ color: "#ef4444" }} data-testid="text-email-error">{emailError}</p>}
-            {(() => {
-              const currentTo = to.trim().toLowerCase();
-              const showPicker =
-                recipientOptions.length > 1 ||
-                (recipientOptions.length === 1 && recipientOptions[0].email.toLowerCase() !== currentTo);
-              if (!showPicker) return null;
-              return (
-                <div className="pt-1.5 space-y-1" data-testid="contact-options">
-                  <p className="text-[11px]" style={{ color: "var(--lux-text-muted)" }}>
-                    Select a contact from {clientName || "this company"}:
-                  </p>
-                  <div className="flex flex-wrap gap-1.5 min-w-0">
-                    {recipientOptions.map((opt, idx) => {
-                      const active = currentTo === opt.email.toLowerCase();
-                      return (
-                        <button
-                          key={opt.email}
-                          type="button"
-                          onClick={() => { setTo(opt.email); if (emailError) setEmailError(""); }}
-                          title={opt.email}
-                          className={cn("text-left rounded-md px-2.5 py-1 text-xs border transition-colors min-w-0 max-w-full")}
-                          style={
-                            active
-                              ? { background: "var(--gradient-brand)", color: "#fff", borderColor: "transparent" }
-                              : { background: "var(--lux-bg)", color: "var(--lux-text)", borderColor: "var(--lux-border)" }
-                          }
-                          data-testid={`button-contact-option-${idx}`}
-                        >
-                          <span className="font-medium">{opt.label}</span>
-                          {opt.label.toLowerCase() !== opt.email.toLowerCase() && (
-                            <span className="ml-1.5 break-all" style={{ color: active ? "rgba(255,255,255,0.85)" : "var(--lux-text-muted)" }}>{opt.email}</span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
+            {recipients.length > 1 && (
+              <p className="text-[11px]" style={{ color: "var(--lux-text-muted)" }}>
+                The first recipient is the To; everyone else is CC'd.
+              </p>
+            )}
+            {recipientOptions.length > 0 && (
+              <div className="pt-1.5 space-y-1" data-testid="contact-options">
+                <p className="text-[11px]" style={{ color: "var(--lux-text-muted)" }}>
+                  Choose contacts from {clientName || "this company"} (select as many as you like):
+                </p>
+                <div className="flex flex-wrap gap-1.5 min-w-0">
+                  {recipientOptions.map((opt, idx) => {
+                    const active = isSelected(opt.email);
+                    return (
+                      <button
+                        key={opt.email}
+                        type="button"
+                        role="checkbox"
+                        aria-checked={active}
+                        onClick={() => toggle(opt.email)}
+                        disabled={contactsLoading}
+                        title={opt.email}
+                        className={cn("inline-flex items-center gap-1.5 text-left rounded-md px-2.5 py-1 text-xs border transition-colors min-w-0 max-w-full")}
+                        style={
+                          active
+                            ? { background: "var(--gradient-brand)", color: "#fff", borderColor: "transparent" }
+                            : { background: "var(--lux-bg)", color: "var(--lux-text)", borderColor: "var(--lux-border)" }
+                        }
+                        data-testid={`button-contact-option-${idx}`}
+                      >
+                        {active ? <Check className="w-3 h-3 shrink-0" /> : <Plus className="w-3 h-3 shrink-0" />}
+                        <span className="font-medium">{opt.label}</span>
+                        {opt.label.toLowerCase() !== opt.email.toLowerCase() && (
+                          <span className="break-all" style={{ color: active ? "rgba(255,255,255,0.85)" : "var(--lux-text-muted)" }}>{opt.email}</span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
-              );
-            })()}
+              </div>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Subject</Label>
@@ -289,13 +425,25 @@ export function SendEmailModal({
               data-testid="input-email-body"
             />
           </div>
+          {type === "invoice" && (
+            <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--lux-text-muted)" }} data-testid="text-pdf-attached">
+              <Paperclip className="w-3.5 h-3.5" /> Invoice-{number.replace(/[^A-Za-z0-9._-]+/g, "-")}.pdf will be attached
+            </p>
+          )}
+          {contactsFailed && (
+            <p className="text-xs" style={{ color: "var(--lux-text-muted)" }} data-testid="text-contacts-failed">
+              {edited
+                ? "Couldn't load this client's contacts. Only the addresses above will receive it, so add any billing contacts by hand."
+                : "Couldn't load this client's contacts. Billing contacts will still be CC'd automatically."}
+            </p>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={onClose} disabled={isPending} style={{ borderColor: "var(--lux-border)", color: "var(--lux-text)" }} data-testid="button-cancel-send">
               <X className="w-4 h-4 mr-2" /> Cancel
             </Button>
             <Button
               onClick={handleSend}
-              disabled={!to || isPending}
+              disabled={(recipients.length === 0 && !draft.trim()) || contactsLoading || isPending}
               style={{ background: "var(--gradient-brand)" }}
               className="text-white"
               data-testid="button-confirm-send"

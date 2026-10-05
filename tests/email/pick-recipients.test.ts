@@ -8,7 +8,7 @@
  * the send/resend routes can refuse (422) instead of silently sending nowhere.
  */
 import { describe, it, expect } from "vitest";
-import { pickRecipients, type RecipientContact } from "../../server/email";
+import { pickRecipients, invoicePdfFilename, type RecipientContact } from "../../server/email";
 
 function c(partial: Partial<RecipientContact>): RecipientContact {
   return { email: null, role: null, isPrimary: false, ...partial };
@@ -131,5 +131,14 @@ describe("pickRecipients", () => {
       override: { cc: [] },
     });
     expect(noCc.cc).toEqual([]); // explicit empty overrides the billing-contact default
+  });
+});
+
+describe("invoicePdfFilename", () => {
+  it("names the attachment after the invoice, header-safe", () => {
+    expect(invoicePdfFilename("CSC-INV-0010")).toBe("Invoice-CSC-INV-0010.pdf");
+    expect(invoicePdfFilename('A/B "1"\r\n')).toBe("Invoice-A-B-1.pdf");
+    expect(invoicePdfFilename("")).toBe("invoice.pdf");
+    expect(invoicePdfFilename(null)).toBe("invoice.pdf");
   });
 });

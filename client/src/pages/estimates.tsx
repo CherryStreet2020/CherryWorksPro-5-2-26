@@ -440,9 +440,10 @@ export default function EstimatesPage() {
   });
 
   const sendMutation = useMutation({
-    mutationFn: async (params: { id: string; emailTo?: string; emailSubject?: string; emailBody?: string }) => {
+    mutationFn: async (params: { id: string; emailTo?: string; cc?: string[]; emailSubject?: string; emailBody?: string }) => {
       const res = await apiRequest("POST", `/api/estimates/${params.id}/send`, {
         emailTo: params.emailTo,
+        cc: params.cc,
         emailSubject: params.emailSubject,
         emailBody: params.emailBody,
       });
@@ -1682,6 +1683,7 @@ export default function EstimatesPage() {
             sendMutation.mutate({
               id: sendEstimate.id,
               emailTo: emailData.to,
+              cc: emailData.cc,
               emailSubject: emailData.subject,
               emailBody: emailData.body,
             });

@@ -569,9 +569,10 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
   });
 
   const sendMutation = useMutation({
-    mutationFn: async (params: { invoiceId: string; emailTo?: string; emailSubject?: string; emailBody?: string }) => {
+    mutationFn: async (params: { invoiceId: string; emailTo?: string; cc?: string[]; emailSubject?: string; emailBody?: string }) => {
       const res = await apiRequest("POST", `/api/invoices/${params.invoiceId}/send`, {
         emailTo: params.emailTo,
+        cc: params.cc,
         emailSubject: params.emailSubject,
         emailBody: params.emailBody,
       });
@@ -597,9 +598,10 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
   });
 
   const resendMutation = useMutation({
-    mutationFn: async (params: { invoiceId: string; emailTo?: string; emailSubject?: string; emailBody?: string }) => {
+    mutationFn: async (params: { invoiceId: string; emailTo?: string; cc?: string[]; emailSubject?: string; emailBody?: string }) => {
       const res = await apiRequest("POST", `/api/invoices/${params.invoiceId}/resend`, {
         emailTo: params.emailTo,
+        cc: params.cc,
         emailSubject: params.emailSubject,
         emailBody: params.emailBody,
       });
@@ -2532,6 +2534,7 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
             const params = {
               invoiceId: viewInvoice.id,
               emailTo: emailData.to,
+              cc: emailData.cc,
               emailSubject: emailData.subject,
               emailBody: emailData.body,
             };

@@ -252,6 +252,11 @@ class FileCaptureTransport implements EmailTransport {
           replyTo: message.replyTo ?? null,
           fromName: message.fromName ?? null,
           fromEmail: message.fromEmail ?? null,
+          attachments: (message.attachments ?? []).map((a) => ({
+            filename: a.filename,
+            contentType: a.contentType ?? null,
+            size: a.content.length,
+          })),
         },
         null,
         2,
@@ -357,6 +362,12 @@ function htmlToPlainText(html: string): string {
  * To and Cc — which can otherwise happen when the chosen To is itself a
  * billing contact and the caller also CCs every billing contact.
  */
+/** Attachment name for an invoice PDF — "Invoice-CSC-INV-0010.pdf". Header-safe (no quotes/CRLF). */
+export function invoicePdfFilename(invoiceNumber: string | null | undefined): string {
+  const safe = String(invoiceNumber || "").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  return safe ? `Invoice-${safe}.pdf` : "invoice.pdf";
+}
+
 export function normalizeCc(cc: string[] | undefined, to: string): string[] {
   if (!cc || cc.length === 0) return [];
   const seen = new Set<string>([(typeof to === "string" ? to : "").trim().toLowerCase()]);
@@ -485,11 +496,12 @@ export async function sendInvoiceEmail(
   smtpConfig?: SmtpConfig | null,
   cc?: string[],
   org?: OrgForTransport | null,
+  pdfFilename?: string,
 ): Promise<{ messageId: string; previewUrl?: string }> {
   const transport = await pickTransport(org, smtpConfig);
 
   const attachments: SendableAttachment[] = pdfBuffer
-    ? [{ filename: "invoice.pdf", content: pdfBuffer, contentType: "application/pdf" }]
+    ? [{ filename: pdfFilename || "invoice.pdf", content: pdfBuffer, contentType: "application/pdf" }]
     : [];
 
   const cleanedCc = normalizeCc(cc, to);
