@@ -304,11 +304,12 @@ export function SendEmailModal({
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-xl" style={{ background: "var(--lux-surface)", borderColor: "var(--lux-border)" }} data-testid="send-email-modal">
+      <DialogContent className="max-w-xl max-h-[90vh] flex flex-col gap-0 overflow-hidden" style={{ background: "var(--lux-surface)", borderColor: "var(--lux-border)" }} data-testid="send-email-modal">
         <DialogHeader>
           <DialogTitle style={{ color: "var(--lux-text)" }}>{isResend ? "Resend" : "Send"} {typeLabel} #{number}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 pt-2">
+        {/* Body scrolls; the Cancel/Send row below stays on screen at any window height. */}
+        <div className="space-y-4 pt-2 pb-1 flex-1 min-h-0 overflow-y-auto pr-1 -mr-1" data-testid="send-email-body">
           <div className="space-y-1.5">
             <Label className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>To</Label>
             <div
@@ -372,7 +373,7 @@ export function SendEmailModal({
                 <p className="text-[11px]" style={{ color: "var(--lux-text-muted)" }}>
                   Choose contacts from {clientName || "this company"} (select as many as you like):
                 </p>
-                <div className="flex flex-wrap gap-1.5 min-w-0">
+                <div className="flex flex-wrap gap-1.5 min-w-0 max-h-28 overflow-y-auto">
                   {recipientOptions.map((opt, idx) => {
                     const active = isSelected(opt.email);
                     return (
@@ -419,7 +420,7 @@ export function SendEmailModal({
             <Textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              rows={10}
+              rows={6}
               className="text-sm font-sans leading-relaxed"
               style={{ borderColor: "var(--lux-border)", color: "var(--lux-text)" }}
               data-testid="input-email-body"
@@ -437,20 +438,20 @@ export function SendEmailModal({
                 : "Couldn't load this client's contacts. Billing contacts will still be CC'd automatically."}
             </p>
           )}
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={onClose} disabled={isPending} style={{ borderColor: "var(--lux-border)", color: "var(--lux-text)" }} data-testid="button-cancel-send">
-              <X className="w-4 h-4 mr-2" /> Cancel
-            </Button>
-            <Button
-              onClick={handleSend}
-              disabled={(recipients.length === 0 && !draft.trim()) || contactsLoading || isPending}
-              style={{ background: "var(--gradient-brand)" }}
-              className="text-white"
-              data-testid="button-confirm-send"
-            >
-              <Send className="w-4 h-4 mr-2" /> {isPending ? "Sending..." : `${isResend ? "Resend" : "Send"} ${typeLabel}`}
-            </Button>
-          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-3 mt-1 shrink-0 border-t" style={{ borderColor: "var(--lux-border)" }}>
+          <Button variant="outline" onClick={onClose} disabled={isPending} style={{ borderColor: "var(--lux-border)", color: "var(--lux-text)" }} data-testid="button-cancel-send">
+            <X className="w-4 h-4 mr-2" /> Cancel
+          </Button>
+          <Button
+            onClick={handleSend}
+            disabled={(recipients.length === 0 && !draft.trim()) || contactsLoading || isPending}
+            style={{ background: "var(--gradient-brand)" }}
+            className="text-white"
+            data-testid="button-confirm-send"
+          >
+            <Send className="w-4 h-4 mr-2" /> {isPending ? "Sending..." : `${isResend ? "Resend" : "Send"} ${typeLabel}`}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
