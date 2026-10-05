@@ -10,8 +10,9 @@ import { SendEmailModal } from "@/components/shared/send-email-modal";
 
 type Sent = { to: string; cc?: string[]; subject: string; body: string };
 
-function setup(contacts: () => Promise<unknown>) {
-  const client = new QueryClient({ defaultOptions: { queries: { queryFn: contacts, retry: false, gcTime: 0 } } });
+function setup(contacts: () => Promise<unknown>, cached?: unknown) {
+  const client = new QueryClient({ defaultOptions: { queries: { queryFn: contacts, retry: false, gcTime: 60_000 } } });
+  if (cached !== undefined) client.setQueryData(["/api/clients", "c1", "contacts"], cached);
   const sends: Sent[] = [];
   const props = {
     open: true, onClose: () => {}, onSend: (d: Sent) => sends.push(d), isPending: false,
@@ -58,5 +59,15 @@ describe("SendEmailModal default recipients", () => {
     fireEvent.click(ui.getByTestId("button-confirm-send"));
     expect(sends[0].to).toBe("client@example.com");
     expect(sends[0].cc).toBeUndefined();
+  });
+
+  it("a stale cached contact list is replaced by the fresh one before Send unlocks", async () => {
+    let resolve!: (v: unknown) => void;
+    const { ui, sends } = setup(() => new Promise((r) => { resolve = r; }), []);
+    expect((ui.getByTestId("button-confirm-send") as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => { resolve([{ id: "ap", email: "ap@example.com", role: "billing", isPrimary: false }]); });
+    await flush();
+    fireEvent.click(ui.getByTestId("button-confirm-send"));
+    expect(sends[0].cc).toEqual(["ap@example.com"]);
   });
 });

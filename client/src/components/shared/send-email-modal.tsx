@@ -199,9 +199,12 @@ export function SendEmailModal({
   const [body, setBody] = useState("");
   const [emailError, setEmailError] = useState("");
 
-  const { data: contacts, isError: contactsFailed } = useQuery<ContactLite[]>({
+  // Always refetch on open: a cached list could be missing a contact added
+  // since, and the defaults below must match who the server would email now.
+  const { data: contacts, isError: contactsFailed, isFetching: contactsFetching } = useQuery<ContactLite[]>({
     queryKey: ["/api/clients", clientId, "contacts"],
     enabled: open && !!clientId,
+    staleTime: 0,
   });
 
   const recipientOptions = useMemo(
@@ -209,9 +212,8 @@ export function SendEmailModal({
     [clientEmail, contacts],
   );
 
-  // Defaults are applied once per open, after contacts arrive; any manual change wins.
+  // Defaults follow the latest contact list until the user edits; any manual change wins.
   const touchedRef = useRef(false);
-  const defaultsAppliedRef = useRef(false);
 
   // Recipients reset only when the dialog opens or the client changes — not when
   // org settings or totals arrive late, which would drop the billing CCs.
@@ -222,7 +224,6 @@ export function SendEmailModal({
       setDraft("");
       setEmailError("");
       touchedRef.current = false;
-      defaultsAppliedRef.current = false;
     }
   }, [open, clientId, clientEmail]);
 
@@ -237,17 +238,15 @@ export function SendEmailModal({
   // matching the server's precedence), CC = billing contacts — exactly who the
   // server would email if nothing were chosen, now visible and editable.
   useEffect(() => {
-    if (!open || defaultsAppliedRef.current || touchedRef.current || !contacts) return;
-    defaultsAppliedRef.current = true;
-    setRecipients((cur) => {
-      const first = cur.length > 0 ? cur : recipientOptions.slice(0, 1).map((o) => o.email);
-      return addRecipients(first, defaultCcEmails(contacts));
-    });
-  }, [open, contacts, recipientOptions]);
+    if (!open || touchedRef.current || !contacts) return;
+    const ce = (clientEmail || "").trim();
+    const first = ce ? [ce] : recipientOptions.slice(0, 1).map((o) => o.email);
+    setRecipients(addRecipients(first, defaultCcEmails(contacts)));
+  }, [open, clientEmail, contacts, recipientOptions]);
 
   // Until the contact list has loaded, the default CCs aren't known yet; sending
   // then would send an explicit empty CC and skip the billing contacts.
-  const contactsLoading = open && !!clientId && contacts === undefined && !contactsFailed;
+  const contactsLoading = open && !!clientId && !contactsFailed && (contacts === undefined || contactsFetching);
 
   const isSelected = (email: string) => recipients.some((r) => r.toLowerCase() === email.toLowerCase());
 
