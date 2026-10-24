@@ -50,7 +50,10 @@ describe("serveStatic with pre-rendered pages", () => {
     mkdirSync(path.join(dist, "prerendered"));
     writeFileSync(path.join(dist, "public", "index.html"), TEMPLATE);
     writeFileSync(path.join(dist, "prerendered", "pricing.html"), composeDocument(TEMPLATE, "<h1>PRERENDERED PRICING</h1>", "/pricing"));
-    writeFileSync(path.join(dist, "prerendered", "manifest.json"), JSON.stringify({ "/pricing": "pricing.html" }));
+    writeFileSync(path.join(dist, "prerendered", "marketing.html"), composeDocument(TEMPLATE, "<h1>PRERENDERED MARKETING</h1>", "/marketing"));
+    writeFileSync(path.join(dist, "prerendered", "manifest.json"), JSON.stringify({ "/pricing": "pricing.html", "/marketing": "marketing.html" }));
+    mkdirSync(path.join(dist, "public", "marketing", "screens"), { recursive: true });
+    writeFileSync(path.join(dist, "public", "marketing", "screens", "shot.webp"), "RIFF");
     const app = express();
     serveStatic(app, dist);
     await new Promise<void>((resolve) => { server = app.listen(0, resolve); });
@@ -92,6 +95,13 @@ describe("serveStatic with pre-rendered pages", () => {
     const t = await get("/marketing-os?utm=1");
     expect(t.status).toBe(301);
     expect(t.headers.get("location")).toBe("/marketing?utm=1");
+  });
+
+  it("serves a page whose name matches an asset folder instead of redirecting to the folder", async () => {
+    const r = await get("/marketing");
+    expect(r.status).toBe(200);
+    expect(await r.text()).toContain("PRERENDERED MARKETING");
+    expect((await get("/marketing/screens/shot.webp")).status).toBe(200);
   });
 
   it("never exposes the pre-rendered files as static assets", async () => {

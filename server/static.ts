@@ -76,6 +76,9 @@ export function serveStatic(app: Express, distDir = __dirname) {
     maxAge: "1y",
     immutable: true,
     index: false,
+    // An asset folder that shares a page's name (public/marketing/screens/ and the
+    // /marketing page) must not turn the page into a 301 to /marketing/.
+    redirect: false,
     setHeaders: (res, filePath) => {
       if (filePath.endsWith(".html")) {
         res.setHeader("Cache-Control", "no-cache");
