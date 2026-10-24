@@ -90,7 +90,7 @@ test.describe("Public /demo", () => {
     await expect(page.locator('[data-testid="button-revise-estimate"]')).toBeVisible();
   });
 
-  test("Marketing OS cross-sell on /demo links to /marketing", async ({ page }) => {
+  test("Marketing OS cross-sell on /tour links to /marketing", async ({ page }) => {
     await page.goto("/tour");
     const link = page.locator('[data-testid="link-tour-marketing-os"]');
     await link.scrollIntoViewIfNeeded();

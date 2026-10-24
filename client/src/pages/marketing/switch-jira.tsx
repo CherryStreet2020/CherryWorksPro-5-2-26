@@ -1,116 +1,179 @@
-import { Link } from "wouter";
-import { ArrowRight, CheckCircle, XCircle, Upload } from "lucide-react";
-import { useFadeIn } from "@/hooks/use-fade-in";
 import { SEO } from "@/components/seo";
-import { MarketingNav } from "@/components/marketing/marketing-nav";
-import { MarketingFooter } from "@/components/marketing/marketing-footer";
+import { SCREENS } from "@/components/marketing/screens";
+import {
+  ButtonLink, Closing, Container, Ctas, Display, Eyebrow, Fact, Heading, Lede, MarketingShell, Note, PageHero, Scene,
+  Section, Shot, TextLink,
+} from "@/components/marketing/kit";
 
-const painPoints = [
-  { pain: "Priced per agent", fix: "Every plan here has unlimited users. Anyone on the team can pick up a case — the person who did the project work usually should." },
-  { pain: "Support lives apart from billing", fix: "A case belongs to a client, a project and a rate. Hours logged on it are approved, invoiced and paid out with everything else." },
-  { pain: "Another portal, another set of credentials", fix: "Your clients already have a portal for invoices and payments. Cases are in the same one, opened with a one-time link." },
-  { pain: "Reports about tickets, not about the firm", fix: "Support shows up where you run the business: utilization, project profitability, payouts, AR." },
-  { pain: "Built for IT departments", fix: "No queues, request types or automation rules to configure before a client can email you. Point the mailbox at it and the first case exists." },
+const PAINS = [
+  {
+    pain: "Priced per agent",
+    fix: "Every plan here includes unlimited users, so whoever did the project work can pick up the case.",
+  },
+  {
+    pain: "Support lives apart from billing",
+    fix: "A case belongs to a client and a project, at that client’s rate. Hours logged on it are approved, invoiced and paid out with everything else.",
+  },
+  {
+    pain: "Client accounts to manage",
+    fix: "Approve a client’s business email domain and their people sign in to your Help Center with a one-time link. There are no passwords to reset.",
+  },
+  {
+    pain: "Reports about tickets, not the firm",
+    fix: "Case hours show up in utilization, project profitability and payout reports, next to the rest of the client’s work.",
+  },
+  {
+    pain: "Built for IT departments",
+    fix: "Connect the mailbox, approve the client’s domain, and the next email from that client is a case with an owner and an SLA clock.",
+  },
 ];
 
-const comparison: Array<{ feature: string; cw: boolean; jira: boolean | "partial" }> = [
-  { feature: "Unlimited team members (no per-agent fee)", cw: true, jira: false },
-  { feature: "Email-to-case from your existing mailbox", cw: true, jira: true },
-  { feature: "Passwordless client portal (magic link)", cw: true, jira: "partial" },
-  { feature: "SLAs per client, business-hours aware", cw: true, jira: true },
-  { feature: "Time on a case flows to the client invoice", cw: true, jira: false },
-  { feature: "Payouts to the team from case time", cw: true, jira: false },
-  { feature: "Same portal shows the client's invoices and payments", cw: true, jira: false },
-  { feature: "General ledger, AR aging, profitability reports", cw: true, jira: false },
-  { feature: "Import existing issues, comments and attachments", cw: true, jira: true },
+const COMPARISON = [
+  { row: "Pricing", cw: "Flat per firm, unlimited users", jira: "Per agent" },
+  { row: "Email to case", cw: "From a Microsoft 365 mailbox", jira: "Yes" },
+  { row: "SLA targets", cw: "Per client, in business hours", jira: "Yes" },
+  { row: "Case hours on the client invoice", cw: "Built in", jira: "Not built in" },
+  { row: "Paying the team for case hours", cw: "Built in", jira: "Not built in" },
+  { row: "General ledger and AR", cw: "Built in", jira: "Not built in" },
+  { row: "Automation rules and asset management", cw: "Not offered", jira: "Yes" },
 ];
 
-const steps = [
-  "Connect: Support → Settings → enter your Jira site, project key, email and API token. The token is stored encrypted.",
-  "Import: issues become cases (status, priority, reporter, comments, attachments), each keeping a reference to its Jira key.",
-  "Switch the mailbox: point your support address at the connected Microsoft 365 mailbox. New emails become cases from that moment.",
-  "Invite clients: each contact gets a portal link by email. No accounts to create on their side.",
+const STEPS = [
+  {
+    title: "Connect Jira Cloud",
+    body: "In Support settings, enter your Jira site, the project key, your Atlassian account email and an API token. The token is stored encrypted.",
+  },
+  {
+    title: "Preview, then import",
+    body: "A dry run shows what will come across before anything is written. The import brings each issue into the client you choose, with its comments, status history, attachments, original key and dates.",
+  },
+  {
+    title: "Connect your support mailbox",
+    body: "Connect the Microsoft 365 mailbox behind your support address. From then on, email from your clients’ contacts opens cases here.",
+  },
+  {
+    title: "Approve your clients’ domains",
+    body: "Approve each client’s business email domain so their people can sign in to the Help Center with a one-time link.",
+  },
 ];
 
 export default function SwitchJiraPage() {
-  const fadeRef = useFadeIn();
   return (
-    <div>
-      <MarketingNav />
+    <MarketingShell>
       <SEO path="/switch-from-jira-service-management" />
-      <section className="pt-[100px] pb-8 md:pb-10" style={{ background: "var(--gradient-hero)" }}>
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="max-w-3xl">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] mb-4" style={{ color: "#f87171" }}>Switch from Jira Service Management</p>
-            <h1 className="text-4xl md:text-6xl font-bold text-white tracking-tight leading-[1.08]" data-testid="switch-jira-h1">Jira runs a service desk. Your firm bills for service.</h1>
-            <p className="mt-6 text-lg md:text-xl leading-relaxed" style={{ color: "rgba(255,255,255,0.65)" }}>
-              If every support hour you deliver should end up on an invoice, a help desk that knows nothing about your clients&rsquo; contracts is the wrong shape. Move the project — issues, comments, attachments — into CherryWorks Pro and keep the email address.
-            </p>
-            <div className="mt-8 flex flex-col sm:flex-row gap-4">
-              <Link href="/demo"><span className="inline-flex items-center gap-2 px-7 py-4 text-base font-bold text-white rounded-xl cursor-pointer" style={{ background: "linear-gradient(135deg, #cf3339, #a3282d)" }}>Request a demo <ArrowRight className="w-4 h-4" /></span></Link>
-              <Link href="/client-support"><span className="inline-flex items-center gap-2 px-7 py-4 text-base font-semibold rounded-xl cursor-pointer" style={{ color: "rgba(255,255,255,0.8)", border: "1px solid rgba(255,255,255,0.15)" }}>See Client Support</span></Link>
+
+      <PageHero>
+        <Container>
+          <Eyebrow>Moving from Jira Service Management</Eyebrow>
+          <Display testId="switch-jira-h1" className="mt-4">Jira runs a service desk. Your firm bills for service.</Display>
+          <Lede size="hero" className="mt-6">
+            If every support hour should end up on an invoice, a help desk that knows nothing about your clients’ contracts is the wrong shape. Bring the project across with its comments, attachments and keys, and run support where you already bill.
+          </Lede>
+          <Ctas>
+            <ButtonLink href="/signup" testId="switch-jira-cta-signup">Start your trial</ButtonLink>
+            <ButtonLink href="/client-support" variant="secondary" testId="switch-jira-cta-support">See the support desk</ButtonLink>
+          </Ctas>
+          <Note>Imports from Jira Cloud · Professional and up</Note>
+          <Scene screen={SCREENS.supportCases} priority className="mt-14 md:mt-20" testId="switch-jira-hero-screen" />
+          <div className="mt-14 grid gap-x-8 gap-y-10 sm:grid-cols-3 md:mt-20" data-testid="section-jira-facts">
+            <Fact value="Original keys" label="kept on every case, and new cases carry on the numbering" />
+            <Fact value="Closed issues" label="imported with their history, not just the open ones" />
+            <Fact value="Run it again" label="later runs pick up new issues and skip the ones already here" />
+          </div>
+        </Container>
+      </PageHero>
+
+      <Section testId="section-pains">
+        <Container>
+          <div className="grid grid-cols-1 gap-12 lg:grid-cols-[5fr_7fr] lg:gap-[72px]">
+            <Heading>Where Jira stops fitting a services firm.</Heading>
+            <dl className="border-t border-[#E6E3DD] lg:mt-2">
+              {PAINS.map((p, i) => (
+                <div key={p.pain} data-testid={`pain-row-${i}`} className="grid gap-2 border-b border-[#E6E3DD] py-6 sm:grid-cols-[14rem_1fr] sm:gap-8">
+                  <dt className="text-[17px] font-medium text-[#15171C]">{p.pain}</dt>
+                  <dd className="text-[15.5px] leading-[1.55] text-[#5C606A]">{p.fix}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </Container>
+      </Section>
+
+      <Section testId="section-comparison">
+        <Container>
+          <Heading>What each one is built to do.</Heading>
+          <div className="mt-10 md:mt-14">
+            <table className="w-full table-fixed border-collapse text-left">
+              <colgroup>
+                <col />
+                <col className="w-[34%] sm:w-[30%]" />
+                <col className="w-[26%] sm:w-[24%]" />
+              </colgroup>
+              <thead>
+                <tr className="border-b border-[#15171C] text-[14px] font-medium text-[#5C606A]">
+                  <th scope="col" className="py-3 pr-2"><span className="sr-only">Capability</span></th>
+                  <th scope="col" className="px-2 py-3 text-[#15171C] sm:px-4">CherryWorks Pro</th>
+                  <th scope="col" className="px-2 py-3 sm:px-4">Jira SM</th>
+                </tr>
+              </thead>
+              <tbody>
+                {COMPARISON.map((c) => (
+                  <tr key={c.row} className="border-b border-[#E6E3DD]">
+                    <th scope="row" className="py-4 pr-2 align-top text-[14px] font-medium text-[#15171C] sm:text-[15.5px]">{c.row}</th>
+                    <td className="px-2 py-4 align-top text-[13px] leading-snug text-[#15171C] sm:px-4 sm:text-[15.5px]">{c.cw}</td>
+                    <td className="px-2 py-4 align-top text-[13px] leading-snug text-[#5C606A] sm:px-4 sm:text-[15.5px]">{c.jira}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-5 max-w-3xl text-[14px] leading-relaxed text-[#6E727B]">
+            Jira Service Management as described on Atlassian’s site for its cloud plans, October 2026. Marketplace apps can add time tracking and invoicing to Jira.
+          </p>
+        </Container>
+      </Section>
+
+      <Section testId="section-import">
+        <Container>
+          <div className="grid grid-cols-1 gap-12 lg:grid-cols-[5fr_7fr] lg:gap-[72px]">
+            <div>
+              <Heading>Move a project while Jira stays on.</Heading>
+              <ul className="mt-10 border-t border-[#E6E3DD]">
+                {STEPS.map((s, i) => (
+                  <li key={s.title} data-testid={`import-step-${i}`} className="border-b border-[#E6E3DD] py-6">
+                    <h3 className="text-[17px] font-medium text-[#15171C]">{s.title}</h3>
+                    <p className="mt-2 text-[15.5px] leading-[1.55] text-[#5C606A]">{s.body}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="lg:pt-2">
+              <Shot screen={SCREENS.caseDetail} />
+              <div className="mt-10 grid gap-x-10 sm:grid-cols-2">
+                <div className="border-t border-[#E6E3DD] pb-6 pt-5">
+                  <h3 className="text-[17px] font-medium text-[#15171C]">Run it again before you switch off</h3>
+                  <p className="mt-2 text-[15.5px] leading-[1.55] text-[#5C606A]">
+                    Each run picks up new issues and skips the ones already imported. The last run can also copy attachments on closed issues.
+                  </p>
+                </div>
+                <div className="border-t border-[#E6E3DD] pb-6 pt-5">
+                  <h3 className="text-[17px] font-medium text-[#15171C]">What stays behind</h3>
+                  <p className="mt-2 text-[15.5px] leading-[1.55] text-[#5C606A]">
+                    Queues, automation rules and SLA settings don’t come across; you set SLA targets per client here. Jira Data Center and Server sites aren’t supported.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </Container>
+      </Section>
 
-      <section ref={fadeRef} className="py-10 md:py-14 fade-in-section" style={{ background: "#0a0f1c" }}>
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-3xl md:text-4xl font-bold text-white tracking-tight text-center mb-10">Where it stops fitting a services firm</h2>
-          <div className="space-y-4">
-            {painPoints.map((p) => (
-              <div key={p.pain} className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-xl p-5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                <div className="flex gap-3"><XCircle className="w-5 h-5 mt-0.5 shrink-0" style={{ color: "#f87171" }} /><p className="text-base text-white font-semibold">{p.pain}</p></div>
-                <div className="flex gap-3"><CheckCircle className="w-5 h-5 mt-0.5 shrink-0" style={{ color: "#22c55e" }} /><p className="text-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.6)" }}>{p.fix}</p></div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="py-10 md:py-14" style={{ background: "linear-gradient(180deg, #111827 0%, #0a0f1c 100%)" }} data-testid="section-comparison">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-3xl md:text-4xl font-bold text-white tracking-tight text-center mb-8">Side by side</h2>
-          <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.08)" }}>
-            <div className="grid grid-cols-[1fr_auto_auto] text-xs font-bold uppercase tracking-wider px-5 py-3" style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.5)" }}>
-              <span>Capability</span><span className="w-28 text-center">CherryWorks Pro</span><span className="w-28 text-center">Jira SM</span>
-            </div>
-            {comparison.map((c) => (
-              <div key={c.feature} className="grid grid-cols-[1fr_auto_auto] items-center px-5 py-3 text-sm" style={{ borderTop: "1px solid rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.75)" }}>
-                <span>{c.feature}</span>
-                <span className="w-28 flex justify-center"><CheckCircle className="w-5 h-5" style={{ color: "#22c55e" }} /></span>
-                <span className="w-28 flex justify-center">{c.jira === true ? <CheckCircle className="w-5 h-5" style={{ color: "rgba(255,255,255,0.4)" }} /> : c.jira === "partial" ? <span className="text-xs" style={{ color: "rgba(255,255,255,0.45)" }}>with setup</span> : <XCircle className="w-5 h-5" style={{ color: "#f87171" }} />}</span>
-              </div>
-            ))}
-          </div>
-          <p className="mt-3 text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>Jira Service Management capabilities as documented by Atlassian for its cloud plans; check your plan for specifics.</p>
-        </div>
-      </section>
-
-      <section className="py-10 md:py-14" style={{ background: "#0a0f1c" }} data-testid="section-import">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3 justify-center mb-8"><Upload className="w-6 h-6" style={{ color: "#cf3339" }} /><h2 className="text-3xl md:text-4xl font-bold text-white tracking-tight">Moving a project takes an afternoon</h2></div>
-          <ol className="space-y-3">
-            {steps.map((s, i) => (
-              <li key={i} className="flex gap-4 rounded-xl p-5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                <span className="w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-sm font-black text-white" style={{ background: "#cf3339" }}>{i + 1}</span>
-                <p className="text-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.65)" }}>{s}</p>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </section>
-
-      <section className="py-12 md:py-16" style={{ background: "linear-gradient(135deg, #1a0505 0%, #0a0f1c 50%, #1a0a0a 100%)" }}>
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-3xl md:text-4xl font-bold text-white tracking-tight">Bring the project. Keep the email address.</h2>
-          <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="/demo"><span className="inline-flex items-center gap-2 px-8 py-4 text-lg font-bold text-white rounded-xl cursor-pointer" style={{ background: "linear-gradient(135deg, #cf3339, #a3282d)" }}>Request a demo <ArrowRight className="w-5 h-5" /></span></Link>
-            <Link href="/signup"><span className="inline-flex items-center gap-2 px-8 py-4 text-lg font-semibold rounded-xl cursor-pointer" style={{ color: "rgba(255,255,255,0.8)", border: "1px solid rgba(255,255,255,0.15)" }}>Start free</span></Link>
-          </div>
-        </div>
-      </section>
-      <MarketingFooter />
-    </div>
+      <Closing
+        heading="Bring the project. Keep the history."
+        body={<>The trial runs on Professional, Jira import included. Or read <TextLink href="/client-support" testId="link-switch-jira-support">how the support desk works</TextLink>.</>}
+        primary={{ href: "/signup", label: "Start your trial", testId: "cta-start-trial" }}
+        secondary={{ href: "/demo", label: "Book a demo", testId: "cta-book-demo" }}
+      />
+    </MarketingShell>
   );
 }

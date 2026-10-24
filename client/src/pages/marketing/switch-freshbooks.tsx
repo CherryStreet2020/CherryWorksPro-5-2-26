@@ -1,284 +1,518 @@
-import { useState, useMemo } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "wouter";
-import { CheckCircle, X, ArrowRight, Upload, DollarSign, BarChart3, Users, Clock, Shield, Receipt, Globe, ChevronDown, Database, Send } from "lucide-react";
 import { SEO } from "@/components/seo";
-import { MarketingNav } from "@/components/marketing/marketing-nav";
-import { MarketingFooter } from "@/components/marketing/marketing-footer";
+import {
+  ButtonLink, Container, Ctas, Display, Eyebrow, Heading, Lede, MarketingShell, Note, PageHero, Section, TRIAL_NOTE,
+} from "@/components/marketing/kit";
+import { MarketingHubBand, ClosingCta } from "@/components/marketing/switch-page";
+import { PLAN_PRICING } from "@shared/plan-pricing";
 
-const BRAND_COLORS: Record<string, string> = {
-  freshbooks: "#0075DD",
-  quickbooks: "#2CA01C",
-  harvest: "#FA5D00",
-  xero: "#13B5EA",
-  wave: "#004A82",
-  bigtime: "#1B75BC",
-  scoro: "#3D5AFE",
-  paymo: "#F4511E",
+/**
+ * /compare — one comparison table across the eight products we have switch
+ * guides for, plus a tile linking to each guide. Competitor cells are US list
+ * prices and published features as of October 2026; every vendor's source is
+ * listed under the table, and the detail (with more sources) lives on each
+ * /switch-from-* page.
+ */
+
+const money = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+
+type RowKey = "price" | "model" | "time" | "invoicing" | "payments" | "payouts" | "support" | "ledger";
+
+const ROWS: { key: RowKey; label: string }[] = [
+  { key: "price", label: "List price, as of October 2026" },
+  { key: "model", label: "How it’s priced" },
+  { key: "time", label: "Time tracking" },
+  { key: "invoicing", label: "Invoices from tracked time" },
+  { key: "payments", label: "Online payments" },
+  { key: "payouts", label: "Paying contractors" },
+  { key: "support", label: "Client support" },
+  { key: "ledger", label: "Double-entry ledger" },
+];
+
+type Product = {
+  id: string;
+  name: string;
+  /** Full wording, for the two-product view. */
+  cells: Record<RowKey, ReactNode>;
+  /** Short wording, for the nine-column grid. */
+  brief: Record<RowKey, ReactNode>;
 };
 
-const competitors = [
-  { id: "all", name: "All Platforms" },
-  { id: "freshbooks", name: "FreshBooks" },
-  { id: "quickbooks", name: "QuickBooks" },
-  { id: "xero", name: "Xero" },
-  { id: "wave", name: "Wave" },
-  { id: "harvest", name: "Harvest" },
-  { id: "bigtime", name: "BigTime" },
-  { id: "scoro", name: "Scoro" },
-  { id: "paymo", name: "Paymo" },
+const CHERRY: Product = {
+  id: "cherryworks",
+  name: "CherryWorks Pro",
+  cells: {
+    price: (
+      <>
+        {money(PLAN_PRICING.STARTER.monthly)}, {money(PLAN_PRICING.PROFESSIONAL.monthly)} or{" "}
+        {money(PLAN_PRICING.BUSINESS.monthly)} a month
+      </>
+    ),
+    model: <>Per firm, unlimited users on every plan</>,
+    time: <>Timers and timesheets; approvals on Professional and up</>,
+    invoicing: <>Yes</>,
+    payments: <>Card and ACH</>,
+    payouts: <>Hours × cost rate; Stripe Connect or a recorded payment, on Professional and up</>,
+    support: <>Support cases and a client Help Center, on Professional and up</>,
+    ledger: <>Yes, on every plan</>,
+  },
+  brief: {
+    price: <>{money(PLAN_PRICING.STARTER.monthly)}, {money(PLAN_PRICING.PROFESSIONAL.monthly)} or {money(PLAN_PRICING.BUSINESS.monthly)} a month</>,
+    model: <>Per firm, unlimited users</>,
+    time: <>Yes</>,
+    invoicing: <>Yes</>,
+    payments: <>Card, ACH</>,
+    payouts: <>Built in, Professional and up</>,
+    support: <>Cases and a Help Center, Professional and up</>,
+    ledger: <>Every plan</>,
+  },
+};
+
+const COMPETITORS: Product[] = [
+  {
+    id: "freshbooks",
+    name: "FreshBooks",
+    cells: {
+      price: <>$23, $43 or $70 a month; Select is quoted</>,
+      model: <>Per plan, plus $11 a month per team member</>,
+      time: <>Yes</>,
+      invoicing: <>Yes</>,
+      payments: <>Card and ACH, through Stripe</>,
+      payouts: <>FreshBooks Payroll add-on (Gusto)</>,
+      support: <>—</>,
+      ledger: <>Plus and up</>,
+    },
+    brief: {
+      price: <>$23 to $70 a month; Select quoted</>,
+      model: <>Per plan + $11 per team member</>,
+      time: <>Yes</>,
+      invoicing: <>Yes</>,
+      payments: <>Card, ACH</>,
+      payouts: <>Payroll add-on</>,
+      support: <>—</>,
+      ledger: <>Plus and up</>,
+    },
+  },
+  {
+    id: "quickbooks",
+    name: "QuickBooks Online",
+    cells: {
+      price: <>$38, $85, $140 or $340 a month</>,
+      model: <>Per plan, with 1 to 25 users</>,
+      time: <>Essentials and up; QuickBooks Time is sold separately</>,
+      invoicing: <>Essentials and up</>,
+      payments: <>Card 2.99%, ACH 1%</>,
+      payouts: <>Contractor Payments add-on</>,
+      support: <>—</>,
+      ledger: <>Yes</>,
+    },
+    brief: {
+      price: <>$38 to $340 a month</>,
+      model: <>Per plan, 1 to 25 users</>,
+      time: <>Essentials and up</>,
+      invoicing: <>Essentials and up</>,
+      payments: <>Card, ACH</>,
+      payouts: <>Add-on</>,
+      support: <>—</>,
+      ledger: <>Yes</>,
+    },
+  },
+  {
+    id: "xero",
+    name: "Xero",
+    cells: {
+      price: <>$27, $59 or $97 a month</>,
+      model: <>Per plan, no per-user fees</>,
+      time: <>Through Xero Projects, on Established</>,
+      invoicing: <>Through Xero Projects, on Established</>,
+      payments: <>Stripe and GoCardless</>,
+      payouts: <>Gusto payroll add-on</>,
+      support: <>—</>,
+      ledger: <>Yes</>,
+    },
+    brief: {
+      price: <>$27 to $97 a month</>,
+      model: <>Per plan</>,
+      time: <>Established, via Projects</>,
+      invoicing: <>Established, via Projects</>,
+      payments: <>Stripe, GoCardless</>,
+      payouts: <>Gusto add-on</>,
+      support: <>—</>,
+      ledger: <>Yes</>,
+    },
+  },
+  {
+    id: "wave",
+    name: "Wave",
+    cells: {
+      price: <>Free, or $19 a month for Pro</>,
+      model: <>Per plan</>,
+      time: <>—</>,
+      invoicing: <>— No time tracking to invoice from</>,
+      payments: <>Card and bank payments</>,
+      payouts: <>Wave Payroll add-on</>,
+      support: <>—</>,
+      ledger: <>Yes</>,
+    },
+    brief: {
+      price: <>Free, or $19 a month</>,
+      model: <>Per plan</>,
+      time: <>—</>,
+      invoicing: <>—</>,
+      payments: <>Card, bank</>,
+      payouts: <>Payroll add-on</>,
+      support: <>—</>,
+      ledger: <>Yes</>,
+    },
+  },
+  {
+    id: "harvest",
+    name: "Harvest",
+    cells: {
+      price: <>$11 or $17.50 per seat a month, plus usage charges; free for one seat</>,
+      model: <>Per seat, plus usage</>,
+      time: <>Yes</>,
+      invoicing: <>Yes</>,
+      payments: <>Stripe or PayPal</>,
+      payouts: <>Deel integration</>,
+      support: <>—</>,
+      ledger: <>— Syncs to QuickBooks Online or Xero</>,
+    },
+    brief: {
+      price: <>$11 or $17.50 per seat a month, plus usage</>,
+      model: <>Per seat + usage</>,
+      time: <>Yes</>,
+      invoicing: <>Yes</>,
+      payments: <>Stripe, PayPal</>,
+      payouts: <>Deel integration</>,
+      support: <>—</>,
+      ledger: <>— Syncs to QuickBooks or Xero</>,
+    },
+  },
+  {
+    id: "bigtime",
+    name: "BigTime",
+    cells: {
+      price: <>From $20 per user a month; higher plans are quoted</>,
+      model: <>Per user</>,
+      time: <>Yes</>,
+      invoicing: <>Yes</>,
+      payments: <>Card and ACH</>,
+      payouts: <>—</>,
+      support: <>Client portal, on Advanced and up</>,
+      ledger: <>— Connects to QuickBooks or Sage Intacct</>,
+    },
+    brief: {
+      price: <>From $20 per user a month</>,
+      model: <>Per user</>,
+      time: <>Yes</>,
+      invoicing: <>Yes</>,
+      payments: <>Card, ACH</>,
+      payouts: <>—</>,
+      support: <>Client portal, Advanced and up</>,
+      ledger: <>— Connects to QuickBooks or Sage Intacct</>,
+    },
+  },
+  {
+    id: "scoro",
+    name: "Scoro",
+    cells: {
+      price: <>$17 to $57 per user a month</>,
+      model: <>Per user, 5-user minimum</>,
+      time: <>Yes</>,
+      invoicing: <>Invoice app; not in Projects & Resources</>,
+      payments: <>Stripe payment links</>,
+      payouts: <>—</>,
+      support: <>Customer portal</>,
+      ledger: <>— Syncs with Xero, QuickBooks and others</>,
+    },
+    brief: {
+      price: <>$17 to $57 per user a month</>,
+      model: <>Per user, 5 minimum</>,
+      time: <>Yes</>,
+      invoicing: <>All plans but Projects & Resources</>,
+      payments: <>Stripe payment links</>,
+      payouts: <>—</>,
+      support: <>Customer portal</>,
+      ledger: <>— Syncs to Xero, QuickBooks and others</>,
+    },
+  },
+  {
+    id: "paymo",
+    name: "Paymo",
+    cells: {
+      price: <>Free for one user; Solo $9.90; Plus $15.90 or Pro $23.90 per user a month</>,
+      model: <>Per user</>,
+      time: <>Yes</>,
+      invoicing: <>Yes</>,
+      payments: <>PM Payments: card and ACH</>,
+      payouts: <>—</>,
+      support: <>—</>,
+      ledger: <>— Syncs with QuickBooks Online and Xero</>,
+    },
+    brief: {
+      price: <>Free to $23.90 per user a month</>,
+      model: <>Per user</>,
+      time: <>Yes</>,
+      invoicing: <>Yes</>,
+      payments: <>Card, ACH</>,
+      payouts: <>—</>,
+      support: <>—</>,
+      ledger: <>— Syncs to QuickBooks Online or Xero</>,
+    },
+  },
 ];
 
-type Support = boolean | string;
-interface CompRow {
-  feature: string;
-  category: string;
-  cherry: Support;
-  freshbooks: Support;
-  quickbooks: Support;
-  xero: Support;
-  wave: Support;
-  harvest: Support;
-  bigtime: Support;
-  scoro: Support;
-  paymo: Support;
+const SOURCES: { label: string; href: string }[] = [
+  { label: "FreshBooks", href: "https://www.freshbooks.com/pricing" },
+  { label: "QuickBooks Online", href: "https://quickbooks.intuit.com/pricing/" },
+  { label: "Xero", href: "https://www.xero.com/us/pricing-plans/" },
+  { label: "Wave", href: "https://www.waveapps.com/pricing" },
+  { label: "Harvest", href: "https://www.getharvest.com/pricing" },
+  { label: "BigTime", href: "https://www.bigtime.net/pricing/" },
+  { label: "Scoro", href: "https://www.scoro.com/pricing/" },
+  { label: "Paymo", href: "https://www.paymoapp.com/pricing/" },
+];
+
+type Guide = { id: string; name: string; href: string; summary: string };
+
+const GUIDES: Guide[] = [
+  { id: "freshbooks", name: "FreshBooks", href: "/switch-from-freshbooks", summary: "Invoicing priced per team member, with payroll as an add-on." },
+  { id: "quickbooks", name: "QuickBooks Online", href: "/switch-from-quickbooks", summary: "Plans capped at 1 to 25 users, with contractor payments as an add-on." },
+  { id: "xero", name: "Xero", href: "/switch-from-xero", summary: "Time tracking through Projects on Established, and payroll through Gusto." },
+  { id: "wave", name: "Wave", href: "/switch-from-wave", summary: "Free bookkeeping and invoicing, without time tracking." },
+  { id: "harvest", name: "Harvest", href: "/switch-from-harvest", summary: "Per-seat time tracking plus usage charges, with the books in a second system." },
+  { id: "bigtime", name: "BigTime", href: "/switch-from-bigtime", summary: "Per-user time and billing that connects to your accounting system." },
+  { id: "scoro", name: "Scoro", href: "/switch-from-scoro", summary: "Per-user work management with a 5-user minimum, and accounting kept elsewhere." },
+  { id: "paymo", name: "Paymo", href: "/switch-from-paymo", summary: "Per-user projects and time, syncing to QuickBooks Online or Xero." },
+  {
+    id: "jira",
+    name: "Jira Service Management",
+    href: "/switch-from-jira-service-management",
+    summary: "Bring your support cases across, closed ones included, with their comments and attachments.",
+  },
+];
+
+const FILTERS: { id: string; label: string }[] = [
+  { id: "all", label: "All eight" },
+  ...COMPETITORS.map((c) => ({ id: c.id, label: c.name })),
+];
+
+
+function CompareTable({ selected }: { selected: string }) {
+  const single = selected !== "all";
+  const columns = [CHERRY, ...COMPETITORS.filter((c) => !single || c.id === selected)];
+  const caption = single
+    ? `CherryWorks Pro and ${columns[1].name} compared`
+    : "CherryWorks Pro and eight other products compared";
+
+  if (single) {
+    // Two products: a readable three-column table that stacks on phones.
+    const other = columns[1];
+    const cell = "align-top py-5 pr-8 max-md:block max-md:p-0";
+    const colLabel = "mb-1 block text-[14px] font-medium md:hidden";
+    return (
+      <table data-testid="comparison-table" className="w-full border-collapse text-left text-[16px] leading-[1.55] max-md:block">
+        <caption className="sr-only">{caption}</caption>
+        <thead className="max-md:hidden">
+          <tr className="border-b border-[#15171C]">
+            <th scope="col" className="w-[24%] pb-4 pr-8"><span className="sr-only">Feature</span></th>
+            <th scope="col" className="w-[38%] pb-4 pr-8 text-[15px] font-medium text-[#15171C]">{CHERRY.name}</th>
+            <th scope="col" className="w-[38%] pb-4 text-[15px] font-medium text-[#5C606A]">{other.name}</th>
+          </tr>
+        </thead>
+        <tbody className="max-md:block max-md:border-t max-md:border-[#15171C]">
+          {ROWS.map((r) => (
+            <tr key={r.key} className="border-b border-[#E6E3DD] max-md:block max-md:space-y-4 max-md:py-6">
+              <th scope="row" className={`${cell} font-medium text-[#15171C]`}>{r.label}</th>
+              <td className={`${cell} text-[#15171C]`}>
+                <span className={`${colLabel} text-[#CF3339]`}>{CHERRY.name}</span>
+                {CHERRY.cells[r.key]}
+              </td>
+              <td className={`${cell} text-[#5C606A] md:pr-0`}>
+                <span className={`${colLabel} text-[#6E727B]`}>{other.name}</span>
+                {other.cells[r.key]}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  }
+
+  // All nine: a compact grid of short answers, with the feature column pinned.
+  // It fits from about 1130px wide and scrolls sideways below that.
+  return (
+    <>
+      <p className="mb-3 text-[14px] text-[#6E727B] min-[1130px]:hidden" aria-hidden="true">
+        Scroll sideways to see all nine products.
+      </p>
+      <div
+        role="region"
+        aria-label={`${caption}. Scroll sideways to see every column.`}
+        tabIndex={0}
+        className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#CF3339]"
+      >
+        <table data-testid="comparison-table" className="w-full min-w-[1060px] table-fixed border-collapse text-left text-[14px] leading-snug">
+          <caption className="sr-only">{caption}</caption>
+          <colgroup>
+            <col className="w-[120px] md:w-[140px]" />
+            {columns.map((c) => <col key={c.id} />)}
+          </colgroup>
+          <thead>
+            <tr className="border-b border-[#15171C]">
+              <th scope="col" className="sticky left-0 z-10 bg-white pb-4 pr-3">
+                <span className="sr-only">Feature</span>
+              </th>
+              {columns.map((c, i) => (
+                <th
+                  key={c.id}
+                  scope="col"
+                  className={`px-3 pb-4 align-bottom text-[14px] font-medium leading-tight ${i === 0 ? "text-[#CF3339]" : "text-[#15171C]"}`}
+                >
+                  {c.name}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {ROWS.map((r) => (
+              <tr key={r.key} className="border-b border-[#E6E3DD]">
+                <th scope="row" className="sticky left-0 z-10 bg-white py-4 pr-3 align-top font-medium text-[#15171C]">
+                  {r.label}
+                </th>
+                {columns.map((c, i) => (
+                  <td key={c.id} className={`px-3 py-4 align-top ${i === 0 ? "text-[#15171C]" : "text-[#5C606A]"}`}>
+                    {c.brief[r.key]}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
 }
-
-const comparisonData: CompRow[] = [
-  { feature: "Unlimited team members (no per-user fees)", category: "Pricing", cherry: true, freshbooks: false, quickbooks: false, xero: true, wave: true, harvest: false, bigtime: false, scoro: false, paymo: false },
-  { feature: "1099 + W-2 + Corp-to-Corp worker types", category: "Team", cherry: true, freshbooks: false, quickbooks: false, xero: false, wave: false, harvest: false, bigtime: false, scoro: false, paymo: false },
-  { feature: "Smart onboarding wizard (adapts to worker type)", category: "Team", cherry: true, freshbooks: false, quickbooks: false, xero: false, wave: false, harvest: false, bigtime: false, scoro: false, paymo: false },
-  { feature: "Time tracking (week, month, day views)", category: "Time", cherry: true, freshbooks: true, quickbooks: true, xero: false, wave: false, harvest: true, bigtime: true, scoro: true, paymo: true },
-  { feature: "Floating timer widget", category: "Time", cherry: true, freshbooks: true, quickbooks: false, xero: false, wave: false, harvest: true, bigtime: false, scoro: true, paymo: true },
-  { feature: "Timesheet approval workflow", category: "Time", cherry: true, freshbooks: false, quickbooks: true, xero: false, wave: false, harvest: true, bigtime: true, scoro: true, paymo: true },
-  { feature: "Invoicing from billable time", category: "Billing", cherry: true, freshbooks: true, quickbooks: true, xero: true, wave: false, harvest: false, bigtime: true, scoro: true, paymo: true },
-  { feature: "Multi-currency invoicing (30+)", category: "Billing", cherry: true, freshbooks: true, quickbooks: true, xero: true, wave: false, harvest: false, bigtime: true, scoro: true, paymo: false },
-  { feature: "Recurring invoice templates", category: "Billing", cherry: true, freshbooks: true, quickbooks: true, xero: true, wave: false, harvest: false, bigtime: false, scoro: true, paymo: true },
-  { feature: "Stripe Checkout integration", category: "Billing", cherry: true, freshbooks: true, quickbooks: false, xero: true, wave: false, harvest: false, bigtime: false, scoro: true, paymo: false },
-  { feature: "ACH bank transfer payments", category: "Billing", cherry: true, freshbooks: true, quickbooks: true, xero: false, wave: false, harvest: false, bigtime: false, scoro: false, paymo: false },
-  { feature: "19 built-in reports", category: "Reports", cherry: true, freshbooks: false, quickbooks: true, xero: true, wave: false, harvest: false, bigtime: true, scoro: true, paymo: true },
-  { feature: "AR aging report", category: "Reports", cherry: true, freshbooks: true, quickbooks: true, xero: true, wave: false, harvest: false, bigtime: false, scoro: false, paymo: false },
-  { feature: "Team utilization report", category: "Reports", cherry: true, freshbooks: true, quickbooks: false, xero: false, wave: false, harvest: false, bigtime: true, scoro: true, paymo: true },
-  { feature: "Expense analytics (category, project, team member)", category: "Reports", cherry: true, freshbooks: false, quickbooks: true, xero: false, wave: false, harvest: false, bigtime: true, scoro: true, paymo: true },
-  { feature: "Expense management with approval workflow", category: "Expenses", cherry: true, freshbooks: true, quickbooks: true, xero: true, wave: false, harvest: true, bigtime: true, scoro: true, paymo: true },
-  { feature: "Receipt photo/PDF upload", category: "Expenses", cherry: true, freshbooks: true, quickbooks: true, xero: true, wave: true, harvest: true, bigtime: false, scoro: false, paymo: false },
-  { feature: "AI receipt scanning (photo to GL entry)", category: "Expenses", cherry: true, freshbooks: false, quickbooks: false, xero: false, wave: false, harvest: false, bigtime: false, scoro: false, paymo: false },
-  { feature: "Batch expense reports", category: "Expenses", cherry: true, freshbooks: true, quickbooks: true, xero: false, wave: false, harvest: false, bigtime: true, scoro: true, paymo: true },
-  { feature: "Auto-reimbursement payouts on approval", category: "Expenses", cherry: true, freshbooks: false, quickbooks: false, xero: false, wave: false, harvest: false, bigtime: false, scoro: false, paymo: false },
-  { feature: "Expense reports with GL posting", category: "Expenses", cherry: true, freshbooks: false, quickbooks: false, xero: false, wave: false, harvest: false, bigtime: false, scoro: false, paymo: false },
-  { feature: "Automatic payout tracking", category: "Payouts", cherry: true, freshbooks: false, quickbooks: false, xero: false, wave: false, harvest: false, bigtime: false, scoro: false, paymo: false },
-  { feature: "Stripe Connect team payouts", category: "Payouts", cherry: true, freshbooks: false, quickbooks: false, xero: false, wave: false, harvest: false, bigtime: false, scoro: false, paymo: false },
-  { feature: "Bill rate vs cost rate per project", category: "Payouts", cherry: true, freshbooks: true, quickbooks: false, xero: true, wave: false, harvest: false, bigtime: true, scoro: true, paymo: true },
-  { feature: "1099-ready export", category: "Payouts", cherry: true, freshbooks: false, quickbooks: true, xero: true, wave: false, harvest: false, bigtime: false, scoro: false, paymo: false },
-  { feature: "Project profitability (labor + expenses)", category: "Projects", cherry: true, freshbooks: true, quickbooks: true, xero: true, wave: false, harvest: false, bigtime: true, scoro: true, paymo: true },
-  { feature: "Project budget tracking", category: "Projects", cherry: true, freshbooks: true, quickbooks: true, xero: true, wave: false, harvest: false, bigtime: true, scoro: true, paymo: true },
-  { feature: "Client portal (invoices, payments, overdue alerts)", category: "Clients", cherry: true, freshbooks: true, quickbooks: false, xero: false, wave: false, harvest: false, bigtime: true, scoro: true, paymo: true },
-  { feature: "Estimates & proposals", category: "Clients", cherry: true, freshbooks: true, quickbooks: true, xero: false, wave: true, harvest: false, bigtime: true, scoro: true, paymo: true },
-  { feature: "Import wizard for 8 platforms (preview, execute, rollback)", category: "Migration", cherry: true, freshbooks: false, quickbooks: false, xero: false, wave: false, harvest: false, bigtime: false, scoro: false, paymo: false },
-  { feature: "REST API for external integrations", category: "Integrations", cherry: true, freshbooks: true, quickbooks: true, xero: true, wave: false, harvest: true, bigtime: true, scoro: true, paymo: true },
-  { feature: "Webhook event notifications", category: "Integrations", cherry: true, freshbooks: true, quickbooks: true, xero: true, wave: false, harvest: true, bigtime: false, scoro: false, paymo: false },
-  { feature: "Zapier payroll webhooks", category: "Integrations", cherry: true, freshbooks: false, quickbooks: false, xero: false, wave: false, harvest: false, bigtime: false, scoro: false, paymo: false },
-  { feature: "AI-powered help assistant", category: "AI & Automation", cherry: true, freshbooks: true, quickbooks: true, xero: false, wave: false, harvest: false, bigtime: true, scoro: true, paymo: false },
-  { feature: "Mission Control dashboard", category: "AI & Automation", cherry: true, freshbooks: false, quickbooks: false, xero: false, wave: false, harvest: false, bigtime: false, scoro: false, paymo: false },
-  { feature: "General Ledger (chart of accounts, journal entries)", category: "Accounting", cherry: true, freshbooks: true, quickbooks: true, xero: true, wave: true, harvest: false, bigtime: false, scoro: false, paymo: false },
-  { feature: "Bank reconciliation", category: "Accounting", cherry: true, freshbooks: true, quickbooks: true, xero: true, wave: true, harvest: false, bigtime: true, scoro: false, paymo: false },
-  { feature: "Trial Balance report", category: "Accounting", cherry: true, freshbooks: true, quickbooks: true, xero: true, wave: true, harvest: false, bigtime: false, scoro: false, paymo: false },
-  { feature: "Close periods (period locking)", category: "Accounting", cherry: true, freshbooks: true, quickbooks: true, xero: true, wave: false, harvest: false, bigtime: false, scoro: true, paymo: false },
-  { feature: "Auto-post transactions to General Ledger", category: "Accounting", cherry: true, freshbooks: true, quickbooks: false, xero: false, wave: false, harvest: false, bigtime: false, scoro: false, paymo: false },
-  { feature: "Enterprise audit logging", category: "Security", cherry: true, freshbooks: true, quickbooks: false, xero: false, wave: false, harvest: false, bigtime: false, scoro: true, paymo: false },
-];
-
-const Chk = () => <CheckCircle className="w-3.5 h-3.5 mx-auto" style={{ color: "#22c55e" }} />;
-const No = () => <X className="w-3.5 h-3.5 mx-auto" style={{ color: "rgba(255,255,255,0.1)" }} />;
-const Val = ({ v }: { v: Support }) => typeof v === "string" ? <span className="text-xs text-center block" style={{ color: "#f59e0b" }}>{v}</span> : v ? <Chk /> : <No />;
 
 export default function SwitchFreshBooksPage() {
   const [selected, setSelected] = useState("all");
 
-  const visibleCompetitors = selected === "all"
-    ? competitors.filter(c => c.id !== "all")
-    : competitors.filter(c => c.id === selected);
-
-  const allCompetitorIds = ["freshbooks", "quickbooks", "xero", "wave", "harvest", "bigtime", "scoro", "paymo"];
-  const cherryExclusiveCount = useMemo(() =>
-    comparisonData.filter(row =>
-      row.cherry === true && allCompetitorIds.every(id => (row as any)[id] === false)
-    ).length,
-  []);
-
   return (
-    <div style={{ background: "#0a0f1c" }}>
-      <MarketingNav />
+    <MarketingShell>
       <SEO path="/compare" />
 
-      <section className="pt-[100px] pb-8 md:pb-10" style={{ background: "linear-gradient(135deg, #0a0f1c 0%, #111827 50%, #1a0a0a 100%)" }}>
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8 md:pt-12 md:pb-10">
-          <div className="max-w-3xl">
-            <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight">
-              We didn't build another time tracker. We built the platform that replaces{" "}
-              <span style={{ color: "#cf3339" }}>all of them</span>.
-            </h1>
-            <p className="mt-4 text-lg" style={{ color: "rgba(255,255,255,0.65)" }}>
-              Eight competitors. 41 features compared. 41 wins. Switching? Import your data in minutes. Starting fresh? You'll be live just as fast.
-            </p>
-          </div>
-        </div>
-      </section>
+      <PageHero>
+        <Container>
+          <Eyebrow>Compare</Eyebrow>
+          <Display className="mt-4">How CherryWorks{" "}Pro compares.</Display>
+          <Lede size="hero" className="mt-6">
+            CherryWorks Pro runs support cases, time, invoicing, contractor payouts and the general ledger in one system, with
+            Marketing Hub on Business, priced per firm. Here’s how it lines up against eight tools firms often use, by their
+            published list prices and features.
+          </Lede>
+          <Ctas>
+            <ButtonLink href="/signup" testId="cta-start-trial">Start your trial</ButtonLink>
+            <ButtonLink href="/tour" variant="secondary" testId="cta-take-tour">Take the tour</ButtonLink>
+          </Ctas>
+          <Note>{TRIAL_NOTE}</Note>
+        </Container>
+      </PageHero>
 
-      <section className="py-10 md:py-12" style={{ background: "var(--color-brand-900)" }}>
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
-            <div><p className="text-2xl font-bold text-white">{comparisonData.length}</p><p className="text-xs uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.5)" }}>Features Compared</p></div>
-            <div><p className="text-2xl font-bold" style={{ color: "#22c55e" }}>{comparisonData.filter(r => r.cherry).length}</p><p className="text-xs uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.5)" }}>CherryWorks Pro Wins</p></div>
-            <div><p className="text-2xl font-bold text-white">8</p><p className="text-xs uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.5)" }}>Competitors Compared</p></div>
-            <div><p className="text-2xl font-bold" style={{ color: "#cf3339" }}>{cherryExclusiveCount}</p><p className="text-xs uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.5)" }}>Exclusive to CherryWorks Pro</p></div>
-          </div>
-        </div>
-      </section>
+      <Section testId="section-comparison">
+        <Container>
+          <Heading>Side by side.</Heading>
+          <Lede className="mt-5">Pick a product to see it next to CherryWorks Pro in more detail, or view all eight at once.</Lede>
 
-      <section className="pt-8 md:pt-10" style={{ background: "#0a0f1c" }}>
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <p className="text-sm font-bold mb-4" style={{ color: "rgba(255,255,255,0.7)" }}>Compare CherryWorks Pro against:</p>
-          <div className="flex flex-wrap gap-2">
-            {competitors.map(c => {
-              const brandColor = BRAND_COLORS[c.id];
+          <div role="group" aria-label="Choose a product to compare" className="mt-10 flex flex-wrap gap-x-6 gap-y-1 border-b border-[#E6E3DD]">
+            {FILTERS.map((f) => {
+              const on = selected === f.id;
               return (
-                <button key={c.id} onClick={() => setSelected(c.id)} className="px-4 py-2 text-sm font-medium rounded-lg transition-all cursor-pointer" data-testid={`compare-filter-${c.id}`} style={{ background: selected === c.id ? "#cf3339" : "rgba(255,255,255,0.03)", color: selected === c.id ? "#fff" : (brandColor || "rgba(255,255,255,0.5)"), border: `1px solid ${selected === c.id ? "#cf3339" : "rgba(255,255,255,0.06)"}` }}>
-                  {c.name}
+                <button
+                  key={f.id}
+                  type="button"
+                  aria-pressed={on}
+                  data-testid={`compare-filter-${f.id}`}
+                  onClick={() => setSelected(f.id)}
+                  className={`-mb-px border-b py-3 text-[15px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#CF3339] ${
+                    on ? "border-[#15171C] text-[#15171C]" : "border-transparent text-[#6E727B] hover:text-[#15171C]"
+                  }`}
+                >
+                  {f.label}
                 </button>
               );
             })}
           </div>
-        </div>
-      </section>
 
-      <section className="pb-16 md:pb-20" style={{ background: "#0a0f1c" }}>
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="rounded-2xl overflow-hidden overflow-x-auto" style={{ border: "1px solid rgba(255,255,255,0.06)" }}>
-            <table className="w-full text-sm" data-testid="comparison-table">
-              <thead>
-                <tr style={{ background: "rgba(255,255,255,0.03)" }}>
-                  <th className="text-left px-4 py-3 text-xs font-bold uppercase tracking-wider sticky left-0 z-10" style={{ color: "rgba(255,255,255,0.5)", background: "rgba(255,255,255,0.03)", minWidth: "240px" }}>Feature</th>
-                  <th className="text-center px-3 py-3 text-xs font-bold" style={{ color: "#cf3339", minWidth: "100px" }}>CherryWorks Pro</th>
-                  {visibleCompetitors.map(c => (
-                    <th key={c.id} className="text-center px-3 py-3 text-xs font-bold" style={{ color: BRAND_COLORS[c.id] || "rgba(255,255,255,0.5)", minWidth: "100px" }}>{c.name}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {comparisonData.map((row, i) => {
-                  const prevCat = i > 0 ? comparisonData[i-1].category : "";
-                  const showCat = row.category !== prevCat;
-                  return (
-                    <tr key={i}>
-                      <td className="px-4 py-2.5 sticky left-0 z-10" style={{ background: "#0a0f1c", borderTop: showCat ? "2px solid rgba(255,255,255,0.06)" : "1px solid rgba(255,255,255,0.06)" }}>
-                        {showCat && <p className="text-xs font-bold uppercase tracking-wider mb-0.5" style={{ color: "#cf3339" }}>{row.category}</p>}
-                        <p className="text-sm" style={{ color: "rgba(255,255,255,0.7)" }}>{row.feature}</p>
-                      </td>
-                      <td className="text-center px-3 py-2.5" style={{ background: "rgba(207,51,57,0.03)", borderTop: showCat ? "2px solid rgba(255,255,255,0.06)" : "1px solid rgba(255,255,255,0.06)" }}><Val v={row.cherry} /></td>
-                      {visibleCompetitors.map(c => (
-                        <td key={c.id} className="text-center px-3 py-2.5" style={{ borderTop: showCat ? "2px solid rgba(255,255,255,0.06)" : "1px solid rgba(255,255,255,0.06)" }}><Val v={(row as any)[c.id]} /></td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="mt-10">
+            <CompareTable selected={selected} />
           </div>
-          <p className="mt-4 text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>* Some features require Professional or Business plans. See <Link href="/pricing" style={{ color: "rgba(255,255,255,0.35)", textDecoration: "underline" }}>pricing</Link> for details. Competitor features verified April 2026.</p>
-        </div>
-      </section>
 
-      <section className="py-10 md:py-14" style={{ background: "linear-gradient(135deg, #0a0f1c 0%, #111827 100%)" }}>
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-3xl font-bold text-white tracking-tight">Switch from any of them in under 5 minutes</h2>
-          <p className="mt-3 text-base" style={{ color: "rgba(255,255,255,0.5)" }}>Built-in import wizards for every major platform. Upload your export, preview with dry-run, execute with one click. Full rollback if anything goes wrong.</p>
-          <div className="flex flex-wrap justify-center gap-3 mt-8">
-            {[
-              { name: "FreshBooks", href: "/switch-from-freshbooks", color: "#0075DD" },
-              { name: "QuickBooks", href: "/switch-from-quickbooks", color: "#2CA01C" },
-              { name: "Xero", href: "/switch-from-xero", color: "#13B5EA" },
-              { name: "Wave", href: "/switch-from-wave", color: "#004A82" },
-              { name: "Harvest", href: "/switch-from-harvest", color: "#FA5D00" },
-              { name: "BigTime", href: "/switch-from-bigtime", color: "#1B75BC" },
-              { name: "Scoro", href: "/switch-from-scoro", color: "#3D5AFE" },
-              { name: "Paymo", href: "/switch-from-paymo", color: "#F4511E" },
-            ].map((p, i) => (
-              <Link key={i} href={p.href}><span className="text-xs font-bold px-4 py-2 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105 inline-block" data-testid={`switch-link-${p.name.toLowerCase()}`} style={{ background: `${p.color}15`, color: p.color, border: `1px solid ${p.color}40`, boxShadow: `0 0 0 0 ${p.color}00` }} onMouseEnter={e => { e.currentTarget.style.background = `${p.color}25`; e.currentTarget.style.borderColor = `${p.color}80`; e.currentTarget.style.boxShadow = `0 0 12px ${p.color}30`; }} onMouseLeave={e => { e.currentTarget.style.background = `${p.color}15`; e.currentTarget.style.borderColor = `${p.color}40`; e.currentTarget.style.boxShadow = `0 0 0 0 ${p.color}00`; }}>{p.name}</span></Link>
-            ))}
-          </div>
-          <div className="mt-8 flex flex-col sm:flex-row justify-center gap-4">
-            <div className="rounded-xl p-5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
-              <p className="text-sm" style={{ color: "rgba(255,255,255,0.5)" }}>
-                Switching from QuickBooks?{" "}
-                <Link href="/switch-from-quickbooks"><span className="font-bold cursor-pointer transition-colors hover:text-white" style={{ color: "#f87171" }}>See our detailed comparison <ArrowRight className="w-3.5 h-3.5 inline" /></span></Link>
-              </p>
-            </div>
-            <div className="rounded-xl p-5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
-              <p className="text-sm" style={{ color: "rgba(255,255,255,0.5)" }}>
-                Switching from FreshBooks?{" "}
-                <Link href="/switch-from-freshbooks"><span className="font-bold cursor-pointer transition-colors hover:text-white" style={{ color: "#f87171" }}>See our detailed comparison <ArrowRight className="w-3.5 h-3.5 inline" /></span></Link>
-              </p>
-            </div>
-          </div>
-          <div className="mt-8">
-            <Link href="/signup"><span className="inline-flex items-center gap-2 px-7 py-4 text-base font-bold text-white rounded-xl cursor-pointer transition-all hover:scale-[1.03]" style={{ background: "linear-gradient(135deg, #cf3339, #e74c3c)", boxShadow: "0 4px 30px rgba(207,51,57,0.4)" }}>Start Free Trial <ArrowRight className="w-4 h-4" /></span></Link>
-          </div>
-          <p className="mt-4 text-sm" style={{ color: "rgba(255,255,255,0.3)" }}>14-day free trial &middot; Cancel anytime</p>
-        </div>
-      </section>
-
-      <section className="py-10 md:py-14" style={{ background: "#0a0f1c" }} data-testid="section-compare-marketing-os">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-10">
-            <span className="inline-block text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full mb-3" style={{ background: "rgba(220,38,38,0.15)", color: "#f87171", border: "1px solid rgba(220,38,38,0.25)" }} data-testid="badge-compare-marketing-os">
-              Included in Business plan
-            </span>
-            <h2 className="text-3xl md:text-4xl font-bold text-white tracking-tight">One more thing no competitor offers</h2>
-            <p className="mt-3 text-base max-w-2xl mx-auto" style={{ color: "rgba(255,255,255,0.55)" }}>
-              Marketing Hub adds a full prospect-to-client layer on top of CherryWorks Pro &mdash; included in the Business plan, with no cross-contamination between marketing and billing records.
+          <div className="mt-6 max-w-3xl space-y-3 text-[14px] leading-relaxed text-[#6E727B]">
+            <p>
+              Monthly list prices in US dollars, as of October 2026. Several vendors charge less for annual billing. A dash means we
+              found no built-in feature in the vendor’s published plans; many of these products connect to other tools that fill
+              the gap. Check each vendor’s site for current terms.
+            </p>
+            <p>
+              Vendor pricing:{" "}
+              {SOURCES.map((s, i) => (
+                <span key={s.href}>
+                  <a
+                    href={s.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="border-b border-[#CFCBC3] text-[#5C606A] transition-colors hover:border-[#15171C] hover:text-[#15171C]"
+                  >
+                    {s.label}
+                  </a>
+                  {i < SOURCES.length - 1 ? " · " : ""}
+                </span>
+              ))}
             </p>
           </div>
-          <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.06)" }}>
-            <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
-              {[
-                { icon: Users, title: "Contacts & Companies CRM", desc: "Track prospects and companies in their own tables, completely separate from billing clients. Tags, custom fields, activity timeline." },
-                { icon: Send, title: "Campaigns & Sequences", desc: "Broadcast to a segment, or run multi-step automated outreach. Stops the moment a prospect replies or is promoted to a client." },
-                { icon: Database, title: "Prospect / Client Separation", desc: "Marketing data lives in dedicated database tables — no foreign keys to your books, no cross-contamination between marketing and billing records." },
-              ].map((card) => {
-                const Icon = card.icon;
-                return (
-                  <div
-                    key={card.title}
-                    className="p-7"
-                    style={{ background: "rgba(207,51,57,0.03)", borderColor: "rgba(255,255,255,0.06)" }}
-                    data-testid={`card-compare-marketing-os-${card.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}`}
-                  >
-                    <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-4" style={{ background: "rgba(220,38,38,0.12)" }}>
-                      <Icon className="w-5 h-5" style={{ color: "#f87171" }} />
-                    </div>
-                    <h3 className="text-base font-bold text-white mb-2">{card.title}</h3>
-                    <p className="text-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>{card.desc}</p>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <div className="mt-8 text-center">
-            <Link href="/marketing">
-              <span
-                className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-lg cursor-pointer transition-colors hover:bg-white/5"
-                style={{ color: "rgba(255,255,255,0.85)", border: "1px solid rgba(255,255,255,0.18)" }}
-                data-testid="link-compare-marketing-os"
-              >
-                Tour Marketing Hub
-                <ArrowRight className="w-4 h-4" />
-              </span>
-            </Link>
-          </div>
-        </div>
-      </section>
+        </Container>
+      </Section>
 
-      <MarketingFooter />
-    </div>
+      <Section testId="section-switch-guides">
+        <Container>
+          <div className="grid gap-10 lg:grid-cols-[4fr_8fr] lg:gap-[72px]">
+            <div>
+              <Heading>Switching guides.</Heading>
+              <Lede className="mt-5">
+                Each guide covers what that product does well, where firms run into limits, and how its exports come across in
+                the import wizard. Nothing is written to your books until you’ve reviewed a dry run.
+              </Lede>
+            </div>
+            <ul className="grid gap-x-10 border-t border-[#E6E3DD] sm:grid-cols-2 lg:mt-2">
+              {GUIDES.map((g) => (
+                <li key={g.id} className="border-b border-[#E6E3DD]">
+                  <Link
+                    href={g.href}
+                    className="group block py-6 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#CF3339]"
+                  >
+                    <span data-testid={`switch-link-${g.id}`} className="block">
+                      <span className="flex items-baseline justify-between gap-4">
+                        <span className="text-[17px] font-medium text-[#15171C]">From {g.name}</span>
+                        <span aria-hidden="true" className="text-[#6E727B] transition-transform group-hover:translate-x-0.5 group-hover:text-[#15171C]">→</span>
+                      </span>
+                      <span className="mt-2 block text-[15.5px] leading-[1.55] text-[#5C606A]">{g.summary}</span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Container>
+      </Section>
+
+      <MarketingHubBand />
+
+      <ClosingCta
+        heading="Try it with your own data."
+        body="Fourteen days on Professional, import wizard included. Bring your history across and see what your team is owed."
+      />
+    </MarketingShell>
   );
 }

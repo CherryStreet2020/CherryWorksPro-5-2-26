@@ -1,110 +1,201 @@
-import { Link } from "wouter";
-import { ArrowRight, CheckCircle, Inbox, KeyRound, Timer, Paperclip, Receipt, Upload, LifeBuoy } from "lucide-react";
-import { useFadeIn } from "@/hooks/use-fade-in";
+import { Plus } from "lucide-react";
 import { SEO, FAQStructuredData } from "@/components/seo";
-import { MarketingNav } from "@/components/marketing/marketing-nav";
-import { MarketingFooter } from "@/components/marketing/marketing-footer";
+import { SCREENS } from "@/components/marketing/screens";
+import {
+  ButtonLink, Closing, Container, Ctas, Display, Eyebrow, Flow, Heading, Lede, MarketingShell, Note, PageHero, Row,
+  Scene, Section, TextLink, TRIAL_NOTE,
+} from "@/components/marketing/kit";
 
-const capabilities = [
-  { icon: Inbox, title: "Email becomes a case", desc: "Point your support address at CherryWorks Pro. Every message in that shared Microsoft 365 mailbox becomes a case with a key like ABS-158; replies that carry the key thread onto the same case, attachments included." },
-  { icon: KeyRound, title: "A Help Center with no passwords", desc: "One link for a client's whole team. Anyone at an approved email domain signs in with a one-time link, opens cases, replies and attaches files — in your branding. Customer admins see every case for their company, set priority, close and reopen, and invite colleagues. Billing lives in a separate Customer Portal for billing contacts only." },
-  { icon: Timer, title: "SLAs per client, business-hours aware", desc: "First-response and resolution targets set per client, counted only inside the hours and timezone you define. The clock pauses when you are waiting on the client. Breaches alert the assignee before they happen." },
-  { icon: Receipt, title: "Support time is billable time", desc: "Hours logged on a case are time entries like any other: approved on the timesheet, invoiced to the client, paid out to the person who did the work. No separate export, no reconciliation." },
-  { icon: Paperclip, title: "Attachments, notes and history", desc: "Internal notes stay internal; client-visible replies go out by email and appear in the Help Center. Every status, priority and assignee change is on the case timeline." },
-  { icon: Upload, title: "Import from Jira", desc: "Connect a Jira site with an API token and import a project — issues, comments and attachments — into cases. The connection is saved and encrypted, so a re-import is one click." },
+const FLOW = [
+  {
+    title: "A client emails you, and it’s a case.",
+    screen: SCREENS.caseDetail,
+    body: [
+      "Email from a client’s contacts to your support address becomes a case with a key like ABS-158. They can also open one in your Help Center.",
+      "Replies go to the client by email and show in the Help Center. Internal notes stay internal, and every status, priority and assignee change is on the timeline.",
+    ],
+  },
+  {
+    title: "The hours go on the invoice.",
+    screen: SCREENS.invoices,
+    body: [
+      "Time on a case is an ordinary time entry for that client and project, so it goes through the same approval as project work and lands on the client’s next invoice.",
+    ],
+  },
+  {
+    title: "And the person who did the work is paid.",
+    screen: SCREENS.payouts,
+    body: [
+      "Case hours count toward the payout of whoever logged them, the same as any other billable time.",
+    ],
+  },
+];
+
+const CAPABILITIES = [
+  {
+    t: "Email becomes a case",
+    d: "Connect the Microsoft 365 mailbox behind your support address. Mail from a verified client contact opens a case, and replies that carry the case key thread onto it, attachments included. Unknown senders never open cases.",
+  },
+  {
+    t: "A Help Center with no passwords",
+    d: "Approve a client’s business email domain and anyone there signs in with a one-time link. They open cases, reply, attach files and add colleagues as watchers, under your firm’s name and logo.",
+  },
+  {
+    t: "Customer Admins",
+    d: "A lead at each client sees every case their company has open, sets priority, closes and reopens cases, and invites colleagues.",
+  },
+  {
+    t: "SLAs per client",
+    d: "Set first-response and resolution targets for the firm, then override them for any client. Clocks count business hours in your timezone and pause while you’re waiting on the client.",
+  },
+  {
+    t: "Alerts before a target is missed",
+    d: "The assignee is told shortly before a target and again if it’s missed. Unassigned cases alert your managers instead.",
+  },
+  {
+    t: "Billing kept separate",
+    d: "Invoices and payments live in a separate client portal that only the client’s billing contacts can open, so a support requester never sees what you charge.",
+  },
+];
+
+const CONTRAST = [
+  { t: "Priced per agent", d: "Help desk products charge for each person who answers cases. Every plan here includes unlimited users." },
+  { t: "No idea what the client pays", d: "A ticket in a help desk has no rate, no contract and no invoice. Here a case belongs to the client and project you bill." },
+  { t: "Someone else’s brand in front of your client", d: "The Help Center and every case email carry your firm’s name and logo, because the client is hiring you, not a help desk vendor." },
+  { t: "Reports stop at the ticket", d: "Case hours feed the same utilization, profitability and payout reports as the rest of your work." },
 ];
 
 const faqs = [
-  { q: "Do my clients need an account?", a: "No. Approve the client's email domain and anyone at the company can sign in to the Help Center with a one-time link sent to their inbox. Nothing to install, no password to reset, no user list to maintain." },
-  { q: "Which plans include Client Support?", a: "Support Cases, the Help Center, SLAs and email-to-case are part of the platform on every plan. Unlimited users applies to your team; client contacts and customer admins are not users." },
-  { q: "Can I keep using my existing support email address?", a: "Yes. Connect the Microsoft 365 mailbox that receives it and set it as the support address; CherryWorks Pro reads the inbox and creates or updates cases. Outgoing replies are sent from that mailbox." },
-  { q: "How does support time reach the invoice?", a: "Time logged on a case is a normal time entry attached to the client and project. It goes through the same approval and invoicing flow as project time, and the payout to the team member is computed from it." },
-  { q: "What is imported from Jira?", a: "Issues with their summary, description, status, priority, reporter, comments and attachments, into cases that keep a reference to the original key." },
+  {
+    q: "Do my clients need an account?",
+    a: "No. Approve the client’s business email domain and anyone at the company can sign in to the Help Center with a one-time link sent to their inbox. There’s no password to reset and no user list to maintain. Shared domains like gmail.com can’t be approved.",
+  },
+  {
+    q: "Which plans include the support desk?",
+    a: "Support cases, the Help Center, SLAs and email-to-case are on the Professional and Business plans, not on Starter. The 14-day trial runs on Professional, so you can try all of it. Client contacts and Customer Admins don’t count as users.",
+  },
+  {
+    q: "Can I keep my existing support email address?",
+    a: "Yes, if it’s a Microsoft 365 mailbox. Connect it and set it as the support address, and CherryWorks Pro creates or updates cases from the mail your clients send to it. Google and SMTP mailboxes can send invoices and replies, but they can’t receive cases.",
+  },
+  {
+    q: "How does support time reach the invoice?",
+    a: "Time logged on a case is a normal time entry for the client and project. It goes through the same approval and invoicing as project time, and it counts toward the payout of the person who logged it.",
+  },
+  {
+    q: "What comes across from Jira?",
+    a: "From Jira Cloud: issues with their summary, description, status, priority, reporter, comments and attachments, closed issues included. Cases keep their original keys and new cases carry on the numbering.",
+  },
 ];
 
 export default function ClientSupportPage() {
-  const fadeRef = useFadeIn();
   return (
-    <div>
-      <MarketingNav />
+    <MarketingShell>
       <SEO path="/client-support" />
       <FAQStructuredData faqs={faqs} />
-      <section className="pt-[100px] pb-10 md:pb-14" style={{ background: "var(--gradient-hero)" }}>
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="max-w-3xl">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] mb-4" style={{ color: "#f87171" }}>Client Support</p>
-            <h1 className="text-4xl md:text-6xl font-bold text-white tracking-tight leading-[1.08]" data-testid="client-support-h1">A support desk that bills</h1>
-            <p className="mt-6 text-lg md:text-xl leading-relaxed" style={{ color: "rgba(255,255,255,0.65)" }}>
-              Cases, SLAs, a passwordless Help Center with customer admins, and email-to-case — built into the same platform that tracks the time, sends the invoice and pays your team. Not a separate tool with a separate login and a separate bill.
-            </p>
-            <div className="mt-8 flex flex-col sm:flex-row gap-4">
-              <Link href="/demo"><span className="inline-flex items-center gap-2 px-7 py-4 text-base font-bold text-white rounded-xl cursor-pointer" style={{ background: "linear-gradient(135deg, #cf3339, #a3282d)" }} data-testid="client-support-cta-demo">Request a demo <ArrowRight className="w-4 h-4" /></span></Link>
-              <Link href="/signup"><span className="inline-flex items-center gap-2 px-7 py-4 text-base font-semibold rounded-xl cursor-pointer" style={{ color: "rgba(255,255,255,0.8)", border: "1px solid rgba(255,255,255,0.15)" }}>Start free</span></Link>
+
+      <PageHero>
+        <Container>
+          <Eyebrow>
+            Support desk <span className="font-normal text-[#6E727B]">· Professional and up</span>
+          </Eyebrow>
+          <Display testId="client-support-h1" className="mt-4">A support desk that bills.</Display>
+          <Lede size="hero" className="mt-6">
+            Cases, SLAs, a Help Center with no passwords and email-to-case, in the same system that tracks the time, sends the invoice and pays your team.
+          </Lede>
+          <Ctas>
+            <ButtonLink href="/signup" testId="client-support-cta-signup">Start your trial</ButtonLink>
+            <ButtonLink href="/demo" variant="secondary" testId="client-support-cta-demo">Book a demo</ButtonLink>
+          </Ctas>
+          <Note>{TRIAL_NOTE}</Note>
+          <Scene screen={SCREENS.supportCases} priority className="mt-14 md:mt-20" testId="client-support-hero-screen" />
+        </Container>
+      </PageHero>
+
+      <Section testId="section-flow">
+        <Container>
+          <Heading>From the first email to the invoice.</Heading>
+          <Lede className="mt-5">
+            A help desk stops at the ticket. Here the case, the hours, the invoice and the payout are one record.
+          </Lede>
+          <Flow>
+            {FLOW.map((s, i) => (
+              <Row key={s.title} title={s.title} screen={s.screen} flip={i % 2 === 1} testId={`flow-step-${i}`}>
+                {s.body.map((p) => <p key={p}>{p}</p>)}
+              </Row>
+            ))}
+          </Flow>
+        </Container>
+      </Section>
+
+      <Section testId="section-capabilities">
+        <Container>
+          <Heading>Everything a client asks for, on the record that already knows them.</Heading>
+          <dl className="mt-10 grid gap-x-10 sm:grid-cols-2 md:mt-16 lg:grid-cols-3 lg:gap-x-[72px]">
+            {CAPABILITIES.map((c) => (
+              <div key={c.t} className="border-t border-[#E6E3DD] pb-8 pt-5">
+                <dt className="text-[17px] font-medium tracking-[-0.005em] text-[#15171C]">{c.t}</dt>
+                <dd className="mt-2 text-[15.5px] leading-[1.55] text-[#5C606A]">{c.d}</dd>
+              </div>
+            ))}
+          </dl>
+        </Container>
+      </Section>
+
+      <Section testId="section-contrast">
+        <Container>
+          <div className="grid gap-12 lg:grid-cols-[5fr_7fr] lg:gap-[72px]">
+            <div>
+              <Heading>Help desks were built for support departments.</Heading>
+              <Lede className="mt-5">Your firm bills for support. That changes what the tool has to know.</Lede>
+              <p className="mt-6 text-[15px]">
+                <TextLink href="/switch-from-jira-service-management" testId="link-client-support-jira">
+                  Moving from Jira Service Management
+                </TextLink>
+              </p>
+            </div>
+            <dl className="border-t border-[#E6E3DD] lg:mt-2">
+              {CONTRAST.map((c) => (
+                <div key={c.t} className="grid gap-2 border-b border-[#E6E3DD] py-6 sm:grid-cols-[14rem_1fr] sm:gap-8">
+                  <dt className="text-[17px] font-medium text-[#15171C]">{c.t}</dt>
+                  <dd className="text-[15.5px] leading-[1.55] text-[#5C606A]">{c.d}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </Container>
+      </Section>
+
+      <Section testId="section-faq">
+        <Container>
+          <div className="grid gap-12 lg:grid-cols-12">
+            <div className="lg:col-span-4">
+              <Heading>Questions about the support desk</Heading>
+            </div>
+            <div className="border-t border-[#E6E3DD] lg:col-span-8">
+              {faqs.map((f, i) => (
+                <details key={f.q} className="group border-b border-[#E6E3DD] py-5" data-testid={`faq-item-${i}`}>
+                  <summary
+                    data-testid={`button-faq-${i}`}
+                    className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-6 text-[17px] font-medium text-[#15171C] [&::-webkit-details-marker]:hidden"
+                  >
+                    {f.q}
+                    <Plus className="h-5 w-5 shrink-0 text-[#5C606A] transition-transform group-open:rotate-45" aria-hidden="true" />
+                  </summary>
+                  <p className="mt-2 max-w-2xl text-[16px] leading-[1.6] text-[#5C606A]">{f.a}</p>
+                </details>
+              ))}
             </div>
           </div>
-        </div>
-      </section>
+        </Container>
+      </Section>
 
-      <section ref={fadeRef} className="py-12 md:py-16 fade-in-section" style={{ background: "#0a0f1c" }} data-testid="section-capabilities">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-3xl md:text-4xl font-bold text-white tracking-tight text-center mb-12">Everything a client asks for, in the record that already knows them</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {capabilities.map((c) => (
-              <div key={c.title} className="rounded-xl p-6" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                <c.icon className="w-6 h-6 mb-3" style={{ color: "#cf3339" }} />
-                <h3 className="text-base font-bold text-white mb-1.5">{c.title}</h3>
-                <p className="text-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>{c.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="py-12 md:py-16" style={{ background: "linear-gradient(180deg, #111827 0%, #0a0f1c 100%)" }}>
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-3xl md:text-4xl font-bold text-white tracking-tight text-center">Why not a help desk product?</h2>
-          <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-5">
-            {[
-              ["Help desks charge per agent", "CherryWorks Pro has unlimited users on every plan. Your whole team can take a case."],
-              ["Help desks don't know your billing", "Here a case belongs to a client with a contract, a project with a budget and a rate card. The hour on the case is the hour on the invoice."],
-              ["Help desks need another portal login", "Your clients get one Help Center link for the whole company and a separate Customer Portal for billing contacts — both with the same one-time sign-in, no passwords."],
-              ["Help desks report on tickets", "Here support shows up in utilization, profitability and payouts — the reports your firm actually runs on."],
-            ].map(([t, d]) => (
-              <div key={t} className="rounded-xl p-6 flex gap-3" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                <CheckCircle className="w-5 h-5 mt-0.5 shrink-0" style={{ color: "#22c55e" }} />
-                <div><h3 className="text-base font-bold text-white">{t}</h3><p className="text-sm mt-1 leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>{d}</p></div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="py-12 md:py-16" style={{ background: "#0a0f1c" }} data-testid="section-faq">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight text-center mb-8">Questions firms ask</h2>
-          <div className="space-y-3">
-            {faqs.map((f) => (
-              <details key={f.q} className="rounded-xl p-5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                <summary className="text-base font-semibold text-white cursor-pointer">{f.q}</summary>
-                <p className="mt-3 text-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>{f.a}</p>
-              </details>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="py-12 md:py-16" style={{ background: "linear-gradient(135deg, #1a0505 0%, #0a0f1c 50%, #1a0a0a 100%)" }}>
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <LifeBuoy className="w-8 h-8 mx-auto mb-4" style={{ color: "#cf3339" }} />
-          <h2 className="text-3xl md:text-4xl font-bold text-white tracking-tight">See a case go from email to invoice</h2>
-          <p className="mt-4 text-lg" style={{ color: "rgba(255,255,255,0.55)" }}>Twenty minutes, your own scenario, no slides.</p>
-          <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="/demo"><span className="inline-flex items-center gap-2 px-8 py-4 text-lg font-bold text-white rounded-xl cursor-pointer" style={{ background: "linear-gradient(135deg, #cf3339, #a3282d)" }}>Request a demo <ArrowRight className="w-5 h-5" /></span></Link>
-            <Link href="/switch-from-jira-service-management"><span className="inline-flex items-center gap-2 px-8 py-4 text-lg font-semibold rounded-xl cursor-pointer" style={{ color: "rgba(255,255,255,0.8)", border: "1px solid rgba(255,255,255,0.15)" }}>Switching from Jira?</span></Link>
-          </div>
-        </div>
-      </section>
-      <MarketingFooter />
-    </div>
+      <Closing
+        heading="See a case go from email to invoice."
+        body={<>Or <TextLink href="/tour" testId="link-client-support-tour">take the product tour</TextLink> first.</>}
+        primary={{ href: "/signup", label: "Start your trial", testId: "cta-start-trial" }}
+        secondary={{ href: "/demo", label: "Book a demo", testId: "cta-book-demo" }}
+      />
+    </MarketingShell>
   );
 }

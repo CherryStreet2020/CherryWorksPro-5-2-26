@@ -1,99 +1,121 @@
 import { SEO } from "@/components/seo";
-import { MarketingNav } from "@/components/marketing/marketing-nav";
-import { MarketingFooter } from "@/components/marketing/marketing-footer";
-import { Shield, Database, CreditCard, Lock, ShieldAlert, Link2, FileText, Server } from "lucide-react";
-import { Link } from "wouter";
+import { Container, Display, Eyebrow, Heading, Lede, MarketingShell, PageHero, Section, TextLink } from "@/components/marketing/kit";
 
-const sections = [
+/**
+ * Every line below is something the product does today and can be pointed to
+ * in the code or the hosting setup (docs/DEPLOY.md). Keep it that way: add a
+ * claim only with the code that backs it.
+ */
+const sections: { title: string; points: string[] }[] = [
   {
-    icon: Database,
-    title: "Tenant Isolation",
-    content: "Every row in our database is scoped to a single organization. Every query and mutation derives the organization ID from the authenticated session \u2014 never from request input. Cross-tenant reads and writes are architecturally impossible.",
+    title: "Each firm’s data stays separate",
+    points: [
+      "Every record belongs to one organization.",
+      "The server takes your organization from your signed-in session, never from anything the browser sends, and scopes every query and change to it.",
+    ],
   },
   {
-    icon: Shield,
-    title: "Financial Determinism",
-    content: "Invoice totals, discounts, tax, and payment status are computed deterministically and re-verifiable on demand. Once an invoice is sent, edits create immutable revision snapshots \u2014 the original is never silently mutated. Every financial mutation is written to an audit log.",
+    title: "Sign-in and sessions",
+    points: [
+      "Passwords are hashed with bcrypt. We never store them in plain text.",
+      "Session cookies are HttpOnly, SameSite=Lax and Secure. A session ends after 30 minutes without activity.",
+      "Every request that changes data must carry a CSRF token.",
+      "Two-factor sign-in with an authenticator app, with recovery codes. A firm can require it for every admin.",
+    ],
   },
   {
-    icon: CreditCard,
     title: "Payments",
-    content: "Stripe integration uses signature-verified webhooks (constructEvent against STRIPE_WEBHOOK_SECRET). Payment receipts are reconciled idempotently. Refunds reconcile atomically against the original charge. We never see or store full card numbers.",
+    points: [
+      "Clients pay by card or ACH on Stripe’s hosted checkout page, so card numbers never reach our servers.",
+      "Stripe’s webhooks are checked against their signature, and each event is recorded so it is applied only once.",
+      "A refund is checked against the original charge and recorded in a single step.",
+    ],
   },
   {
-    icon: Lock,
-    title: "Authentication & Sessions",
-    content: "HttpOnly session cookies with sameSite=lax and the secure flag in production. CSRF protection with double-submit tokens on every mutating request. Bcrypt password hashing. Optional TOTP and WebAuthn multi-factor authentication, persisted to the database.",
+    title: "Invoices",
+    points: [
+      "Once an invoice is sent, each edit is saved as a new revision, so the version your client received is kept.",
+      "Each invoice’s public link carries its own random 256-bit token.",
+    ],
   },
   {
-    icon: ShieldAlert,
-    title: "Rate Limiting & Abuse Protection",
-    content: "Per-route rate limits on login, signup, password reset, public invoice tokens, payments, imports, payroll webhooks, and settings changes. Per-tenant token-bucket limiter on top of per-IP and per-user limits.",
+    title: "Rate limits",
+    points: [
+      "Sign-in, signup, password reset, public invoice links, payments, imports and settings changes each have their own limit.",
+      "On top of those, every IP address, user and organization has a per-minute request budget.",
+    ],
   },
   {
-    icon: Link2,
-    title: "Public Invoice Links",
-    content: "Public invoice tokens use 256 bits of cryptographic entropy (randomBytes(32)). Each invoice has its own token. Tokens can be revoked.",
+    title: "Audit log",
+    points: [
+      "Invoice sends and revisions, payments and refunds, payouts, timesheet approvals, imports, sign-ins and API key changes are written to an audit log for your organization.",
+      "Admins can export the log.",
+    ],
   },
   {
-    icon: FileText,
-    title: "Audit Logging",
-    content: "Every financial and workflow mutation \u2014 invoice send, invoice revision, payment apply, payment refund, payout, timesheet transition, MFA change, import run, year-end close \u2014 is written to an append-only audit log scoped to your organization.",
+    title: "Hosting and stored data",
+    points: [
+      "CherryWorks Pro runs on Microsoft Azure in the United States (East US 2).",
+      "All traffic uses HTTPS, with HSTS.",
+      "Stored bank details, mailbox passwords and mailbox sign-in tokens are encrypted by the application before they are saved.",
+      "The database keeps 35 days of point-in-time backups.",
+      "We do not sell customer data.",
+    ],
   },
   {
-    icon: Server,
-    title: "Data Handling",
-    content: "All traffic is HTTPS. PII is masked in application logs. We do not sell or share customer data with third parties.",
-  },
-  {
-    icon: Database,
-    title: "Marketing Hub — Prospect / Client Separation",
-    content: "On the Business plan, Marketing Hub is included: marketing prospects and marketing companies live in physically separate database tables (marketing_prospects, marketing_companies) from your billing clients. No foreign keys cross that boundary, so a marketing lead cannot be silently invoiced or reported on as a client. Promoting a prospect to a billing client is an explicit, audited action — never an automatic side effect. This prevents cross-contamination between marketing and billing records by design.",
+    title: "Marketing contacts stay apart from billing",
+    points: [
+      "On the Business plan, Marketing Hub prospects and companies are stored in their own tables, separate from your billing clients.",
+      "Prospects are never copied into your client list automatically.",
+    ],
   },
 ];
 
 export default function SecurityPage() {
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: "var(--lux-bg)" }}>
-      <MarketingNav />
+    <MarketingShell>
       <SEO path="/security" />
-      <main className="flex-1 pt-[136px] pb-16 px-4">
-        <div className="max-w-3xl mx-auto" style={{ color: "var(--lux-text)" }}>
-          <h1 className="text-3xl font-bold mb-2" style={{ color: "var(--lux-text)" }} data-testid="heading-security-title">
-            Security at CherryWorks Pro
-          </h1>
-          <p className="text-sm mb-8" style={{ color: "var(--lux-text-muted)" }} data-testid="text-security-subtitle">
-            Built for firms that handle their clients' money.
+
+      <PageHero>
+        <Container>
+          <Eyebrow>Security</Eyebrow>
+          <Display testId="heading-security-title" className="mt-4">How CherryWorks Pro protects your data.</Display>
+          <Lede size="hero" className="mt-6">
+            <span data-testid="text-security-subtitle">Built for firms that handle their clients’ money.</span>{" "}
+            This page lists what the product does today, in plain terms. If you need something it doesn’t cover, ask us.
+          </Lede>
+        </Container>
+      </PageHero>
+
+      <Section>
+        <Container>
+          <ul className="border-t border-[#E6E3DD]">
+            {sections.map((section, idx) => (
+              <li
+                key={section.title}
+                data-testid={`section-security-${idx + 1}`}
+                className="grid gap-4 border-b border-[#E6E3DD] py-10 md:grid-cols-[5fr_7fr] md:gap-[72px] md:py-12"
+              >
+                <Heading as="h2" className="!text-[22px] !leading-[1.2] !tracking-[-0.015em] md:!text-[26px]">{section.title}</Heading>
+                <ul className="space-y-3 text-[16px] leading-[1.6] text-[#5C606A]">
+                  {section.points.map((point) => (
+                    <li key={point}>{point}</li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </Container>
+      </Section>
+
+      <Section className="pb-24 md:pb-[152px]">
+        <Container>
+          <p className="max-w-2xl text-[19px] leading-[1.5] text-[#15171C]" data-testid="text-security-cta">
+            Questions about security or compliance, or a questionnaire to fill in?{" "}
+            <TextLink href="/contact" testId="link-security-contact">Send us a message</TextLink>.
           </p>
-
-          <div className="space-y-8 text-sm leading-relaxed" style={{ color: "var(--lux-text-secondary)" }}>
-            {sections.map((section, idx) => {
-              const Icon = section.icon;
-              return (
-                <section key={idx} data-testid={`section-security-${idx + 1}`}>
-                  <div className="flex items-center gap-2.5 mb-2">
-                    <Icon className="w-5 h-5 flex-shrink-0" style={{ color: "var(--lux-accent)" }} />
-                    <h2 className="text-lg font-semibold" style={{ color: "var(--lux-text)" }}>
-                      {idx + 1}. {section.title}
-                    </h2>
-                  </div>
-                  <p className="pl-[30px]">{section.content}</p>
-                </section>
-              );
-            })}
-
-            <div className="mt-12 pt-8 border-t" style={{ borderColor: "var(--lux-border)" }}>
-              <p className="text-center" style={{ color: "var(--lux-text-secondary)" }} data-testid="text-security-cta">
-                Questions about security or compliance?{" "}
-                <Link href="/contact">
-                  <span className="font-bold underline cursor-pointer" style={{ color: "#cf3339" }} data-testid="link-security-contact">Contact our security team</span>
-                </Link>
-              </p>
-            </div>
-          </div>
-        </div>
-      </main>
-      <MarketingFooter />
-    </div>
+        </Container>
+      </Section>
+    </MarketingShell>
   );
 }

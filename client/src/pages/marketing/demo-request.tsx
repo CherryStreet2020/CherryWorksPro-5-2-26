@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { Link } from "wouter";
-import { CheckCircle, ArrowRight } from "lucide-react";
 import { SEO } from "@/components/seo";
-import { MarketingNav } from "@/components/marketing/marketing-nav";
-import { MarketingFooter } from "@/components/marketing/marketing-footer";
+import { Container, Display, Eyebrow, FORM, Lede, MarketingShell, PageHero, TextLink } from "@/components/marketing/kit";
 
 type State = { kind: "idle" } | { kind: "sending" } | { kind: "sent" } | { kind: "error"; message: string };
+
+// The server rejects longer messages; the counter shows once the limit is close.
+const MAX_MESSAGE = 4000;
 
 export default function DemoRequestPage() {
   const [state, setState] = useState<State>({ kind: "idle" });
@@ -25,64 +25,102 @@ export default function DemoRequestPage() {
     }
   }
 
-  const field = "w-full rounded-lg px-4 py-3 text-base text-white outline-none focus:ring-2";
-  const fieldStyle = { background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)" };
+  const field = `${FORM.field} ${FORM.border}`;
 
   return (
-    <div>
-      <MarketingNav />
+    <MarketingShell>
       <SEO path="/demo" />
-      <section className="pt-[100px] pb-16" style={{ background: "var(--gradient-hero)", minHeight: "80vh" }}>
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 lg:grid-cols-2 gap-12">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.2em] mb-4" style={{ color: "#f87171" }}>Demo</p>
-            <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight leading-[1.08]" data-testid="demo-h1">Twenty minutes, your scenario, no slides</h1>
-            <p className="mt-6 text-lg leading-relaxed" style={{ color: "rgba(255,255,255,0.65)" }}>
-              Tell us how your firm bills and where the time goes today. We&rsquo;ll walk the same flow in CherryWorks Pro — from a client email to the invoice, the ledger and the payout — on a screen share.
-            </p>
-            <ul className="mt-8 space-y-3">
-              {["Your request goes straight into our own Marketing Hub — a person replies within one business day", "Prefer to look around first? The self-guided tour shows every screen", "Already decided? The free trial has everything on"].map((t) => (
-                <li key={t} className="flex gap-3 text-sm" style={{ color: "rgba(255,255,255,0.6)" }}><CheckCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "#22c55e" }} />{t}</li>
-              ))}
-            </ul>
-            <div className="mt-8 flex gap-4 text-sm">
-              <Link href="/tour"><span className="inline-flex items-center gap-1 font-semibold cursor-pointer" style={{ color: "#f87171" }}>Take the tour <ArrowRight className="w-4 h-4" /></span></Link>
-              <Link href="/signup"><span className="inline-flex items-center gap-1 font-semibold cursor-pointer" style={{ color: "rgba(255,255,255,0.7)" }}>Start free</span></Link>
+
+      <PageHero>
+        <Container>
+          <div className="grid gap-14 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-x-[72px] lg:gap-y-12">
+            <div className="lg:col-start-1 lg:row-start-1">
+              <Eyebrow>Book a demo</Eyebrow>
+              <Display testId="demo-h1" className="mt-4 lg:!text-[56px]">Twenty minutes, your scenario, no slides.</Display>
+              <Lede size="hero" className="mt-6">
+                Tell us how your firm wins work, bills and gets paid today. We’ll walk the same flow in CherryWorks Pro on a screen
+                share, from a prospect or a client email to the invoice, the payout and the books.
+              </Lede>
+            </div>
+
+            <div className="lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:pt-3">
+              <div className="border-t border-[#15171C] pt-6">
+                {state.kind === "sent" ? (
+                  <div data-testid="demo-sent">
+                    <h2 className="text-[20px] font-medium tracking-[-0.01em] text-[#15171C]">Request received</h2>
+                    <p className="mt-2 text-[15.5px] leading-[1.55] text-[#5C606A]">
+                      Thanks. We’ll reply by email to set up a time.
+                    </p>
+                  </div>
+                ) : (
+                  <form onSubmit={submit} className="space-y-5" data-testid="demo-form">
+                    <h2 className="text-[20px] font-medium tracking-[-0.01em] text-[#15171C]">Request a demo</h2>
+                    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                      <div>
+                        <label htmlFor="demo-name" className={FORM.label}>Name</label>
+                        <input id="demo-name" required className={`${field} h-12`} placeholder="Your name" value={form.name} onChange={set("name")} data-testid="demo-name" />
+                      </div>
+                      <div>
+                        <label htmlFor="demo-email" className={FORM.label}>Work email</label>
+                        <input id="demo-email" required type="email" className={`${field} h-12`} placeholder="you@yourfirm.com" value={form.email} onChange={set("email")} data-testid="demo-email" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                      <div>
+                        <label htmlFor="demo-company" className={FORM.label}>Firm</label>
+                        <input id="demo-company" required className={`${field} h-12`} placeholder="Firm name" value={form.company} onChange={set("company")} data-testid="demo-company" />
+                      </div>
+                      <div>
+                        <label htmlFor="demo-team-size" className={FORM.label}>Team size <span className={FORM.optional}>(optional)</span></label>
+                        <select id="demo-team-size" className={`${field} h-12`} value={form.teamSize} onChange={set("teamSize")} data-testid="demo-team-size">
+                          <option value="">Select a range</option>
+                          <option value="1-5">1–5</option><option value="6-15">6–15</option><option value="16-50">16–50</option><option value="51+">51+</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label htmlFor="demo-message" className={FORM.label}>Your setup today <span className={FORM.optional}>(optional)</span></label>
+                      <textarea id="demo-message" className={`${field} resize-y py-3 leading-relaxed`} rows={4} maxLength={MAX_MESSAGE} placeholder="What do you use today, and what is not working?" value={form.message} onChange={set("message")} data-testid="demo-message" />
+                      {form.message.length > MAX_MESSAGE - 400 && (
+                        <p className={FORM.count} data-testid="demo-message-count">
+                          {form.message.length.toLocaleString("en-US")} of {MAX_MESSAGE.toLocaleString("en-US")} characters
+                        </p>
+                      )}
+                    </div>
+                    {state.kind === "error" && (
+                      <p role="alert" className={FORM.alert} data-testid="demo-error">
+                        {state.message}
+                      </p>
+                    )}
+                    <button type="submit" disabled={state.kind === "sending"} className={FORM.submit} data-testid="demo-submit">
+                      {state.kind === "sending" ? "Sending…" : "Request a demo"}
+                    </button>
+                    <p className="text-[14px] text-[#6E727B]">We use this only to reply to you. No newsletter.</p>
+                  </form>
+                )}
+              </div>
+            </div>
+
+            <div className="lg:col-start-1 lg:row-start-2">
+              <ul className="border-t border-[#E6E3DD]">
+                <li className="border-b border-[#E6E3DD] py-4 text-[15.5px] leading-[1.55] text-[#5C606A]">
+                  Your request goes straight into our own Marketing Hub, the same one Business plan firms use.
+                </li>
+                <li className="border-b border-[#E6E3DD] py-4 text-[15.5px] leading-[1.55] text-[#5C606A]">
+                  Prefer to look around first? The self-guided tour shows the product screen by screen.
+                </li>
+                <li className="border-b border-[#E6E3DD] py-4 text-[15.5px] leading-[1.55] text-[#5C606A]">
+                  Already decided? Start the 14-day trial. You won’t be charged until day 15.
+                </li>
+              </ul>
+              <div className="mt-8 flex flex-wrap gap-x-8 gap-y-3 text-[15.5px]">
+                <TextLink href="/tour">Take the tour</TextLink>
+                <TextLink href="/signup">Start your trial</TextLink>
+              </div>
             </div>
           </div>
-          <div className="rounded-2xl p-6 md:p-8" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
-            {state.kind === "sent" ? (
-              <div className="text-center py-10" data-testid="demo-sent">
-                <CheckCircle className="w-10 h-10 mx-auto mb-4" style={{ color: "#22c55e" }} />
-                <h2 className="text-2xl font-bold text-white">Request received</h2>
-                <p className="mt-3 text-base" style={{ color: "rgba(255,255,255,0.6)" }}>A person will reply within one business day.</p>
-              </div>
-            ) : (
-              <form onSubmit={submit} className="space-y-4" data-testid="demo-form">
-                <h2 className="text-xl font-bold text-white">Request a demo</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <input required className={field} style={fieldStyle} placeholder="Your name" value={form.name} onChange={set("name")} data-testid="demo-name" />
-                  <input required type="email" className={field} style={fieldStyle} placeholder="Work email" value={form.email} onChange={set("email")} data-testid="demo-email" />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <input required className={field} style={fieldStyle} placeholder="Firm" value={form.company} onChange={set("company")} data-testid="demo-company" />
-                  <select className={field} style={fieldStyle} value={form.teamSize} onChange={set("teamSize")} data-testid="demo-team-size">
-                    <option value="">Team size</option>
-                    <option value="1-5">1–5</option><option value="6-15">6–15</option><option value="16-50">16–50</option><option value="51+">51+</option>
-                  </select>
-                </div>
-                <textarea className={field} style={fieldStyle} rows={4} placeholder="What do you use today, and what is not working?" value={form.message} onChange={set("message")} data-testid="demo-message" />
-                {state.kind === "error" && <p className="text-sm" style={{ color: "#f87171" }} data-testid="demo-error">{state.message}</p>}
-                <button type="submit" disabled={state.kind === "sending"} className="w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 text-base font-bold text-white rounded-xl disabled:opacity-60" style={{ background: "linear-gradient(135deg, #cf3339, #a3282d)" }} data-testid="demo-submit">
-                  {state.kind === "sending" ? "Sending…" : "Request a demo"} <ArrowRight className="w-4 h-4" />
-                </button>
-                <p className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>We use this only to reply to you. No newsletter.</p>
-              </form>
-            )}
-          </div>
-        </div>
-      </section>
-      <MarketingFooter />
-    </div>
+        </Container>
+      </PageHero>
+    </MarketingShell>
   );
 }

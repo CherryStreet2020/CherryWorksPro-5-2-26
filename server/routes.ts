@@ -295,11 +295,11 @@ export async function registerRoutes(
       const cspDirectives = [
         "default-src 'self'",
         `script-src 'self' 'nonce-${nonce}' https://js.stripe.com`,
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com",
         "img-src 'self' data: blob: https://logo.clearbit.com https://www.google.com",
         "connect-src 'self' https://checkout.stripe.com https://api.stripe.com",
         "frame-src 'self' blob: https://checkout.stripe.com https://js.stripe.com",
-        "font-src 'self' https://fonts.gstatic.com",
+        "font-src 'self' https://fonts.gstatic.com https://cdn.fontshare.com",
         "object-src 'none'",
         "base-uri 'self'",
         "form-action 'self'",

@@ -10,13 +10,14 @@ import { test, expect } from "@playwright/test";
 test.use({ navigationTimeout: 30_000 });
 
 test.describe("Static marketing pages — CTA deep-links", () => {
-  test("/features → 'See it in action' goes to /demo", async ({ page }) => {
+  // `/tour` is the product walk-through; `/demo` is now the book-a-demo form.
+  test("/features → 'See it in action' goes to /tour", async ({ page }) => {
     await page.goto("/features");
     await expect(page.locator('[data-testid="features-heading"]')).toBeVisible({ timeout: 15000 });
     const cta = page.locator('[data-testid="see-it-in-action"]').first();
     await cta.scrollIntoViewIfNeeded();
     await Promise.all([
-      page.waitForURL(/\/demo(\?|$)/, { timeout: 15000 }),
+      page.waitForURL(/\/tour(\?|$)/, { timeout: 15000 }),
       cta.click(),
     ]);
     await expect(page.locator('[data-testid="demo-section-dashboard"]').first()).toBeVisible({ timeout: 15000 });

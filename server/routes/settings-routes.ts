@@ -543,42 +543,101 @@ app.post("/api/admin/test-email", requireAdmin, async (req, res) => {
   }
 });
 
-// ── Public contact form ──
+// The public contact and demo forms cap the message (their textareas enforce the same
+// limit). Over the cap is a 400, never a silent cut: a truncated inquiry is a lost lead.
+const MAX_FORM_MESSAGE = 4000;
+const TOO_LONG = "Keep your message under 4,000 characters, or email info@cherrystconsulting.com.";
+
+// ── Public contact form → Marketing Hub ──
+// Same contract as the demo request below: the message is recorded as a prospect
+// (created, or updated — email is unique per workspace) in the operator workspace's
+// Marketing Hub with a `form_submitted` activity carrying the message, then the team
+// is notified through the platform mailbox. Nothing is acknowledged unless the
+// prospect row exists, so a mail outage can no longer swallow a lead.
 app.post("/api/public/contact", apiLimiter, async (req, res) => {
   try {
-    const { name, email, message } = req.body;
-    if (!name || !email || !message) {
-      return res.status(400).json({ message: "Name, email, and message are required" });
+    const { name, email, message } = req.body ?? {};
+    const clean = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/[\r\n]+/g, " ").trim().slice(0, max) : "");
+    const n = clean(name, 120), e = clean(email, 320).toLowerCase();
+    const m = typeof message === "string" ? message.trim() : "";
+    if (!n || !e || !m) return res.status(400).json({ message: "Name, email, and message are required" });
+    if (m.length > MAX_FORM_MESSAGE) return res.status(400).json({ message: TOO_LONG });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return res.status(400).json({ message: "Enter a valid email address" });
+
+    const slug = (process.env.PLATFORM_MAILBOX_ORG_SLUG || "").trim();
+    const operator = slug ? await storage.getOrgBySlug(slug) : undefined;
+    if (!operator) {
+      console.error("[contact] PLATFORM_MAILBOX_ORG_SLUG is not set or names no workspace — message NOT recorded");
+      return res.status(503).json({ message: "The contact form is not available right now. Email info@cherrystconsulting.com instead." });
     }
-    // Send email notification to admin
+    const brands = await storage.listBrandsByOrg(operator.id);
+    const brandId = (brands.find((b) => b.active) ?? brands[0])?.id ?? null;
+    const [firstName, ...rest] = n.split(/\s+/);
+    const lastName = rest.join(" ") || null;
+    // No firm field on this form: link a company only when the business domain is already known.
+    const rawDomain = e.split("@")[1] ?? "";
+    const domain = SHARED_MAIL_DOMAINS.has(rawDomain) ? null : rawDomain || null;
+    const companyRow = domain ? await storage.findMarketingCompanyByDomain(operator.id, domain) : undefined;
+    const stamp = new Date().toISOString().slice(0, 10);
+    const note = `[${stamp}] Contact form on the website:\n${m}`;
+    const existing = await storage.findProspectByEmail(operator.id, e); // includes a soft-deleted row (unique email)
+    if (existing?.deletedAt) await storage.restoreProspect(existing.id, operator.id);
+    const prospect = existing
+      ? await storage.updateProspect(existing.id, operator.id, {
+          brandId: existing.brandId ?? brandId,
+          companyId: existing.companyId ?? companyRow?.id ?? null,
+          firstName: existing.firstName ?? firstName,
+          lastName: existing.lastName ?? lastName,
+          notes: existing.notes ? `${existing.notes}\n\n${note}` : note,
+          lastActivityAt: new Date(),
+        })
+      : await storage.createProspect({
+          orgId: operator.id,
+          brandId,
+          companyId: companyRow?.id ?? null,
+          firstName,
+          lastName,
+          email: e,
+          leadSource: "website-contact",
+          notes: note,
+          lastActivityAt: new Date(),
+        } as InsertMarketingProspect);
+    if (!prospect) throw new Error("prospect row missing after write");
+    await storage.createActivity({
+      orgId: operator.id,
+      brandId: prospect.brandId ?? brandId, // an existing prospect keeps its own brand; its feed is per brand
+      prospectId: prospect.id,
+      type: "form_submitted",
+      payload: { form: "contact", subject: "Contact form", name: n, email: e, message: m, source: "website" },
+    } as InsertContactActivity);
+
+    // Best effort: the team hears about it through the platform mailbox. The prospect already exists.
     try {
-      const { createTransporter } = await import("../email");
-      const transporter = await createTransporter();
-      await transporter!.sendMail({
-        from: process.env.SMTP_USER || "noreply@cherryworkspro.com",
-        to: "info@cherrystconsulting.com",
-        replyTo: email,
-        subject: `[CherryWorks Pro] Contact form: ${name}`,
-        text: `Name: ${name}\nEmail: ${email}\n\nMessage:\n${message}`,
+      const { sendPlatformNotice } = await import("../email");
+      const text = `Contact form\n\nName: ${n}\nEmail: ${e}\n\n${m}\n\nMarketing Hub: /marketing/contacts/${prospect.id}`;
+      await sendPlatformNotice({
+        to: operator.email || "info@cherrystconsulting.com",
+        replyTo: e,
+        subject: `Contact form: ${n}`,
+        text,
         html: wrapEmailLayout(`
-          <p style="font-size:20px;font-weight:700;color:#1a1a2e;margin:0 0 4px;">Contact Form</p>
-          <p style="font-size:14px;color:#8b8da3;margin:0 0 28px;">New message received</p>
+          <p style="font-size:20px;font-weight:700;color:#1a1a2e;margin:0 0 4px;">Contact form</p>
+          <p style="font-size:14px;color:#8b8da3;margin:0 0 28px;">From the website · now in Marketing Hub</p>
           ${emailDetailCard(
-            emailKeyValue("Name", escapeHtml(name)) +
-            emailKeyValue("Email", `<a href="mailto:${escapeHtml(email)}" style="color:#1a1a2e;text-decoration:underline;">${escapeHtml(email)}</a>`)
+            emailKeyValue("Name", escapeHtml(n)) +
+            emailKeyValue("Email", `<a href="mailto:${escapeHtml(e)}" style="color:#1a1a2e;text-decoration:underline;">${escapeHtml(e)}</a>`)
           )}
-          <div style="font-size:15px;color:#555770;line-height:1.7;white-space:pre-wrap;">${escapeHtml(message).replace(/\n/g, "<br/>")}</div>
+          <div style="font-size:15px;color:#555770;line-height:1.7;white-space:pre-wrap;">${escapeHtml(m).replace(/\n/g, "<br/>")}</div>
         `),
       });
     } catch (emailErr: any) {
-      console.error("[contact] Failed to send contact email:", emailErr.message);
-      console.log(`[contact] Message from ${name} <${maskEmail(email)}>: ${message.slice(0, 100)}...`);
-      return res.json({ ok: true, warning: "Your message was saved but the email notification could not be sent. Our team will still see your message." });
+      console.error(`[contact] prospect ${prospect.id} recorded; notification failed:`, emailErr.message);
     }
-    console.log(`[contact] Message from ${name} <${maskEmail(email)}>: ${message.slice(0, 100)}...`);
-    return res.json({ ok: true });
+    console.log(`[contact] ${existing ? "updated" : "created"} prospect ${prospect.id} ${maskEmail(e)}`);
+    return res.json({ ok: true }); // no hint of whether the address was already known
   } catch (err: any) {
-    return res.status(500).json({ message: sanitizeErrorMessage(err) });
+    console.error("[contact] failed:", err?.message);
+    return res.status(502).json({ message: "We could not send your message. Email info@cherrystconsulting.com instead." });
   }
 });
 // Public demo request → Marketing Hub. The prospect is created (or updated, email
@@ -592,15 +651,16 @@ app.post("/api/public/demo-request", apiLimiter, async (req, res) => {
     const { name, email, company, teamSize, message } = req.body ?? {};
     const clean = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/[\r\n]+/g, " ").trim().slice(0, max) : "");
     const n = clean(name, 120), e = clean(email, 320).toLowerCase(), c = clean(company, 160), t = clean(teamSize, 10);
-    const m = typeof message === "string" ? message.trim().slice(0, 4000) : "";
+    const m = typeof message === "string" ? message.trim() : "";
     if (!n || !e || !c) return res.status(400).json({ message: "Name, work email and firm are required" });
+    if (m.length > MAX_FORM_MESSAGE) return res.status(400).json({ message: TOO_LONG });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return res.status(400).json({ message: "Enter a valid email address" });
 
     const slug = (process.env.PLATFORM_MAILBOX_ORG_SLUG || "").trim();
     const operator = slug ? await storage.getOrgBySlug(slug) : undefined;
     if (!operator) {
       console.error("[demo-request] PLATFORM_MAILBOX_ORG_SLUG is not set or names no workspace — request NOT recorded");
-      return res.status(503).json({ message: "Demo requests are not available right now. Email info@cherrystconsulting.com and we will reply within one business day." });
+      return res.status(503).json({ message: "Demo requests are not available right now. Email info@cherrystconsulting.com instead." });
     }
     // Marketing Hub lists contacts per brand: records without the operator's brand
     // would be invisible in the team's workflow.
@@ -642,7 +702,7 @@ app.post("/api/public/demo-request", apiLimiter, async (req, res) => {
     if (!prospect) throw new Error("prospect row missing after write");
     await storage.createActivity({
       orgId: operator.id,
-      brandId,
+      brandId: prospect.brandId ?? brandId, // an existing prospect keeps its own brand; its feed is per brand
       prospectId: prospect.id,
       type: "demo_request",
       payload: { name: n, email: e, company: c, teamSize: t || null, message: m || null, source: "website" },
@@ -676,7 +736,7 @@ app.post("/api/public/demo-request", apiLimiter, async (req, res) => {
     return res.json({ ok: true }); // no hint of whether the address was already known
   } catch (err: any) {
     console.error("[demo-request] failed:", err?.message);
-    return res.status(502).json({ message: "We could not record your request. Email info@cherrystconsulting.com and we will reply within one business day." });
+    return res.status(502).json({ message: "We could not record your request. Email info@cherrystconsulting.com instead." });
   }
 });
 app.get("/api/org/settings", requireAdmin, async (req, res) => {
