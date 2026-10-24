@@ -282,7 +282,7 @@ export function BrandModal({
           data-testid="signature-rendered-preview"
         >
           <div
-            className="mb-1 text-[10px] font-semibold uppercase tracking-wide"
+            className="mb-1 text-xs font-medium"
             style={{ color: "var(--lux-text-muted)" }}
           >
             Signature

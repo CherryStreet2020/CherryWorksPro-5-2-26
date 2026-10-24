@@ -676,7 +676,7 @@ function CampaignEditor({
       <CardContent className="p-6">
         <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6">
           <div className="space-y-4">
-            <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "var(--lux-text-muted)" }}>
+            <h2 className="text-sm font-medium" style={{ color: "var(--lux-text-muted)" }}>
               {mode === "create" ? "New campaign" : "Edit campaign"}
             </h2>
             <div>
@@ -872,7 +872,7 @@ function CampaignEditor({
             </div>
           </div>
           <div>
-            <div className="mb-3 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--lux-text-muted)" }}>
+            <div className="mb-3 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>
               Live preview
             </div>
             <EmailPreview

@@ -250,7 +250,7 @@ function NavSection({ section, isAdmin, canManage, location, planTier }: { secti
         >
           <Link
             href={section.hubUrl}
-            className="flex-1 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider no-underline cursor-pointer"
+            className="flex-1 px-3 py-1.5 text-xs font-medium no-underline cursor-pointer"
             style={{ color: hubActive ? "var(--lux-sidebar-active-text, var(--lux-text))" : "var(--lux-sidebar-section-color, var(--lux-text-muted))", display: "block" }}
             data-testid={headerTestId}
           >
@@ -275,7 +275,7 @@ function NavSection({ section, isAdmin, canManage, location, planTier }: { secti
         <button
           onClick={() => setOpen(!open)}
           aria-expanded={open}
-          className="w-full flex items-center justify-between px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors"
+          className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors"
           style={{ color: "var(--lux-sidebar-section-color, var(--lux-text-muted))" }}
           data-testid={toggleTestId}
         >
@@ -413,7 +413,7 @@ export function AppSidebar() {
             </div>
           ) : (
             <div>
-              <BrandLockup iconSize={34} textSize="base" />
+              <BrandLockup iconSize={34} textSize="base" tone="auto" />
               <span
                 className="inline-block text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-full leading-none mt-1"
                 style={{

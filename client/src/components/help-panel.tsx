@@ -76,7 +76,7 @@ function RenderedMarkdown({ body }: { body: string }) {
         >
           <span className="text-base flex-shrink-0 mt-0.5">💡</span>
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: "#d97706" }}>Pro Tip</p>
+            <p className="text-xs font-medium mb-1" style={{ color: "#d97706" }}>Pro Tip</p>
             <p className="text-sm" style={{ color: "var(--lux-text-secondary)", lineHeight: "1.7" }}>{proTip}</p>
           </div>
         </div>
@@ -563,7 +563,7 @@ function HelpStatusBadge() {
       ) : (
         <div className="w-1.5 h-1.5 rounded-full" style={{ background: cfg.color }} />
       )}
-      <span className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: cfg.color }}>{cfg.label}</span>
+      <span className="text-xs font-medium" style={{ color: cfg.color }}>{cfg.label}</span>
     </div>
   );
 }
@@ -830,7 +830,7 @@ export function HelpPanel() {
               </div>
               {search.trim() && (
                 <p
-                  className="text-[10px] font-bold uppercase tracking-wider mt-2"
+                  className="text-xs font-medium mt-2"
                   style={{ color: "var(--lux-text-muted)", animation: "helpFadeIn 0.2s ease-out" }}
                   data-testid="text-search-count"
                 >
@@ -865,7 +865,7 @@ export function HelpPanel() {
                 <>
                   {contextual.length > 0 ? (
                     <>
-                      <p className="text-[10px] font-bold uppercase tracking-wider mb-2.5" style={{ color: "var(--lux-text-muted)" }}>
+                      <p className="text-xs font-medium mb-2.5" style={{ color: "var(--lux-text-muted)" }}>
                         <Lightbulb className="w-3 h-3 inline-block mr-1 -mt-0.5" style={{ color: "#f59e0b" }} />
                         Relevant to this page
                       </p>
@@ -883,7 +883,7 @@ export function HelpPanel() {
                     </div>
                   )}
 
-                  <p className="text-[10px] font-bold uppercase tracking-wider mb-2.5" style={{ color: "var(--lux-text-muted)" }}>
+                  <p className="text-xs font-medium mb-2.5" style={{ color: "var(--lux-text-muted)" }}>
                     Browse by category
                   </p>
                   <CategoryGrid onSelectCategory={setSelectedCategory} marketingLocked={marketingLocked} />

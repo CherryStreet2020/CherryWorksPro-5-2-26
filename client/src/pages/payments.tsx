@@ -53,7 +53,7 @@ import {
   Plus, CreditCard, DollarSign, Pencil, Trash2, RotateCcw, Search,
   ArrowUpDown, ArrowUp, ArrowDown, BookOpen, Download, X, Save,
   ChevronRight, Calendar as CalendarIcon, Hash, Mail, Copy, TrendingUp, Clock, BarChart3,
-  CheckCircle, AlertTriangle, Wallet, Ban, RefreshCw, Layers, Check, ChevronsUpDown,
+  CheckCircle, AlertTriangle, Ban, RefreshCw, Layers, Check, ChevronsUpDown,
   ClipboardList,
 } from "lucide-react";
 import { format } from "date-fns";
@@ -743,12 +743,6 @@ export default function PaymentsPage() {
       <div className={`flex-1 px-6 lg:px-8 xl:px-10 py-6 space-y-6 transition-all duration-300 ${detailId ? "mr-[440px]" : ""}`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="relative">
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(var(--lux-accent-rgb),0.15) 0%, rgba(var(--lux-accent-rgb),0.05) 100%)" }}>
-                <Wallet className="w-6 h-6" style={{ color: "var(--lux-accent)" }} />
-              </div>
-              <div className="absolute -inset-1 rounded-xl opacity-40 blur-md -z-10" style={{ background: "radial-gradient(circle, rgba(var(--lux-accent-rgb),0.3) 0%, transparent 70%)" }} />
-            </div>
             <div>
               <div className="flex items-center gap-3">
                 <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--lux-text)" }} data-testid="text-payments-title">
@@ -780,7 +774,7 @@ export default function PaymentsPage() {
             {canManage && (
               <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setFormTouched(false); }}>
                 <DialogTrigger asChild>
-                  <Button data-testid="button-record-payment" className="text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.03]" style={{ background: "var(--gradient-brand)" }}>
+                  <Button data-testid="button-record-payment" className="text-white transition-all duration-300" style={{ background: "var(--gradient-brand)" }}>
                     <Plus className="w-4 h-4 mr-2" />
                     Record Payment
                   </Button>
@@ -806,7 +800,7 @@ export default function PaymentsPage() {
                     <div>
                       <div className="flex items-center gap-2 mb-3">
                         <CreditCard className="w-3.5 h-3.5" style={{ color: "var(--lux-accent)" }} />
-                        <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Invoice Details</span>
+                        <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Invoice Details</span>
                       </div>
                       <div className="space-y-4">
                         <div className="space-y-2">
@@ -882,7 +876,7 @@ export default function PaymentsPage() {
                     <div>
                       <div className="flex items-center gap-2 mb-3">
                         <CalendarIcon className="w-3.5 h-3.5" style={{ color: "#3b82f6" }} />
-                        <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Payment Info</span>
+                        <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Payment Info</span>
                       </div>
                       <div className="space-y-4">
                         <div className="grid grid-cols-2 gap-4">
@@ -936,7 +930,7 @@ export default function PaymentsPage() {
                     </div>
                     <Button
                       type="submit"
-                      className="w-full text-white transition-all duration-200 hover:scale-[1.03] hover:shadow-lg"
+                      className="w-full text-white transition-all duration-200"
                       disabled={createMutation.isPending || !invoiceId || !amount}
                       data-testid="button-submit-payment"
                       style={{ background: "var(--gradient-brand)" }}
@@ -966,7 +960,7 @@ export default function PaymentsPage() {
                 <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl" style={{ background: sc.gradient }} />
                 <div className="relative z-10">
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>{sc.label}</p>
+                    <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>{sc.label}</p>
                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-transform duration-300 group-hover:scale-110${(sc as any).pulse ? " animate-pulse" : ""}`} style={{ background: (sc as any).iconBg || `${sc.color}15` }}>
                       <Icon className="w-4 h-4" style={{ color: sc.color }} />
                     </div>
@@ -1006,7 +1000,7 @@ export default function PaymentsPage() {
               const col = tab.key === "OVERDUE" ? "#ef4444" : tab.key === "DUE_WEEK" ? "#f59e0b" : tab.key === "DUE_MONTH" ? "#3b82f6" : tab.key === "PARTIAL" ? "#a855f7" : "#8b5cf6";
               return (
                 <button key={tab.key} onClick={() => { setArFilterTab(tab.key); setArSelectedIds(new Set()); }}
-                  className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all duration-200 hover:scale-[1.02]"
+                  className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all duration-200"
                   style={{ background: active ? `${col}15` : "transparent", color: active ? col : "var(--lux-text-muted)", boxShadow: active ? `0 0 0 1px ${col}30, 0 1px 3px ${col}10` : "none" }}
                   data-testid={`ar-filter-${tab.key.toLowerCase()}`}>
                   <TabIcon className="w-3.5 h-3.5" />
@@ -1043,12 +1037,12 @@ export default function PaymentsPage() {
                             aria-label="Select all outstanding invoices"
                             data-testid="checkbox-select-all-ar" />
                         </TableHead>
-                        <TableHead><span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Invoice #</span></TableHead>
-                        <TableHead><span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Client</span></TableHead>
-                        <TableHead><span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Amount Due</span></TableHead>
-                        <TableHead><span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Due Date</span></TableHead>
-                        <TableHead><span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Status</span></TableHead>
-                        <TableHead className="w-24"><span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Action</span></TableHead>
+                        <TableHead><span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Invoice #</span></TableHead>
+                        <TableHead><span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Client</span></TableHead>
+                        <TableHead><span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Amount Due</span></TableHead>
+                        <TableHead><span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Due Date</span></TableHead>
+                        <TableHead><span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Status</span></TableHead>
+                        <TableHead className="w-24"><span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Action</span></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1081,7 +1075,7 @@ export default function PaymentsPage() {
                           </TableCell>
                           <TableCell>
                             {canManage && (
-                              <Button size="sm" className="h-7 px-3 text-xs text-white transition-all hover:scale-[1.03] hover:shadow-lg"
+                              <Button size="sm" className="h-7 px-3 text-xs text-white transition-all"
                                 style={{ background: "var(--gradient-brand)" }}
                                 onClick={() => handlePayInvoice(inv)}
                                 data-testid={`button-pay-${inv.id}`}>
@@ -1115,7 +1109,7 @@ export default function PaymentsPage() {
                 Total: {formatMoney((unpaidInvoices || []).filter(i => arSelectedIds.has(i.id)).reduce((s, i) => s + Number(i.total) - Number(i.paidAmount), 0), baseCurrency)}
               </span>
             </div>
-            <Button className="text-white transition-all hover:scale-[1.03] hover:shadow-lg" style={{ background: "var(--gradient-brand)" }}
+            <Button className="text-white transition-all" style={{ background: "var(--gradient-brand)" }}
               onClick={() => setBulkPayOpen(true)} data-testid="button-bulk-pay">
               Record Bulk Payment
             </Button>
@@ -1144,7 +1138,7 @@ export default function PaymentsPage() {
               <button
                 key={s}
                 onClick={() => { setStatusTab(s === "ALL" ? "All" : s); setSelectedIds(new Set()); setHubFilter(null); }}
-                className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all duration-200 hover:scale-[1.02]"
+                className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all duration-200"
                 style={{
                   background: active ? `${col}15` : "transparent",
                   color: active ? col : "var(--lux-text-muted)",
@@ -1358,7 +1352,7 @@ export default function PaymentsPage() {
                 {payments?.length ? "Try adjusting your search, method filter, or date range" : "Record your first payment against an invoice to get started"}
               </p>
               {!payments?.length && canManage && (
-                <Button onClick={() => setOpen(true)} data-testid="button-empty-create" style={{ background: "var(--gradient-brand)" }} className="text-white transition-all duration-200 hover:scale-[1.03] hover:shadow-lg">
+                <Button onClick={() => setOpen(true)} data-testid="button-empty-create" style={{ background: "var(--gradient-brand)" }} className="text-white transition-all duration-200">
                   <Plus className="w-4 h-4 mr-2" /> Record Payment
                 </Button>
               )}
@@ -1386,27 +1380,27 @@ export default function PaymentsPage() {
                         />
                       </TableHead>
                       <TableHead>
-                        <button className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("invoiceNumber")} data-testid="button-sort-invoice">
+                        <button className="flex items-center gap-1 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("invoiceNumber")} data-testid="button-sort-invoice">
                           Invoice / Client <SortIcon field="invoiceNumber" />
                         </button>
                       </TableHead>
                       <TableHead>
-                        <button className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("status")} data-testid="button-sort-status">
+                        <button className="flex items-center gap-1 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("status")} data-testid="button-sort-status">
                           Status <SortIcon field="status" />
                         </button>
                       </TableHead>
                       <TableHead>
-                        <button className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("date")} data-testid="button-sort-date">
+                        <button className="flex items-center gap-1 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("date")} data-testid="button-sort-date">
                           Date <SortIcon field="date" />
                         </button>
                       </TableHead>
                       <TableHead>
-                        <button className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("method")} data-testid="button-sort-method">
+                        <button className="flex items-center gap-1 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("method")} data-testid="button-sort-method">
                           Method <SortIcon field="method" />
                         </button>
                       </TableHead>
                       <TableHead>
-                        <button className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("amount")} data-testid="button-sort-amount">
+                        <button className="flex items-center gap-1 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("amount")} data-testid="button-sort-amount">
                           Amount <SortIcon field="amount" />
                         </button>
                       </TableHead>
@@ -1551,17 +1545,17 @@ export default function PaymentsPage() {
 
             <div className="grid grid-cols-3 gap-3">
               <div className="rounded-lg p-3 text-center" style={{ background: "var(--lux-bg)" }}>
-                <p className="text-xs font-medium uppercase tracking-wider mb-1" style={{ color: "var(--lux-text-muted)" }}>Amount</p>
+                <p className="text-xs font-medium mb-1" style={{ color: "var(--lux-text-muted)" }}>Amount</p>
                 <p className="text-lg font-bold tabular-nums" style={{ color: Number(detailPayment.amount) < 0 ? "#ef4444" : "#22c55e" }}>
                   {formatMoney(Math.abs(Number(detailPayment.amount)), baseCurrency)}
                 </p>
               </div>
               <div className="rounded-lg p-3 text-center" style={{ background: "var(--lux-bg)" }}>
-                <p className="text-xs font-medium uppercase tracking-wider mb-1" style={{ color: "var(--lux-text-muted)" }}>Method</p>
+                <p className="text-xs font-medium mb-1" style={{ color: "var(--lux-text-muted)" }}>Method</p>
                 <p className="text-sm font-semibold" style={{ color: "var(--lux-text)" }}>{detailPayment.method}</p>
               </div>
               <div className="rounded-lg p-3 text-center" style={{ background: "var(--lux-bg)" }}>
-                <p className="text-xs font-medium uppercase tracking-wider mb-1" style={{ color: "var(--lux-text-muted)" }}>Date</p>
+                <p className="text-xs font-medium mb-1" style={{ color: "var(--lux-text-muted)" }}>Date</p>
                 <p className="text-sm font-semibold" style={{ color: "var(--lux-text)" }}>
                   <DateDisplay value={detailPayment.date} />
                 </p>
@@ -1570,16 +1564,16 @@ export default function PaymentsPage() {
 
             <div className="space-y-3">
               <div>
-                <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Invoice</span>
+                <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Invoice</span>
                 <p className="font-semibold" style={{ color: "var(--lux-text)" }}>{detailPayment.invoiceNumber}</p>
               </div>
               <div>
-                <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Client</span>
+                <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Client</span>
                 <p className="font-semibold" style={{ color: "var(--lux-text)" }}>{detailPayment.clientName}</p>
               </div>
               {(detailPayment as any).referenceNumber && (
                 <div>
-                  <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Reference Number</span>
+                  <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Reference Number</span>
                   <div className="flex items-center gap-1">
                     <Hash className="w-3 h-3" style={{ color: "var(--lux-text-muted)" }} />
                     <p className="font-medium text-sm" style={{ color: "var(--lux-text)" }}>{(detailPayment as any).referenceNumber}</p>
@@ -1588,7 +1582,7 @@ export default function PaymentsPage() {
               )}
               {detailPayment.provider && detailPayment.provider !== "MANUAL" && (
                 <div>
-                  <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Provider</span>
+                  <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Provider</span>
                   <p className="font-medium text-sm" style={{ color: "var(--lux-text)" }}>{detailPayment.provider}</p>
                 </div>
               )}
@@ -1597,7 +1591,7 @@ export default function PaymentsPage() {
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <Clock className="w-3.5 h-3.5" style={{ color: "var(--lux-accent)" }} />
-                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Timeline</span>
+                <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Timeline</span>
               </div>
               <div className="relative pl-5 space-y-3">
                 <div className="absolute left-[7px] top-1 bottom-1 w-px" style={{ background: "var(--lux-border)" }} />
@@ -1652,7 +1646,7 @@ export default function PaymentsPage() {
 
             {canManage && (
               <div className="space-y-2 rounded-lg p-4 border" style={{ borderColor: "var(--lux-border)" }}>
-                <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Update Status</span>
+                <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Update Status</span>
                 <Select
                   value={(detailPayment as any).status || "CLEARED"}
                   onValueChange={(val) => updateStatusMutation.mutate({ id: detailPayment.id, status: val })}
@@ -1672,7 +1666,7 @@ export default function PaymentsPage() {
             )}
 
             <div className="space-y-2">
-              <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Notes</span>
+              <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Notes</span>
               <Textarea
                 value={detailNotes}
                 onChange={(e) => setDetailNotes(e.target.value)}
@@ -1694,7 +1688,7 @@ export default function PaymentsPage() {
 
             {canManage && (
               <div className="space-y-2 pt-3 border-t" style={{ borderColor: "var(--lux-border)" }}>
-                <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Actions</span>
+                <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Actions</span>
                 <div className="flex flex-wrap gap-2">
                   <TooltipProvider>
                     <Tooltip>
@@ -1774,15 +1768,15 @@ export default function PaymentsPage() {
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <ClipboardList className="w-3.5 h-3.5" style={{ color: "var(--lux-accent)" }} />
-                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Selected Invoices</span>
+                <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Selected Invoices</span>
               </div>
               <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--lux-border)" }}>
                 <table className="w-full text-sm">
                   <thead>
                     <tr style={{ background: "var(--lux-bg)" }}>
-                      <th className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Invoice</th>
-                      <th className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Client</th>
-                      <th className="text-right px-3 py-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Amount</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Invoice</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Client</th>
+                      <th className="text-right px-3 py-2 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Amount</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1808,7 +1802,7 @@ export default function PaymentsPage() {
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <CalendarIcon className="w-3.5 h-3.5" style={{ color: "#3b82f6" }} />
-                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Payment Details</span>
+                <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Payment Details</span>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -1862,7 +1856,7 @@ export default function PaymentsPage() {
                   data-testid="input-bulk-notes" />
               </div>
             </div>
-            <Button className="w-full text-white transition-all duration-200 hover:scale-[1.03] hover:shadow-lg"
+            <Button className="w-full text-white transition-all duration-200"
               style={{ background: "var(--gradient-brand)" }}
               disabled={bulkPaying}
               onClick={handleBulkPayment}
@@ -1895,7 +1889,7 @@ export default function PaymentsPage() {
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <CreditCard className="w-3.5 h-3.5" style={{ color: "var(--lux-accent)" }} />
-                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Payment Details</span>
+                <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Payment Details</span>
               </div>
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
@@ -1956,7 +1950,7 @@ export default function PaymentsPage() {
             </div>
             <Button
               type="submit"
-              className="w-full text-white transition-all duration-200 hover:scale-[1.03] hover:shadow-lg"
+              className="w-full text-white transition-all duration-200"
               disabled={updateMutation.isPending}
               data-testid="button-submit-edit-payment"
               style={{ background: "var(--gradient-brand)" }}

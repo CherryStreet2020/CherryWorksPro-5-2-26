@@ -103,7 +103,7 @@ export function MailboxReconnectBanner({
             data-testid="container-mailbox-reconnect-error"
           >
             <div className="flex items-center justify-between gap-2">
-              <div className="font-medium uppercase tracking-wide text-[11px] opacity-80">
+              <div className="font-medium text-xs opacity-80">
                 {providerLabel} reported
               </div>
               <button

@@ -419,7 +419,7 @@ function ContactEditForm({ contact }: { contact: ContactWithTags }) {
 
           {tags.length > 0 && (
             <div>
-              <div className="text-xs uppercase tracking-wider mb-1" style={{ color: "var(--lux-text-muted)" }}>Tags</div>
+              <div className="text-xs mb-1" style={{ color: "var(--lux-text-muted)" }}>Tags</div>
               <div className="flex flex-wrap gap-1">
                 {tags.map((t) => (
                   <span key={t.id} className="text-[11px] px-1.5 py-0.5 rounded text-white" style={{ background: t.color }} data-testid={`tag-${t.id}`}>
@@ -509,7 +509,7 @@ function ActivityTimeline({ activities }: { activities: ContactActivity[] }) {
     <div className="space-y-4" data-testid="list-activities">
       {groups.map(([day, items]) => (
         <section key={day} data-testid={`day-group-${day}`}>
-          <div className="text-xs uppercase tracking-wider mb-2" style={{ color: "var(--lux-text-muted)" }} data-testid={`day-label-${day}`}>
+          <div className="text-xs mb-2" style={{ color: "var(--lux-text-muted)" }} data-testid={`day-label-${day}`}>
             {formatDayLabel(day)}
           </div>
           <ol className="space-y-2">

@@ -413,11 +413,6 @@ export default function ProjectsPage() {
     <div className="px-6 lg:px-8 xl:px-10 py-6 space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-4">
-          <div className="relative">
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(var(--lux-accent-rgb),0.15) 0%, rgba(var(--lux-accent-rgb),0.05) 100%)" }}>
-              <FolderKanban className="w-6 h-6" style={{ color: "var(--lux-accent)" }} />
-            </div>
-          </div>
           <div>
             <div className="flex items-center gap-3">
               <h1
@@ -694,7 +689,7 @@ export default function ProjectsPage() {
           <Table>
             <TableHeader>
               <TableRow style={{ background: "var(--lux-table-header-bg)" }}>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+                <TableHead className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>
                   <button
                     className="flex items-center font-semibold cursor-pointer"
                     onClick={() => toggleSort("name")}
@@ -703,7 +698,7 @@ export default function ProjectsPage() {
                     Name <SortIcon field="name" />
                   </button>
                 </TableHead>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+                <TableHead className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>
                   <button
                     className="flex items-center font-semibold cursor-pointer"
                     onClick={() => toggleSort("clientName")}
@@ -712,7 +707,7 @@ export default function ProjectsPage() {
                     Client <SortIcon field="clientName" />
                   </button>
                 </TableHead>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+                <TableHead className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>
                   <button
                     className="flex items-center font-semibold cursor-pointer"
                     onClick={() => toggleSort("status")}
@@ -721,8 +716,8 @@ export default function ProjectsPage() {
                     Status <SortIcon field="status" />
                   </button>
                 </TableHead>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Members</TableHead>
-                {canManage && <TableHead className="text-right text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Actions</TableHead>}
+                <TableHead className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Members</TableHead>
+                {canManage && <TableHead className="text-right text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>

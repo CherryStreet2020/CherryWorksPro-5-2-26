@@ -382,11 +382,6 @@ export default function ApprovalsPage() {
     <div className="px-6 lg:px-8 xl:px-10 py-6 space-y-6">
       <PageBreadcrumbs group="Management" page="Approvals" />
       <div className="flex items-center gap-4">
-        <div className="relative">
-          <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(var(--lux-accent-rgb),0.15) 0%, rgba(var(--lux-accent-rgb),0.05) 100%)" }}>
-            <ClipboardList className="w-6 h-6" style={{ color: "var(--lux-accent)" }} />
-          </div>
-        </div>
         <div className="flex-1">
           <div className="flex items-center gap-3">
             <h1
@@ -580,7 +575,7 @@ export default function ApprovalsPage() {
                       />
                     </th>
                     <th
-                      className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider cursor-pointer"
+                      className="text-left px-4 py-2.5 text-xs font-medium cursor-pointer"
                       style={{ color: "var(--lux-text-muted)" }}
                       onClick={() => toggleSort("userName")}
                       data-testid="header-sort-team-member"
@@ -588,7 +583,7 @@ export default function ApprovalsPage() {
                       Team Member <SortIcon field="userName" />
                     </th>
                     <th
-                      className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider cursor-pointer"
+                      className="text-left px-4 py-2.5 text-xs font-medium cursor-pointer"
                       style={{ color: "var(--lux-text-muted)" }}
                       onClick={() => toggleSort("weekStartDate")}
                       data-testid="header-sort-week"
@@ -596,17 +591,17 @@ export default function ApprovalsPage() {
                       Week <SortIcon field="weekStartDate" />
                     </th>
                     <th
-                      className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider cursor-pointer"
+                      className="text-right px-4 py-2.5 text-xs font-medium cursor-pointer"
                       style={{ color: "var(--lux-text-muted)" }}
                       onClick={() => toggleSort("totalMinutes")}
                       data-testid="header-sort-hours"
                     >
                       Hours <SortIcon field="totalMinutes" />
                     </th>
-                    <th className="text-center px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+                    <th className="text-center px-4 py-2.5 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>
                       Status
                     </th>
-                    <th className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+                    <th className="text-right px-4 py-2.5 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>
                       Actions
                     </th>
                   </tr>

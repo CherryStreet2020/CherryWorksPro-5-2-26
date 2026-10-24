@@ -435,9 +435,9 @@ function EntityList({ entity }: { entity: string }) {
             <Table>
               <TableHeader>
                 <TableRow style={{ background: "var(--lux-table-header-bg)" }}>
-                  <TableHead className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--lux-text-muted)" }}>ID</TableHead>
+                  <TableHead className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>ID</TableHead>
                   {config.listColumns.map((col) => (
-                    <TableHead key={col.key} className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--lux-text-muted)" }}>{col.label}</TableHead>
+                    <TableHead key={col.key} className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>{col.label}</TableHead>
                   ))}
                 </TableRow>
               </TableHeader>

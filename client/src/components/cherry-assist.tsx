@@ -114,7 +114,7 @@ function ArticleCard({ article, onThumbsDown }: { article: HelpArticle; onThumbs
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span
-              className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+              className="text-xs font-medium px-1.5 py-0.5 rounded"
               style={{ background: `${catColor}15`, color: catColor }}
             >
               {article.category}
@@ -301,14 +301,14 @@ function SupportForm({ userName, userEmail, orgName, onSubmit, onBack, submittin
 
       <div className="space-y-3">
         <div>
-          <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--lux-text-muted)" }}>Name</label>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--lux-text-muted)" }}>Name</label>
           <div className="rounded-lg px-3 py-2 text-[12px]" style={{ background: "var(--lux-bg)", border: "1px solid var(--lux-border)", color: "var(--lux-text-secondary)" }} data-testid="text-support-name">
             {userName}
           </div>
         </div>
 
         <div>
-          <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--lux-text-muted)" }}>Email</label>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--lux-text-muted)" }}>Email</label>
           <div className="rounded-lg px-3 py-2 text-[12px]" style={{ background: "var(--lux-bg)", border: "1px solid var(--lux-border)", color: "var(--lux-text-secondary)" }} data-testid="text-support-email">
             {userEmail}
           </div>
@@ -316,7 +316,7 @@ function SupportForm({ userName, userEmail, orgName, onSubmit, onBack, submittin
 
         {orgName && (
           <div>
-            <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--lux-text-muted)" }}>Organization</label>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--lux-text-muted)" }}>Organization</label>
             <div className="rounded-lg px-3 py-2 text-[12px]" style={{ background: "var(--lux-bg)", border: "1px solid var(--lux-border)", color: "var(--lux-text-secondary)" }} data-testid="text-support-org">
               {orgName}
             </div>
@@ -324,7 +324,7 @@ function SupportForm({ userName, userEmail, orgName, onSubmit, onBack, submittin
         )}
 
         <div>
-          <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--lux-text-muted)" }}>Subject</label>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--lux-text-muted)" }}>Subject</label>
           <input
             type="text"
             value={subject}
@@ -337,7 +337,7 @@ function SupportForm({ userName, userEmail, orgName, onSubmit, onBack, submittin
         </div>
 
         <div>
-          <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--lux-text-muted)" }}>Message</label>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--lux-text-muted)" }}>Message</label>
           <textarea
             value={message}
             onChange={e => setMessage(e.target.value)}
@@ -352,7 +352,7 @@ function SupportForm({ userName, userEmail, orgName, onSubmit, onBack, submittin
         <button
           onClick={() => canSubmit && onSubmit({ subject: subject.trim(), message: message.trim() })}
           disabled={!canSubmit}
-          className="w-full py-2.5 rounded-xl text-[12px] font-bold text-white cursor-pointer transition-all hover:scale-[1.01] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          className="w-full py-2.5 rounded-xl text-[12px] font-bold text-white cursor-pointer transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           style={{ background: canSubmit ? "var(--gradient-brand)" : "var(--lux-bg)" }}
           data-testid="button-support-submit"
         >
@@ -385,7 +385,7 @@ function SupportConfirmation({ referenceId, emailSent, onBack }: { referenceId: 
       </p>
 
       <div className="rounded-xl px-4 py-3 mb-4" style={{ background: "var(--lux-bg)", border: "1px solid var(--lux-border)" }}>
-        <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--lux-text-muted)" }}>Reference Number</p>
+        <p className="text-xs mb-1" style={{ color: "var(--lux-text-muted)" }}>Reference Number</p>
         <p className="text-[14px] font-bold" style={{ fontFamily: "monospace", color: "var(--lux-text)" }} data-testid="text-support-reference">{referenceId}</p>
       </div>
 
@@ -669,7 +669,7 @@ export function CherryAssist() {
                   </p>
                   <a
                     href="/pricing"
-                    className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white rounded-xl transition-all hover:scale-[1.02]"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white rounded-xl transition-all"
                     style={{ background: "var(--gradient-brand)" }}
                     data-testid="link-upgrade-assist"
                   >

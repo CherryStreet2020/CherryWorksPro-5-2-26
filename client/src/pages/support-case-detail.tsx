@@ -192,6 +192,7 @@ export default function SupportCaseDetailPage() {
 
   const card = { background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" } as const;
   const muted = { color: "var(--lux-text-muted)" } as const;
+  const ink = { color: "var(--lux-text)" } as const;
   const fieldStyle = { borderColor: "var(--lux-border)", color: "var(--lux-text)" } as const;
   const t = c.time.totals;
   const intakeRows = intakeEntries(c.intake);
@@ -241,7 +242,7 @@ export default function SupportCaseDetailPage() {
         <div className="space-y-5 min-w-0">
           <section className="rounded-2xl p-5 border-0" style={card}>
             <div className="flex items-center justify-between mb-2">
-              <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Description</h2>
+              <h2 className="text-sm font-semibold" style={ink}>Description</h2>
               {!editingDesc && <button className="text-xs underline" style={muted} onClick={() => setEditingDesc(true)} data-testid="button-edit-description">Edit</button>}
             </div>
             {editingDesc ? (
@@ -261,7 +262,7 @@ export default function SupportCaseDetailPage() {
 
           {intakeRows.length > 0 && (
             <section className="rounded-2xl p-5 border-0" style={card} data-testid="case-intake-card">
-              <h2 className="text-[11px] font-bold uppercase tracking-wider mb-3" style={muted}>Customer intake</h2>
+              <h2 className="text-sm font-semibold mb-3" style={ink}>Customer intake</h2>
               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
                 {intakeRows.map(([key, label, value]) => (
                   <div key={key} className={key === "stepsToReproduce" || key === "expected" ? "sm:col-span-2" : ""} data-testid={`case-intake-${key}`}>
@@ -275,7 +276,7 @@ export default function SupportCaseDetailPage() {
 
           <section className="rounded-2xl p-5 border-0" style={card} data-testid="card-case-attachments">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Attachments{c.attachments.length ? ` (${c.attachments.length})` : ""}</h2>
+              <h2 className="text-sm font-semibold" style={ink}>Attachments{c.attachments.length ? ` (${c.attachments.length})` : ""}</h2>
               <div>
                 <input ref={fileInput} type="file" multiple className="hidden" onChange={e => { if (e.target.files?.length) upload.mutate(e.target.files); }} data-testid="input-case-files" />
                 <Button size="sm" variant="outline" onClick={() => fileInput.current?.click()} disabled={upload.isPending} data-testid="button-attach-files">
@@ -310,7 +311,7 @@ export default function SupportCaseDetailPage() {
           </section>
 
           <section className="rounded-2xl p-5 border-0" style={card}>
-            <h2 className="text-[11px] font-bold uppercase tracking-wider mb-4" style={muted}>Conversation</h2>
+            <h2 className="text-sm font-semibold mb-4" style={ink}>Conversation</h2>
             {thread.length === 0 ? (
               <p className="text-sm py-4 text-center" style={muted}>No messages yet. Reply to the customer or leave an internal note below.</p>
             ) : (
@@ -391,7 +392,7 @@ export default function SupportCaseDetailPage() {
 
         <aside className="space-y-5">
           <section className="rounded-2xl p-5 border-0 space-y-3" style={card}>
-            <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Properties</h2>
+            <h2 className="text-sm font-semibold" style={ink}>Properties</h2>
             <Field label="Status">
               <Select value={c.status} onValueChange={v => patch.mutate({ status: v as CaseStatus })}>
                 <SelectTrigger style={fieldStyle} data-testid="select-status"><SelectValue /></SelectTrigger>
@@ -436,13 +437,13 @@ export default function SupportCaseDetailPage() {
 
           <section className="rounded-2xl p-5 border-0" style={card} data-testid="card-case-hours">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Hours on this case</h2>
+              <h2 className="text-sm font-semibold" style={ink}>Hours on this case</h2>
               <button className="text-xs underline" style={muted} onClick={() => setShowLogTime(true)} disabled={!logTimeProject}>Log time</button>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Stat label="Logged" value={hoursLabel(t.minutes)} />
               <Stat label="Billable" value={hoursLabel(t.billableMinutes)} />
-              <Stat label="Unbilled" value={hoursLabel(t.unbilledMinutes)} accent />
+              <Stat label="Unbilled" value={hoursLabel(t.unbilledMinutes)} />
               <Stat label="Invoiced" value={hoursLabel(t.invoicedMinutes)} />
             </div>
             {c.time.entries.length > 0 && (
@@ -464,7 +465,7 @@ export default function SupportCaseDetailPage() {
           </section>
 
           <section className="rounded-2xl p-5 border-0" style={card} data-testid="card-case-portal">
-            <h2 className="text-[11px] font-bold uppercase tracking-wider mb-2" style={muted}>Customer portal</h2>
+            <h2 className="text-sm font-semibold mb-2" style={ink}>Customer portal</h2>
             {c.requesterContactId && c.requesterEmail ? (
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs" style={muted}>{c.requesterName} can sign in with a one-time link.</p>
@@ -484,7 +485,7 @@ export default function SupportCaseDetailPage() {
           </section>
 
           <section className="rounded-2xl p-5 border-0" style={card} data-testid="case-watchers-card">
-            <h2 className="text-[11px] font-bold uppercase tracking-wider mb-2" style={muted}>Watchers{watchers.length ? ` (${watchers.length})` : ""}</h2>
+            <h2 className="text-sm font-semibold mb-2" style={ink}>Watchers{watchers.length ? ` (${watchers.length})` : ""}</h2>
             {watchers.length === 0 ? (
               <p className="text-xs" style={muted}>No colleagues are following this case yet.</p>
             ) : (
@@ -529,7 +530,7 @@ export default function SupportCaseDetailPage() {
 
           <section className="rounded-2xl p-5 border-0" style={card} data-testid="card-case-sla">
             <div className="flex items-center justify-between mb-2">
-              <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Service level</h2>
+              <h2 className="text-sm font-semibold" style={ink}>Service level</h2>
               <SlaChip sla={c.sla} />
             </div>
             <dl className="text-xs space-y-1.5">
@@ -540,7 +541,7 @@ export default function SupportCaseDetailPage() {
           </section>
 
           <section className="rounded-2xl p-5 border-0" style={card}>
-            <h2 className="text-[11px] font-bold uppercase tracking-wider mb-2" style={muted}>Timeline</h2>
+            <h2 className="text-sm font-semibold mb-2" style={ink}>Timeline</h2>
             <dl className="text-xs space-y-1.5">
               <Row k="Opened" v={new Date(c.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} />
               <Row k="First response" v={c.firstResponseAt ? relativeTime(c.firstResponseAt) : "not yet"} />
@@ -591,11 +592,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg px-3 py-2" style={{ background: "var(--lux-surface-alt)", border: "1px solid var(--lux-border)" }}>
-      <p className="text-[10px] uppercase tracking-wider font-bold" style={{ color: "var(--lux-text-muted)" }}>{label}</p>
-      <p className="text-base font-bold tabular-nums" style={{ color: accent ? "var(--lux-accent)" : "var(--lux-text)" }}>{value}</p>
+      <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>{label}</p>
+      <p className="text-base font-semibold tabular-nums" style={{ color: "var(--lux-text)" }}>{value}</p>
     </div>
   );
 }

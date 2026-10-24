@@ -150,7 +150,7 @@ export default function EntryList(props: EntryListProps) {
           <div key={dateKey}>
             <div className="flex items-center gap-3 mb-2 px-1">
               <div className="flex-1 flex items-center gap-2">
-                <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-secondary)" }}>
+                <span className="text-xs font-medium" style={{ color: "var(--lux-text-secondary)" }}>
                   {humanDate(dateKey)}
                 </span>
                 <div className="flex-1 h-px" style={{ background: "var(--lux-border)" }} />

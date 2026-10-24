@@ -1113,7 +1113,7 @@ export default function BankConnectionsPage() {
                                         className="mx-auto" data-testid="checkbox-select-all" />
                                     ) : (
                                       <button
-                                        className={`flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap ${isSortable ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
+                                        className={`flex items-center gap-1 text-xs font-medium whitespace-nowrap ${isSortable ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
                                         style={{ color: sort ? "var(--lux-accent)" : "var(--lux-text-muted)", background: "none", border: "none", padding: 0 }}
                                         onClick={isSortable ? (e) => handleGridSort(col, e) : undefined}
                                         data-testid={`header-${col}`}

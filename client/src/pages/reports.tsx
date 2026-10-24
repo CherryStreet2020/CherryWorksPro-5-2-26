@@ -51,7 +51,7 @@ function SectionCard({ children, title, actions }: { children: React.ReactNode; 
     <Card className="border-0" style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }}>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <h3 className="text-sm font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>{title}</h3>
+          <h3 className="text-sm font-medium" style={{ color: "var(--lux-text-muted)" }}>{title}</h3>
           {actions}
         </div>
       </CardHeader>
@@ -93,7 +93,7 @@ function ReportTable({ headers, children }: { headers: string[]; children: React
         <thead>
           <tr style={{ background: "var(--lux-table-header-bg)" }}>
             {headers.map((h, i) => (
-              <th key={i} className={`${i === 0 ? "text-left" : "text-right"} px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider`} style={{ color: "var(--lux-text-muted)" }}>{h}</th>
+              <th key={i} className={`${i === 0 ? "text-left" : "text-right"} px-4 py-2.5 text-xs font-medium`} style={{ color: "var(--lux-text-muted)" }}>{h}</th>
             ))}
           </tr>
         </thead>
@@ -385,7 +385,7 @@ export default function ReportsPage() {
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="rounded-xl p-5" style={{ background: "var(--lux-surface-alt)" }}>
-                      <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Avg Days to Collect</p>
+                      <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Avg Days to Collect</p>
                       <p className="text-3xl font-bold mt-2" style={{ color: collections.overallAvgDays <= 30 ? "#22c55e" : collections.overallAvgDays <= 60 ? "#f59e0b" : "#ef4444" }}>{collections.overallAvgDays} days</p>
                       <p className="text-xs mt-1" style={{ color: "var(--lux-text-muted)" }}>Across {collections.invoiceCount} paid invoices</p>
                     </div>
@@ -614,7 +614,7 @@ export default function ReportsPage() {
                     { title: "By Project", data: wipAging.byProject },
                   ].map(({ title, data }) => (
                     <div key={title}>
-                      <h4 className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: "var(--lux-text-muted)" }}>{title}</h4>
+                      <h4 className="text-xs font-medium mb-2" style={{ color: "var(--lux-text-muted)" }}>{title}</h4>
                       <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--lux-border)" }}>
                         <table className="w-full text-sm" style={{ tableLayout: "fixed" }}>
                           <colgroup>
@@ -627,11 +627,11 @@ export default function ReportsPage() {
                           </colgroup>
                           <thead>
                             <tr style={{ background: "var(--lux-table-header-bg)" }}>
-                              <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Name</th>
+                              <th className="text-left px-4 py-2.5 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Name</th>
                               {AGING_BUCKETS.map(b => (
-                                <th key={b} className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>{b}d</th>
+                                <th key={b} className="text-right px-4 py-2.5 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>{b}d</th>
                               ))}
-                              <th className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Total</th>
+                              <th className="text-right px-4 py-2.5 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Total</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -752,7 +752,7 @@ export default function ReportsPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     {laborSummary.map((row: any, i: number) => (
                       <div key={i} className="rounded-xl p-5" style={{ background: "var(--lux-surface-alt)" }}>
-                        <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>{WORKER_TYPE_LABELS[row.workerType] || row.workerType}</p>
+                        <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>{WORKER_TYPE_LABELS[row.workerType] || row.workerType}</p>
                         <p className="text-2xl font-bold mt-1" style={{ color: "var(--lux-text)" }}>{row.activeCount} <span className="text-sm font-normal" style={{ color: "var(--lux-text-muted)" }}>active</span></p>
                         <div className="mt-2 space-y-1 text-xs" style={{ color: "var(--lux-text-muted)" }}>
                           <p>{formatHours(row.totalHours)}h total · {formatHours(row.billableHours)}h billable</p>
@@ -819,7 +819,7 @@ export default function ReportsPage() {
                       ))}
                     </ReportTable>
                   )}
-                  <h4 className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>All Payouts</h4>
+                  <h4 className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>All Payouts</h4>
                   <ReportTable headers={["Date", "Independent", "Amount", "Method", "Status", "Reference"]}>
                     {payoutDetail.payouts.slice(0, 50).map((p: any) => (
                       <tr key={p.id}>

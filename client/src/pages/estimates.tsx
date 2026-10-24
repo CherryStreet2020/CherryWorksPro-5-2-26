@@ -727,12 +727,6 @@ export default function EstimatesPage() {
         <PageBreadcrumbs group="Billing" page="Estimates" />
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="relative">
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(var(--lux-accent-rgb),0.15) 0%, rgba(var(--lux-accent-rgb),0.05) 100%)" }}>
-                <FileText className="w-6 h-6" style={{ color: "var(--lux-accent)" }} />
-              </div>
-              <div className="absolute -inset-1 rounded-xl opacity-40 blur-md -z-10" style={{ background: "radial-gradient(circle, rgba(var(--lux-accent-rgb),0.3) 0%, transparent 70%)" }} />
-            </div>
             <div>
               <div className="flex items-center gap-3">
                 <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--lux-text)" }} data-testid="text-page-title">
@@ -763,7 +757,7 @@ export default function EstimatesPage() {
             </TooltipProvider>
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
-                <Button className="text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.03]" style={{ background: "var(--gradient-brand)" }} data-testid="button-new-estimate">
+                <Button className="text-white transition-all duration-300" style={{ background: "var(--gradient-brand)" }} data-testid="button-new-estimate">
                   <Plus className="w-4 h-4 mr-2" /> New Estimate
                 </Button>
               </DialogTrigger>
@@ -788,7 +782,7 @@ export default function EstimatesPage() {
                   <div>
                     <div className="flex items-center gap-2 mb-3">
                       <FileCheck className="w-3.5 h-3.5" style={{ color: "var(--lux-accent)" }} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Client & Dates</span>
+                      <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Client & Dates</span>
                     </div>
                     <div className="space-y-4">
                       <div className="grid grid-cols-2 gap-4">
@@ -868,7 +862,7 @@ export default function EstimatesPage() {
                   <div>
                     <div className="flex items-center gap-2 mb-3">
                       <DollarSign className="w-3.5 h-3.5" style={{ color: "#22c55e" }} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Pricing</span>
+                      <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Pricing</span>
                     </div>
                     <div className="space-y-4">
                       <div className="grid grid-cols-2 gap-4">
@@ -911,7 +905,7 @@ export default function EstimatesPage() {
                   <div>
                     <div className="flex items-center gap-2 mb-3">
                       <FileText className="w-3.5 h-3.5" style={{ color: "#3b82f6" }} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Additional Notes</span>
+                      <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Additional Notes</span>
                     </div>
                     <Textarea
                       value={notes}
@@ -984,7 +978,7 @@ export default function EstimatesPage() {
                     </div>
                   </div>
                   <Button
-                    className="w-full text-white shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-[1.03]"
+                    className="w-full text-white transition-all duration-200"
                     style={{ background: "var(--gradient-brand)" }}
                     onClick={handleSubmit}
                     disabled={createMutation.isPending}
@@ -1014,7 +1008,7 @@ export default function EstimatesPage() {
                 <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl" style={{ background: sc.gradient }} />
                 <div className="relative z-10">
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>{sc.label}</p>
+                    <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>{sc.label}</p>
                     <div className="w-8 h-8 rounded-lg flex items-center justify-center transition-transform duration-300 group-hover:scale-110" style={{ background: (sc as any).iconBg || `${sc.color}15` }}>
                       <Icon className="w-4 h-4" style={{ color: sc.color }} />
                     </div>
@@ -1037,7 +1031,7 @@ export default function EstimatesPage() {
               <button
                 key={s}
                 onClick={() => { setActiveTab(s === "ALL" ? "All" : s); setSelectedIds(new Set()); setHubFilter(null); }}
-                className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all duration-200 hover:scale-[1.02]"
+                className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all duration-200"
                 style={{
                   background: active ? `${col}15` : "transparent",
                   color: active ? col : "var(--lux-text-muted)",
@@ -1177,32 +1171,32 @@ export default function EstimatesPage() {
                       />
                     </TableHead>
                     <TableHead>
-                      <button className="flex items-center text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("number")} data-testid="sort-number">
+                      <button className="flex items-center text-xs font-medium" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("number")} data-testid="sort-number">
                         Number <SortIcon field="number" />
                       </button>
                     </TableHead>
                     <TableHead>
-                      <button className="flex items-center text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("clientName")} data-testid="sort-client">
+                      <button className="flex items-center text-xs font-medium" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("clientName")} data-testid="sort-client">
                         Client <SortIcon field="clientName" />
                       </button>
                     </TableHead>
                     <TableHead>
-                      <button className="flex items-center text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("status")} data-testid="sort-status">
+                      <button className="flex items-center text-xs font-medium" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("status")} data-testid="sort-status">
                         Status <SortIcon field="status" />
                       </button>
                     </TableHead>
                     <TableHead>
-                      <button className="flex items-center text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("issuedDate")} data-testid="sort-issued">
+                      <button className="flex items-center text-xs font-medium" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("issuedDate")} data-testid="sort-issued">
                         Issued <SortIcon field="issuedDate" />
                       </button>
                     </TableHead>
                     <TableHead>
-                      <button className="flex items-center text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("expiryDate")} data-testid="sort-expiry">
+                      <button className="flex items-center text-xs font-medium" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("expiryDate")} data-testid="sort-expiry">
                         Expiry <SortIcon field="expiryDate" />
                       </button>
                     </TableHead>
                     <TableHead className="text-right">
-                      <button className="flex items-center text-[11px] font-semibold uppercase tracking-wider ml-auto" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("total")} data-testid="sort-total">
+                      <button className="flex items-center text-xs font-medium ml-auto" style={{ color: "var(--lux-text-muted)" }} onClick={() => handleSort("total")} data-testid="sort-total">
                         Total <SortIcon field="total" />
                       </button>
                     </TableHead>
@@ -1354,7 +1348,7 @@ export default function EstimatesPage() {
 
               <div className="space-y-3">
                 <div>
-                  <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Client</span>
+                  <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Client</span>
                   <p className="font-semibold" style={{ color: "var(--lux-text)" }}>{detailEstimate.clientName}</p>
                   {(detailClient?.email || detailEstimate.clientEmail) && (
                     <div className="flex items-center gap-1 mt-0.5">
@@ -1384,13 +1378,13 @@ export default function EstimatesPage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Issued</span>
+                    <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Issued</span>
                     <p className="text-sm font-medium" style={{ color: "var(--lux-text)" }}>
                       <DateDisplay value={detailEstimate.issuedDate} />
                     </p>
                   </div>
                   <div>
-                    <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Expiry</span>
+                    <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Expiry</span>
                     {(detailEstimate.status === "DRAFT" || detailEstimate.status === "SENT") ? (
                       <Popover open={detailExpiryPopoverOpen} onOpenChange={setDetailExpiryPopoverOpen}>
                         <PopoverTrigger asChild>
@@ -1419,7 +1413,7 @@ export default function EstimatesPage() {
                 className="rounded-lg p-4 space-y-2"
                 style={{ background: "var(--lux-bg)" }}
               >
-                <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Line Items</span>
+                <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Line Items</span>
                 {(detailEstimate.lines || []).map((line: any, idx: number) => (
                   <div key={line.id || idx} className="flex justify-between items-center text-sm py-1" style={{ borderBottom: idx < (detailEstimate.lines || []).length - 1 ? "1px solid var(--lux-border)" : "none" }}>
                     <div className="flex-1 min-w-0 pr-2">
@@ -1464,7 +1458,7 @@ export default function EstimatesPage() {
 
               {(detailEstimate.status === "DRAFT" || detailEstimate.status === "SENT") && (
                 <div className="space-y-3 rounded-lg p-4 border" style={{ borderColor: "var(--lux-border)" }}>
-                  <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Edit Pricing</span>
+                  <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Edit Pricing</span>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <Label className="text-xs">Tax Rate (%)</Label>
@@ -1506,7 +1500,7 @@ export default function EstimatesPage() {
               )}
 
               <div className="space-y-2">
-                <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Notes</span>
+                <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Notes</span>
                 <Textarea
                   value={detailNotes}
                   onChange={(e) => setDetailNotes(e.target.value)}
@@ -1521,7 +1515,7 @@ export default function EstimatesPage() {
               </div>
 
               <div className="space-y-2 pt-3 border-t" style={{ borderColor: "var(--lux-border)" }}>
-                <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Actions</span>
+                <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Actions</span>
                 <div className="flex flex-wrap gap-2">
                   {detailEstimate.status === "DRAFT" && (
                     <Button

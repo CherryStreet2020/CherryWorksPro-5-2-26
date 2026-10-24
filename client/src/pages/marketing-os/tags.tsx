@@ -170,7 +170,7 @@ export default function TagsListPage() {
                           style={{ background: t.color, border: "1px solid var(--lux-border)" }}
                           data-testid={`swatch-tag-${t.id}`}
                         />
-                        <span className="text-xs uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+                        <span className="text-xs" style={{ color: "var(--lux-text-muted)" }}>
                           {t.color}
                         </span>
                       </div>
@@ -340,7 +340,7 @@ function TagFormDialog({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Preview:</span>
+            <span className="text-xs" style={{ color: "var(--lux-text-muted)" }}>Preview:</span>
             <span
               className="text-[10px] px-1.5 py-0.5 rounded text-white"
               style={{ background: color }}

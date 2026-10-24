@@ -1314,7 +1314,7 @@ function PreflightAuditDashboard({
 
         <div className="px-8 pb-6 space-y-6">
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+            <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
               File Integrity
             </h3>
             <div className="space-y-3">
@@ -1404,7 +1404,7 @@ function PreflightAuditDashboard({
           </div>
 
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+            <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
               Entity Summary
             </h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1445,7 +1445,7 @@ function PreflightAuditDashboard({
 
           {hasFinancials && (
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+              <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
                 Financial Snapshot
               </h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1514,7 +1514,7 @@ function PreflightAuditDashboard({
           )}
 
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+            <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
               Warnings & Issues
             </h3>
             {warnings.length === 0 ? (
@@ -1597,7 +1597,7 @@ function PreflightAuditDashboard({
           </div>
 
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+            <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
               Duplicates
             </h3>
             {totalDuplicates === 0 ? (
@@ -1656,7 +1656,7 @@ function PreflightAuditDashboard({
 
           {hasExpenses && (
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+              <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
                 Expense Breakdowns
               </h3>
               {preflightResults.filter(f => f.expenseBreakdowns).map((f, idx) => (
@@ -2005,7 +2005,7 @@ function ImportHistoryPanel({
           ) : (
             <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--lux-border)" }}>
               <div
-                className="grid px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider"
+                className="grid px-4 py-2.5 text-xs font-medium"
                 style={{
                   gridTemplateColumns: "1fr 120px 100px 80px 100px",
                   background: "var(--color-surface-2)",
@@ -2222,7 +2222,7 @@ function ExecuteResultsDashboard({
 
         <div className="px-8 pb-6 pt-6 space-y-6">
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+            <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
               Entity Results
             </h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -2272,7 +2272,7 @@ function ExecuteResultsDashboard({
             </div>
           ) : (
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+              <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
                 Row-Level Issues
               </h3>
               <div
@@ -2368,7 +2368,7 @@ function ExecuteResultsDashboard({
 
           {reconcLegs.length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+              <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
                 Final Verification
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -2427,7 +2427,7 @@ function ExecuteResultsDashboard({
 
           {r.verification?.checks && r.verification.checks.length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+              <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
                 Verification Checks
               </h3>
               <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--lux-border)" }}>
@@ -2655,7 +2655,7 @@ function OptionsPanel({
 
         <div className="px-8 pb-6 space-y-6">
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+            <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
               Quick Presets
             </h3>
             <div className="flex flex-wrap gap-2">
@@ -2681,7 +2681,7 @@ function OptionsPanel({
           </div>
 
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+            <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
               Date Range Filter
             </h3>
             <div
@@ -2746,7 +2746,7 @@ function OptionsPanel({
           </div>
 
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+            <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
               Entity Types
             </h3>
 
@@ -2870,7 +2870,7 @@ function OptionsPanel({
 
           {hasPayouts && uniquePayees.length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+              <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
                 Payee Mapping
               </h3>
               <div
@@ -2933,7 +2933,7 @@ function OptionsPanel({
 
           {uniqueCategories.length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+              <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
                 Expense Category Filters
               </h3>
               <div
@@ -3127,7 +3127,7 @@ function DryRunResultsDashboard({
 
         <div className="px-8 pb-6 pt-6 space-y-6">
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+            <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
               Entity Counts
             </h3>
             <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--lux-border)" }} data-testid="div-dryrun-summary">
@@ -3187,7 +3187,7 @@ function DryRunResultsDashboard({
 
           {plan.opCountsByType && Object.keys(plan.opCountsByType).length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+              <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
                 Operation Breakdown
               </h3>
               <div className="flex flex-wrap gap-2">
@@ -3211,7 +3211,7 @@ function DryRunResultsDashboard({
 
           {reconcLegs.length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+              <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
                 Reconciliation
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -3270,7 +3270,7 @@ function DryRunResultsDashboard({
 
           {totalIssues > 0 && (
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+              <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
                 Row Issues
               </h3>
               <div
@@ -3354,7 +3354,7 @@ function DryRunResultsDashboard({
 
           {plan.ignoredBreakdown && Object.keys(plan.ignoredBreakdown).length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+              <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
                 Skipped Rows
               </h3>
               <div
@@ -3401,7 +3401,7 @@ function DryRunResultsDashboard({
 
           {plan.nameMerges && plan.nameMerges.length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+              <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
                 Name Normalizations
               </h3>
               <div
@@ -3448,7 +3448,7 @@ function DryRunResultsDashboard({
 
           {plan.fileRowCounts && Object.keys(plan.fileRowCounts).length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>
+              <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>
                 File Processing Summary
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

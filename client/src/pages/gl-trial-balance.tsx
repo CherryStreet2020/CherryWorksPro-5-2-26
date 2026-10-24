@@ -134,9 +134,6 @@ export default function GLTrialBalancePage() {
       />
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(var(--lux-accent-rgb),0.15) 0%, rgba(var(--lux-accent-rgb),0.05) 100%)" }}>
-            <Scale className="w-6 h-6" style={{ color: "var(--lux-accent)" }} />
-          </div>
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--lux-text)" }} data-testid="text-page-title">
@@ -195,10 +192,10 @@ export default function GLTrialBalancePage() {
           <table className="w-full">
             <thead>
               <tr style={{ borderBottom: "2px solid var(--lux-border)", background: "var(--lux-table-header-bg)" }}>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider w-[100px]" style={{ color: "var(--lux-text-muted)" }}>Account #</th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Account Name</th>
-                <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider w-[140px]" style={{ color: "var(--lux-text-muted)" }}>Debit Balance</th>
-                <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider w-[140px]" style={{ color: "var(--lux-text-muted)" }}>Credit Balance</th>
+                <th className="text-left px-4 py-3 text-xs font-medium w-[100px]" style={{ color: "var(--lux-text-muted)" }}>Account #</th>
+                <th className="text-left px-4 py-3 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Account Name</th>
+                <th className="text-right px-4 py-3 text-xs font-medium w-[140px]" style={{ color: "var(--lux-text-muted)" }}>Debit Balance</th>
+                <th className="text-right px-4 py-3 text-xs font-medium w-[140px]" style={{ color: "var(--lux-text-muted)" }}>Credit Balance</th>
               </tr>
             </thead>
             {TYPE_ORDER.map(type => {
@@ -216,7 +213,7 @@ export default function GLTrialBalancePage() {
                 <tbody key={type}>
                   <tr style={{ background: colors.bg }}>
                     <td colSpan={4} className="px-4 py-2">
-                      <span className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.text }}>
+                      <span className="text-xs font-medium" style={{ color: colors.text }}>
                         {formatType(type)}
                       </span>
                     </td>
@@ -262,7 +259,7 @@ export default function GLTrialBalancePage() {
             <tfoot style={{ position: "sticky", bottom: 0, zIndex: 2 }}>
               <tr style={{ borderTop: "3px double var(--lux-border)", background: "var(--lux-bg)" }}>
                 <td className="px-4 py-3" />
-                <td className="px-4 py-3 text-sm font-bold uppercase tracking-wider" style={{ color: "var(--lux-text)" }}>
+                <td className="px-4 py-3 text-sm font-medium" style={{ color: "var(--lux-text)" }}>
                   Total
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums text-sm font-bold" style={{ color: "var(--lux-text)" }} data-testid="text-total-debits">

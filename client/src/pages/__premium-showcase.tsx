@@ -255,7 +255,7 @@ function Section({
   return (
     <section id={id} data-testid={id}>
       <h2
-        className="mb-3 text-xs font-semibold uppercase tracking-wider"
+        className="mb-3 text-xs font-medium"
         style={{ color: "var(--lux-text-muted)" }}
       >
         {title}

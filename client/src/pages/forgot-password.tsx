@@ -93,7 +93,7 @@ export default function ForgotPasswordPage() {
               </div>
               <form onSubmit={handleSubmit} className="space-y-5">
                 <div className="space-y-2">
-                  <Label className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+                  <Label className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>
                     Email
                   </Label>
                   <Input

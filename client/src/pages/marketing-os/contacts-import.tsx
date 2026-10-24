@@ -1691,7 +1691,7 @@ function StatusBadge({ status }: { status: RecentImportSummary["status"] }) {
   const m = map[status] ?? map.pending;
   return (
     <span
-      className={`inline-flex items-center text-[10px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded ${m.cls}`}
+      className={`inline-flex items-center text-xs font-medium px-1.5 py-0.5 rounded ${m.cls}`}
       data-testid={`badge-import-status-${status}`}
     >
       {m.label}

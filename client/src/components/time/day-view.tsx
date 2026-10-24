@@ -106,7 +106,7 @@ export default function DayView({ selectedDate, setSelectedDate, entries, onDupl
 
           {projectBreakdown.length > 0 && (
             <div className="space-y-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+              <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>
                 Project Breakdown
               </p>
               {projectBreakdown.map(pb => {
@@ -147,7 +147,7 @@ export default function DayView({ selectedDate, setSelectedDate, entries, onDupl
 
       {dayEntries.length > 0 && (
         <div className="space-y-1">
-          <p className="text-[10px] font-semibold uppercase tracking-wider px-1 mb-2" style={{ color: "var(--lux-text-muted)" }}>
+          <p className="text-xs font-medium px-1 mb-2" style={{ color: "var(--lux-text-muted)" }}>
             Entries
           </p>
           {dayEntries.map(entry => (
@@ -186,7 +186,7 @@ export default function DayView({ selectedDate, setSelectedDate, entries, onDupl
       {yesterdayEntries.length > 0 && (
         <Card className="border-0" style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }}>
           <CardContent className="p-4 space-y-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+            <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>
               Repeat from yesterday
             </p>
             <div className="flex flex-wrap gap-2">

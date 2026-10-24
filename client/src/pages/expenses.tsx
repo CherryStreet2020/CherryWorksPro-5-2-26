@@ -726,10 +726,10 @@ export default function ExpensesPage() {
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <Receipt className="w-3.5 h-3.5" style={{ color: "#a855f7" }} />
-                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Receipt</span>
+                  <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Receipt</span>
                   <button
                     type="button"
-                    className="ml-auto inline-flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-lg cursor-pointer transition-all hover:scale-[1.03] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="ml-auto inline-flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-lg cursor-pointer transition-all hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ background: "linear-gradient(135deg, #a855f7 0%, #7c3aed 50%, #6366f1 100%)", color: "white", boxShadow: "0 2px 8px rgba(168,85,247,0.3)" }}
                     onClick={() => triggerAiScan()}
                     disabled={scanningReceipt || formReceipts.length === 0}
@@ -804,7 +804,7 @@ export default function ExpensesPage() {
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <Calculator className="w-3.5 h-3.5" style={{ color: "var(--lux-accent)" }} />
-                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Amount Breakdown</span>
+                  <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Amount Breakdown</span>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -852,7 +852,7 @@ export default function ExpensesPage() {
                   <div>
                     <button type="button" className="flex items-center gap-2 mb-2 w-full text-left" onClick={() => setShowLineItems(!showLineItems)}>
                       <BookOpen className="w-3.5 h-3.5" style={{ color: "#f59e0b" }} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Line Items ({scanLineItems.length})</span>
+                      <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Line Items ({scanLineItems.length})</span>
                       {showLineItems ? <ChevronUp className="w-3 h-3 ml-auto" style={{ color: "var(--lux-text-muted)" }} /> : <ChevronDown className="w-3 h-3 ml-auto" style={{ color: "var(--lux-text-muted)" }} />}
                     </button>
                     {showLineItems && (
@@ -888,7 +888,7 @@ export default function ExpensesPage() {
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <FileText className="w-3.5 h-3.5" style={{ color: "#3b82f6" }} />
-                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Details</span>
+                  <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Details</span>
                 </div>
                 <div className="space-y-3">
                   <div>
@@ -921,7 +921,7 @@ export default function ExpensesPage() {
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <Tag className="w-3.5 h-3.5" style={{ color: "#22c55e" }} />
-                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Classification</span>
+                  <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Classification</span>
                 </div>
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
@@ -974,7 +974,7 @@ export default function ExpensesPage() {
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <StickyNote className="w-3.5 h-3.5" style={{ color: "#f59e0b" }} />
-                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Notes</span>
+                  <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Notes</span>
                 </div>
                 <Textarea value={formNotes} onChange={e => setFormNotes(e.target.value)} placeholder="Additional notes, context, or details..." className="resize-none" rows={2} data-testid="input-expense-notes" />
               </div>
@@ -982,7 +982,7 @@ export default function ExpensesPage() {
               <div className="flex justify-end gap-2 pt-3" style={{ borderTop: "1px solid var(--lux-border)" }}>
                 <Button variant="outline" onClick={() => { setShowCreate(false); setEditingExpense(null); resetForm(); }} className="px-5">Cancel</Button>
                 <Button
-                  className="text-white px-6 transition-all duration-200 hover:scale-[1.03] hover:shadow-lg"
+                  className="text-white px-6 transition-all duration-200"
                   style={{ background: "var(--gradient-brand)" }}
                   disabled={!formAmount || Number(formAmount) <= 0 || !formDate || (editingExpense ? updateMutation.isPending : createMutation.isPending)}
                   onClick={() => editingExpense ? updateMutation.mutate() : createMutation.mutate()}
@@ -998,7 +998,7 @@ export default function ExpensesPage() {
               <div className="sticky top-0 space-y-3">
                 <div className="flex items-center gap-2 mb-1">
                   <Eye className="w-3.5 h-3.5" style={{ color: "var(--lux-text-muted)" }} />
-                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Receipt Preview</span>
+                  <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Receipt Preview</span>
                 </div>
                 <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--lux-border)", background: "var(--lux-bg)", minHeight: "280px" }}>
                   {receiptPreviewUrl ? (
@@ -1070,12 +1070,6 @@ export default function ExpensesPage() {
     <div className="px-6 lg:px-8 xl:px-10 py-6 space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="relative">
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(var(--lux-accent-rgb),0.15) 0%, rgba(var(--lux-accent-rgb),0.05) 100%)" }}>
-              <Receipt className="w-6 h-6" style={{ color: "var(--lux-accent)" }} />
-            </div>
-            <div className="absolute -inset-1 rounded-xl opacity-40 blur-md -z-10" style={{ background: "radial-gradient(circle, rgba(var(--lux-accent-rgb),0.3) 0%, transparent 70%)" }} />
-          </div>
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--lux-text)" }} data-testid="text-expenses-title">Expenses</h1>
@@ -1084,7 +1078,7 @@ export default function ExpensesPage() {
             <p className="text-sm mt-0.5" style={{ color: "var(--lux-text-muted)" }}>{canManage ? "Review, approve, and manage all team expenses" : "Track, submit, and manage your expenses"}</p>
           </div>
         </div>
-        <Button className="text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.03]" style={{ background: "var(--gradient-brand)" }} onClick={() => { resetForm(); setShowCreate(true); }} data-testid="button-new-expense">
+        <Button className="text-white transition-all duration-300" style={{ background: "var(--gradient-brand)" }} onClick={() => { resetForm(); setShowCreate(true); }} data-testid="button-new-expense">
           <Plus className="w-4 h-4 mr-2" /> New Expense
         </Button>
       </div>
@@ -1103,7 +1097,7 @@ export default function ExpensesPage() {
               <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl" style={{ background: sc.gradient }} />
               <div className="relative z-10">
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>{sc.label}</p>
+                  <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>{sc.label}</p>
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-transform duration-300 group-hover:scale-110${sc.pulse ? " animate-pulse" : ""}`} style={{ background: sc.iconBg || `${sc.color}15` }}>
                     <Icon className="w-4 h-4" style={{ color: sc.color }} />
                   </div>
@@ -1145,7 +1139,7 @@ export default function ExpensesPage() {
             <button
               key={s}
               onClick={() => setFilterStatus(s)}
-              className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all duration-200 hover:scale-[1.02]"
+              className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all duration-200"
               style={{
                 background: active ? `${col}15` : "transparent",
                 color: active ? col : "var(--lux-text-muted)",
@@ -1258,7 +1252,7 @@ export default function ExpensesPage() {
                                   className="mx-auto" data-testid="checkbox-select-all-expenses" />
                               ) : (
                                 <button
-                                  className={`flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap ${isSortable ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
+                                  className={`flex items-center gap-1 text-xs font-medium whitespace-nowrap ${isSortable ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
                                   style={{ color: sort ? "var(--lux-accent)" : "var(--lux-text-muted)", background: "none", border: "none", padding: 0 }}
                                   onClick={isSortable ? (e) => handleGridSort(col, e) : undefined}
                                   data-testid={`header-exp-${col}`}
@@ -1570,7 +1564,7 @@ export default function ExpensesPage() {
               <div className="relative px-6 pt-6 pb-5" style={{ background: "linear-gradient(135deg, rgba(var(--lux-accent-rgb),0.1) 0%, rgba(var(--lux-accent-rgb),0.02) 100%)" }}>
                 <div className="flex items-start justify-between">
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "var(--lux-text-muted)" }}>Expense Amount</p>
+                    <p className="text-xs font-medium mb-1" style={{ color: "var(--lux-text-muted)" }}>Expense Amount</p>
                     <p className="text-3xl font-bold tracking-tight tabular-nums" style={{ color: "var(--lux-text)" }} data-testid="text-detail-amount">
                       {formatMoney(viewExpense.amount, (viewExpense as any).currency || baseCurrency)}
                     </p>
@@ -1620,7 +1614,7 @@ export default function ExpensesPage() {
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
                         <Receipt className="w-3.5 h-3.5" style={{ color: "#a855f7" }} />
-                        <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+                        <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>
                           {allReceipts.length === 1 ? "Attached Receipt" : `${allReceipts.length} Attached Receipts`}
                         </span>
                       </div>
@@ -1661,7 +1655,7 @@ export default function ExpensesPage() {
                   <div className="rounded-xl p-3" style={{ background: "rgba(245,158,11,0.04)", border: "1px solid rgba(245,158,11,0.12)" }}>
                     <div className="flex items-center gap-1.5 mb-1.5">
                       <StickyNote className="w-3 h-3" style={{ color: "#f59e0b" }} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "#f59e0b" }}>Notes</span>
+                      <span className="text-xs font-medium" style={{ color: "#f59e0b" }}>Notes</span>
                     </div>
                     <p className="text-xs leading-relaxed" style={{ color: "var(--lux-text)" }}>{viewExpense.notes}</p>
                   </div>
@@ -1672,7 +1666,7 @@ export default function ExpensesPage() {
                     <div className="absolute top-0 left-0 w-1 h-full" style={{ background: "#ef4444" }} />
                     <div className="flex items-center gap-2 mb-2 pl-2">
                       <AlertTriangle className="w-4 h-4" style={{ color: "#ef4444" }} />
-                      <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "#ef4444" }}>Rejection Reason</span>
+                      <span className="text-xs font-medium" style={{ color: "#ef4444" }}>Rejection Reason</span>
                     </div>
                     <p className="text-sm pl-2 leading-relaxed" style={{ color: "var(--lux-text)" }}>{viewExpense.rejectionReason}</p>
                   </div>

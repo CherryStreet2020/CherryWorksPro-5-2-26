@@ -7,7 +7,7 @@ import { PageHelpLink } from "@/components/page-help-link";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { Link } from "wouter";
 import {
-  Landmark, ChevronDown, ChevronRight, Download, Printer,
+  ChevronDown, ChevronRight, Download, Printer,
   Calendar, ArrowUpDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -226,9 +226,6 @@ export default function GLLedgerPage() {
       />
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(var(--lux-accent-rgb),0.15) 0%, rgba(var(--lux-accent-rgb),0.05) 100%)" }}>
-            <Landmark className="w-6 h-6" style={{ color: "var(--lux-accent)" }} />
-          </div>
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--lux-text)" }} data-testid="text-page-title">
@@ -327,20 +324,20 @@ export default function GLLedgerPage() {
             return (
               <div key={type} className="space-y-1">
                 <div className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ background: colors.bg }}>
-                  <span className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.text }}>
+                  <span className="text-xs font-medium" style={{ color: colors.text }}>
                     {formatType(type)}
                   </span>
                   <div className="flex items-center gap-6">
                     <div className="text-right">
-                      <span className="text-[10px] uppercase tracking-wider mr-1" style={{ color: colors.text, opacity: 0.7 }}>Dr</span>
+                      <span className="text-xs mr-1" style={{ color: colors.text, opacity: 0.7 }}>Dr</span>
                       <span className="text-xs font-bold tabular-nums" style={{ color: colors.text }}>{fmtMoney(groupDebit)}</span>
                     </div>
                     <div className="text-right">
-                      <span className="text-[10px] uppercase tracking-wider mr-1" style={{ color: colors.text, opacity: 0.7 }}>Cr</span>
+                      <span className="text-xs mr-1" style={{ color: colors.text, opacity: 0.7 }}>Cr</span>
                       <span className="text-xs font-bold tabular-nums" style={{ color: colors.text }}>{fmtMoney(groupCredit)}</span>
                     </div>
                     <div className="text-right">
-                      <span className="text-[10px] uppercase tracking-wider mr-1" style={{ color: colors.text, opacity: 0.7 }}>Period</span>
+                      <span className="text-xs mr-1" style={{ color: colors.text, opacity: 0.7 }}>Period</span>
                       <span className="text-sm font-bold tabular-nums" style={{ color: colors.text }}>{fmtMoney(Math.abs(groupBalance))}</span>
                       <span className="text-[10px] ml-0.5 font-semibold" style={{ color: colors.text, opacity: 0.7 }}>{groupPeriodLabel(groupBalance, type)}</span>
                     </div>
@@ -387,13 +384,13 @@ export default function GLLedgerPage() {
                               <table className="w-full text-sm">
                                 <thead>
                                   <tr style={{ borderBottom: "1px solid var(--lux-border)" }}>
-                                    <th className="text-left px-4 py-2 text-[11px] font-semibold uppercase tracking-wider pl-14" style={{ color: "var(--lux-text-muted)" }}>Date</th>
-                                    <th className="text-left px-4 py-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Type</th>
-                                    <th className="text-left px-4 py-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Transaction #</th>
-                                    <th className="text-left px-4 py-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Memo</th>
-                                    <th className="text-right px-4 py-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Debit</th>
-                                    <th className="text-right px-4 py-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Credit</th>
-                                    <th className="text-right px-4 py-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Running Bal</th>
+                                    <th className="text-left px-4 py-2 text-xs font-medium pl-14" style={{ color: "var(--lux-text-muted)" }}>Date</th>
+                                    <th className="text-left px-4 py-2 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Type</th>
+                                    <th className="text-left px-4 py-2 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Transaction #</th>
+                                    <th className="text-left px-4 py-2 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Memo</th>
+                                    <th className="text-right px-4 py-2 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Debit</th>
+                                    <th className="text-right px-4 py-2 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Credit</th>
+                                    <th className="text-right px-4 py-2 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Running Bal</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -465,14 +462,14 @@ export default function GLLedgerPage() {
 
           <div className="rounded-xl border-0 p-4" style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }}>
             <div className="flex items-center justify-between">
-              <span className="text-sm font-bold uppercase tracking-wider" style={{ color: "var(--lux-text)" }}>Grand Totals</span>
+              <span className="text-sm font-medium" style={{ color: "var(--lux-text)" }}>Grand Totals</span>
               <div className="flex items-center gap-8">
                 <div className="text-right">
-                  <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Total Debits</p>
+                  <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>Total Debits</p>
                   <p className="tabular-nums text-sm font-bold" style={{ color: "var(--lux-text)" }} data-testid="text-total-debits">{fmtMoney(totalDebit)}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Total Credits</p>
+                  <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>Total Credits</p>
                   <p className="tabular-nums text-sm font-bold" style={{ color: "var(--lux-text)" }} data-testid="text-total-credits">{fmtMoney(totalCredit)}</p>
                 </div>
               </div>

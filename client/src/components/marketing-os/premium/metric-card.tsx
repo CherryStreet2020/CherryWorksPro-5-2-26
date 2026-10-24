@@ -51,7 +51,7 @@ export function MetricCard({
     >
       <div className="flex items-start justify-between">
         <div
-          className="text-xs font-medium uppercase tracking-wide"
+          className="text-xs font-medium"
           style={{ color: "var(--lux-text-muted)" }}
         >
           {label}

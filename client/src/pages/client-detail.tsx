@@ -163,7 +163,7 @@ function HealthGauge({ score, display }: { score: number; display?: number }) {
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-end pb-1">
           <span className="text-2xl font-bold tabular-nums" style={{ color }} data-testid="text-health-score">{shown}</span>
-          <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>/ 100</span>
+          <span className="text-xs" style={{ color: "var(--lux-text-muted)" }}>/ 100</span>
         </div>
       </div>
       <span className="text-xs font-semibold mt-1" style={{ color }} data-testid="text-health-label">{label}</span>
@@ -692,7 +692,7 @@ export default function ClientDetailPage() {
                 >
                   <div className="flex items-center gap-1.5 mb-1">
                     <Star className="w-3 h-3 fill-current" style={{ color: "#f59e0b" }} />
-                    <span className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Primary Contact</span>
+                    <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Primary Contact</span>
                   </div>
                   <div className="text-xs font-semibold" style={{ color: "var(--lux-text)" }} data-testid="text-primary-contact-name">
                     {primary.firstName} {primary.lastName}
@@ -747,7 +747,7 @@ export default function ClientDetailPage() {
                 >
                   <div className="flex items-center gap-1 mb-0.5">
                     <kpi.icon className="w-3 h-3" style={{ color: kpi.color }} />
-                    <span className="text-[9px] font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>{kpi.label}</span>
+                    <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>{kpi.label}</span>
                   </div>
                   <span className="text-sm font-bold" style={{ color: kpi.color }}>{kpi.value}</span>
                 </div>
@@ -862,22 +862,22 @@ export default function ClientDetailPage() {
             <div className="space-y-4 lux-tab-content">
               <div className="rounded-lg border p-5" style={{ background: "var(--lux-surface)", borderColor: "var(--lux-border)", boxShadow: "var(--lux-card-shadow)" }} data-testid="financial-snapshot">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Financial Snapshot</h3>
+                  <h3 className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Financial Snapshot</h3>
                   <span className="text-[10px] font-semibold" style={{ color: "var(--lux-text-muted)" }}>
                     {clientDetail.totalBilled > 0 ? Math.round((clientDetail.totalPaid / clientDetail.totalBilled) * 100) : 0}% collected
                   </span>
                 </div>
                 <div className="grid grid-cols-3 gap-4 mb-4">
                   <div data-testid="snapshot-billed">
-                    <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--lux-text-muted)" }}>Total Billed</div>
+                    <div className="text-xs mb-1" style={{ color: "var(--lux-text-muted)" }}>Total Billed</div>
                     <div className="text-xl font-bold tabular-nums" style={{ color: "var(--lux-text)" }} data-testid="text-detail-total-billed">{formatMoney(clientDetail.totalBilled, baseCurrency)}</div>
                   </div>
                   <div data-testid="snapshot-paid">
-                    <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--lux-text-muted)" }}>Collected</div>
+                    <div className="text-xs mb-1" style={{ color: "var(--lux-text-muted)" }}>Collected</div>
                     <div className="text-xl font-bold tabular-nums" style={{ color: "#22c55e" }} data-testid="text-detail-total-paid">{formatMoney(clientDetail.totalPaid, baseCurrency)}</div>
                   </div>
                   <div data-testid="snapshot-outstanding">
-                    <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--lux-text-muted)" }}>Outstanding</div>
+                    <div className="text-xs mb-1" style={{ color: "var(--lux-text-muted)" }}>Outstanding</div>
                     <div className="text-xl font-bold tabular-nums" style={{ color: clientDetail.outstanding > 0 ? "#ef4444" : "var(--lux-text-muted)" }} data-testid="text-detail-outstanding">{formatMoney(clientDetail.outstanding, baseCurrency)}</div>
                   </div>
                 </div>
@@ -926,7 +926,7 @@ export default function ClientDetailPage() {
                 if (!hasAging) return null;
                 return (
                   <div className="rounded-lg border p-4" style={{ background: "var(--lux-bg)", borderColor: "var(--lux-border)" }} data-testid="ar-aging">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--lux-text-muted)" }}>AR Aging</h3>
+                    <h3 className="text-xs font-medium mb-3" style={{ color: "var(--lux-text-muted)" }}>AR Aging</h3>
                     <div className="grid grid-cols-4 gap-2">
                       {[
                         { label: "Current", value: aging.current, color: "#22c55e" },
@@ -948,7 +948,7 @@ export default function ClientDetailPage() {
 
               <div className="rounded-lg border p-4" style={{ background: "var(--lux-bg)", borderColor: "var(--lux-border)" }} data-testid="recent-activity-timeline">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Recent Activity</h3>
+                  <h3 className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Recent Activity</h3>
                   {mergedActivity.length > 6 && (
                     <button className="text-[10px] hover:underline" style={{ color: "var(--lux-accent)" }} onClick={() => setActiveTab("activity")} data-testid="button-view-all-activity">View all</button>
                   )}
@@ -1175,7 +1175,7 @@ export default function ClientDetailPage() {
                         { label: "Non-Billable Hours", value: `${Math.round(unbilledMinutes / 60 * 10) / 10}h`, color: "#f59e0b" },
                       ].map(stat => (
                         <div key={stat.label} className="rounded-lg border p-3" style={{ background: "var(--lux-bg)", borderColor: "var(--lux-border)" }}>
-                          <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--lux-text-muted)" }}>{stat.label}</div>
+                          <div className="text-xs mb-1" style={{ color: "var(--lux-text-muted)" }}>{stat.label}</div>
                           <div className="text-lg font-bold tabular-nums" style={{ color: stat.color }}>{stat.value}</div>
                         </div>
                       ))}
@@ -1316,7 +1316,7 @@ export default function ClientDetailPage() {
 
           {activeTab === "contacts" && canManage && blocked && blocked.length > 0 && (
             <div className="rounded-lg border p-3 mt-3" style={{ background: "var(--lux-bg)", borderColor: "var(--lux-border)" }} data-testid="portal-blocked-list">
-              <p className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: "var(--lux-text-muted)" }}>Kept out of the Help Center</p>
+              <p className="text-xs font-medium mb-2" style={{ color: "var(--lux-text-muted)" }}>Kept out of the Help Center</p>
               <div className="space-y-1.5">
                 {blocked.map(b => (
                   <div key={b.id} className="flex items-center justify-between gap-3 text-xs" data-testid={`portal-blocked-${b.id}`}>
@@ -1331,7 +1331,7 @@ export default function ClientDetailPage() {
           {activeTab === "activity" && (
             <div className="rounded-lg border p-4 lux-tab-content" style={{ background: "var(--lux-bg)", borderColor: "var(--lux-border)" }} data-testid="activity-timeline">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Unified Timeline</h3>
+                <h3 className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Unified Timeline</h3>
               </div>
               <div className="flex flex-wrap gap-2 mb-4" data-testid="activity-filters">
                 {[
@@ -1861,7 +1861,7 @@ export default function ClientDetailPage() {
               <label htmlFor="contact-primary" className="text-sm" style={{ color: "var(--lux-text-secondary)" }}>Primary contact</label>
             </div>
             <div className="rounded-lg border p-3 space-y-2" style={{ borderColor: "var(--lux-border)" }} data-testid="contact-portal-access">
-              <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Help Center &amp; Customer Portal</p>
+              <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Help Center &amp; Customer Portal</p>
               <div className="space-y-1">
                 <label className="text-xs font-medium" style={{ color: "var(--lux-text-secondary)" }}>Help Center role</label>
                 <select value={contactPortalRole} onChange={(e) => setContactPortalRole(e.target.value as "member" | "admin")} className="flex h-10 w-full rounded-md border px-3 py-2 text-sm" style={{ background: "var(--color-surface-1)", borderColor: "var(--color-border-1)", color: "var(--color-text-1)" }} data-testid="select-contact-portal-role">

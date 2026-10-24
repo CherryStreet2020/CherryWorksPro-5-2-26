@@ -58,7 +58,7 @@ export function MarketingNavSection({
         <button
           onClick={() => setOpen(!open)}
           aria-expanded={open}
-          className="w-full flex items-center justify-between px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors"
+          className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors"
           style={{ color: "var(--lux-sidebar-section-color, var(--lux-text-muted))" }}
           data-testid="button-section-toggle-marketing"
         >
@@ -107,7 +107,7 @@ export function MarketingNavSection({
       <button
         type="button"
         onClick={() => openModal("section_label")}
-        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors"
+        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors"
         style={{ color: "var(--lux-sidebar-section-color, var(--lux-text-muted))" }}
         data-testid="button-section-marketing-locked"
       >

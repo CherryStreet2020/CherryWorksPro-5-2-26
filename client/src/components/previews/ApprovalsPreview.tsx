@@ -13,7 +13,7 @@ export function ApprovalsPreview() {
       </div>
 
       <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--lux-border)" }}>
-        <div className="px-4 py-3 grid grid-cols-5 gap-2 text-[10px] font-semibold uppercase tracking-wider" style={{ background: "var(--lux-surface-alt)", color: "var(--lux-text-muted)" }}>
+        <div className="px-4 py-3 grid grid-cols-5 gap-2 text-xs font-medium" style={{ background: "var(--lux-surface-alt)", color: "var(--lux-text-muted)" }}>
           <span>Team Member</span>
           <span>Week</span>
           <span className="text-right">Hours</span>

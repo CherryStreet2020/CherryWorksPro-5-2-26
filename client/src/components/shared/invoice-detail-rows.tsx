@@ -48,7 +48,7 @@ export function InvoiceDetailRows({
             >
               <td
                 colSpan={colSpan}
-                className="px-6 py-1.5 text-[11px] font-bold uppercase tracking-wider"
+                className="px-6 py-1.5 text-xs font-medium"
                 style={{ color: "var(--lux-text)" }}
               >
                 <div className="flex items-center justify-between">
@@ -138,7 +138,7 @@ export function InvoiceDetailRows({
                   {formatHM(it.hours)}
                 </span>
                 <span
-                  className="text-[9px] font-bold uppercase tracking-wider shrink-0"
+                  className="text-xs font-medium shrink-0"
                   style={{
                     color: it.billable ? "var(--lux-accent)" : "var(--lux-text-muted)",
                     width: 60,

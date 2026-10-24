@@ -258,7 +258,7 @@ export default function LoginPage() {
                 </div>
                 <form onSubmit={handleMfaSubmit} className="space-y-5">
                   <div className="space-y-2">
-                    <Label htmlFor="mfa-code" className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+                    <Label htmlFor="mfa-code" className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>
                       Authentication code
                     </Label>
                     <Input
@@ -331,7 +331,7 @@ export default function LoginPage() {
                 {setupSecret && (
                   <div className="space-y-4" data-testid="state-mfa-setup-ready">
                     <div>
-                      <Label className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+                      <Label className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>
                         Scan in your authenticator app
                       </Label>
                       <code
@@ -349,7 +349,7 @@ export default function LoginPage() {
                     </div>
                     {setupRecoveryCodes && setupRecoveryCodes.length > 0 && (
                       <div>
-                        <Label className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+                        <Label className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>
                           Recovery codes — store somewhere safe
                         </Label>
                         <ul
@@ -364,7 +364,7 @@ export default function LoginPage() {
                       </div>
                     )}
                     <form onSubmit={handleSetupVerify} className="space-y-3">
-                      <Label htmlFor="mfa-setup-code" className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+                      <Label htmlFor="mfa-setup-code" className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>
                         Enter the 6-digit code from your app
                       </Label>
                       <Input
@@ -460,7 +460,7 @@ export default function LoginPage() {
                       type="button"
                       onClick={() => handleOrgPick(org.slug)}
                       disabled={loading}
-                      className="w-full flex items-center gap-3 px-4 py-3.5 rounded-lg text-left transition-all hover:scale-[1.01]"
+                      className="w-full flex items-center gap-3 px-4 py-3.5 rounded-lg text-left transition-all"
                       style={{
                         background: "var(--lux-bg)",
                         border: "1px solid var(--lux-border)",
@@ -505,7 +505,7 @@ export default function LoginPage() {
                 </div>
                 <form onSubmit={handleSubmit} className="space-y-5">
                   <div className="space-y-2">
-                    <Label htmlFor="email" className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+                    <Label htmlFor="email" className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>
                       Email
                     </Label>
                     <Input
@@ -525,7 +525,7 @@ export default function LoginPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="password" className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+                    <Label htmlFor="password" className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>
                       Password
                     </Label>
                     <div className="relative">

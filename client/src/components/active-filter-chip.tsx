@@ -54,7 +54,7 @@ export function ActiveFilterBar({ chips, className, testId }: ActiveFilterBarPro
       data-testid={testId || "active-filter-bar"}
     >
       <span
-        className="text-xs font-semibold uppercase tracking-wider"
+        className="text-xs font-medium"
         style={{ color: "var(--lux-text-muted)" }}
       >
         Filtered:
