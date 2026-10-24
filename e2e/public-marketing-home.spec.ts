@@ -69,6 +69,14 @@ test.describe("Public marketing home", () => {
     await expect(page.locator('[data-testid="calc-verdict"]')).toContainText("per-user pricing costs less");
     await expect(page.locator('[data-testid="calc-verdict"]')).toContainText("at 9 people");
 
+    // Equal totals read as equal, not as per-user pricing costing less.
+    await page.locator('[data-testid="input-calc-seat"]').fill("89");
+    await page.locator('[data-testid="input-calc-team"]').focus();
+    for (let i = 0; i < 2; i++) await page.keyboard.press("ArrowLeft");
+    await expect(page.locator('[data-testid="calc-team-value"]')).toHaveText("1");
+    await expect(page.locator('[data-testid="calc-verdict"]')).toContainText("both cost $89 a month");
+    await expect(page.locator('[data-testid="calc-verdict"]')).toContainText("at 2 people");
+
     await page.locator('[data-testid="input-calc-seat"]').fill("");
     await expect(page.locator('[data-testid="calc-verdict"]')).toContainText("Enter your per-user price");
   });
@@ -82,6 +90,17 @@ test.describe("Public marketing home", () => {
       area.getByRole("link").first().click(),
     ]);
     await expect(page.locator('[data-testid="client-support-h1"]')).toBeVisible({ timeout: 15000 });
+  });
+
+  test("a home area that links to a /features section lands on that section", async ({ page }) => {
+    await page.goto("/");
+    const area = page.locator('[data-testid="area-billing"]');
+    await area.scrollIntoViewIfNeeded();
+    await Promise.all([
+      page.waitForURL(/\/features#invoicing$/, { timeout: 15000 }),
+      area.getByRole("link").first().click(),
+    ]);
+    await expect(page.locator("#invoicing")).toBeInViewport({ timeout: 15000 });
   });
 
   test("nav exposes Log in + Start your trial CTAs that route correctly", async ({ page }) => {

@@ -15,8 +15,9 @@ export function SeatCalculator() {
   const flat = PLAN_PRICING.PROFESSIONAL.monthly;
   const perUser = Math.max(0, Number(seat) || 0);
   const perSeat = team * perUser;
-  const saving = perSeat - flat;
-  const breakEven = perUser > 0 ? Math.floor(flat / perUser) + 1 : null;
+  // Compare the whole-dollar totals the page shows, so equal-looking totals read as equal.
+  const saving = Math.round(perSeat) - flat;
+  const breakEven = perUser > 0 ? Math.ceil((flat + 0.5) / perUser) : null;
 
   return (
     <div className="grid border-t border-[#E6E3DD] md:grid-cols-2" data-testid="seat-calculator">
@@ -80,7 +81,9 @@ export function SeatCalculator() {
             ? "Enter your per-user price to compare."
             : saving > 0
               ? <>You’d keep <strong className="font-medium">{money(saving)} a month</strong>, {money(saving * 12)} a year, and the gap grows with every hire.</>
-              : <>At {team} {team === 1 ? "person" : "people"}, per-user pricing costs less. Flat pricing pulls ahead at {breakEven} people and stays flat after that.</>}
+              : saving === 0
+                ? <>At {team} {team === 1 ? "person" : "people"}, both cost {money(flat)} a month. Flat pricing pulls ahead at {breakEven} people and stays flat after that.</>
+                : <>At {team} {team === 1 ? "person" : "people"}, per-user pricing costs less. Flat pricing pulls ahead at {breakEven} people and stays flat after that.</>}
         </p>
       </div>
     </div>
