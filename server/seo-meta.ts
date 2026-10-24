@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import {
   BASE_URL, SITE_NAME, REPORT_COUNT, PUBLIC_ROUTES, classifyPath, sitemapPaths, type RouteClass,
 } from "@shared/seo-routes";
+import { PLAN_PRICING } from "@shared/plan-pricing";
 
 const OG_IMAGE = `${BASE_URL}/og-preview.png`;
 
@@ -24,17 +25,17 @@ const SOFTWARE_APPLICATION_SCHEMA = {
   "name": SITE_NAME,
   "applicationCategory": "BusinessApplication",
   "operatingSystem": "Web-based",
-  "description": "Professional services operating system with time tracking, invoicing, general ledger, expenses, team payouts and client support",
+  "description": "Time tracking, invoicing, expenses, contractor payouts, a general ledger and client support for professional services firms",
   "offers": [
-    { "@type": "Offer", "name": "Starter", "price": "39", "priceCurrency": "USD", "billingDuration": "P1M" },
-    { "@type": "Offer", "name": "Professional", "price": "89", "priceCurrency": "USD", "billingDuration": "P1M" },
-    { "@type": "Offer", "name": "Business", "price": "159", "priceCurrency": "USD", "billingDuration": "P1M" },
+    { "@type": "Offer", "name": "Starter", "price": String(PLAN_PRICING.STARTER.monthly), "priceCurrency": "USD", "billingDuration": "P1M" },
+    { "@type": "Offer", "name": "Professional", "price": String(PLAN_PRICING.PROFESSIONAL.monthly), "priceCurrency": "USD", "billingDuration": "P1M" },
+    { "@type": "Offer", "name": "Business", "price": String(PLAN_PRICING.BUSINESS.monthly), "priceCurrency": "USD", "billingDuration": "P1M" },
   ],
   "publisher": { "@type": "Organization", "name": SITE_NAME, "url": BASE_URL },
   "featureList": [
     "Time Tracking", "Timesheet Approval Workflow", "Invoicing with Multi-Currency", "Expense Management with Approvals",
-    "Team Payout Tracking", `${REPORT_COUNT} Built-in Reports`, "Client Portal", "Client Support Cases", "Import Wizard for 8 Platforms",
-    "1099 Export", "Project Profitability Analysis", "Enterprise Audit Logging", "AI Receipt OCR", "GL Journal Entries",
+    "Team Payout Tracking", `${REPORT_COUNT} Built-in Reports`, "Client Support Cases", "Help Center", "Import Wizard for 8 Platforms",
+    "1099 Export", "Project Profitability Analysis", "Audit Log", "Receipt Scanning", "GL Journal Entries",
     "Recurring Invoices", "Stripe Financial Connections",
   ],
 };

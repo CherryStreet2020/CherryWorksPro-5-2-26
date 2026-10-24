@@ -1,16 +1,29 @@
 import { useState, useEffect, useMemo } from "react";
 import { Link } from "wouter";
-import { Eye, EyeOff, CheckCircle2, CreditCard, Check, X, Clock, DollarSign, BarChart3, Shield, ArrowLeft } from "lucide-react";
+import { Eye, EyeOff, Check, X, ArrowLeft } from "lucide-react";
 import { BrandLockup } from "@/components/shared/brand-lockup";
 import { SEO } from "@/components/seo";
 import { MarketingChatBubble } from "@/components/marketing/marketing-chat-bubble";
+import { Display, Eyebrow } from "@/components/marketing/kit";
 import { isValidStripeUrl } from "@/lib/url-validation";
 import { PLAN_PRICING, annualPerMonth, type PlanId } from "@shared/plan-pricing";
 
 const plans = [
   { id: "STARTER", name: "Starter", monthly: PLAN_PRICING.STARTER.monthly, annual: annualPerMonth("STARTER"), capacity: "Up to 5 clients · Unlimited users", features: "5 clients · 3 projects · Full GL" },
-  { id: "PROFESSIONAL", name: "Professional", monthly: PLAN_PRICING.PROFESSIONAL.monthly, annual: annualPerMonth("PROFESSIONAL"), capacity: "Unlimited clients · Unlimited users", popular: true, features: "Unlimited · Approvals · Payouts · API" },
-  { id: "BUSINESS", name: "Business", monthly: PLAN_PRICING.BUSINESS.monthly, annual: annualPerMonth("BUSINESS"), capacity: "Unlimited clients · API · Custom branding", features: "Period closes · Dunning · Multi-entity" },
+  { id: "PROFESSIONAL", name: "Professional", monthly: PLAN_PRICING.PROFESSIONAL.monthly, annual: annualPerMonth("PROFESSIONAL"), capacity: "Unlimited clients · Unlimited users", popular: true, features: "Unlimited clients · Support · Payouts" },
+  { id: "BUSINESS", name: "Business", monthly: PLAN_PRICING.BUSINESS.monthly, annual: annualPerMonth("BUSINESS"), capacity: "Unlimited clients · Unlimited users", features: "Marketing Hub · Period closes" },
+];
+
+const LABEL = "block text-sm font-medium text-[#15171C]";
+const FIELD =
+  "mt-2 block h-12 w-full rounded-lg border border-[#D9D4CB] bg-white px-4 text-[15px] text-[#15171C] placeholder:text-[#8A909A] transition-colors hover:border-[#B9B3A8] focus:border-[#CF3339] focus:outline-none focus:ring-2 focus:ring-[#CF3339]/25";
+const NOTICE = "mb-5 rounded-lg border border-[#E6E2DA] bg-[#FBFAF7] px-4 py-3 text-sm leading-relaxed text-[#3D4350]";
+const NOTICE_LINK = "font-medium text-[#15171C] underline decoration-[#D9D4CB] underline-offset-4 hover:decoration-[#15171C]";
+
+const reassurance = [
+  "A 14-day trial on the plan you pick. Professional is selected to start.",
+  "Unlimited users on every plan.",
+  "Cancel anytime before day 15 and you pay nothing.",
 ];
 
 function PasswordChecks({ password }: { password: string }) {
@@ -22,39 +35,18 @@ function PasswordChecks({ password }: { password: string }) {
   ];
   if (!password) return null;
   return (
-    <div className="mt-2 space-y-1" data-testid="password-checks">
+    <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1" data-testid="password-checks">
       {checks.map((c) => (
         <div key={c.label} className="flex items-center gap-1.5">
           {c.met
-            ? <Check className="w-3.5 h-3.5 text-green-500" />
-            : <X className="w-3.5 h-3.5 text-red-400" />}
-          <span className="text-xs" style={{ color: c.met ? "#22c55e" : "#f87171" }}>{c.label}</span>
+            ? <Check className="h-3.5 w-3.5 text-[#2F7D4F]" aria-hidden="true" />
+            : <X className="h-3.5 w-3.5 text-[#9AA0AA]" aria-hidden="true" />}
+          <span className={`text-[13px] ${c.met ? "text-[#2F7D4F]" : "text-[#5F6672]"}`}>{c.label}</span>
         </div>
       ))}
     </div>
   );
 }
-
-const valueProps = [
-  { icon: Clock, title: "Live in 5 minutes", desc: "Guided setup wizard walks you through everything. Import from 8 platforms or start fresh." },
-  { icon: DollarSign, title: "Save $100+/mo vs competitors", desc: "A 10-person firm pays $142/mo on FreshBooks. CherryWorks Pro Starter: $39/mo. Zero per-user fees." },
-  { icon: BarChart3, title: "The reports you've always wanted", desc: "Revenue trends, AR aging, utilization, profitability, WIP, cash flow — all built in, not bolted on." },
-];
-
-const featureHighlights = [
-  "Full General Ledger",
-  "Unlimited Users",
-  "AI Receipt Scanner",
-  "Team Payouts",
-  "Client Portal",
-  "22+ Features",
-  "Marketing Hub (Business plan)",
-  "Marketing Hub CRM",
-];
-
-const platformLogos = ["FreshBooks", "QuickBooks", "Harvest", "Xero", "Wave", "BigTime", "Scoro", "Paymo"];
-
-const industryPills = ["Consulting Firms", "Agencies", "IT Services", "Architecture", "Legal", "Engineering"];
 
 export default function SignupPage() {
   const [firmName, setFirmName] = useState("");
@@ -172,284 +164,191 @@ export default function SignupPage() {
     }
   };
 
+  const annualSaving = Math.round(
+    (1 - PLAN_PRICING[selectedPlan as PlanId].annual / (PLAN_PRICING[selectedPlan as PlanId].monthly * 12)) * 100,
+  );
+
   return (
-    <div className="min-h-screen" style={{ background: "var(--gradient-hero)" }}>
+    <div className="flex min-h-screen flex-col bg-[#FBFAF7] text-[#3D4350] antialiased">
       <SEO path="/signup" />
 
-      <style>{`
-        @keyframes fadeInLeft {
-          from { opacity: 0; transform: translateX(-20px); }
-          to { opacity: 1; transform: translateX(0); }
-        }
-        @keyframes fadeInRight {
-          from { opacity: 0; transform: translateX(20px); }
-          to { opacity: 1; transform: translateX(0); }
-        }
-        .animate-fade-left { animation: fadeInLeft 0.5s ease-out both; }
-        .animate-fade-right { animation: fadeInRight 0.6s ease-out 0.1s both; }
-        .animate-stagger-1 { animation: fadeInLeft 0.5s ease-out 0.1s both; }
-        .animate-stagger-2 { animation: fadeInLeft 0.5s ease-out 0.2s both; }
-        .animate-stagger-3 { animation: fadeInLeft 0.5s ease-out 0.3s both; }
-      `}</style>
-
-      <div className="max-w-7xl mx-auto px-6 lg:px-12 py-8">
-        <Link href="/">
-          <div className="flex items-center gap-2.5 cursor-pointer w-fit" data-testid="link-logo-home">
-            <BrandLockup iconSize={34} textSize="base" />
-          </div>
+      <header className="mx-auto flex h-20 w-full max-w-6xl items-center justify-between px-5 sm:px-8">
+        <Link href="/" className="block w-fit" data-testid="link-logo-home" aria-label="CherryWorks Pro home">
+          <BrandLockup iconSize={32} textSize="base" tone="light" />
         </Link>
-      </div>
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-[#5F6672] hover:text-[#15171C]"
+          data-testid="link-back-to-home"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+          Back to home
+        </Link>
+      </header>
 
-      <div className="max-w-7xl mx-auto px-6 lg:px-12 pb-16">
-        <div className="flex flex-col lg:flex-row gap-12 lg:gap-16">
-
-          <div className="lg:w-[55%] animate-fade-left">
-            <div className="mt-4 lg:mt-8">
-              <h1 className="text-3xl lg:text-4xl font-bold text-white leading-tight" data-testid="text-signup-headline">
-                Welcome to the platform your business deserves
-              </h1>
-              <p className="mt-4 text-lg" style={{ color: "rgba(255,255,255,0.6)" }}>
-                Full GL, unlimited users, no per-seat fees. You'll be live in 5 minutes.
+      <main id="main-content" className="flex-1">
+        <div className="mx-auto w-full max-w-6xl px-5 pb-20 pt-6 sm:px-8 lg:pt-14">
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-20">
+            <div className="lg:sticky lg:top-10 lg:self-start lg:pt-4">
+              <Eyebrow>Free for 14 days</Eyebrow>
+              <Display testId="text-signup-headline" className="mt-4 !text-[2.3rem] sm:!text-5xl md:!text-[3.4rem]">
+                Start your trial
+              </Display>
+              <p className="mt-5 max-w-md text-lg leading-relaxed text-[#3D4350]">
+                Set up your firm’s workspace and choose a plan. You can invite your team once you’re in.
               </p>
+              <ul className="mt-8 max-w-md divide-y divide-[#E6E2DA] border-y border-[#E6E2DA]">
+                {reassurance.map((line) => (
+                  <li key={line} className="flex gap-3 py-3.5 text-[15px] leading-relaxed text-[#15171C]">
+                    <Check className="mt-1 h-4 w-4 shrink-0 text-[#B32A30]" aria-hidden="true" />
+                    {line}
+                  </li>
+                ))}
+              </ul>
             </div>
 
-            <div className="mt-10 space-y-4">
-              {valueProps.map((vp, i) => {
-                const Icon = vp.icon;
-                return (
-                  <div
-                    key={vp.title}
-                    className={`flex items-start gap-4 rounded-xl px-5 py-4 animate-stagger-${i + 1}`}
-                    style={{ background: "rgba(255,255,255,0.04)", borderLeft: "4px solid var(--color-accent, #dc2626)" }}
-                    data-testid={`value-prop-${i}`}
-                  >
-                    <div className="mt-0.5 w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(220,38,38,0.15)" }}>
-                      <Icon className="w-5 h-5" style={{ color: "var(--color-accent-light, #f87171)" }} />
+            <div>
+              <div
+                className="rounded-xl border border-[#E6E2DA] bg-white p-6 shadow-[0_1px_2px_rgba(16,20,27,0.04),0_12px_32px_-12px_rgba(16,20,27,0.12)] sm:p-8"
+                data-testid="signup-form-card"
+              >
+                <h2 className="font-display text-2xl font-semibold tracking-[-0.01em] text-[#15171C]">
+                  {resume ? "Finish setting up billing" : "Create your account"}
+                </h2>
+                <p className="mb-6 mt-1.5 text-[15px] leading-relaxed text-[#5F6672]">
+                  {resume ? `Welcome back, ${resume.name}. Your workspace is ready — pick a plan to continue.` : "Next you add a card on Stripe’s checkout page. Nothing is charged today."}
+                </p>
+                {closed && !resume && (
+                  <div className={NOTICE} data-testid="signup-closed-notice">
+                    <strong className="font-semibold text-[#15171C]">Signups are closed for the moment.</strong> {closed} Want a heads-up when they reopen? <a href="/contact" className={NOTICE_LINK}>Get in touch</a>.
+                  </div>
+                )}
+                {resume && (
+                  <div className={NOTICE} data-testid="signup-resume-notice">
+                    Checkout was canceled, but your account was created. You can also do this later from <a href="/settings/billing" className={NOTICE_LINK}>Settings → Billing</a>, or <a href="/getting-started" className={NOTICE_LINK}>go to your dashboard</a> now.
+                  </div>
+                )}
+
+                {error && (
+                  <div role="alert" className="mb-5 rounded-lg border border-[#F3C7C4] bg-[#FDF3F2] px-4 py-3 text-sm text-[#B42318]" data-testid="signup-error">
+                    {error}
+                  </div>
+                )}
+
+                <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
+                  {!resume && (<>
+                  <div>
+                    <label htmlFor="signup-firm-name" className={LABEL}>Firm or company name</label>
+                    <input id="signup-firm-name" type="text" value={firmName} onChange={(e) => setFirmName(e.target.value)} required className={FIELD} placeholder="Your firm name" data-testid="input-firm-name" />
+                    {generatedSlug && (
+                      <p className="mt-1.5 text-[13px] text-[#5F6672]" data-testid="text-slug-preview">
+                        Your firm slug will be: <strong className="font-semibold text-[#15171C]">{generatedSlug}</strong>
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="signup-first-name" className={LABEL}>First name</label>
+                      <input id="signup-first-name" type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} required className={FIELD} placeholder="Jane" data-testid="input-signup-firstName" />
                     </div>
                     <div>
-                      <p className="text-sm font-bold text-white">{vp.title}</p>
-                      <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.55)" }}>{vp.desc}</p>
+                      <label htmlFor="signup-last-name" className={LABEL}>Last name</label>
+                      <input id="signup-last-name" type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} required className={FIELD} placeholder="Doe" data-testid="input-signup-lastName" />
                     </div>
                   </div>
-                );
-              })}
-            </div>
 
-            <div className="mt-10" data-testid="built-for-you-strip">
-              <p className="text-sm font-medium text-white mb-3">Built for professional services firms of every kind</p>
-              <div className="flex flex-wrap gap-2">
-                {industryPills.map((pill) => (
-                  <span
-                    key={pill}
-                    className="px-3 py-1.5 rounded-full text-xs font-medium"
-                    style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.55)", border: "1px solid rgba(255,255,255,0.1)" }}
-                  >
-                    {pill}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-8" data-testid="platform-logos-strip">
-              <p className="text-xs font-medium uppercase tracking-wider mb-3" style={{ color: "rgba(255,255,255,0.4)" }}>
-                Switch from anything in minutes
-              </p>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm" style={{ color: "rgba(255,255,255,0.3)" }}>
-                {platformLogos.map((name, i) => (
-                  <span key={name}>
-                    {name}{i < platformLogos.length - 1 ? " ·" : ""}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-8 grid grid-cols-2 gap-x-6 gap-y-3" data-testid="feature-highlights-grid">
-              {featureHighlights.map((f) => (
-                <div key={f} className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 shrink-0" style={{ color: "var(--color-accent, #dc2626)" }} />
-                  <span className="text-sm text-white">{f}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-8 px-5 py-4 rounded-xl" style={{ border: "1px solid rgba(220,38,38,0.18)", background: "linear-gradient(135deg, rgba(220,38,38,0.08), rgba(220,38,38,0.02))" }} data-testid="card-signup-marketing-os">
-              <div className="flex items-center gap-2 mb-1.5">
-                <span className="inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: "rgba(220,38,38,0.18)", color: "#f87171", border: "1px solid rgba(220,38,38,0.28)" }}>
-                  Included in Business plan
-                </span>
-              </div>
-              <p className="text-sm font-bold text-white mb-1">Marketing Hub — Prospect / Client Separation</p>
-              <p className="text-xs leading-relaxed mb-2" style={{ color: "rgba(255,255,255,0.5)" }}>
-                Contacts &amp; companies CRM, tags, segments, campaigns, and sequences. Marketing prospects live in separate database tables from your billing clients — no cross-contamination between marketing and billing records.
-              </p>
-              <p className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
-                Pick the Business plan to turn Marketing Hub on from day one.{" "}
-                <Link href="/marketing">
-                  <span className="underline cursor-pointer" style={{ color: "#f87171" }} data-testid="link-signup-marketing-os">See details</span>
-                </Link>
-              </p>
-            </div>
-
-            <div className="mt-10 flex items-center gap-3 px-5 py-3.5 rounded-xl" style={{ border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.03)" }} data-testid="guarantee-badge">
-              <Shield className="w-5 h-5 shrink-0" style={{ color: "rgba(255,255,255,0.5)" }} />
-              <p className="text-sm" style={{ color: "rgba(255,255,255,0.55)" }}>
-                14-day free trial · No credit card charged during trial · Cancel anytime
-              </p>
-            </div>
-
-            <p className="mt-10 text-xs hidden lg:block" style={{ color: "rgba(255,255,255,0.25)" }}>
-              &copy; {new Date().getFullYear()} CherryWorks Pro. All rights reserved.
-            </p>
-          </div>
-
-          <div className="lg:w-[45%] animate-fade-right">
-            <div className="lg:hidden text-center mb-6">
-              <h2 className="text-xl font-bold text-white">Start your free trial</h2>
-              <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.5)" }}>No commitment. Full access. Live in 5 minutes.</p>
-            </div>
-
-            <div
-              className="rounded-2xl p-8"
-              style={{
-                background: "var(--lux-surface)",
-                boxShadow: "0 0 0 1px rgba(220,38,38,0.1), 0 24px 64px rgba(0,0,0,0.3), 0 0 40px rgba(220,38,38,0.04)",
-                borderRadius: "16px",
-              }}
-              data-testid="signup-form-card"
-            >
-              <h2 className="text-xl font-bold mb-1 hidden lg:block" style={{ color: "var(--lux-text)" }}>{resume ? "Finish setting up billing" : "Start your free trial"}</h2>
-              <p className="text-sm mb-6 hidden lg:block" style={{ color: "var(--lux-text-muted)" }}>{resume ? `Welcome back, ${resume.name}. Your workspace is ready — pick a plan to continue.` : "No commitment. Full access. Live in 5 minutes."}</p>
-              {closed && !resume && (
-                <div className="mb-4 px-4 py-3 rounded-lg text-sm" style={{ background: "var(--lux-surface-alt)", color: "var(--lux-text)" }} data-testid="signup-closed-notice">
-                  <strong>Signups are closed for the moment.</strong> {closed} Want a heads-up when they reopen? <a href="/contact" className="underline">Get in touch</a>.
-                </div>
-              )}
-              {resume && (
-                <div className="mb-4 px-4 py-3 rounded-lg text-sm" style={{ background: "var(--lux-surface-alt)", color: "var(--lux-text)" }} data-testid="signup-resume-notice">
-                  Checkout was canceled, but your account was created. You can also do this later from <a href="/settings/billing" className="underline">Settings → Billing</a>, or <a href="/getting-started" className="underline">go to your dashboard</a> now.
-                </div>
-              )}
-
-              {error && (
-                <div className="mb-4 px-4 py-3 rounded-lg text-sm" style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444" }} data-testid="signup-error">
-                  {error}
-                </div>
-              )}
-
-              <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
-                {!resume && (<>
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--lux-text)" }}>Firm / Company Name</label>
-                  <input type="text" value={firmName} onChange={(e) => setFirmName(e.target.value)} required className="w-full px-4 py-2.5 text-sm rounded-lg" style={{ background: "var(--color-surface-0)", border: "1px solid var(--lux-border)", color: "var(--lux-text)" }} placeholder="Your firm name" data-testid="input-firm-name" />
-                  {generatedSlug && (
-                    <p className="text-xs mt-1.5" style={{ color: "var(--lux-text-muted)" }} data-testid="text-slug-preview">
-                      Your firm slug will be: <strong style={{ color: "var(--lux-text)" }}>{generatedSlug}</strong>
-                    </p>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--lux-text)" }}>First Name</label>
-                    <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} required className="w-full px-4 py-2.5 text-sm rounded-lg" style={{ background: "var(--color-surface-0)", border: "1px solid var(--lux-border)", color: "var(--lux-text)" }} placeholder="Jane" data-testid="input-signup-firstName" />
+                    <label htmlFor="signup-email" className={LABEL}>Work email</label>
+                    <input id="signup-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className={FIELD} placeholder="you@yourfirm.com" autoComplete="email" data-testid="input-signup-email" />
                   </div>
+
                   <div>
-                    <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--lux-text)" }}>Last Name</label>
-                    <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} required className="w-full px-4 py-2.5 text-sm rounded-lg" style={{ background: "var(--color-surface-0)", border: "1px solid var(--lux-border)", color: "var(--lux-text)" }} placeholder="Doe" data-testid="input-signup-lastName" />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--lux-text)" }}>Email</label>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full px-4 py-2.5 text-sm rounded-lg" style={{ background: "var(--color-surface-0)", border: "1px solid var(--lux-border)", color: "var(--lux-text)" }} placeholder="you@yourfirm.com" autoComplete="email" data-testid="input-signup-email" />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--lux-text)" }}>Password</label>
-                  <div className="relative">
-                    <input type={showPass ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} className="w-full px-4 py-2.5 text-sm rounded-lg pr-10" style={{ background: "var(--color-surface-0)", border: "1px solid var(--lux-border)", color: "var(--lux-text)" }} placeholder="8+ chars, upper, lower, number" autoComplete="new-password" data-testid="input-signup-password" />
-                    <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: "var(--lux-text-muted)" }}>
-                      {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  <PasswordChecks password={password} />
-                </div>
-
-                </>)}
-
-                <div>
-                  <label className="block text-xs font-medium mb-2" style={{ color: "var(--lux-text)" }}>Select Plan</label>
-                  <div className="space-y-2">
-                    {plans.map((plan) => (
-                      <button key={plan.id} type="button" onClick={() => setSelectedPlan(plan.id)} className="w-full flex items-center justify-between px-4 py-3 rounded-lg text-left transition-all" style={{ background: selectedPlan === plan.id ? "var(--color-accent-soft)" : "var(--color-surface-0)", border: selectedPlan === plan.id ? "2px solid var(--color-accent)" : "1px solid var(--lux-border)" }} data-testid={`plan-select-${plan.id}`}>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold" style={{ color: "var(--lux-text)" }}>{plan.name}</span>
-                            {plan.popular && (<span className="text-xs font-bold px-1.5 py-0.5 rounded-full text-white" style={{ background: "var(--gradient-brand)" }}>Popular</span>)}
-                          </div>
-                          <span className="text-xs" style={{ color: "var(--lux-text-muted)" }}>{plan.features}</span>
-                        </div>
-                        <span className="text-sm font-bold" style={{ color: selectedPlan === plan.id ? "var(--color-accent)" : "var(--lux-text-secondary)" }}>${annual ? plan.annual : plan.monthly}<span className="text-xs font-normal">/mo</span></span>
+                    <label htmlFor="signup-password" className={LABEL}>Password</label>
+                    <div className="relative">
+                      <input id="signup-password" type={showPass ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} className={`${FIELD} pr-11`} placeholder="8+ chars, upper, lower, number" autoComplete="new-password" data-testid="input-signup-password" />
+                      <button type="button" onClick={() => setShowPass(!showPass)} aria-label={showPass ? "Hide password" : "Show password"} className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-[#5F6672] hover:text-[#15171C] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#CF3339]">
+                        {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
-                    ))}
+                    </div>
+                    <PasswordChecks password={password} />
                   </div>
-                </div>
 
-                <div className="px-3 py-3 rounded-lg" style={{ background: "var(--color-surface-0)", border: `1.5px solid ${annual ? "var(--color-accent)" : "var(--lux-border)"}` }}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-semibold" style={{ color: "var(--lux-text-primary)" }}>
+                  </>)}
+
+                  <div className="pt-1">
+                    <p className={LABEL}>Plan</p>
+                    <div className="mt-2 space-y-2">
+                      {plans.map((plan) => (
+                        <button key={plan.id} type="button" onClick={() => setSelectedPlan(plan.id)} aria-pressed={selectedPlan === plan.id} className={`flex w-full items-center justify-between gap-4 rounded-lg border bg-white px-4 py-3 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#CF3339] ${selectedPlan === plan.id ? "border-[#15171C] ring-1 ring-[#15171C]" : "border-[#D9D4CB] hover:border-[#B9B3A8]"}`} data-testid={`plan-select-${plan.id.toLowerCase()}`}>
+                          <span className="flex min-w-0 items-start gap-3">
+                            <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${selectedPlan === plan.id ? "border-[#CF3339]" : "border-[#B9B3A8]"}`} aria-hidden="true">
+                              {selectedPlan === plan.id && <span className="h-2 w-2 rounded-full bg-[#CF3339]" />}
+                            </span>
+                            <span className="min-w-0">
+                              <span className="block text-[15px] font-semibold text-[#15171C]">{plan.name}</span>
+                              <span className="block text-[13px] text-[#5F6672]">{plan.features}</span>
+                            </span>
+                          </span>
+                          <span className="shrink-0 text-[15px] font-semibold tabular-nums text-[#15171C]">${annual ? plan.annual : plan.monthly}<span className="text-[13px] font-normal text-[#5F6672]">/mo</span></span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-4 rounded-lg border border-[#E6E2DA] bg-[#FBFAF7] px-4 py-3">
+                    <div className="flex min-w-0 flex-col">
+                      <span className="text-sm font-semibold text-[#15171C]">
                         {annual ? "Annual billing" : "Monthly billing"}
                       </span>
-                      <span className="text-xs mt-0.5" style={{ color: "var(--lux-text-muted)" }}>
+                      <span className="mt-0.5 text-[13px] text-[#5F6672]">
                         {annual
                           ? `$${PLAN_PRICING[selectedPlan as PlanId].annual.toLocaleString()}/yr — billed once per year`
                           : `$${plans.find(p => p.id === selectedPlan)?.monthly ?? 0}/mo — billed each month`}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium" style={{ color: annual ? "var(--lux-text-muted)" : "var(--lux-text-secondary)" }}>Annual</span>
-                      <button type="button" onClick={() => setAnnual(!annual)} className="relative w-10 h-5 rounded-full transition-colors" style={{ background: annual ? "var(--color-accent)" : "var(--lux-border)" }} data-testid="toggle-annual">
-                        <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform" style={{ left: annual ? "22px" : "2px" }} />
+                    <div className="flex shrink-0 items-center gap-2">
+                      {annual && <span className="text-[13px] font-semibold text-[#2F7D4F]">Save {annualSaving}%</span>}
+                      <span className="text-[13px] font-medium text-[#5F6672]">Annual</span>
+                      <button type="button" onClick={() => setAnnual(!annual)} role="switch" aria-checked={annual} aria-label="Bill annually" className="inline-flex h-11 items-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#CF3339]" data-testid="toggle-annual">
+                        <span className={`relative block h-6 w-11 rounded-full transition-colors ${annual ? "bg-[#CF3339]" : "bg-[#D9D4CB]"}`} aria-hidden="true">
+                          <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${annual ? "translate-x-5" : "translate-x-0"}`} />
+                        </span>
                       </button>
-                      {annual && <span className="text-xs font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>Save 20%</span>}
                     </div>
                   </div>
-                </div>
 
-                <button type="submit" disabled={loading || (!!closed && !resume) || (!resume && (!firmName || !firstName || !lastName || !email || !passwordValid))} className="w-full px-4 py-3 text-sm font-semibold text-white rounded-lg transition-opacity hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2" style={{ background: "var(--gradient-brand)" }} data-testid="button-signup-submit">
-                  <CreditCard className="w-4 h-4" />
-                  {loading ? (resume ? "Opening checkout..." : "Creating your account...") : "Continue to Payment"}
-                </button>
-              </form>
+                  <button type="submit" disabled={loading || (!!closed && !resume) || (!resume && (!firmName || !firstName || !lastName || !email || !passwordValid))} className="inline-flex h-12 w-full items-center justify-center rounded-lg bg-[#CF3339] px-6 text-[15px] font-semibold text-white shadow-[0_1px_0_rgba(0,0,0,0.08)] transition-colors hover:bg-[#B32A30] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#CF3339] disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-signup-submit">
+                    {loading ? (resume ? "Opening checkout…" : "Creating your account…") : "Continue to payment"}
+                  </button>
+                </form>
 
-              <p className="text-xs text-center mt-4" style={{ color: "var(--lux-text-muted)" }}>
-                {resume ? resume.chargeNote : "Your card won't be charged for 14 days. Cancel anytime during trial."}
-              </p>
-
-              <div className="mt-6 pt-4 text-center" style={{ borderTop: "1px solid var(--lux-border)" }}>
-                <p className="text-sm" style={{ color: "var(--lux-text-muted)" }}>
-                  Already have an account?{" "}
-                  <Link href="/login"><span className="font-semibold cursor-pointer" style={{ color: "var(--color-accent)" }} data-testid="link-login">Log in</span></Link>
+                <p className="mt-4 text-center text-[13px] text-[#5F6672]">
+                  {resume ? resume.chargeNote : "You won’t be charged until day 15 · Cancel anytime"}
                 </p>
+
+                <div className="mt-6 border-t border-[#E6E2DA] pt-5 text-center">
+                  <p className="text-sm text-[#5F6672]">
+                    Already have an account?{" "}
+                    <Link href="/login" className="font-semibold text-[#15171C] underline decoration-[#CF3339]/40 underline-offset-4 hover:decoration-[#CF3339]" data-testid="link-login">Log in</Link>
+                  </p>
+                </div>
               </div>
             </div>
-
-            <p className="mt-8 text-xs text-center lg:hidden" style={{ color: "rgba(255,255,255,0.25)" }}>
-              &copy; {new Date().getFullYear()} CherryWorks Pro. All rights reserved.
-            </p>
           </div>
         </div>
-      </div>
+      </main>
 
-      <div className="max-w-7xl mx-auto px-6 lg:px-12 pb-8">
-        <Link href="/">
-          <span className="text-sm font-medium inline-flex items-center gap-1 cursor-pointer" style={{ color: "rgba(255,255,255,0.4)" }} data-testid="link-back-to-home">
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Back to home
-          </span>
-        </Link>
-      </div>
+      <footer className="border-t border-[#E6E2DA]">
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-6 text-[13px] text-[#5F6672] sm:px-8">
+          <p>&copy; {new Date().getFullYear()} CherryWorks Pro</p>
+          <nav aria-label="Legal" className="flex gap-5">
+            <Link href="/terms" className="hover:text-[#15171C]">Terms</Link>
+            <Link href="/privacy" className="hover:text-[#15171C]">Privacy</Link>
+            <Link href="/security" className="hover:text-[#15171C]">Security</Link>
+          </nav>
+        </div>
+      </footer>
 
       <MarketingChatBubble />
     </div>

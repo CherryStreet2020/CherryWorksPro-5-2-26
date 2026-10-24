@@ -5,6 +5,8 @@
  * so a title can only ever be one string. Keep titles ≤ 60 chars and
  * descriptions ≤ 155 chars; tests/unit/seo-routes.test.ts enforces both.
  */
+import { PLAN_PRICING } from "./plan-pricing";
+
 export interface PublicRouteSeo {
   title: string;
   description: string;
@@ -16,18 +18,22 @@ export const SITE_NAME = "CherryWorks Pro";
 export const BASE_URL = "https://cherryworkspro.com";
 export const REPORT_COUNT = 19; // client/src/pages/reports.tsx REPORT_REGISTRY — update both together
 
+const STARTER = `$${PLAN_PRICING.STARTER.monthly}`;
+const PROFESSIONAL = `$${PLAN_PRICING.PROFESSIONAL.monthly}`;
+const BUSINESS = `$${PLAN_PRICING.BUSINESS.monthly}`;
+
 export const PUBLIC_ROUTES: Record<string, PublicRouteSeo> = {
   "/": {
-    title: "CherryWorks Pro — The Professional Services Operating System",
-    description: `Time tracking, invoicing, books, team payouts and client support in one platform with unlimited users. ${REPORT_COUNT} built-in reports. From $39/mo, no per-user fees.`,
+    title: "CherryWorks Pro — Time, Billing, Payouts and Client Support",
+    description: `Time tracking, invoicing, contractor payouts, a general ledger and client support for services firms. Unlimited users, ${REPORT_COUNT} reports, from ${STARTER}/mo.`,
   },
   "/features": {
     title: "Features — Time, Billing, Books & Payouts | CherryWorks Pro",
-    description: "Time tracking, invoicing, expenses, payouts, general ledger, client support and multi-currency — core features on every plan, unlimited users included.",
+    description: "Time tracking, approvals, invoicing, expenses, contractor payouts, a general ledger, reports and client support, with unlimited users on every plan.",
   },
   "/pricing": {
-    title: "Pricing — Flat-Rate Plans from $39/mo | CherryWorks Pro",
-    description: "Simple flat-rate pricing with unlimited users: Starter $39, Professional $89, Business $159 (Marketing Hub included), Enterprise custom. 14-day free trial.",
+    title: `Pricing — Flat-Rate Plans from ${STARTER}/mo | CherryWorks Pro`,
+    description: `Flat pricing per firm with unlimited users: Starter ${STARTER}, Professional ${PROFESSIONAL}, Business ${BUSINESS} with Marketing Hub, or Enterprise. 14-day trial.`,
   },
   "/compare": {
     title: "Compare CherryWorks Pro vs FreshBooks, QuickBooks & More",
@@ -35,39 +41,39 @@ export const PUBLIC_ROUTES: Record<string, PublicRouteSeo> = {
   },
   "/demo": {
     title: "Request a Demo | CherryWorks Pro",
-    description: "A twenty-minute screen share on your own scenario: from a client email to the invoice, the ledger and the payout. A person replies within one business day.",
+    description: "A twenty-minute screen share on your own scenario, from a client email to the invoice, the ledger and the payout. We reply by email to set a time.",
   },
   "/tour": {
-    title: "Product Tour — See Every Feature | CherryWorks Pro",
-    description: "Explore CherryWorks Pro in one scroll: time tracking, invoicing, approvals, payouts, general ledger, reports and client support. No signup required.",
+    title: "Product Tour — From Support Case to Payout | CherryWorks Pro",
+    description: "Follow one client request through CherryWorks Pro in real screenshots: the support case, the hours, the invoice and the payout. No signup needed.",
   },
   "/client-support": {
     title: "Client Support — A Support Desk That Bills | CherryWorks Pro",
-    description: "Cases, SLAs per client, a passwordless client portal and email-to-case, built into the platform that tracks the time, sends the invoice and pays your team.",
+    description: "Support cases, SLAs per client, a Help Center with one-time sign-in links and email-to-case, in the system that bills the time and pays your team.",
   },
   "/switch-from-jira-service-management": {
     title: "Switch from Jira Service Management | CherryWorks Pro",
-    description: "Jira runs a service desk; your firm bills for service. Import the project, keep the email address, and put support hours on the invoice. Unlimited users.",
+    description: "Import Jira Cloud issues with comments, attachments and keys, then bill support hours to the client and pay your team for them. Unlimited users.",
   },
   "/about": {
     title: "About CherryWorks Pro — Built Inside a Consulting Firm",
-    description: "CherryWorks Pro was built inside a real consulting firm because we needed it — then every firm like ours did too. Learn about the team and the mission.",
+    description: "CherryWorks Pro was built inside a working consulting firm to log time, invoice clients, collect payments and pay the team, and that firm still runs on it.",
   },
   "/contact": {
-    title: "Support & Contact | CherryWorks Pro",
-    description: "Get help from CherryAssist AI around the clock or reach the CherryWorks Pro team directly with pricing, feature, integration and onboarding questions.",
+    title: "Contact the Team | CherryWorks Pro",
+    description: "Questions about pricing, features, moving from another tool or getting set up? Send the CherryWorks Pro team a message and we reply by email.",
   },
   "/signup": {
     title: "Start Your 14-Day Free Trial | CherryWorks Pro",
     description: "Start a 14-day free trial of CherryWorks Pro: full general ledger, unlimited users, no per-seat fees. Import from FreshBooks, QuickBooks, Harvest and Xero.",
   },
   "/integrations": {
-    title: "Integrations — Zapier, Slack, Stripe | CherryWorks Pro",
-    description: "Connect CherryWorks Pro to Stripe, Slack, QuickBooks, Google Sheets, HubSpot and 6,000+ apps through Zapier. REST API and webhooks included on every plan.",
+    title: "Integrations — Email, Stripe, Bank Feeds | CherryWorks Pro",
+    description: "Mail from Microsoft 365, Google or SMTP, Stripe payments and payouts, bank feeds, imports from 8 tools and Jira, plus an API and webhooks on Professional.",
   },
   "/marketing": {
     title: "Marketing Hub — CRM, Campaigns & Sequences | CherryWorks Pro",
-    description: "Marketing Hub adds a prospect-to-client CRM to CherryWorks Pro: contacts, companies, segments, campaigns and sequences — included with the Business plan.",
+    description: "Marketing Hub adds contacts, companies, segments, CSV import, campaigns and email sequences, kept apart from your billing clients. On the Business plan.",
   },
   "/terms": {
     title: "Terms of Service | CherryWorks Pro",
@@ -79,39 +85,39 @@ export const PUBLIC_ROUTES: Record<string, PublicRouteSeo> = {
   },
   "/security": {
     title: "Security — How CherryWorks Pro Protects Your Data",
-    description: "How CherryWorks Pro protects your data: tenant isolation, AES-256 encryption, MFA, CSRF protection, rate limiting and audit logging.",
+    description: "How CherryWorks Pro protects your data: each firm kept separate, two-factor sign-in, CSRF tokens, rate limits, an audit log and encrypted credentials.",
   },
   "/switch-from-quickbooks": {
     title: "Switch from QuickBooks to CherryWorks Pro",
-    description: "QuickBooks is built for accountants. CherryWorks Pro is built for services firms: time tracking, invoicing, payouts and project profitability in one place.",
+    description: "QuickBooks caps users by plan and sells contractor payments as an add-on. CherryWorks Pro has a ledger built around billable hours, with unlimited users.",
   },
   "/switch-from-freshbooks": {
     title: "Switch from FreshBooks to CherryWorks Pro",
-    description: "FreshBooks charges per user. CherryWorks Pro gives you unlimited users, a full general ledger, 1099 exports and project profitability from $39/mo flat.",
+    description: `FreshBooks charges for each team member. CherryWorks Pro has unlimited users, a full general ledger, contractor payouts and client support, from ${STARTER}/mo.`,
   },
   "/switch-from-xero": {
     title: "Switch from Xero to CherryWorks Pro",
-    description: `Xero gives you a ledger. CherryWorks Pro gives you the whole operating system: time tracking, invoicing, payouts and ${REPORT_COUNT} reports for services firms.`,
+    description: "Xero is a solid ledger. CherryWorks Pro keeps one too, plus timesheets, invoices from billable hours, contractor payouts and client support.",
   },
   "/switch-from-wave": {
     title: "Switch from Wave to CherryWorks Pro",
-    description: `Wave has no time tracking. CherryWorks Pro has time tracking, project profitability, team payouts, expense approvals and ${REPORT_COUNT} built-in reports.`,
+    description: `Wave covers the books but not the hours. CherryWorks Pro adds time tracking, invoices from billable hours, contractor payouts and ${REPORT_COUNT} reports.`,
   },
   "/switch-from-harvest": {
     title: "Switch from Harvest to CherryWorks Pro",
-    description: "Harvest tracks time. CherryWorks Pro replaces Harvest and the three other tools you run beside it: invoicing, general ledger, payouts and reporting in one.",
+    description: "Harvest now bills by seat and by usage. CherryWorks Pro keeps your timesheets and adds the general ledger, contractor payouts and client support, per firm.",
   },
   "/switch-from-bigtime": {
     title: "Switch from BigTime to CherryWorks Pro",
-    description: "BigTime charges per user per month. CherryWorks Pro: unlimited users, a full general ledger and 1099 exports — everything BigTime does plus accounting.",
+    description: "BigTime is priced per user and leaves the books to QuickBooks. CherryWorks Pro adds a general ledger and contractor payouts, with unlimited users.",
   },
   "/switch-from-scoro": {
     title: "Switch from Scoro to CherryWorks Pro",
-    description: "Scoro bundles features you will never use. CherryWorks Pro covers what runs your firm: time, invoicing, payouts and books. Unlimited users from $39/mo.",
+    description: "Scoro is priced per user with a 5-user minimum, and the books stay elsewhere. CherryWorks Pro keeps time, invoicing, the ledger and payouts in one.",
   },
   "/switch-from-paymo": {
     title: "Switch from Paymo to CherryWorks Pro",
-    description: "Paymo charges per user, with no general ledger or team payouts. CherryWorks Pro: unlimited users, full accounting and 1099 exports from $39/mo flat.",
+    description: "Paymo is priced per user and syncs to another ledger. CherryWorks Pro keeps time, invoicing, the ledger, payouts and client support together.",
   },
   "/login": { title: "Log In | CherryWorks Pro", description: "Sign in to your CherryWorks Pro workspace.", noindex: true },
   "/forgot-password": { title: "Forgot Password | CherryWorks Pro", description: "Request a password reset link for your CherryWorks Pro account.", noindex: true },

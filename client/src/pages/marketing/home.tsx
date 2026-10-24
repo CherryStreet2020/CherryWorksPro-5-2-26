@@ -14,30 +14,30 @@ const WORKFLOW = [
   {
     n: "01",
     title: "A client emails support. It becomes a case.",
-    body: "Connect the Microsoft 365 mailbox your clients already write to. Every message opens or updates a case with a key, a priority, an owner and an SLA clock, so nothing sits unanswered in someone’s inbox.",
+    body: "Connect the Microsoft 365 mailbox your clients already write to. Email from their contacts opens or updates a case with a key, a priority, an owner and an SLA clock, so nothing sits unanswered in someone’s inbox.",
     img: { src: `${SCREENS}/support-cases.webp`, width: 1600, height: 1217, alt: "The Support Cases list: open cases for several clients with status, priority, assignee and SLA due times." },
-    url: "app.cherryworkspro.com/support/cases",
+    url: "cherryworkspro.com/support/cases",
   },
   {
     n: "02",
     title: "The hours go on the timesheet.",
     body: "Your team logs time against the case or the project, by timer or on the weekly timesheet. Support work and project work land in the same place, at the right rate for each client.",
     img: { src: `${SCREENS}/time.webp`, width: 1600, height: 1041, alt: "A weekly timesheet with hours logged per client and project, day by day." },
-    url: "app.cherryworkspro.com/time",
+    url: "cherryworkspro.com/time",
   },
   {
     n: "03",
     title: "Approved time becomes the invoice.",
     body: "Generate the invoice from approved hours and send it from your own mailbox: Microsoft 365, Google or SMTP. Clients pay by card or ACH, and the payment posts to your ledger by itself.",
     img: { src: `${SCREENS}/invoices.webp`, width: 1600, height: 1136, alt: "The Invoices page: totals invoiced, outstanding and paid this month, and a list of sent and paid invoices." },
-    url: "app.cherryworkspro.com/invoices",
+    url: "cherryworkspro.com/invoices",
   },
   {
     n: "04",
     title: "Everyone gets paid what they’re owed.",
     body: "Payouts are worked out from the hours each person logged at their rate, and team members can see which of their hours have been invoiced and paid. Pay contractors through Stripe Connect or record a payment you made elsewhere.",
     img: { src: `${SCREENS}/payouts.webp`, width: 1600, height: 852, alt: "The Payouts page: unpaid time value and the balance owed to each team member, with a Pay button per person." },
-    url: "app.cherryworkspro.com/payouts",
+    url: "cherryworkspro.com/payouts",
   },
 ];
 
@@ -50,7 +50,7 @@ const PILLARS = [
   {
     icon: BookOpen, title: "Books", href: "/features",
     desc: "A real general ledger under everything. Invoices, payments, expenses and payouts post themselves.",
-    points: ["Chart of accounts, journals, trial balance", "AR aging, cash flow and P&L", "Receipt scanning that posts the expense"],
+    points: ["Chart of accounts, journals, trial balance", "AR aging, cash flow and unbilled time", "Receipt scanning that fills in the expense"],
   },
   {
     icon: Users, title: "Team & Payouts", href: "/features",
@@ -95,7 +95,7 @@ const FAQS = [
   },
   {
     q: "Does it replace my accounting software?",
-    a: "Every plan includes a full general ledger: chart of accounts, journal entries, trial balance and P&L, with invoices, payments, expenses and payouts posting automatically. Whether you also keep a separate accounting package is up to you and your accountant.",
+    a: "Every plan includes a full general ledger: chart of accounts, journal entries and a trial balance, with invoices, payments, expenses and payouts posting automatically. Whether you also keep a separate accounting package is up to you and your accountant.",
   },
   {
     q: "How are team payouts worked out?",
@@ -205,7 +205,7 @@ export default function HomePage() {
               <span className="block">Your team paid.</span>
             </Display>
             <Lede className="mt-6 max-w-2xl">
-              CherryWorks Pro runs the whole loop in one system. Client emails become support cases, the hours your team logs become invoices, and each person’s payout is worked out from the hours that were billed.
+              CherryWorks Pro runs the whole loop in one system. Client emails become support cases, the hours your team logs become invoices, and each person’s payout is worked out from the hours they logged.
             </Lede>
             <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
               <ButtonLink href="/signup" size="lg" arrow testId="hero-cta-signup">Start your 14-day trial</ButtonLink>
@@ -228,7 +228,7 @@ export default function HomePage() {
               height={1521}
               priority
               fade
-              url="app.cherryworkspro.com/support/cases/BL-1"
+              url="cherryworkspro.com/support/cases/BL-1"
               alt="A support case in CherryWorks Pro: the client's report, a reply and an internal note, and the hours logged on the case with how many are billed."
               testId="hero-screenshot"
             />
@@ -324,7 +324,7 @@ export default function HomePage() {
                 <ButtonLink href="/client-support" variant="secondary" arrow testId="link-home-client-support">See Client Support</ButtonLink>
               </div>
               <p className="mt-5 text-sm text-[#5F6672]">
-                Leaving Jira?{" "}
+                On the Professional and Business plans. Leaving Jira?{" "}
                 <Link href="/switch-from-jira-service-management" className="font-medium text-[#15171C] underline decoration-[#D9D4CB] underline-offset-4 hover:decoration-[#15171C]" data-testid="link-home-jira">
                   Import your project with its history
                 </Link>
@@ -371,7 +371,7 @@ export default function HomePage() {
             <div className="lg:col-span-5">
               <Eyebrow>Switching</Eyebrow>
               <Heading className="mt-4">Bring your history with you</Heading>
-              <Lede className="mt-5">Clients, projects, time and invoices come across from the tool you use today. Preview the import before anything is written.</Lede>
+              <Lede className="mt-5">Clients, projects, time and invoices come across from the tool you use today, and Jira projects arrive as support cases. Preview the import before anything is written.</Lede>
             </div>
             <ul className="flex flex-wrap gap-2.5 lg:col-span-7">
               {IMPORTS.map((imp) => (
@@ -419,7 +419,7 @@ export default function HomePage() {
           <div className="mx-auto max-w-2xl text-center">
             <h2 className="font-display text-3xl font-semibold leading-tight tracking-[-0.015em] text-white md:text-5xl">Try it on your own work</h2>
             <p className="mt-5 text-lg leading-relaxed text-white/70">
-              Fourteen days with everything on. Import your clients, projects and time, send a real invoice, and see what your team is owed.
+              Fourteen days on the Professional plan. Import your clients, projects and time, send a real invoice, and see what your team is owed.
             </p>
             <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <ButtonLink href="/signup" size="lg" arrow testId="cta-start-free-trial">Start your 14-day trial</ButtonLink>

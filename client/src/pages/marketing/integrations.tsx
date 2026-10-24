@@ -1,200 +1,232 @@
 import { Link } from "wouter";
-import { ArrowRight, Zap, ExternalLink } from "lucide-react";
-import { SiSlack, SiGooglesheets, SiStripe, SiGmail, SiHubspot, SiNotion } from "react-icons/si";
-import { Users } from "lucide-react";
 import { SEO } from "@/components/seo";
-import { MarketingNav } from "@/components/marketing/marketing-nav";
-import { MarketingFooter } from "@/components/marketing/marketing-footer";
+import {
+  ButtonLink, Container, Display, Eyebrow, Heading, Lede, MarketingShell, PageHero, Section, TextLink,
+} from "@/components/marketing/kit";
 
-const apps = [
+/**
+ * Only connections that are built and working are listed here, each one
+ * traceable to code (server/email/*, server/routes/bank-routes.ts,
+ * server/support-jira.ts, server/routes/integration-routes.ts, server/webhooks.ts).
+ * Plan notes match requirePlanTier() gates. Add a card only with the code behind it.
+ */
+type Integration = { id: string; name: string; plan?: string; body: string; points?: string[] };
+type Group = { title: string; intro: string; items: Integration[] };
+
+const PRO_UP = "Professional and Business";
+
+const groups: Group[] = [
   {
-    name: "Slack",
-    icon: SiSlack,
-    color: "#4A154B",
-    zaps: ["Get notified when an invoice is paid", "Post project updates to a channel"],
+    title: "Email",
+    intro: "Invoices go out from your firm’s own mailbox, so clients see your address, not ours.",
+    items: [
+      {
+        id: "microsoft-365",
+        name: "Microsoft 365",
+        body: "Connect a Microsoft 365 mailbox with Microsoft’s own sign-in. Mail is sent through Microsoft Graph from that mailbox.",
+        points: ["Inbound email-to-case works with Microsoft 365 mailboxes only."],
+      },
+      {
+        id: "google",
+        name: "Gmail and Google Workspace",
+        body: "Connect a Gmail or Google Workspace mailbox with Google’s sign-in and send from it.",
+      },
+      {
+        id: "smtp",
+        name: "Any SMTP server",
+        body: "Point CherryWorks Pro at your mail provider’s SMTP server. The password is encrypted before it is stored.",
+      },
+    ],
   },
   {
-    name: "Google Sheets",
-    icon: SiGooglesheets,
-    color: "#0F9D58",
-    zaps: ["Export new invoices to a spreadsheet", "Sync client data automatically"],
+    title: "Payments and banking",
+    intro: "Money moves through Stripe. CherryWorks Pro records what happened in your ledger.",
+    items: [
+      {
+        id: "stripe",
+        name: "Stripe payments",
+        body: "Clients pay invoices by card or ACH on Stripe’s hosted checkout page, and each payment posts to your ledger.",
+      },
+      {
+        id: "stripe-connect",
+        name: "Stripe Connect payouts",
+        plan: PRO_UP,
+        body: "Pay contractors what their hours have earned through Stripe Connect, or record a payment you made another way.",
+      },
+      {
+        id: "bank-accounts",
+        name: "Bank accounts",
+        plan: PRO_UP,
+        body: "Link US bank accounts through Stripe Financial Connections to pull in transactions and balances, then match deposits and charges to your invoices, payments and expenses.",
+      },
+    ],
   },
   {
-    name: "QuickBooks",
-    icon: null,
-    color: "#2CA01C",
-    label: "QB",
-    zaps: ["Sync paid invoices to QuickBooks", "Import expenses for reconciliation"],
+    title: "Moving in",
+    intro: "Bring your history with you instead of starting from a blank account.",
+    items: [
+      {
+        id: "imports",
+        name: "Imports from 8 platforms",
+        plan: PRO_UP,
+        body: "Import from FreshBooks, QuickBooks, Harvest, Xero, Wave, BigTime, Scoro and Paymo. You see a preview before anything is written.",
+        points: ["These are file imports. There is no live, two-way sync with QuickBooks or any other accounting system."],
+      },
+      {
+        id: "jira-service-management",
+        name: "Jira Service Management",
+        plan: PRO_UP,
+        body: "Import your Jira Cloud support issues with an Atlassian API token. Comments, attachments and original keys come across, closed issues included.",
+      },
+    ],
   },
   {
-    name: "Stripe",
-    icon: SiStripe,
-    color: "#635BFF",
-    zaps: ["Create payouts when invoices are approved", "Log Stripe payments as revenue"],
-  },
-  {
-    name: "Gmail",
-    icon: SiGmail,
-    color: "#EA4335",
-    zaps: ["Email clients when invoices are sent", "Get digest emails for overdue invoices"],
-  },
-  {
-    name: "Microsoft Teams",
-    icon: Users,
-    color: "#5059C9",
-    zaps: ["Post timesheet approvals to Teams", "Alert managers on expense submissions"],
-  },
-  {
-    name: "HubSpot",
-    icon: SiHubspot,
-    color: "#FF7A59",
-    zaps: ["Create CherryWorks Pro clients from HubSpot deals", "Sync revenue data to HubSpot"],
-  },
-  {
-    name: "Notion",
-    icon: SiNotion,
-    color: "#ffffff",
-    zaps: ["Log new projects in a Notion database", "Track invoices in a Notion table"],
-  },
-  {
-    name: "Gmail / M365 OAuth",
-    icon: SiGmail,
-    color: "#EA4335",
-    zaps: ["Connect a Gmail or Microsoft 365 mailbox to send from your own address", "Auto-recover sender health when sends start working again"],
-  },
-  {
-    name: "Tracking Subdomain",
-    icon: null,
-    color: "#0075DD",
-    label: "DNS",
-    zaps: ["Use your own subdomain (e.g. links.yourbrand.com) for click and open tracking", "Keep marketing analytics on your domain — never a vendor's"],
+    title: "For developers",
+    intro: "Connect your own tools directly. An admin creates the API keys and webhook endpoints.",
+    items: [
+      {
+        id: "rest-api",
+        name: "REST API",
+        plan: PRO_UP,
+        body: "Read clients, invoices, payments, projects, time entries and your team, and create clients, invoices, projects and time entries, under /api/v1 with an API key. The OpenAPI description is published at /api/docs.",
+      },
+      {
+        id: "webhooks",
+        name: "Webhooks",
+        plan: PRO_UP,
+        body: "Get a request to your endpoint, signed with HMAC-SHA256, when something happens in your account. Failed deliveries are retried.",
+        points: [
+          "Events: invoice.created, invoice.sent, invoice.paid, payment.received, client.created, estimate.sent, timesheet.submitted, timesheet.approved, timesheet.recalled.",
+        ],
+      },
+    ],
   },
 ];
 
+const notYet = ["Zapier", "Slack", "Microsoft Teams", "HubSpot", "Google Sheets", "Notion", "Live QuickBooks Online sync"];
+
 export default function IntegrationsPage() {
   return (
-    <div className="min-h-screen" style={{ background: "#060a14" }}>
+    <MarketingShell>
       <SEO path="/integrations" />
-      <MarketingNav />
 
-      <section className="pt-[100px] pb-8 md:pb-10 px-4 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: "radial-gradient(circle at 30% 30%, #cf3339 0%, transparent 50%), radial-gradient(circle at 70% 70%, #cf3339 0%, transparent 50%)" }} />
-        <div className="max-w-4xl mx-auto text-center relative z-10 pt-8 md:pt-12">
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white tracking-tight leading-tight mb-6">
-            Connect CherryWorks Pro to{" "}
-            <span style={{ color: "#cf3339" }}>6,000+ apps</span>
-          </h1>
-          <p className="text-lg md:text-xl leading-relaxed max-w-2xl mx-auto mb-10" style={{ color: "rgba(255,255,255,0.55)" }}>
-            Automate your workflows by connecting CherryWorks Pro to the tools you already use — powered by Zapier. No code required.
-          </p>
-          <a
-            href="https://zapier.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-3 px-8 py-4 rounded-xl text-base font-semibold transition-all hover:scale-[1.02]"
-            style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04))", border: "1px solid rgba(255,255,255,0.1)", color: "white" }}
-            data-testid="link-zapier"
-          >
-            <ZapierLogo />
-            Powered by Zapier
-            <ExternalLink className="w-4 h-4" style={{ color: "rgba(255,255,255,0.4)" }} />
-          </a>
-        </div>
-      </section>
-
-      <section className="pb-24 px-4">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-3">Popular connections</h2>
-            <p className="text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>Automate the busywork between CherryWorks Pro and your favorite tools</p>
+      <PageHero>
+        <Container>
+          <div className="max-w-3xl">
+            <Eyebrow>Integrations</Eyebrow>
+            <Display className="mt-5">What CherryWorks Pro connects to</Display>
+            <Lede className="mt-6 max-w-2xl">
+              This page lists only the connections that are built and working today. If a tool you rely on isn’t here, it isn’t built yet.
+            </Lede>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {apps.map((app) => (
+        </Container>
+      </PageHero>
+
+      <Section tone="white" className="!py-0">
+        <Container>
+          <div className="divide-y divide-[#E6E2DA]">
+            {groups.map((group) => (
               <div
-                key={app.name}
-                className="rounded-xl p-5 transition-all hover:scale-[1.02] group"
-                style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
-                data-testid={`card-integration-${app.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}`}
+                key={group.title}
+                className="grid gap-6 py-12 md:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] md:gap-12 md:py-16"
               >
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: `${app.color}20` }}>
-                    {app.icon ? (
-                      <app.icon className="w-5 h-5" style={{ color: app.color }} />
-                    ) : (
-                      <span className="text-sm font-bold" style={{ color: app.color }}>{app.label}</span>
-                    )}
-                  </div>
-                  <span className="text-base font-semibold text-white">{app.name}</span>
+                <div>
+                  <h2 className="font-display text-2xl font-semibold leading-snug tracking-[-0.01em] text-[#15171C] md:text-[1.75rem]">
+                    {group.title}
+                  </h2>
+                  <p className="mt-3 max-w-sm text-base leading-relaxed text-[#5F6672]">{group.intro}</p>
                 </div>
-                <div className="space-y-2">
-                  {app.zaps.map((zap, j) => (
-                    <div key={j} className="flex items-start gap-2">
-                      <Zap className="w-3 h-3 mt-1 flex-shrink-0" style={{ color: "#f87171" }} />
-                      <span className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>{zap}</span>
-                    </div>
+                <ul className="grid gap-px overflow-hidden rounded-xl border border-[#E6E2DA] bg-[#E6E2DA]">
+                  {group.items.map((item) => (
+                    <li key={item.id} data-testid={`card-integration-${item.id}`} className="bg-white p-6 md:p-7">
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                        <h3 className="text-lg font-semibold text-[#15171C]">{item.name}</h3>
+                        {item.plan && <p className="text-[13px] font-medium text-[#5F6672]">{item.plan}</p>}
+                      </div>
+                      <p className="mt-2 text-[15px] leading-relaxed text-[#3D4350]">{item.body}</p>
+                      {item.points?.map((point) => (
+                        <p key={point} className="mt-3 border-l-2 border-[#E6E2DA] pl-3 text-sm leading-relaxed text-[#5F6672]">
+                          {point}
+                        </p>
+                      ))}
+                    </li>
                   ))}
-                </div>
+                </ul>
               </div>
             ))}
           </div>
-        </div>
-      </section>
+        </Container>
+      </Section>
 
-      <section className="pb-24 px-4" data-testid="section-marketing-os-addon">
-        <div className="max-w-3xl mx-auto text-center">
-          <div className="rounded-2xl p-10" style={{ background: "linear-gradient(135deg, rgba(220,38,38,0.08), rgba(220,38,38,0.02))", border: "1px solid rgba(220,38,38,0.15)" }}>
-            <span className="inline-block text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full mb-3" style={{ background: "rgba(220,38,38,0.15)", color: "#f87171", border: "1px solid rgba(220,38,38,0.25)" }} data-testid="badge-marketing-os-addon">Included in Business plan</span>
-            <h3 className="text-2xl font-bold text-white mb-3">Marketing Hub — Prospect / Client Separation</h3>
-            <p className="text-sm mb-6 max-w-lg mx-auto" style={{ color: "rgba(255,255,255,0.55)" }}>
-              Contacts &amp; companies CRM, tags, segments, campaigns, sequences, and an activity timeline — included in the Business plan. Marketing prospects live in separate database tables from your billing clients, so a marketing lead can never silently turn into an invoice — no cross-contamination between marketing and billing records, by design.
-            </p>
-            <Link href="/marketing">
-              <span
-                className="inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold rounded-lg cursor-pointer transition-colors hover:bg-white/5"
-                style={{ color: "rgba(255,255,255,0.85)", border: "1px solid rgba(255,255,255,0.18)" }}
-                data-testid="link-marketing-os"
-              >
-                Tour Marketing Hub
-                <ArrowRight className="w-4 h-4" />
-              </span>
-            </Link>
+      <Section>
+        <Container>
+          <div className="grid gap-6 md:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] md:gap-12">
+            <h2 className="font-display text-2xl font-semibold leading-snug tracking-[-0.01em] text-[#15171C] md:text-[1.75rem]">
+              Not built yet
+            </h2>
+            <div>
+              <p className="text-base leading-relaxed text-[#3D4350]">
+                People ask about these. None of them is available today:
+              </p>
+              <p className="mt-3 text-base leading-relaxed text-[#15171C]">{notYet.join(" · ")}</p>
+              <p className="mt-6 text-base leading-relaxed text-[#3D4350]">
+                <Link
+                  href="/contact"
+                  data-testid="link-zapier"
+                  className="font-medium text-[#15171C] underline decoration-[#D9D4CB] underline-offset-4 hover:decoration-[#15171C]"
+                >
+                  Zapier: not yet — tell us if you need it
+                </Link>
+                . The same goes for anything else on this list. Requests decide what gets built next.
+              </p>
+            </div>
           </div>
-        </div>
-      </section>
+        </Container>
+      </Section>
 
-      <section className="pb-24 px-4">
-        <div className="max-w-3xl mx-auto text-center">
-          <div className="rounded-2xl p-10" style={{ background: "linear-gradient(135deg, rgba(220,38,38,0.08), rgba(220,38,38,0.02))", border: "1px solid rgba(220,38,38,0.15)" }}>
-            <h3 className="text-2xl font-bold text-white mb-3">Start automating today</h3>
-            <p className="text-sm mb-6 max-w-lg mx-auto" style={{ color: "rgba(255,255,255,0.5)" }}>
-              REST API, webhooks, and Zapier integration are live on every Professional plan. Connect CherryWorks Pro to thousands of apps and automate your workflows.
-            </p>
-            <Link href="/signup">
-              <span
-                className="inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold text-white rounded-lg cursor-pointer transition-opacity hover:opacity-90"
-                style={{ background: "linear-gradient(135deg, #cf3339, #e74c3c)" }}
-                data-testid="button-start-trial-integrations"
+      <Section tone="white" testId="section-marketing-os-addon">
+        <Container>
+          <div className="grid gap-8 md:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] md:items-end md:gap-12">
+            <div>
+              <p
+                data-testid="badge-marketing-os-addon"
+                className="inline-flex items-center gap-2 text-[13px] font-semibold text-[#B32A30]"
               >
-                Start Free Trial
-                <ArrowRight className="w-4 h-4" />
-              </span>
-            </Link>
+                <span className="h-1.5 w-1.5 rounded-full bg-[#CF3339]" aria-hidden="true" />
+                Included in Business plan
+              </p>
+              <Heading className="mt-4">Marketing Hub keeps prospects apart from billing</Heading>
+              <p className="mt-5 max-w-xl text-lg leading-relaxed text-[#3D4350]">
+                Prospects, companies, tags, segments, campaigns and email sequences live in their own tables, separate from your
+                billing clients. Prospects are never copied into your client list automatically.
+              </p>
+            </div>
+            <div className="md:justify-self-end">
+              <TextLink href="/marketing" testId="link-marketing-os">Tour Marketing Hub</TextLink>
+            </div>
           </div>
-        </div>
-      </section>
+        </Container>
+      </Section>
 
-      <MarketingFooter />
-    </div>
-  );
-}
-
-function ZapierLogo() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-      <path d="M15.54 8.46L13.41 10.59L15.54 12.71L13.41 14.84L15.54 16.97L17.66 14.84L19.79 16.97L21.92 14.84L19.79 12.71L21.92 10.59L19.79 8.46L17.66 10.59L15.54 8.46Z" fill="#FF4A00"/>
-      <path d="M8.46 8.46L6.34 10.59L4.21 8.46L2.08 10.59L4.21 12.71L2.08 14.84L4.21 16.97L6.34 14.84L8.46 16.97L10.59 14.84L8.46 12.71L10.59 10.59L8.46 8.46Z" fill="#FF4A00"/>
-      <path d="M12 2.08L9.88 4.21L12 6.34L14.12 4.21L12 2.08Z" fill="#FF4A00"/>
-      <path d="M12 17.66L9.88 19.79L12 21.92L14.12 19.79L12 17.66Z" fill="#FF4A00"/>
-    </svg>
+      <Section tone="night">
+        <Container>
+          <div className="max-w-2xl">
+            <h2 className="font-display text-3xl font-semibold leading-[1.12] tracking-[-0.015em] text-white md:text-5xl">
+              Connect your own mailbox and Stripe account in the trial
+            </h2>
+            <p className="mt-5 text-lg leading-relaxed text-white/70">
+              Professional and Business include the REST API, webhooks, imports and bank accounts. Start a trial on either to try them.
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <ButtonLink href="/signup" size="lg" arrow testId="button-start-trial-integrations">
+                Start your 14-day trial
+              </ButtonLink>
+              <ButtonLink href="/demo" size="lg" variant="onNight">Book a demo</ButtonLink>
+            </div>
+            <p className="mt-5 text-sm text-white/50">You won’t be charged until day 15 · Cancel anytime</p>
+          </div>
+        </Container>
+      </Section>
+    </MarketingShell>
   );
 }

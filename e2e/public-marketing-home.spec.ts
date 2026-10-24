@@ -25,44 +25,71 @@ function realErrors(errors: string[]): string[] {
 }
 
 test.describe("Public marketing home", () => {
-  test("renders hero, nav, and Marketing OS section without page errors", async ({ page }) => {
+  test("renders hero, nav, and the four pillars without page errors", async ({ page }) => {
     const errors = trackErrors(page);
     await page.goto("/");
     await expect(page.locator('[data-testid="marketing-nav"]')).toBeVisible({ timeout: 15000 });
     await expect(page.locator('[data-testid="announcement-bar"]')).toBeVisible();
+    await expect(page.locator('[data-testid="home-h1"]')).toBeVisible();
+    await expect(page.locator("h1")).toHaveCount(1);
     await expect(page.locator('[data-testid="hero-cta-signup"]').first()).toBeVisible();
     await expect(page.locator('[data-testid="section-pillars"]').first()).toBeVisible();
-    await expect(page.locator('[data-testid="pillar-client-support"]').first()).toBeVisible();
+    for (const pillar of ["time-billing", "books", "team-payouts", "client-support"]) {
+      await expect(page.locator(`[data-testid="pillar-${pillar}"]`)).toBeVisible();
+    }
     expect(realErrors(errors), `home page errors: ${errors.join(" | ")}`).toEqual([]);
   });
 
-  test("hero dashboard mockup renders KPI showcase + revenue/team panels", async ({ page }) => {
+  test("hero product screenshot loads and the workflow shows four steps", async ({ page }) => {
     await page.goto("/");
-    // KPI tiles inside the hero dashboard mockup (six labelled stats).
-    for (const label of ["REVENUE MTD", "COLLECTED", "OUTSTANDING", "OVERDUE", "NET CASH", "TEAM"]) {
-      await expect(page.getByText(label, { exact: true }).first()).toBeVisible({ timeout: 15000 });
+    const shot = page.locator('[data-testid="hero-screenshot"] img').first();
+    await expect(shot).toBeVisible({ timeout: 15000 });
+    await expect.poll(() => shot.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+    for (let i = 1; i <= 4; i++) {
+      await expect(page.locator(`[data-testid="workflow-step-${i}"]`)).toBeVisible();
     }
-    // Concrete dollar values render (driven by component state, not just static labels).
-    await expect(page.getByText("$47,850").first()).toBeVisible();
-    await expect(page.getByText("$38,200").first()).toBeVisible();
-    // Adjacent revenue trend + team utilization panels.
-    await expect(page.getByText(/Revenue Trend/i).first()).toBeVisible();
-    await expect(page.getByText(/Team Utilization/i).first()).toBeVisible();
   });
 
-  test("feature/before-after sections render with comparison content", async ({ page }) => {
+  test("seat calculator compares per-user pricing with the flat Professional price", async ({ page }) => {
     await page.goto("/");
-    // Four pillars + the Client Support spotlight
-    await expect(page.getByText(/support desk built in/i).first()).toBeVisible({ timeout: 15000 });
-    const support = page.locator('[data-testid="section-support"]').first();
+    const calc = page.locator('[data-testid="seat-calculator"]');
+    await calc.scrollIntoViewIfNeeded();
+    // Defaults: 8 people at $15 a user is $120 against $89 flat.
+    await expect(page.locator('[data-testid="calc-team-value"]')).toHaveText("8");
+    await expect(page.locator('[data-testid="calc-result"]')).toContainText("$120");
+    await expect(page.locator('[data-testid="calc-result"]')).toContainText("$89");
+    await expect(page.locator('[data-testid="calc-verdict"]')).toContainText("$31 a month");
+    await expect(page.locator('[data-testid="calc-verdict"]')).toContainText("$372 a year");
+
+    // A cheap per-user tool at a small team: the page says so and names the break-even point.
+    await page.locator('[data-testid="input-calc-seat"]').fill("10");
+    // Drive the slider the way a person would; React does not see a value set directly on a range input.
+    await page.locator('[data-testid="input-calc-team"]').focus();
+    for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowLeft");
+    await expect(page.locator('[data-testid="calc-team-value"]')).toHaveText("3");
+    await expect(page.locator('[data-testid="calc-verdict"]')).toContainText("per-user pricing costs less");
+    await expect(page.locator('[data-testid="calc-verdict"]')).toContainText("at 9 people");
+
+    await page.locator('[data-testid="input-calc-seat"]').fill("");
+    await expect(page.locator('[data-testid="calc-verdict"]')).toContainText("Enter your per-user price");
+  });
+
+  test("support spotlight links to Client Support and the FAQ expands", async ({ page }) => {
+    await page.goto("/");
+    const support = page.locator('[data-testid="section-support"]');
     await support.scrollIntoViewIfNeeded();
     await expect(support).toBeVisible();
-    // FeatureGrid pain/value tiles include the per-user cost narrative
-    await expect(page.getByText(/Zero per-user fees/i).first()).toBeVisible();
-    // Testimonial / what-firms-saying section
-    const testi = page.getByText(/What firms are saying/i).first();
-    await testi.scrollIntoViewIfNeeded();
-    await expect(testi).toBeVisible();
+    await Promise.all([
+      page.waitForURL(/\/client-support(\?|$)/, { timeout: 15000 }),
+      page.locator('[data-testid="link-home-client-support"]').click(),
+    ]);
+    await expect(page.locator('[data-testid="client-support-h1"]')).toBeVisible({ timeout: 15000 });
+
+    await page.goto("/");
+    const faq = page.locator('[data-testid="faq-0"]');
+    await faq.scrollIntoViewIfNeeded();
+    await faq.locator("summary").click();
+    await expect(faq).toHaveAttribute("open", "");
   });
 
   test("nav exposes Log In + Start Free Trial CTAs that route correctly", async ({ page }) => {
@@ -89,20 +116,20 @@ test.describe("Public marketing home", () => {
     await expect(page.locator('[data-testid="signup-form-card"]')).toBeVisible({ timeout: 15000 });
   });
 
-  test("announcement-bar Features link navigates to /features", async ({ page }) => {
+  test("announcement-bar link navigates to the Harvest switch page", async ({ page }) => {
     await page.goto("/");
-    const link = page.locator('[data-testid="link-announcement-features"]').first();
+    const link = page.locator('[data-testid="link-announcement"]').first();
     await expect(link).toBeVisible({ timeout: 15000 });
     await Promise.all([
-      page.waitForURL(/\/features(\?|$)/, { timeout: 15000 }),
+      page.waitForURL(/\/switch-from-harvest(\?|$)/, { timeout: 15000 }),
       link.click(),
     ]);
-    await expect(page.locator('[data-testid="features-heading"]')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('[data-testid="switch-h1"]')).toBeVisible({ timeout: 15000 });
   });
 
   test("hero Start Free CTA navigates to /signup", async ({ page }) => {
     await page.goto("/");
-    const cta = page.locator('[data-testid="hero-cta-start-free"]').first();
+    const cta = page.locator('[data-testid="hero-cta-signup"]').first();
     await expect(cta).toBeVisible({ timeout: 15000 });
     await Promise.all([
       page.waitForURL(/\/signup(\?|$)/, { timeout: 15000 }),
@@ -111,27 +138,26 @@ test.describe("Public marketing home", () => {
     await expect(page.locator('[data-testid="signup-form-card"]')).toBeVisible({ timeout: 15000 });
   });
 
-  test("Marketing OS card link navigates to /marketing", async ({ page }) => {
+  test("hero tour CTA navigates to /tour", async ({ page }) => {
     await page.goto("/");
-    const link = page.locator('[data-testid="link-home-marketing-os"]').first();
-    await link.scrollIntoViewIfNeeded();
-    await expect(link).toBeVisible();
+    const cta = page.locator('[data-testid="hero-cta-tour"]').first();
+    await expect(cta).toBeVisible({ timeout: 15000 });
     await Promise.all([
-      page.waitForURL(/\/marketing(\?|$)/, { timeout: 15000 }),
-      link.click(),
+      page.waitForURL(/\/tour(\?|$)/, { timeout: 15000 }),
+      cta.click(),
     ]);
-    await expect(page.locator('[data-testid="marketing-os-heading"]')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('[data-testid="demo-heading"]')).toBeVisible({ timeout: 15000 });
   });
 
-  test('hero secondary CTA "Explore the Full Platform" navigates to /features', async ({ page }) => {
+  test("import chip navigates to its switch page", async ({ page }) => {
     await page.goto("/");
-    const secondary = page.getByRole("link", { name: /Explore the Full Platform/i }).first();
-    await expect(secondary).toBeVisible({ timeout: 15000 });
+    const chip = page.locator('[data-testid="link-import-quickbooks"]');
+    await chip.scrollIntoViewIfNeeded();
     await Promise.all([
-      page.waitForURL(/\/features(\?|$)/, { timeout: 15000 }),
-      secondary.click(),
+      page.waitForURL(/\/switch-from-quickbooks(\?|$)/, { timeout: 15000 }),
+      chip.click(),
     ]);
-    await expect(page.locator('[data-testid="features-heading"]')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('[data-testid="switch-h1"]')).toBeVisible({ timeout: 15000 });
   });
 
   test("final-section Start Your Free Trial CTA navigates to /signup", async ({ page }) => {
@@ -151,12 +177,11 @@ test.describe("Public marketing home", () => {
   // link on desktop, etc.), which goto-only checks would miss.
   test.describe("Marketing nav links — actual click from home", () => {
     const navTargets: Array<{ label: RegExp; path: RegExp; anchor: string }> = [
-      { label: /^Features$/, path: /\/features(\?|$)/, anchor: '[data-testid="features-heading"]' },
-      { label: /^Tour$/, path: /\/demo(\?|$)/, anchor: '[data-testid="demo-section-dashboard"]' },
-      { label: /^Compare$/, path: /\/compare(\?|$)/, anchor: '[data-testid="comparison-table"]' },
+      { label: /^Product$/, path: /\/features(\?|$)/, anchor: '[data-testid="features-heading"]' },
+      { label: /^Tour$/, path: /\/tour(\?|$)/, anchor: '[data-testid="demo-heading"]' },
+      { label: /^Client Support$/, path: /\/client-support(\?|$)/, anchor: '[data-testid="client-support-h1"]' },
       { label: /^Pricing$/, path: /\/pricing(\?|$)/, anchor: '[data-testid="pricing-heading"]' },
-      { label: /Marketing Hub/, path: /\/marketing(\?|$)/, anchor: '[data-testid="marketing-os-heading"]' },
-      { label: /^Integrations$/, path: /\/integrations(\?|$)/, anchor: '[data-testid="link-zapier"]' },
+      { label: /^Compare$/, path: /\/compare(\?|$)/, anchor: '[data-testid="comparison-table"]' },
       { label: /^About$/, path: /\/about(\?|$)/, anchor: '[data-testid="about-heading"]' },
     ];
 

@@ -41,8 +41,8 @@ test.describe("Public /contact form", () => {
     const errors: string[] = [];
     page.on("pageerror", (err) => errors.push(`pageerror: ${err.message}`));
 
-    // Intercept the network call so the test does not depend on an
-    // actual SMTP transport being configured in the dev environment.
+    // Intercept the network call so the test does not write a prospect
+    // into the dev workspace's Marketing Hub.
     await page.route("**/api/public/contact", async (route) => {
       const req = route.request();
       const body = JSON.parse(req.postData() || "{}");
@@ -75,18 +75,15 @@ test.describe("Public /contact form", () => {
     expect(real, `contact page errors: ${real.join(" | ")}`).toEqual([]);
   });
 
-  test("warning JSON (200 ok with warning) still surfaces success state", async ({ page }) => {
-    // The /api/public/contact endpoint returns `{ ok: true, warning: "..." }`
-    // when the SMTP transport fails but the message was queued. The UI treats
-    // any 2xx as success and shows "Message sent!" — this verifies that
-    // contract so we don't regress to surfacing the warning as an error.
+  test("unavailable (503) surfaces the fallback address and stays on form", async ({ page }) => {
+    // The endpoint answers ok only once the message is recorded in Marketing Hub.
+    // When it can't record it, the visitor is told where to write instead.
     await page.route("**/api/public/contact", async (route) => {
       await route.fulfill({
-        status: 200,
+        status: 503,
         contentType: "application/json",
         body: JSON.stringify({
-          ok: true,
-          warning: "Email notification could not be sent.",
+          message: "The contact form is not available right now. Email info@cherrystconsulting.com instead.",
         }),
       });
     });
@@ -94,10 +91,11 @@ test.describe("Public /contact form", () => {
     await page.goto("/contact");
     await page.fill('[data-testid="input-contact-name"]', "Margaret Hamilton");
     await page.fill('[data-testid="input-contact-email"]', "margaret@example.com");
-    await page.fill('[data-testid="input-contact-message"]', "Soft-warning path");
+    await page.fill('[data-testid="input-contact-message"]', "Unavailable path");
     await page.click('[data-testid="button-contact-submit"]');
 
-    await expect(page.getByText(/Message sent!/i)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("alert")).toContainText("info@cherrystconsulting.com", { timeout: 10000 });
+    await expect(page.getByText(/Message sent!/i)).toHaveCount(0);
   });
 
   test("rate-limit (429) surfaces inline error and stays on form", async ({ page }) => {

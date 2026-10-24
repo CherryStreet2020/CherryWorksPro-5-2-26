@@ -1,249 +1,179 @@
-
-import { useFadeIn } from "@/hooks/use-fade-in";
-import { Link } from "wouter";
-import { ArrowRight, Target, Eye, Zap, Layers, DollarSign, Award, User, Rocket, Star, Globe, CheckCircle, Database } from "lucide-react";
 import { SEO } from "@/components/seo";
-import { MarketingNav } from "@/components/marketing/marketing-nav";
-import { MarketingFooter } from "@/components/marketing/marketing-footer";
+import {
+  MarketingShell, Container, Section, PageHero, Eyebrow, Display, Heading, Lede, ButtonLink, TextLink,
+} from "@/components/marketing/kit";
+import { REPORT_COUNT } from "@shared/seo-routes";
 
+const PILLARS = [
+  {
+    title: "One system, not five",
+    body: `Time, invoices, payments, payouts, support cases and the books live in one place, so nothing has to be copied between tools at month end. ${REPORT_COUNT} reports read from the same records.`,
+  },
+  {
+    title: "Flat pricing, every user included",
+    body: "Plans are priced per firm, not per seat. Adding a contractor for one project doesn’t change your bill, and the price is on the pricing page before you sign up.",
+  },
+  {
+    title: "Built by people who use it",
+    body: "Our own firm runs on CherryWorks Pro every month: support cases, timesheets, invoices, client payments and contractor payouts. When something is awkward, we feel it first.",
+  },
+];
+
+const MONTH = [
+  {
+    title: "Clients raise requests",
+    body: "Requests arrive by email or through the Help Center and become cases. Hours are logged against the case as the work happens.",
+  },
+  {
+    title: "Time is approved",
+    body: "Timesheets are reviewed before anything is billed, so the invoice matches the work.",
+  },
+  {
+    title: "Invoices go out from our own mailbox",
+    body: "Invoices are built from approved hours and sent from our Microsoft 365 account. Clients pay by ACH or card.",
+  },
+  {
+    title: "The team gets paid",
+    body: "Every logged hour is valued at the person’s cost rate, so we know what we owe and to whom. Sending an invoice queues the contractors’ payouts for the hours on it, and each contractor can see whether their hours are unbilled, invoiced or paid.",
+  },
+];
 
 export default function AboutPage() {
-  const storyRef = useFadeIn();
-  const missionRef = useFadeIn();
-  const timelineRef = useFadeIn();
-  const principlesRef = useFadeIn();
-  const statsRef = useFadeIn();
-  const marketingOsRef = useFadeIn();
-
   return (
-    <div style={{ background: "#0a0f1c" }}>
-      <MarketingNav />
+    <MarketingShell>
       <SEO path="/about" />
 
-      <section className="pt-[100px] pb-8 md:pb-10" style={{ background: "var(--gradient-hero)" }}>
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8 md:pt-12 md:pb-10">
+      <PageHero>
+        <Container>
           <div className="max-w-3xl">
-            <p className="text-sm font-bold uppercase tracking-[3px] mb-4" style={{ color: "#cf3339" }}>Our story</p>
-            <h1 className="text-4xl md:text-6xl font-bold text-white tracking-tight leading-[1.1]" data-testid="about-heading">
-              We didn't study the problem.{" "}
-              <span style={{ color: "rgba(255,255,255,0.4)" }}>We lived it.</span>
-            </h1>
-            <p className="mt-6 text-lg md:text-xl leading-relaxed" style={{ color: "rgba(255,255,255,0.6)" }}>
-              CherryWorks Pro was born inside a real consulting firm — not a product lab, not a startup incubator. 
-              We built it because we needed it. Then we realized every firm like ours needed it too.
+            <Eyebrow>Our story</Eyebrow>
+            <Display testId="about-heading" className="mt-5">
+              We didn’t study the problem. We lived it.
+            </Display>
+            <Lede className="mt-6 max-w-2xl">
+              CherryWorks Pro started inside a working consulting firm. We built it because we needed it, and we still run
+              our own business on it.
+            </Lede>
+          </div>
+        </Container>
+      </PageHero>
+
+      <Section tone="white" testId="section-about-story">
+        <Container>
+          <div className="mx-auto max-w-[68ch] space-y-6 text-lg leading-relaxed text-[#3D4350]">
+            <p>
+              We’re a consulting firm first. We manage technology projects for clients in manufacturing, IT and operations,
+              with a mix of 1099 contractors, W-2 employees and corp-to-corp partners working side by side.
+            </p>
+            <p>
+              For years we used FreshBooks for invoicing and time tracking. It was fine for sending invoices. It didn’t help
+              with the part that took the most time.
+            </p>
+            <p className="font-display text-2xl leading-snug text-[#15171C]">The breaking point was paying the team.</p>
+            <p>
+              Every month we matched invoices against time entries in a spreadsheet, worked out what we owed each person,
+              sent the payments across three different rails, then updated another spreadsheet so we could file 1099s at
+              year end. One mistake anywhere in that chain and the whole month had to be rechecked.
+            </p>
+            <p>
+              We looked at the usual options. QuickBooks was more accounting than we needed day to day. Harvest handled time
+              and invoices, but paying people meant another tool and another spreadsheet. Nothing followed the one workflow
+              our firm runs every month:
+            </p>
+            <p className="border-l-2 border-[#CF3339] pl-5 font-display text-xl leading-snug text-[#15171C] md:text-2xl">
+              Log time, invoice the client, collect the payment, pay the person who did the work.
+            </p>
+            <p>
+              So we built it, first for ourselves. Support cases came next, because our clients email us when something
+              breaks and those hours need to be billed too. Then we opened it up to other firms that work the way we do.
             </p>
           </div>
-        </div>
-      </section>
+        </Container>
+      </Section>
 
-      <section className="pt-4 md:pt-8 pb-8 md:pb-12" style={{ background: "#0a0f1c" }}>
-        <div ref={storyRef} className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 fade-in-section">
-          <div className="space-y-6 text-lg leading-relaxed" style={{ color: "rgba(255,255,255,0.6)" }}>
-            <p>
-              We started as a consulting firm — managing enterprise technology projects for clients in manufacturing, IT, and operations. 
-              Real clients. Real deadlines. Real teams of 1099 independents, W-2 employees, and Corp-to-Corp partners working side by side.
-            </p>
-            <p>
-              For years, we used FreshBooks for invoicing and time tracking. It worked — until it didn't.
-            </p>
-            <p className="text-xl font-semibold text-white">
-              The breaking point was team payouts.
-            </p>
-            <p>
-              Every month, we'd reconcile invoices against time entries in a spreadsheet, calculate what we owed each team member, 
-              send the payments across three different rails, then manually update another spreadsheet so we could file 1099s at year end. 
-              One mistake anywhere in the chain and the whole thing broke.
-            </p>
-            <p>
-              We looked at QuickBooks. Too complex for what we needed. Xero. Too generic. 
-              Harvest plus Bill.com. Two tools duct-taped together that still couldn't track who got paid for what.
-            </p>
-            <p>
-              Nothing was purpose-built for the workflow every services firm runs every single day: 
-            </p>
-            <p className="text-xl font-bold text-white pl-4" style={{ borderLeft: "3px solid #cf3339" }}>
-              Log time → Invoice client → Collect payment → Pay team member
-            </p>
-            <p>
-              So we built it. What started as an internal tool became something bigger when we showed it to other firm owners 
-              and heard the same reaction every time:
-            </p>
-            <p className="text-xl font-semibold italic" style={{ color: "rgba(255,255,255,0.8)" }}>
-              "Why doesn't this exist already?"
-            </p>
-            <p className="text-lg" style={{ color: "rgba(255,255,255,0.7)" }}>
-              Now it does. And after thousands of client engagements, we've poured everything we've learned about 
-              running a professional services firm into every feature, every report, and every workflow.
-            </p>
+      <Section testId="section-about-pillars">
+        <Container>
+          <div className="max-w-2xl">
+            <Eyebrow>What we hold to</Eyebrow>
+            <Heading testId="mission-heading" className="mt-4">Three things we won’t trade away</Heading>
           </div>
-        </div>
-      </section>
-
-      <section className="py-8 md:py-12" style={{ background: "#0a0f1c" }}>
-        <div ref={missionRef} className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 fade-in-section">
-          <p className="text-sm font-bold uppercase tracking-[3px] text-center mb-4" style={{ color: "#cf3339" }}>Our mission</p>
-          <h2 className="text-3xl md:text-4xl font-bold text-center mb-14 text-white" data-testid="mission-heading">Built on three pillars</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {[
-              {
-                icon: Layers,
-                title: "Simplicity",
-                tagline: "One platform, not five",
-                desc: "Time tracking, invoicing, expenses, payouts, accounting, and reporting — all in one place. No integrations to maintain, no data syncing to debug, no tool-switching fatigue.",
-                color: "#3b82f6",
-                bg: "rgba(59,130,246,0.1)",
-              },
-              {
-                icon: DollarSign,
-                title: "Transparency",
-                tagline: "No hidden fees, no per-user charges",
-                desc: "Flat pricing on every plan. Unlimited users. No surprise overages. You know exactly what you'll pay before you sign up — and it stays that way.",
-                color: "#22c55e",
-                bg: "rgba(34,197,94,0.1)",
-              },
-              {
-                icon: Award,
-                title: "Professional Grade",
-                tagline: "Enterprise features at startup prices",
-                desc: "AES-256 encryption at rest and in transit, full general ledger, multi-currency support, and 19 built-in reports. The features Fortune 500 firms expect, at prices any firm can afford.",
-                color: "#eab308",
-                bg: "rgba(234,179,8,0.1)",
-              },
-            ].map((p, i) => (
-              <div key={i} className="rounded-2xl p-7 text-center" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }} data-testid={`mission-pillar-${i}`}>
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-5" style={{ background: p.bg }}>
-                  <p.icon className="w-7 h-7" style={{ color: p.color }} />
-                </div>
-                <h3 className="text-lg font-bold text-white mb-1">{p.title}</h3>
-                <p className="text-sm font-semibold mb-3" style={{ color: p.color }}>{p.tagline}</p>
-                <p className="text-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>{p.desc}</p>
+          <div className="mt-12 grid gap-10 md:grid-cols-3 md:gap-12">
+            {PILLARS.map((p, i) => (
+              <div key={p.title} data-testid={`mission-pillar-${i}`} className="border-t border-[#15171C] pt-6">
+                <p className="font-display text-sm font-semibold text-[#B32A30]">0{i + 1}</p>
+                <h3 className="mt-3 text-xl font-semibold text-[#15171C]">{p.title}</h3>
+                <p className="mt-3 text-[15px] leading-relaxed text-[#3D4350]">{p.body}</p>
               </div>
             ))}
           </div>
-        </div>
-      </section>
+        </Container>
+      </Section>
 
-      <section className="py-8 md:py-12" style={{ background: "linear-gradient(180deg, #0f172a 0%, #0a0f1c 100%)" }}>
-        <div ref={timelineRef} className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 fade-in-section">
-          <p className="text-sm font-bold uppercase tracking-[3px] text-center mb-4" style={{ color: "#cf3339" }}>Our journey</p>
-          <h2 className="text-3xl md:text-4xl font-bold text-center mb-14 text-white" data-testid="timeline-heading">Company timeline</h2>
-          <div className="relative">
-            <div className="hidden md:block absolute top-1/2 left-0 right-0 h-px" style={{ background: "rgba(207,51,57,0.2)" }} />
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-              {[
-                { icon: Star, label: "Founded", desc: "Born inside a real consulting firm", color: "#cf3339" },
-                { icon: User, label: "First Client", desc: "Our own firm, our own pain points", color: "#f59e0b" },
-                { icon: Rocket, label: "Platform Launch", desc: "Internal tool becomes a product", color: "#3b82f6" },
-                { icon: CheckCircle, label: "50+ Features", desc: "Every tool a firm needs, built in", color: "#22c55e" },
-                { icon: Globe, label: "SaaS Launch", desc: "Available to every firm, everywhere", color: "#8b5cf6" },
-              ].map((m, i) => (
-                <div key={i} className="text-center relative" data-testid={`timeline-milestone-${i}`}>
-                  <div className="w-12 h-12 rounded-full mx-auto mb-3 flex items-center justify-center relative z-10" style={{ background: `${m.color}15`, border: `2px solid ${m.color}40` }}>
-                    <m.icon className="w-5 h-5" style={{ color: m.color }} />
+      <Section tone="white" testId="section-about-month">
+        <Container>
+          <div className="grid gap-12 lg:grid-cols-12">
+            <div className="lg:col-span-5">
+              <Eyebrow>How we use it</Eyebrow>
+              <Heading testId="timeline-heading" className="mt-4">A month at our own firm</Heading>
+              <p className="mt-5 text-[17px] leading-relaxed text-[#3D4350]">
+                This is the cycle CherryWorks Pro was built around, and the one we run ourselves.
+              </p>
+              <TextLink href="/tour" testId="link-about-tour" className="mt-6">See it in the product tour</TextLink>
+            </div>
+            <ol className="lg:col-span-7">
+              {MONTH.map((m, i) => (
+                <li
+                  key={m.title}
+                  data-testid={`timeline-milestone-${i}`}
+                  className="grid grid-cols-[2.5rem_1fr] gap-4 border-t border-[#E6E2DA] py-6 first:border-t-0 first:pt-0"
+                >
+                  <span className="font-display text-lg font-semibold text-[#B32A30]">{i + 1}</span>
+                  <div>
+                    <h3 className="text-lg font-semibold text-[#15171C]">{m.title}</h3>
+                    <p className="mt-1.5 text-[15px] leading-relaxed text-[#3D4350]">{m.body}</p>
                   </div>
-                  <h3 className="text-sm font-bold text-white mb-1">{m.label}</h3>
-                  <p className="text-xs" style={{ color: "rgba(255,255,255,0.45)" }}>{m.desc}</p>
-                </div>
+                </li>
               ))}
+            </ol>
+          </div>
+        </Container>
+      </Section>
+
+      <Section testId="section-about-marketing-os" className="!py-16 md:!py-20">
+        <Container>
+          <div className="grid items-end gap-8 md:grid-cols-12">
+            <div className="md:col-span-8">
+              <Heading as="h3" testId="about-marketing-os-heading" className="!text-2xl md:!text-3xl">
+                Prospects stay separate from your books
+              </Heading>
+              <p className="mt-4 max-w-2xl text-[17px] leading-relaxed text-[#3D4350]">
+                The Business plan adds Marketing Hub for campaigns and follow-up sequences. Prospects are kept apart from
+                billing clients, so outreach never clutters your invoices or reports.
+              </p>
+            </div>
+            <div className="md:col-span-4 md:text-right">
+              <TextLink href="/marketing" testId="link-about-marketing-os">About Marketing Hub</TextLink>
             </div>
           </div>
-        </div>
-      </section>
+        </Container>
+      </Section>
 
-      <section className="py-8 md:py-12" style={{ background: "#0a0f1c" }}>
-        <div ref={principlesRef} className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 fade-in-section">
-          <p className="text-sm font-bold uppercase tracking-[3px] text-center mb-4" style={{ color: "#cf3339" }}>Our principles</p>
-          <h2 className="text-3xl md:text-4xl font-bold text-center mb-14 text-white">What we believe</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-            {[
-              { icon: Target, title: "Purpose-built beats generic", description: "Software designed for one job outperforms software that tries to do everything. We build exclusively for professional services firms — agencies, consultancies, and every team that bills clients for time." },
-              { icon: Eye, title: "Transparency is non-negotiable", description: "Your team members should know when their hours were invoiced and when to expect payment. Your clients should see exactly what they're paying for. No black boxes." },
-              { icon: Zap, title: "Automate the paper trail", description: "Every financial event — invoice sent, payment received, payout recorded — creates an auditable record automatically. No manual tracking. No spreadsheet reconciliation. Ever." },
-            ].map((v, i) => (
-              <div key={i} className="text-center">
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-5" style={{ background: "rgba(207,51,57,0.1)" }}>
-                  <v.icon className="w-7 h-7" style={{ color: "#cf3339" }} />
-                </div>
-                <h3 className="text-lg font-bold mb-3 text-white">{v.title}</h3>
-                <p className="text-base leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>{v.description}</p>
-              </div>
-            ))}
+      <Section tone="night" testId="section-cta">
+        <Container>
+          <div className="max-w-3xl">
+            <h2 className="font-display text-3xl font-semibold leading-[1.12] tracking-[-0.015em] text-white text-balance md:text-5xl">
+              Run your firm on the system we run ours on.
+            </h2>
+            <p className="mt-5 text-lg text-white/70">
+              14-day trial on the Professional plan. You won’t be charged until day 15 · Cancel anytime.
+            </p>
+            <div className="mt-9 flex flex-wrap gap-3">
+              <ButtonLink href="/signup" size="lg" arrow testId="cta-start-trial">Start free trial</ButtonLink>
+              <ButtonLink href="/demo" size="lg" variant="onNight" testId="cta-book-demo">Book a demo</ButtonLink>
+            </div>
           </div>
-        </div>
-      </section>
-
-      <section className="py-8 md:py-12" style={{ background: "linear-gradient(180deg, #0f172a 0%, #0a0f1c 100%)" }}>
-        <div ref={statsRef} className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 fade-in-section">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center mb-16">
-            {[
-              { value: "20+", label: "Years of industry experience" },
-              { value: "2,000+", label: "Engagements managed" },
-              { value: "15+", label: "Industries served" },
-              { value: "#1", label: "Fastest-rising PSA" },
-            ].map((s, i) => (
-              <div key={i}>
-                <p className="text-3xl md:text-4xl font-bold text-white">{s.value}</p>
-                <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.4)" }}>{s.label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="py-8 md:py-12" style={{ background: "#0a0f1c" }} data-testid="section-about-marketing-os">
-        <div ref={marketingOsRef} className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 fade-in-section">
-          <p className="text-sm font-bold uppercase tracking-[3px] text-center mb-4" style={{ color: "#cf3339" }}>Beyond billing</p>
-          <h2 className="text-3xl md:text-4xl font-bold text-center mb-4 text-white" data-testid="about-marketing-os-heading">A prospect-to-client layer, on its own foundation</h2>
-          <p className="text-base md:text-lg text-center max-w-2xl mx-auto mb-10" style={{ color: "rgba(255,255,255,0.55)" }}>
-            Marketing Hub is included in the Business plan and gives your firm a CRM, campaigns, and sequences — all on dedicated tables that prevent cross-contamination between marketing and billing records.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {[
-              { icon: Layers, title: "Same firm, two clean halves", desc: "Marketing prospects belong to outreach. Billing clients belong to your books. Marketing Hub keeps the line crisp without forcing you to run a second tool." },
-              { icon: Database, title: "Prospect / Client Separation", desc: "Marketing data lives in dedicated database tables — no foreign keys to your books, no cross-contamination between marketing and billing records." },
-              { icon: ArrowRight, title: "Promote when ready", desc: "When a prospect is ready to become a paying client, promote them into your billing world. Marketing Hub history stays put; nothing leaks the other way." },
-            ].map((p, i) => (
-              <div key={i} className="rounded-2xl p-6 text-center" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }} data-testid={`card-about-marketing-os-${i}`}>
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background: "rgba(220,38,38,0.12)" }}>
-                  <p.icon className="w-6 h-6" style={{ color: "#f87171" }} />
-                </div>
-                <h3 className="text-base font-bold text-white mb-2">{p.title}</h3>
-                <p className="text-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>{p.desc}</p>
-              </div>
-            ))}
-          </div>
-          <div className="mt-8 text-center">
-            <Link href="/marketing">
-              <span
-                className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-lg cursor-pointer transition-colors hover:bg-white/5"
-                style={{ color: "rgba(255,255,255,0.85)", border: "1px solid rgba(255,255,255,0.18)" }}
-                data-testid="link-about-marketing-os"
-              >
-                Tour Marketing Hub
-                <ArrowRight className="w-4 h-4" />
-              </span>
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      <section className="py-10 md:py-14" style={{ background: "var(--gradient-hero)" }}>
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-3xl md:text-5xl font-bold text-white tracking-tight">Ready to run your firm the way it deserves?</h2>
-          <p className="mt-5 text-lg" style={{ color: "rgba(255,255,255,0.6)" }}>
-            14-day free trial. Full access. Import your data or start fresh — either way, you'll be live in minutes.
-          </p>
-          <div className="mt-10">
-            <Link href="/signup">
-              <span className="inline-flex items-center gap-2 px-8 py-4 text-lg font-bold text-white rounded-xl cursor-pointer transition-all hover:scale-[1.03]" style={{ background: "linear-gradient(135deg, #cf3339, #e74c3c)", boxShadow: "0 4px 30px rgba(207,51,57,0.4)" }} data-testid="cta-start-trial">
-                Start Your Free Trial <ArrowRight className="w-5 h-5" />
-              </span>
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      <MarketingFooter />
-    </div>
+        </Container>
+      </Section>
+    </MarketingShell>
   );
 }

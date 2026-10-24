@@ -1,360 +1,437 @@
-import { useState } from "react";
-import { useFadeIn } from "@/hooks/use-fade-in";
-import { PLAN_PRICING, annualPerMonth } from "@shared/plan-pricing";
+import { Fragment, useState } from "react";
 import { Link } from "wouter";
-import { CheckCircle, X, ArrowRight, Building2, Shield, ChevronDown } from "lucide-react";
+import { Check, Plus } from "lucide-react";
 import { SEO, FAQStructuredData } from "@/components/seo";
-import { MarketingNav } from "@/components/marketing/marketing-nav";
-import { MarketingFooter } from "@/components/marketing/marketing-footer";
+import {
+  MarketingShell, Container, Section, PageHero, Eyebrow, Display, Heading, Lede, ButtonLink, TextLink,
+} from "@/components/marketing/kit";
+import { PLAN_PRICING, type PlanId } from "@shared/plan-pricing";
+import { REPORT_COUNT } from "@shared/seo-routes";
 
-
-const plans = [
+// Every row below is gated in the server exactly as shown (server/routes/*: requirePlanTier / requireTier)
+// and has a screen in the app. Endpoints with no UI are deliberately left off.
+const PLANS: {
+  id: PlanId;
+  name: string;
+  slug: string;
+  fit: string;
+  lead?: string;
+  points: string[];
+}[] = [
   {
+    id: "STARTER",
     name: "Starter",
-    monthly: PLAN_PRICING.STARTER.monthly,
-    annual: annualPerMonth("STARTER"),
-    users: "Unlimited",
-    clients: "Up to 5",
-    projects: "Up to 3",
-    description: "Everything a lean firm needs. Full GL, expenses, AI assistant, and unlimited users — for less than most tools charge per seat.",
-    cta: "Start Free Trial",
-    featured: false,
+    slug: "starter",
+    fit: "For a small firm getting time, invoices and the books into one place.",
+    points: [
+      "Unlimited users",
+      "Up to 5 clients and 3 projects",
+      "Time, expenses, invoices and online payments",
+      `Full general ledger and ${REPORT_COUNT} reports`,
+      "Invoices sent from your own mailbox",
+    ],
   },
   {
+    id: "PROFESSIONAL",
     name: "Professional",
-    monthly: PLAN_PRICING.PROFESSIONAL.monthly,
-    annual: annualPerMonth("PROFESSIONAL"),
-    users: "Unlimited",
-    clients: "Unlimited",
-    projects: "Unlimited",
-    description: "The toolkit that grows with you. Approvals, bank feeds, team payouts, 8-platform imports, custom branding, and full API access.",
-    cta: "Start Free Trial",
-    featured: true,
+    slug: "professional",
+    fit: "For firms that bill many clients, support them and pay a team.",
+    lead: "Everything in Starter, plus",
+    points: [
+      "Unlimited clients and projects",
+      "Support cases and a Help Center for clients",
+      "Timesheet and expense approvals",
+      "Contractor payouts through Stripe Connect",
+      "Bank feeds, the import wizard and API keys",
+    ],
   },
   {
+    id: "BUSINESS",
     name: "Business",
-    monthly: PLAN_PRICING.BUSINESS.monthly,
-    annual: annualPerMonth("BUSINESS"),
-    users: "Unlimited",
-    clients: "Unlimited",
-    projects: "Unlimited",
-    description: "Firms that take their numbers seriously. Period closes, multi-entity, dunning automation, payment plans, and dashboards built for the people running the numbers.",
-    cta: "Start Free Trial",
-    featured: false,
+    slug: "business",
+    fit: "For firms that also want to find and win new clients.",
+    lead: "Everything in Professional, plus",
+    points: [
+      "Marketing Hub for prospects and campaigns",
+      "Follow-up email sequences",
+      "Prospects kept apart from your billing clients",
+      "Period closes that lock the books",
+    ],
   },
 ];
 
-const featureMatrix = [
-  { feature: "Team members", starter: "Unlimited", pro: "Unlimited", business: "Unlimited", enterprise: "Unlimited" },
-  { feature: "Clients", starter: "Up to 5", pro: "Unlimited", business: "Unlimited", enterprise: "Unlimited" },
-  { feature: "Projects", starter: "Up to 3", pro: "Unlimited", business: "Unlimited", enterprise: "Unlimited" },
-  { feature: "Time tracking (week/month/day + timer)", starter: true, pro: true, business: true, enterprise: true },
-  { feature: "Invoicing from billable hours", starter: true, pro: true, business: true, enterprise: true },
-  { feature: "Multi-currency invoicing (30+)", starter: true, pro: true, business: true, enterprise: true },
-  { feature: "PDF generation & email", starter: true, pro: true, business: true, enterprise: true },
-  { feature: "Client portal with overdue alerts", starter: true, pro: true, business: true, enterprise: true },
-  { feature: "Payment recording + Stripe Checkout", starter: true, pro: true, business: true, enterprise: true },
-  { feature: "Estimates & proposals", starter: true, pro: true, business: true, enterprise: true },
-  { feature: "Recurring invoice templates", starter: true, pro: true, business: true, enterprise: true },
-  { feature: "Expense tracking with receipts", starter: true, pro: true, business: true, enterprise: true },
-  { feature: "Receipt OCR (AI-powered)", starter: true, pro: true, business: true, enterprise: true },
-  { feature: "CherryAssist AI helper", starter: true, pro: true, business: true, enterprise: true },
-  { feature: "Full GL (chart of accounts, journal entries, trial balance, ledger)", starter: true, pro: true, business: true, enterprise: true, highlight: true },
-  { feature: "Reports", starter: "Full Suite", pro: "Full Suite", business: "Full Suite", enterprise: "Full Suite" },
-  { feature: "Expense analytics", starter: true, pro: true, business: true, enterprise: true },
-  { feature: "Multi-currency reporting rollups", starter: true, pro: true, business: true, enterprise: true },
-  { feature: "Team member payout tracking", starter: true, pro: true, business: true, enterprise: true },
-  { feature: "Smart onboarding (1099/W-2/C2C)", starter: true, pro: true, business: true, enterprise: true },
-  { feature: "Your logo on invoices and portal", starter: true, pro: true, business: true, enterprise: true },
-  { feature: "Timesheet approval workflow", starter: false, pro: true, business: true, enterprise: true },
-  { feature: "Expense approval workflow", starter: false, pro: true, business: true, enterprise: true },
-  { feature: "Expense reports with GL posting", starter: true, pro: true, business: true, enterprise: true },
-  { feature: "Batch expense reports", starter: false, pro: true, business: true, enterprise: true },
-  { feature: "Auto-reimbursement payouts", starter: false, pro: true, business: true, enterprise: true },
-  { feature: "Auto-charge recurring invoices", starter: false, pro: true, business: true, enterprise: true },
-  { feature: "Custom invoice themes / branded PDFs", starter: false, pro: true, business: true, enterprise: true },
-  { feature: "Project budgets", starter: false, pro: true, business: true, enterprise: true },
-  { feature: "Vendor 1099 management", starter: false, pro: true, business: true, enterprise: true },
-  { feature: "Stripe Connect team payouts", starter: false, pro: true, business: true, enterprise: true },
-  { feature: "Bank feeds", starter: false, pro: true, business: true, enterprise: true },
-  { feature: "Import wizard (8 platforms)", starter: false, pro: true, business: true, enterprise: true },
-  { feature: "API access + webhooks", starter: false, pro: true, business: true, enterprise: true },
-  { feature: "Close periods (month-end lock)", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Year-end close", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Multi-entity support", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Bulk operations", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Scheduled reports", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Custom report builder", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Audit log search", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Dunning automation", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Payment plans", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Role-based dashboards", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Multi-jurisdiction tax engine", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Marketing Hub — Contacts & Companies CRM", starter: false, pro: false, business: true, enterprise: true, highlight: true },
-  { feature: "Marketing Hub — Tags & Segments", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Marketing Hub — Campaigns", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Marketing Hub — Sequences (auto-stop on reply)", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Marketing Hub — Activity timeline", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Marketing Hub — Bulk contacts CSV import", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Marketing Hub — Prospect / Client Separation", starter: false, pro: false, business: true, enterprise: true, highlight: true },
-  { feature: "Priority email support", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "Dedicated onboarding call", starter: false, pro: false, business: true, enterprise: true },
-  { feature: "SSO / SAML", starter: false, pro: false, business: false, enterprise: true },
-  { feature: "MFA enforcement org-wide", starter: false, pro: false, business: false, enterprise: true },
-  { feature: "User impersonation (support/IT)", starter: false, pro: false, business: false, enterprise: true },
-  { feature: "Advanced AV scanning", starter: false, pro: false, business: false, enterprise: true },
-  { feature: "Backup drill & restore", starter: false, pro: false, business: false, enterprise: true },
-  { feature: "Dedicated account manager", starter: false, pro: false, business: false, enterprise: true },
-  { feature: "Volume discounts", starter: false, pro: false, business: false, enterprise: true },
-  { feature: "Custom contract / SLA / DPA", starter: false, pro: false, business: false, enterprise: true },
-  { feature: "White-label option", starter: false, pro: false, business: false, enterprise: true },
+type Cell = boolean | string;
+const MATRIX: { group: string; rows: { label: string; cells: [Cell, Cell, Cell] }[] }[] = [
+  {
+    group: "Team and limits",
+    rows: [
+      { label: "Users", cells: ["Unlimited", "Unlimited", "Unlimited"] },
+      { label: "Clients", cells: ["Up to 5", "Unlimited", "Unlimited"] },
+      { label: "Projects", cells: ["Up to 3", "Unlimited", "Unlimited"] },
+    ],
+  },
+  {
+    group: "Time and expenses",
+    rows: [
+      { label: "Time tracking and weekly timesheets", cells: [true, true, true] },
+      { label: "Expenses with receipts", cells: [true, true, true] },
+      { label: "Timesheet and expense approvals", cells: [false, true, true] },
+    ],
+  },
+  {
+    group: "Billing and payments",
+    rows: [
+      { label: "Invoices built from tracked time", cells: [true, true, true] },
+      { label: "Recurring invoices", cells: [true, true, true] },
+      { label: "Send from Microsoft 365, Google or SMTP", cells: [true, true, true] },
+      { label: "Client payments by card or ACH", cells: [true, true, true] },
+      { label: "Bank feeds", cells: [false, true, true] },
+    ],
+  },
+  {
+    group: "Paying your team",
+    rows: [
+      { label: "What you owe each person, at their cost rate", cells: [true, true, true] },
+      { label: "Contractor payouts through Stripe Connect", cells: [false, true, true] },
+    ],
+  },
+  {
+    group: "Books and reports",
+    rows: [
+      { label: "General ledger, journal entries and trial balance", cells: [true, true, true] },
+      { label: `${REPORT_COUNT} built-in reports`, cells: [true, true, true] },
+      { label: "Period closes", cells: [false, false, true] },
+    ],
+  },
+  {
+    group: "Client support",
+    rows: [
+      { label: "Support cases with hours that bill", cells: [false, true, true] },
+      { label: "Help Center with one-time sign-in links", cells: [false, true, true] },
+      { label: "Email-to-case from a Microsoft 365 mailbox", cells: [false, true, true] },
+      { label: "SLA targets per client", cells: [false, true, true] },
+      { label: "Jira Service Management import", cells: [false, true, true] },
+    ],
+  },
+  {
+    group: "Moving in and growing",
+    rows: [
+      { label: "Import from 8 platforms, with a preview first", cells: [false, true, true] },
+      { label: "API keys and webhooks", cells: [false, true, true] },
+      { label: "Marketing Hub", cells: [false, false, true] },
+    ],
+  },
 ];
 
-const faqs = [
-  { q: "Is there a free trial?", a: "Yes \u2014 14 days, full access to the Professional plan. You can downgrade to Starter or upgrade to Business anytime during or after the trial. You won't be charged until day 15." },
-  { q: "What happens when I hit 5 clients on Starter?", a: "You'll be prompted to upgrade to Professional to add more clients. Your data stays intact \u2014 no migration needed, just a plan change. You won't lose access to any features." },
-  { q: "What happens when I hit 3 projects on Starter?", a: "Same upgrade path \u2014 upgrade to Professional for unlimited projects. Your existing projects and data stay exactly where they are." },
-  { q: "Are users really unlimited on every plan?", a: "Yes. Add as many team members as you need \u2014 1099 independents, W-2 employees, Corp-to-Corp partners. No per-user fees, ever. On any plan." },
-  { q: "What if I need GL / accounting features?", a: "Full GL is included on every plan, including Starter. Chart of accounts, journal entries, trial balance, general ledger, and P&L \u2014 no upgrade required. This is one of the biggest ways CherryWorks Pro differs from QuickBooks (locks GL to $115/mo) and FreshBooks (no GL at all)." },
-  { q: "Can I switch plans later?", a: "Absolutely. Upgrade or downgrade anytime. If you upgrade mid-cycle, you'll be prorated. If you downgrade, the change takes effect at the next billing date." },
-  { q: "What payment methods do you accept?", a: "All major credit cards via Stripe. Annual plans can also pay by invoice." },
-  { q: "Can I import data from other platforms?", a: "Yes \u2014 the Professional, Business, and Enterprise plans include import wizards for FreshBooks, QuickBooks, Harvest, Xero, Wave, BigTime, Scoro, and Paymo. Upload, preview with dry-run, execute, and rollback if needed." },
-  { q: "Is my data secure?", a: "Yes. All data is encrypted in transit (SSL/TLS) and stored in isolated PostgreSQL databases. Every query is scoped to your organization \u2014 no cross-tenant data access is possible. Full audit logging tracks every financial event." },
-  { q: "Can I cancel anytime?", a: "Yes. No contracts, no cancellation fees. Cancel anytime and your data remains accessible." },
-  { q: "What is Marketing Hub on the Business plan?", a: "Marketing Hub is a full prospect-to-client layer included with the Business plan: contacts and companies CRM, tags, segments, campaigns, sequences, an activity timeline, and bulk contact import. There is no separate add-on charge \u2014 pick the Business plan and Marketing Hub is on for your firm from day one. The Prospect / Client Separation guarantee is built in, so marketing leads never touch your billing records." },
-  { q: "How does Marketing Hub keep marketing data separate from my books?", a: "Marketing prospects and marketing companies live in physically separate database tables from your billing clients. There are no foreign keys between the two, so a marketing lead can never silently be invoiced, reported on, or paid out as a client. Promoting a prospect into a billing client is an explicit, audited step you take \u2014 never an automatic side effect. The result: no cross-contamination between marketing and billing records, by design. We label this guarantee Prospect / Client Separation." },
+const FAQS = [
+  {
+    q: "Is there a free trial?",
+    a: "Yes. The trial lasts 14 days and runs on the Professional plan. We collect a card when you sign up and you won’t be charged until day 15. Cancel before then and you pay nothing.",
+  },
+  {
+    q: "Are users really unlimited?",
+    a: "Yes, on every plan. Add employees, 1099 contractors and corp-to-corp partners without changing your bill.",
+  },
+  {
+    q: "What happens when I outgrow Starter?",
+    a: "Starter covers up to 5 clients and 3 projects. When you need more, move to Professional. Your data stays where it is; only the plan changes.",
+  },
+  {
+    q: "Is the general ledger included on every plan?",
+    a: "Yes. The chart of accounts, journal entries, trial balance and general ledger are on every plan, including Starter.",
+  },
+  {
+    q: "Which plans include support cases?",
+    a: "Professional and Business. That covers support cases, the Help Center for your clients, email-to-case from a Microsoft 365 mailbox, SLA targets per client and the Jira Service Management import.",
+  },
+  {
+    q: "Can I bring my data from another tool?",
+    a: "Yes, on Professional and Business. The import wizard reads exports from FreshBooks, QuickBooks, Harvest, Xero, Wave, BigTime, Scoro and Paymo, and shows you a preview before anything is written.",
+  },
+  {
+    q: "How do I change plans or cancel?",
+    a: "From Billing in Settings, which opens Stripe’s customer portal. There’s no contract and no cancellation fee.",
+  },
+  {
+    q: "How is the subscription billed?",
+    a: "By card through Stripe, monthly or annually. Annual billing costs about 20% less than paying month to month.",
+  },
+  {
+    q: "How is my data kept separate from other firms?",
+    a: "Every record belongs to your firm’s organization and every query is scoped to it, so one firm can’t read another’s data. Traffic is encrypted in transit, and card details are handled by Stripe rather than stored by us.",
+  },
+  {
+    q: "What is Marketing Hub?",
+    a: "A prospecting layer on the Business plan: contacts, companies, tags and segments, email campaigns and follow-up sequences. Prospects are kept apart from your billing clients, so outreach never touches your invoices or reports.",
+  },
 ];
 
-function FeatureCell({ value }: { value: boolean | string }) {
-  if (value === true) return <CheckCircle className="w-4 h-4 mx-auto" style={{ color: "#22c55e" }} data-testid="icon-check" />;
-  if (value === false) return <X className="w-4 h-4 mx-auto" style={{ color: "#ef4444", opacity: 0.6 }} data-testid="icon-x" />;
-  return <span className="text-xs font-medium" style={{ color: "rgba(255,255,255,0.55)" }}>{value}</span>;
+const usd = (n: number) => `$${n.toLocaleString("en-US")}`;
+
+function CellMark({ value }: { value: Cell }) {
+  if (typeof value === "string") return <span className="text-[12px] font-medium text-[#15171C] sm:text-sm">{value}</span>;
+  return value ? (
+    <>
+      <Check className="mx-auto h-[18px] w-[18px] text-[#15171C]" aria-hidden="true" />
+      <span className="sr-only">Included</span>
+    </>
+  ) : (
+    <>
+      <span className="text-[#B9B3A8]" aria-hidden="true">–</span>
+      <span className="sr-only">Not included</span>
+    </>
+  );
 }
 
 export default function PricingPage() {
   const [annual, setAnnual] = useState(false);
-  const [openFaq, setOpenFaq] = useState<number | null>(null);
-  const matrixRef = useFadeIn();
-  const faqRef = useFadeIn();
-
+  const trial = PLAN_PRICING.PROFESSIONAL.monthly;
 
   return (
-    <div style={{ background: "#0a0f1c" }}>
-      <MarketingNav />
+    <MarketingShell>
       <SEO path="/pricing" />
-      <FAQStructuredData faqs={faqs} />
+      <FAQStructuredData faqs={FAQS} />
 
-      <section className="pt-[100px] pb-8 md:pb-10" style={{ background: "linear-gradient(135deg, #0a0f1c 0%, #111827 50%, #1a0a0a 100%)" }}>
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8 md:pt-12 md:pb-10 text-center">
-          <div className="mb-6" data-testid="social-proof-stars">
+      <PageHero className="!pb-12 md:!pb-14">
+        <Container>
+          <div className="max-w-3xl">
+            <Eyebrow>Pricing</Eyebrow>
+            <Display testId="pricing-heading" className="mt-5">One flat price for your whole firm.</Display>
+            <Lede className="mt-6 max-w-2xl">
+              Every plan includes unlimited users and the full general ledger. Choose by how many clients you bill and what
+              else you need to run.
+            </Lede>
           </div>
-          <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight" data-testid="pricing-heading">Every feature. Every plan. Unlimited users.</h1>
-          <p className="mt-4 text-lg max-w-2xl mx-auto" style={{ color: "rgba(255,255,255,0.65)" }}>
-            No per-user fees. Full GL on every plan. Start with everything you need — upgrade when your firm outgrows the basics.
-          </p>
-          <div className="mt-8 inline-flex items-center gap-3 px-4 py-2 rounded-full" data-testid="billing-toggle" style={{ background: "rgba(255,255,255,0.08)" }}>
-            <span className="text-sm font-medium" style={{ color: annual ? "rgba(255,255,255,0.4)" : "white" }}>Monthly</span>
+
+          <div className="mt-10 flex flex-wrap items-center gap-4" data-testid="billing-toggle">
+            <span className={`text-[15px] font-medium ${annual ? "text-[#5F6672]" : "text-[#15171C]"}`}>Monthly</span>
             <button
+              type="button"
+              role="switch"
+              aria-checked={annual}
+              aria-label="Bill annually"
               onClick={() => setAnnual(!annual)}
-              className="relative w-12 h-6 rounded-full transition-colors cursor-pointer"
-              style={{ background: annual ? "#cf3339" : "rgba(255,255,255,0.25)" }}
               data-testid="button-toggle-billing"
+              className="-mx-1 inline-flex h-11 w-14 items-center justify-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#CF3339]"
             >
-              <div className="absolute top-1 w-4 h-4 rounded-full bg-white transition-transform" style={{ left: annual ? "28px" : "4px" }} />
+              <span className={`relative block h-7 w-12 rounded-full transition-colors ${annual ? "bg-[#15171C]" : "bg-[#D9D4CB]"}`}>
+                <span
+                  className={`absolute left-0 top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${annual ? "translate-x-6" : "translate-x-1"}`}
+                />
+              </span>
             </button>
-            <span className="text-sm font-medium" style={{ color: annual ? "white" : "rgba(255,255,255,0.4)" }}>
-              Annual <span className="text-xs font-bold px-2 py-0.5 rounded-full ml-1" style={{ background: "rgba(34,197,94,0.2)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.3)" }} data-testid="badge-save-20">Save 20%</span>
+            <span className={`text-[15px] font-medium ${annual ? "text-[#15171C]" : "text-[#5F6672]"}`}>Annual</span>
+            <span
+              data-testid="badge-save-20"
+              className="rounded-full border border-[#E6E2DA] bg-white px-3 py-1 text-[13px] font-semibold text-[#B32A30]"
+            >
+              Save about 20%
             </span>
           </div>
-        </div>
-      </section>
+        </Container>
+      </PageHero>
 
-      <section className="py-8 md:py-12" style={{ background: "#0a0f1c" }}>
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-5 -mt-20">
-            {plans.map((plan) => (
-              <div
-                key={plan.name}
-                className="rounded-2xl p-7 flex flex-col relative"
-                style={{
-                  opacity: 1,
-                  background: "rgba(255,255,255,0.03)",
-                  border: plan.featured ? "2px solid #cf3339" : "1px solid rgba(255,255,255,0.06)",
-                  boxShadow: plan.featured ? "0 8px 40px rgba(207,51,57,0.15)" : "var(--lux-card-shadow)",
-                }}
-                data-testid={`tier-card-${plan.name.toLowerCase()}`}
-              >
-                {plan.featured && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full text-xs font-bold text-white" style={{ background: "linear-gradient(135deg, #cf3339, #e74c3c)" }}>
-                    Most Popular
-                  </div>
-                )}
-                <h3 className="text-lg font-bold text-white">{plan.name}</h3>
-                <p className="text-base mt-2 mb-4 leading-relaxed" style={{ color: "rgba(255,255,255,0.4)" }}>{plan.description}</p>
-                <div className="flex items-baseline gap-1 mb-1">
-                  <span className="text-4xl font-bold text-white">${annual ? plan.annual : plan.monthly}</span>
-                  <span className="text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>/mo</span>
-                </div>
-                {annual && (
-                  <p className="text-sm mb-3" style={{ color: "#22c55e" }}>
-                    ${plan.monthly - plan.annual}/mo saved &middot; Billed ${plan.annual * 12}/yr
-                  </p>
-                )}
-                {!annual && <div className="mb-3" />}
-                <div className="space-y-1.5 mb-6">
-                  <p className="text-sm font-semibold" style={{ color: "#cf3339" }}>{plan.users} users &middot; {plan.clients} clients &middot; {plan.projects} projects</p>
-                  <p className="text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>Full GL &middot; Full reporting suite</p>
-                  <p className="text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>Your logo on invoices and portal</p>
-                  {plan.name === "Business" && (
-                    <>
-                      <p className="text-sm font-semibold pt-1" style={{ color: "#f87171" }} data-testid="text-business-marketing-included">Marketing Hub included</p>
-                      <p className="text-sm" style={{ color: "rgba(255,255,255,0.55)" }}>CRM, campaigns, sequences &middot; Prospect / Client Separation</p>
-                    </>
+      <section className="pb-16 md:pb-20">
+        <Container>
+          <div className="grid gap-5 lg:grid-cols-3">
+            {PLANS.map((plan) => {
+              const price = PLAN_PRICING[plan.id];
+              const featured = plan.id === "PROFESSIONAL";
+              const perMonth = annual ? (price.annual / 12).toFixed(2) : String(price.monthly);
+              return (
+                <div
+                  key={plan.id}
+                  data-testid={`tier-card-${plan.slug}`}
+                  className={`relative flex flex-col rounded-2xl bg-white p-7 md:p-8 ${featured ? "border-2 border-[#15171C]" : "border border-[#E6E2DA]"}`}
+                >
+                  {featured && (
+                    <p className="absolute -top-3 left-7 rounded-full bg-[#15171C] px-3 py-1 text-xs font-semibold text-white">
+                      Your trial runs on this plan
+                    </p>
                   )}
-                </div>
-                <Link href={`/signup?plan=${plan.name.toLowerCase()}${annual ? "&annual=true" : ""}`}>
-                  <span
-                    className="block text-center px-4 py-3 text-sm font-semibold rounded-lg cursor-pointer transition-opacity hover:opacity-90 mt-auto"
-                    style={plan.featured
-                      ? { background: "linear-gradient(135deg, #cf3339, #e74c3c)", color: "white" }
-                      : { border: "1px solid rgba(255,255,255,0.15)", color: "#ffffff" }
-                    }
-                    data-testid={`button-signup-${plan.name.toLowerCase()}`}
+                  <h2 className="font-display text-2xl font-semibold text-[#15171C]">{plan.name}</h2>
+                  <p className="mt-2 min-h-[3rem] text-[15px] leading-relaxed text-[#5F6672]">{plan.fit}</p>
+
+                  <div className="mt-6 flex items-baseline gap-1.5">
+                    <span className="font-display text-5xl font-semibold tracking-tight text-[#15171C]">${perMonth}</span>
+                    <span className="text-[15px] text-[#5F6672]">/mo</span>
+                  </div>
+                  <p className="mt-2 text-sm text-[#5F6672]">
+                    {annual
+                      ? `Billed ${usd(price.annual)}/yr · you save ${usd(price.monthly * 12 - price.annual)}`
+                      : "Billed monthly · unlimited users"}
+                  </p>
+
+                  <Link
+                    href={`/signup?plan=${plan.slug}${annual ? "&annual=true" : ""}`}
+                    className={`mt-7 inline-flex h-12 items-center justify-center rounded-lg text-[15px] font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#CF3339] ${featured ? "bg-[#CF3339] text-white hover:bg-[#B32A30]" : "border border-[#D9D4CB] bg-white text-[#15171C] hover:border-[#15171C]"}`}
                   >
-                    {plan.cta}
-                  </span>
-                </Link>
-                <p className="text-xs text-center mt-2" style={{ color: "rgba(255,255,255,0.4)" }}>14-day free trial &middot; Cancel anytime</p>
-              </div>
-            ))}
+                    <span data-testid={`button-signup-${plan.slug}`}>Start free trial</span>
+                  </Link>
 
-            {/* Enterprise */}
-            <div className="rounded-2xl p-7 flex flex-col" style={{ opacity: 1, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }} data-testid="tier-card-enterprise">
-              <div className="flex items-center gap-2 mb-1">
-                <Building2 className="w-5 h-5" style={{ color: "#cf3339" }} />
-                <h3 className="text-lg font-bold text-white">Enterprise</h3>
-              </div>
-              <p className="text-base mt-2 mb-4 leading-relaxed" style={{ color: "rgba(255,255,255,0.4)" }}>For large firms needing SSO, volume pricing, and a dedicated account manager</p>
-              <div className="flex items-baseline gap-1 mb-1">
-                <span className="text-2xl font-bold text-white">Custom</span>
-              </div>
-              <p className="text-sm mb-3" style={{ color: "rgba(255,255,255,0.4)" }}>Tailored to your firm</p>
-              <div className="space-y-1.5 mb-6">
-                <div className="flex items-center gap-1.5"><Shield className="w-3 h-3" style={{ color: "#22c55e" }} /><span className="text-sm" style={{ color: "rgba(255,255,255,0.55)" }}>SSO / SAML authentication</span></div>
+                  <div className="mt-8 border-t border-[#E6E2DA] pt-6">
+                    {plan.lead && <p className="text-sm font-semibold text-[#15171C]">{plan.lead}</p>}
+                    <ul className={`space-y-3 ${plan.lead ? "mt-4" : ""}`}>
+                      {plan.points.map((pt, i) => (
+                        <li
+                          key={pt}
+                          className="flex gap-3 text-[15px] leading-snug text-[#3D4350]"
+                          data-testid={plan.id === "BUSINESS" && i === 0 ? "text-business-marketing-included" : undefined}
+                        >
+                          <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#CF3339]" aria-hidden="true" />
+                          {pt}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
 
-                <div className="flex items-center gap-1.5"><CheckCircle className="w-3 h-3" style={{ color: "#22c55e" }} /><span className="text-sm" style={{ color: "rgba(255,255,255,0.55)" }}>Dedicated account manager</span></div>
-                <div className="flex items-center gap-1.5"><CheckCircle className="w-3 h-3" style={{ color: "#22c55e" }} /><span className="text-sm" style={{ color: "rgba(255,255,255,0.55)" }}>Volume discounts</span></div>
-                <div className="flex items-center gap-1.5"><CheckCircle className="w-3 h-3" style={{ color: "#22c55e" }} /><span className="text-sm" style={{ color: "rgba(255,255,255,0.55)" }}>Full white-label branding</span></div>
-              </div>
-              <Link href="/contact">
-                <span className="block text-center px-4 py-3 text-sm font-semibold rounded-lg cursor-pointer mt-auto" style={{ border: "1px solid rgba(255,255,255,0.15)", color: "#ffffff" }}>
-                  Contact Sales
-                </span>
-              </Link>
+          <div
+            data-testid="tier-card-enterprise"
+            className="mt-5 flex flex-col gap-5 rounded-2xl border border-[#E6E2DA] bg-[#F4F1EB] p-7 md:flex-row md:items-center md:justify-between md:p-8"
+          >
+            <div className="max-w-2xl">
+              <h2 className="font-display text-2xl font-semibold text-[#15171C]">Enterprise</h2>
+              <p className="mt-2 text-[15px] leading-relaxed text-[#3D4350]">
+                For larger firms that need custom terms, a security review or help planning the move. Tell us what you need
+                and we’ll put together a quote.
+              </p>
             </div>
+            <ButtonLink href="/contact" variant="secondary" size="lg" className="shrink-0">Contact sales</ButtonLink>
           </div>
 
-          {/* Cost comparison callout */}
-          <div className="mt-10 rounded-xl p-6 text-center" style={{ background: "rgba(207,51,57,0.06)", border: "1px solid rgba(207,51,57,0.15)" }}>
-            <p className="text-sm font-semibold" style={{ color: "#cf3339" }}>
-              A 10-person firm pays $142/mo on FreshBooks ($43 + 9 &times; $11/user) or $110/mo on Harvest ($11/seat &times; 10).
-            </p>
-            <p className="text-sm font-bold mt-1" style={{ color: "#ffffff" }}>
-              CherryWorks Pro Starter: ${annual ? "31" : "39"}/mo. Same team. More features. Zero per-user fees.
-            </p>
-          </div>
-        </div>
+          <p className="mt-8 text-center text-sm text-[#5F6672]">
+            14-day trial on Professional · You won’t be charged until day 15 · Cancel anytime
+          </p>
+        </Container>
       </section>
 
+      <Section tone="white" testId="section-pricing-flat">
+        <Container>
+          <div className="grid gap-10 lg:grid-cols-12 lg:gap-16">
+            <div className="lg:col-span-5">
+              <Eyebrow>Why flat pricing</Eyebrow>
+              <Heading className="mt-4">Your bill doesn’t grow with your bench.</Heading>
+            </div>
+            <div className="space-y-5 text-[17px] leading-relaxed text-[#3D4350] lg:col-span-7">
+              <p>
+                Consulting teams change shape constantly. A contractor joins for one project, a partner firm lends two people
+                for a quarter, someone part-time logs a few hours a month. Per-seat pricing charges you for every one of them.
+              </p>
+              <p>
+                On CherryWorks Pro the price is set by the plan, not the headcount. A firm on Professional pays {usd(trial)} a
+                month whether it has 4 people or 40, and adding five contractors for a project doesn’t change the bill.
+              </p>
+              <TextLink href="/compare" testId="link-pricing-compare">Compare CherryWorks Pro with other tools</TextLink>
+            </div>
+          </div>
+        </Container>
+      </Section>
 
-      <section className="py-8 md:py-12" style={{ background: "rgba(255,255,255,0.03)" }}>
-        <div ref={matrixRef} className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 fade-in-section">
-          <h2 className="text-2xl font-bold text-center mb-10" style={{ color: "#ffffff" }}>Compare every feature</h2>
-          <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.06)" }}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr style={{ background: "var(--color-brand-900)" }}>
-                    <th className="text-left px-5 py-3 text-white font-semibold w-[36%]">Feature</th>
-                    <th className="text-center px-3 py-3 text-white font-semibold">Starter</th>
-                    <th className="text-center px-3 py-3 font-semibold" style={{ color: "#f87171" }}>Professional</th>
-                    <th className="text-center px-3 py-3 text-white font-semibold">Business</th>
-                    <th className="text-center px-3 py-3 text-white font-semibold">Enterprise</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {featureMatrix.map((row, i) => (
-                    <tr key={i} style={{ background: (row as any).highlight ? "rgba(207,51,57,0.08)" : i % 2 === 0 ? "rgba(255,255,255,0.03)" : "#0a0f1c", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-                      <td className="px-5 py-2.5 font-medium" style={{ color: (row as any).highlight ? "#f87171" : "#ffffff", fontWeight: (row as any).highlight ? 700 : 500 }}>{row.feature}</td>
-                      <td className="px-3 py-2.5 text-center"><FeatureCell value={row.starter} /></td>
-                      <td className="px-3 py-2.5 text-center"><FeatureCell value={row.pro} /></td>
-                      <td className="px-3 py-2.5 text-center"><FeatureCell value={row.business} /></td>
-                      <td className="px-3 py-2.5 text-center"><FeatureCell value={row.enterprise} /></td>
-                    </tr>
+      <Section testId="section-pricing-matrix">
+        <Container>
+          <div className="max-w-2xl">
+            <Eyebrow>Compare plans</Eyebrow>
+            <Heading className="mt-4">What each plan includes</Heading>
+          </div>
+
+          <div className="mt-12 overflow-hidden rounded-2xl border border-[#E6E2DA] bg-white">
+            <table className="w-full table-fixed border-collapse text-left">
+              <caption className="sr-only">Features included in each plan</caption>
+              <colgroup>
+                <col />
+                <col className="w-[19%] sm:w-[18%]" />
+                <col className="w-[19%] sm:w-[18%]" />
+                <col className="w-[19%] sm:w-[18%]" />
+              </colgroup>
+              <thead>
+                <tr className="border-b border-[#E6E2DA]">
+                  <th scope="col" className="px-4 py-4 text-sm font-semibold text-[#5F6672] sm:px-6">
+                    <span className="sr-only">Feature</span>
+                  </th>
+                  {PLANS.map((p) => (
+                    <th key={p.id} scope="col" className="px-1 py-4 text-center text-[13px] font-semibold text-[#15171C] sm:text-[15px]">
+                      <span className="sm:hidden">{p.id === "PROFESSIONAL" ? "Pro" : p.name}</span>
+                      <span className="hidden sm:inline">{p.name}</span>
+                    </th>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </tr>
+              </thead>
+              <tbody>
+                {MATRIX.map((g) => (
+                  <Fragment key={g.group}>
+                    <tr className="bg-[#FBFAF7]">
+                      <th colSpan={4} scope="colgroup" className="border-y border-[#E6E2DA] px-4 py-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#B32A30] sm:px-6">
+                        {g.group}
+                      </th>
+                    </tr>
+                    {g.rows.map((r) => (
+                      <tr key={r.label} className="border-t border-[#EFEBE4] first:border-t-0">
+                        <th scope="row" className="py-3.5 pl-3.5 pr-2 text-[14px] font-normal leading-snug text-[#3D4350] sm:px-6 sm:text-[15px]">
+                          {r.label}
+                        </th>
+                        {r.cells.map((c, i) => (
+                          <td key={i} className="px-1 py-3.5 text-center">
+                            <CellMark value={c} />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
-      </section>
+        </Container>
+      </Section>
 
-      {/* Setup speed */}
-      <section className="py-8 md:py-12" style={{ background: "#0a0f1c" }}>
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="rounded-2xl p-8 text-center" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
-            <h3 className="text-xl font-bold mb-3" style={{ color: "#ffffff" }}>Up and running in minutes, not months</h3>
-            <p className="text-sm max-w-xl mx-auto mb-6" style={{ color: "rgba(255,255,255,0.55)" }}>
-              Starting from scratch? The guided wizard walks you through everything. Switching platforms? Import wizards bring your data with you. Either way, you're live on day one.
-            </p>
-            <div className="flex flex-wrap justify-center gap-3">
-              {["60-second signup", "Guided setup wizard", "Start fresh or import data", "Live on day one"].map((t, i) => (
-                <span key={i} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium" style={{ background: "rgba(34,197,94,0.08)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.15)" }}>{t}</span>
+      <Section tone="white" testId="section-faq">
+        <Container>
+          <div className="grid gap-10 lg:grid-cols-12 lg:gap-16">
+            <div className="lg:col-span-4">
+              <Eyebrow>Questions</Eyebrow>
+              <Heading testId="faq-heading" className="mt-4">Pricing questions</Heading>
+              <p className="mt-5 text-[17px] leading-relaxed text-[#3D4350]">
+                Something not covered here? <Link href="/contact" className="font-semibold text-[#15171C] underline decoration-[#CF3339]/40 underline-offset-4 hover:decoration-[#CF3339]">Ask us</Link>.
+              </p>
+            </div>
+            <div className="divide-y divide-[#E6E2DA] border-y border-[#E6E2DA] lg:col-span-8">
+              {FAQS.map((f, i) => (
+                <details key={f.q} className="group py-5" data-testid={`faq-item-${i}`}>
+                  <summary
+                    data-testid={`button-faq-${i}`}
+                    className="flex cursor-pointer list-none items-start justify-between gap-6 text-[17px] font-semibold text-[#15171C] [&::-webkit-details-marker]:hidden"
+                  >
+                    {f.q}
+                    <Plus className="mt-1 h-5 w-5 shrink-0 text-[#5F6672] transition-transform group-open:rotate-45" aria-hidden="true" />
+                  </summary>
+                  <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-[#3D4350]">{f.a}</p>
+                </details>
               ))}
             </div>
           </div>
-        </div>
-      </section>
+        </Container>
+      </Section>
 
-
-      <section className="py-8 md:py-12" style={{ background: "#0a0f1c" }}>
-        <div ref={faqRef} className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 fade-in-section">
-          <h2 className="text-2xl font-bold text-center mb-10" style={{ color: "#ffffff" }} data-testid="faq-heading">Frequently asked questions</h2>
-          <div className="space-y-2">
-            {faqs.map((faq, i) => (
-              <div key={i} className="rounded-xl overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.06)" }} data-testid={`faq-item-${i}`}>
-                <button
-                  className="w-full flex items-center justify-between px-5 py-4 text-left cursor-pointer"
-                  style={{ background: "rgba(255,255,255,0.03)" }}
-                  onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                  data-testid={`button-faq-${i}`}
-                >
-                  <span className="text-sm font-semibold" style={{ color: "#ffffff" }}>{faq.q}</span>
-                  <ChevronDown className="w-4 h-4 flex-shrink-0 ml-3 transition-transform duration-200" style={{ color: "rgba(255,255,255,0.4)", transform: openFaq === i ? "rotate(180deg)" : "none" }} />
-                </button>
-                {openFaq === i && (
-                  <div className="px-5 py-4" style={{ background: "#0a0f1c", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-                    <p className="text-base leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>{faq.a}</p>
-                  </div>
-                )}
-              </div>
-            ))}
+      <Section tone="night" testId="section-cta">
+        <Container>
+          <div className="max-w-3xl">
+            <h2 className="font-display text-3xl font-semibold leading-[1.12] tracking-[-0.015em] text-white text-balance md:text-5xl">
+              Try it on your own work for 14 days.
+            </h2>
+            <p className="mt-5 text-lg text-white/70">
+              The trial runs on Professional. You won’t be charged until day 15 · Cancel anytime.
+            </p>
+            <div className="mt-9 flex flex-wrap gap-3">
+              <ButtonLink href="/signup" size="lg" arrow testId="cta-start-trial">Start free trial</ButtonLink>
+              <ButtonLink href="/demo" size="lg" variant="onNight" testId="cta-book-demo">Book a demo</ButtonLink>
+            </div>
           </div>
-        </div>
-      </section>
-
-      <section className="py-10 md:py-14" style={{ background: "linear-gradient(135deg, #1a0505 0%, #0a0f1c 50%, #1a0a0a 100%)" }}>
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-3xl font-bold text-white tracking-tight">Start your free trial today</h2>
-          <p className="mt-3 text-lg" style={{ color: "rgba(255,255,255,0.6)" }}>14 days. Full access. Guided setup wizard gets you live in minutes.</p>
-          <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="/signup"><span className="inline-flex items-center gap-2 px-7 py-4 text-base font-bold text-white rounded-xl cursor-pointer transition-all hover:scale-[1.03]" style={{ background: "linear-gradient(135deg, #cf3339, #e74c3c)", boxShadow: "0 4px 30px rgba(207,51,57,0.4)" }}>Start Free Trial <ArrowRight className="w-4 h-4" /></span></Link>
-            <Link href="/contact"><span className="inline-flex items-center gap-2 px-7 py-4 text-base font-semibold rounded-xl cursor-pointer" style={{ color: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.15)" }}>Talk to Sales</span></Link>
-          </div>
-        </div>
-      </section>
-
-      <MarketingFooter />
-    </div>
+        </Container>
+      </Section>
+    </MarketingShell>
   );
 }

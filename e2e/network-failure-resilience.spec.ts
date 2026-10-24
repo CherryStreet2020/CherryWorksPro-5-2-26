@@ -2,7 +2,8 @@ import { test as anonTest, expect, type Route } from "@playwright/test";
 
 anonTest.use({ navigationTimeout: 30_000 });
 
-function makeOneShotAborter() {
+// `retry` answers the second attempt; by default it goes through to the server.
+function makeOneShotAborter(retry: (route: Route) => Promise<void> = (route) => route.continue()) {
   let aborted = false;
   let attempts = 0;
   return {
@@ -14,7 +15,7 @@ function makeOneShotAborter() {
         aborted = true;
         await route.abort("failed");
       } else {
-        await route.continue();
+        await retry(route);
       }
     },
   };
@@ -24,7 +25,10 @@ anonTest.describe("Network failure — public contact form", () => {
   anonTest("aborted POST → inline error visible; retry → success card visible", async ({ page }) => {
     const errs: string[] = [];
     page.on("pageerror", (e) => errs.push(e.message));
-    const ab = makeOneShotAborter();
+    // The retry is answered here: a real submit would record a prospect in the
+    // operator workspace's Marketing Hub (tests/integration/public-contact-form.test.ts).
+    const ab = makeOneShotAborter((route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) }));
     await page.route("**/api/public/contact", ab.handler);
 
     await page.goto("/contact");

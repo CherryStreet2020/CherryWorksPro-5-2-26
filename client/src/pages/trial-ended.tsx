@@ -17,8 +17,8 @@ import { VerifyEmailBanner } from "@/components/account-banners";
 
 const PLANS: { id: PlanId; name: string; blurb: string; monthly: number; annual: number; popular?: boolean }[] = [
   { id: "STARTER", name: "Starter", blurb: "5 clients · 3 projects · Full GL", ...PLAN_PRICING.STARTER },
-  { id: "PROFESSIONAL", name: "Professional", blurb: "Unlimited · Approvals · Payouts · API", ...PLAN_PRICING.PROFESSIONAL, popular: true },
-  { id: "BUSINESS", name: "Business", blurb: "Period closes · Dunning · Multi-entity", ...PLAN_PRICING.BUSINESS },
+  { id: "PROFESSIONAL", name: "Professional", blurb: "Unlimited clients · Support · Payouts", ...PLAN_PRICING.PROFESSIONAL, popular: true },
+  { id: "BUSINESS", name: "Business", blurb: "Marketing Hub · Period closes", ...PLAN_PRICING.BUSINESS },
 ];
 
 /** Back from Stripe with a session_id: the webhook usually lands within seconds; poll before offering anything. */
