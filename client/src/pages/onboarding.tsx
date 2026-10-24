@@ -399,14 +399,14 @@ export default function OnboardingPage() {
               <div className="space-y-4">
                 <div className="space-y-3">
                   <div className="rounded-lg px-4 py-3" style={{ background: "var(--lux-surface-alt)" }}>
-                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: "var(--lux-text-muted)" }}>Profile</p>
+                    <p className="text-xs font-medium mb-1.5" style={{ color: "var(--lux-text-muted)" }}>Profile</p>
                     <p className="text-sm font-medium" style={{ color: "var(--lux-text)" }}>{fullName}</p>
                     {phone && <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>{phone}</p>}
                   </div>
 
                   {!isW2 && (
                     <div className="rounded-lg px-4 py-3" style={{ background: "var(--lux-surface-alt)" }}>
-                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: "var(--lux-text-muted)" }}>Business Entity</p>
+                      <p className="text-xs font-medium mb-1.5" style={{ color: "var(--lux-text-muted)" }}>Business Entity</p>
                       <p className="text-sm font-medium" style={{ color: "var(--lux-text)" }}>{payToName}</p>
                       <p className="text-xs" style={{ color: "var(--lux-text-muted)" }}>{ein ? <>EIN: {ein} &bull; </> : null}W-9: &#10003; &bull; Agreement: &#10003;</p>
                     </div>
@@ -414,7 +414,7 @@ export default function OnboardingPage() {
 
                   {!isW2 && (
                     <div className="rounded-lg px-4 py-3" style={{ background: "var(--lux-surface-alt)" }}>
-                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: "var(--lux-text-muted)" }}>Payment</p>
+                      <p className="text-xs font-medium mb-1.5" style={{ color: "var(--lux-text-muted)" }}>Payment</p>
                       {paymentMethod === "ACH" ? (
                         <>
                           <p className="text-sm font-medium" style={{ color: "var(--lux-text)" }}>ACH Direct Deposit</p>
@@ -432,7 +432,7 @@ export default function OnboardingPage() {
                   )}
 
                   <div className="rounded-lg px-4 py-3" style={{ background: "var(--lux-surface-alt)" }}>
-                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: "var(--lux-text-muted)" }}>Mailing Address</p>
+                    <p className="text-xs font-medium mb-1.5" style={{ color: "var(--lux-text-muted)" }}>Mailing Address</p>
                     <p className="text-sm" style={{ color: "var(--lux-text)" }}>
                       {addressLine1}{addressLine2 ? `, ${addressLine2}` : ""}
                     </p>
@@ -443,7 +443,7 @@ export default function OnboardingPage() {
 
                   {myProjects && myProjects.length > 0 ? (
                     <div className="rounded-lg px-4 py-3" style={{ background: "var(--lux-surface-alt)" }}>
-                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: "var(--lux-text-muted)" }}>Assigned Projects</p>
+                      <p className="text-xs font-medium mb-1.5" style={{ color: "var(--lux-text-muted)" }}>Assigned Projects</p>
                       {myProjects.map(p => (
                         <div key={p.id} className="flex items-center gap-2 py-1" data-testid={`project-card-${p.id}`}>
                           <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: getProjectColor(p.id) }} />

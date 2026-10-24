@@ -93,9 +93,6 @@ export default function SupportCasesPage() {
       <PageBreadcrumbs group="Support" page="Support Cases" />
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(var(--lux-accent-rgb),0.15) 0%, rgba(var(--lux-accent-rgb),0.05) 100%)" }}>
-            <LifeBuoy className="w-6 h-6" style={{ color: "var(--lux-accent)" }} />
-          </div>
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--lux-text)" }} data-testid="text-support-cases-title">Support Cases</h1>
@@ -111,7 +108,7 @@ export default function SupportCasesPage() {
             {([["open", "Open"], ["mine", "Mine"], ["unassigned", "Unassigned"]] as const).map(([k, label]) => (
               <div key={k} className="text-center">
                 <p className="text-2xl font-bold tabular-nums" style={{ color: "var(--lux-text)" }} data-testid={`text-count-${k}`}>{summary?.[k] ?? "–"}</p>
-                <p className="text-[10px] uppercase tracking-wider font-bold" style={{ color: "var(--lux-text-muted)" }}>{label}</p>
+                <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>{label}</p>
               </div>
             ))}
           </div>
@@ -169,7 +166,7 @@ export default function SupportCasesPage() {
               <thead>
                 <tr style={{ background: "var(--lux-table-header-bg)" }}>
                   {["Key", "Subject", "Type", "Priority", "Status", "Assignee", "SLA", "Hours", "Updated"].map(h => (
-                    <th key={h} className={`px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider ${h === "Hours" ? "text-right" : "text-left"}`} style={{ color: "var(--lux-text-muted)" }}>{h}</th>
+                    <th key={h} className={`px-4 py-2.5 text-xs font-medium ${h === "Hours" ? "text-right" : "text-left"}`} style={{ color: "var(--lux-text-muted)" }}>{h}</th>
                   ))}
                 </tr>
               </thead>

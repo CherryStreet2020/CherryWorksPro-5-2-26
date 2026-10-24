@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/page-header";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import {
-  User, Briefcase, Clock, Building2, MapPin, CreditCard, ShieldCheck, CheckCircle2, XCircle, Zap, ExternalLink, Lock, Camera, Save, LogOut, AlertTriangle, Trash2, Monitor, Smartphone, Tablet, Shield, Bell, ArrowLeft,
+  Briefcase, Clock, Building2, MapPin, CreditCard, ShieldCheck, CheckCircle2, XCircle, Zap, ExternalLink, Lock, Camera, Save, LogOut, AlertTriangle, Trash2, Monitor, Smartphone, Tablet, Shield, Bell, ArrowLeft,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -196,7 +196,7 @@ export default function ProfilePage() {
   return (
     <div className="px-6 lg:px-8 xl:px-10 py-6 max-w-5xl mx-auto">
       <PageBreadcrumbs page="Profile" className="mb-4" />
-      <PageHeader title="Profile" subtitle="Your account information and activity" icon={User} />
+      <PageHeader title="Profile" subtitle="Your account information and activity" />
 
       <div className="grid gap-6">
 

@@ -147,11 +147,11 @@ export default function ClosePeriodsPage() {
             <table className="w-full border-collapse">
               <thead>
                 <tr style={{ background: "var(--lux-bg)" }}>
-                  <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)", borderBottom: "1px solid var(--lux-border)" }}>Period</th>
-                  <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)", borderBottom: "1px solid var(--lux-border)" }}>Status</th>
-                  <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)", borderBottom: "1px solid var(--lux-border)" }}>Closed At</th>
-                  <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)", borderBottom: "1px solid var(--lux-border)" }}>Notes</th>
-                  <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)", borderBottom: "1px solid var(--lux-border)" }}>Actions</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium" style={{ color: "var(--lux-text-muted)", borderBottom: "1px solid var(--lux-border)" }}>Period</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium" style={{ color: "var(--lux-text-muted)", borderBottom: "1px solid var(--lux-border)" }}>Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium" style={{ color: "var(--lux-text-muted)", borderBottom: "1px solid var(--lux-border)" }}>Closed At</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium" style={{ color: "var(--lux-text-muted)", borderBottom: "1px solid var(--lux-border)" }}>Notes</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium" style={{ color: "var(--lux-text-muted)", borderBottom: "1px solid var(--lux-border)" }}>Actions</th>
                 </tr>
               </thead>
               <tbody>

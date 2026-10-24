@@ -134,7 +134,7 @@ export function PremiumDialog({
               }}
             >
               <div
-                className="mb-3 text-xs font-semibold uppercase tracking-wide"
+                className="mb-3 text-xs font-medium"
                 style={{ color: "var(--lux-text-muted)" }}
               >
                 Live preview

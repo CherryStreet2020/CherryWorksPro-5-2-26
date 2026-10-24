@@ -951,23 +951,17 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
   const allSelected = filteredInvoices.length > 0 && selectedIds.size === filteredInvoices.length;
 
   const invoiceStatCards = [
-    { key: "total-invoiced", label: "Total Invoiced", value: formatMoney(kpiStats.totalInvoiced, "USD"), sub: `${invoices?.length || 0} invoices`, icon: DollarSign, color: "var(--lux-accent)", iconBg: "rgba(var(--lux-accent-rgb),0.08)", gradient: "linear-gradient(135deg, rgba(var(--lux-accent-rgb),0.08) 0%, rgba(var(--lux-accent-rgb),0.02) 100%)" },
-    { key: "outstanding", label: "Outstanding AR", value: formatMoney(kpiStats.outstandingAR, "USD"), sub: "accounts receivable", icon: FileText, color: "#f59e0b", gradient: "linear-gradient(135deg, rgba(245,158,11,0.08) 0%, rgba(245,158,11,0.02) 100%)" },
-    { key: "overdue", label: "Overdue Amount", value: formatMoney(kpiStats.overdueAmount, "USD"), sub: kpiStats.overdueAmount > 0 ? "needs attention" : "all clear", icon: AlertTriangle, color: kpiStats.overdueAmount > 0 ? "#ef4444" : "#6b7280", gradient: "linear-gradient(135deg, rgba(239,68,68,0.08) 0%, rgba(239,68,68,0.02) 100%)", pulse: kpiStats.overdueAmount > 0 },
-    { key: "paid-month", label: "Paid This Month", value: formatMoney(kpiStats.paidThisMonth, "USD"), sub: new Date().toLocaleString("default", { month: "long", year: "numeric" }), icon: CalendarIcon, color: "#22c55e", gradient: "linear-gradient(135deg, rgba(34,197,94,0.08) 0%, rgba(34,197,94,0.02) 100%)" },
-    { key: "collection", label: "Collection Rate", value: `${kpiStats.collectionRate}%`, sub: "All-time · paid vs sent", icon: TrendingUp, color: kpiStats.collectionRate >= 80 ? "#22c55e" : kpiStats.collectionRate >= 50 ? "#f59e0b" : "#ef4444", gradient: "linear-gradient(135deg, rgba(34,197,94,0.08) 0%, rgba(34,197,94,0.02) 100%)" },
+    { key: "total-invoiced", label: "Total Invoiced", value: formatMoney(kpiStats.totalInvoiced, "USD"), sub: `${invoices?.length || 0} invoices`, icon: DollarSign, color: "var(--lux-accent)" },
+    { key: "outstanding", label: "Outstanding AR", value: formatMoney(kpiStats.outstandingAR, "USD"), sub: "accounts receivable", icon: FileText, color: "#f59e0b" },
+    { key: "overdue", label: "Overdue Amount", value: formatMoney(kpiStats.overdueAmount, "USD"), sub: kpiStats.overdueAmount > 0 ? "needs attention" : "all clear", icon: AlertTriangle, color: kpiStats.overdueAmount > 0 ? "#ef4444" : "#6b7280" },
+    { key: "paid-month", label: "Paid This Month", value: formatMoney(kpiStats.paidThisMonth, "USD"), sub: new Date().toLocaleString("default", { month: "long", year: "numeric" }), icon: CalendarIcon, color: "#22c55e" },
+    { key: "collection", label: "Collection Rate", value: `${kpiStats.collectionRate}%`, sub: "All-time · paid vs sent", icon: TrendingUp, color: kpiStats.collectionRate >= 80 ? "#22c55e" : kpiStats.collectionRate >= 50 ? "#f59e0b" : "#ef4444" },
   ];
 
   return (
     <div className="px-6 lg:px-8 xl:px-10 py-6 space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="relative">
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(var(--lux-accent-rgb),0.15) 0%, rgba(var(--lux-accent-rgb),0.05) 100%)" }}>
-              <FileText className="w-6 h-6" style={{ color: "var(--lux-accent)" }} />
-            </div>
-            <div className="absolute -inset-1 rounded-xl opacity-40 blur-md -z-10" style={{ background: "radial-gradient(circle, rgba(var(--lux-accent-rgb),0.3) 0%, transparent 70%)" }} />
-          </div>
           <div>
             <div className="flex items-center gap-3">
               <h1
@@ -1001,7 +995,7 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
               Create Blank Invoice
             </Button>
             <Button
-              className="text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.03]"
+              className="text-white transition-all duration-300"
               style={{ background: "var(--gradient-brand)" }}
               onClick={() => { setDueDate(format(new Date(Date.now() + 30 * 86400000), "yyyy-MM-dd")); setGenFormTouched(false); setClientId(""); setGenCurrency(""); setGenExchangeRate("1"); setGenOpen(true); }}
               data-testid="button-generate-invoice"
@@ -1052,7 +1046,7 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <DollarSign className="w-3.5 h-3.5" style={{ color: "var(--lux-accent)" }} />
-                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Client</span>
+                  <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Client</span>
                 </div>
                 <Popover open={clientComboOpen} onOpenChange={setClientComboOpen}>
                   <PopoverTrigger asChild>
@@ -1088,7 +1082,7 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <CalendarIcon className="w-3.5 h-3.5" style={{ color: "var(--lux-accent)" }} />
-                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Due Date</span>
+                  <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Due Date</span>
                 </div>
                 <Popover open={dueDatePopoverOpen} onOpenChange={setDueDatePopoverOpen}>
                   <PopoverTrigger asChild>
@@ -1109,7 +1103,7 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
                 <div>
                   <div className="flex items-center gap-2 mb-3">
                     <DollarSign className="w-3.5 h-3.5" style={{ color: "var(--lux-accent)" }} />
-                    <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Currency</span>
+                    <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Currency</span>
                   </div>
                   <Select value={genCurrency || orgBaseCurrency} onValueChange={(v) => { setGenCurrency(v); if (v === orgBaseCurrency) setGenExchangeRate("1"); }}>
                     <SelectTrigger style={{ background: "var(--lux-bg)", borderColor: "var(--lux-border)", color: "var(--lux-text)" }} data-testid="select-gen-currency">
@@ -1125,7 +1119,7 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
                 <div>
                   <div className="flex items-center gap-2 mb-3">
                     <ArrowUpDown className="w-3.5 h-3.5" style={{ color: "var(--lux-accent)" }} />
-                    <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Exchange Rate</span>
+                    <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Exchange Rate</span>
                   </div>
                   <Input
                     type="number"
@@ -1157,7 +1151,7 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
               </div>
               <Button
                 type="submit"
-                className="w-full text-white transition-all duration-200 hover:scale-[1.03] hover:shadow-lg"
+                className="w-full text-white transition-all duration-200"
                 disabled={generateMutation.isPending}
                 data-testid="button-submit-invoice"
                 style={{ background: "var(--gradient-brand)" }}
@@ -1171,29 +1165,17 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
 
       {/* KPI STAT CARDS */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4" data-testid="kpi-stat-cards">
-        {invoiceStatCards.map(sc => {
-          const Icon = sc.icon;
-          return (
-            <div
-              key={sc.key}
-              className="group relative rounded-xl p-4 transition-all duration-300 hover:-translate-y-0.5 cursor-default overflow-hidden"
-              style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }}
-              data-testid={`stat-card-${sc.key}`}
-            >
-              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl" style={{ background: sc.gradient }} />
-              <div className="relative z-10">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>{sc.label}</p>
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-transform duration-300 group-hover:scale-110${(sc as any).pulse ? " animate-pulse" : ""}`} style={{ background: (sc as any).iconBg || `${sc.color}15` }}>
-                    <Icon className="w-4 h-4" style={{ color: sc.color }} />
-                  </div>
-                </div>
-                <p className="text-xl font-bold tracking-tight" style={{ color: "var(--lux-text)" }}>{sc.value}</p>
-                <p className="text-[11px] mt-1" style={{ color: "var(--lux-text-muted)" }}>{sc.sub}</p>
-              </div>
-            </div>
-          );
-        })}
+        {invoiceStatCards.map(sc => (
+          <StatCard
+            key={sc.key}
+            icon={sc.icon}
+            label={sc.label}
+            value={sc.value}
+            subValue={sc.sub}
+            color={sc.color}
+            testId={`stat-card-${sc.key}`}
+          />
+        ))}
       </div>
 
       {/* STATUS TABS */}
@@ -1207,7 +1189,7 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
             <button
               key={tab}
               onClick={() => { setStatusFilter(tab); setHubFilter(null); }}
-              className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all duration-200 hover:scale-[1.02]"
+              className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all duration-200"
               style={{
                 background: active ? `${col}15` : "transparent",
                 color: active ? col : "var(--lux-text-muted)",
@@ -1309,7 +1291,7 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
 
         {/* DATE QUICK FILTERS */}
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>
+          <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>
             Quick:
           </span>
           {([
@@ -1773,10 +1755,10 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
                 <table className="w-full text-sm">
                   <thead>
                     <tr style={{ background: "var(--lux-table-header-bg)" }}>
-                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Description</th>
-                      <th className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Qty</th>
-                      <th className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Rate</th>
-                      <th className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Amount</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Description</th>
+                      <th className="text-right px-4 py-2.5 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Qty</th>
+                      <th className="text-right px-4 py-2.5 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Rate</th>
+                      <th className="text-right px-4 py-2.5 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Amount</th>
                       {isEditable && canManage && <th className="w-20 px-2 py-2.5"></th>}
                     </tr>
                   </thead>
@@ -1863,7 +1845,7 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
                           >
                             <td
                               colSpan={cs}
-                              className="px-4 py-2 text-sm font-bold uppercase tracking-wider"
+                              className="px-4 py-2 text-sm font-medium"
                               style={{
                                 color: "var(--lux-text)",
                                 background: "var(--lux-surface-alt)",
@@ -1915,7 +1897,7 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
                         </tr>
                         <tr style={{ borderTop: "1px solid var(--lux-border)" }}>
                           <td colSpan={isEditable && canManage ? 4 : 3} className="px-4 py-2 text-right text-sm font-bold" style={{ color: "var(--lux-text)" }}>Outstanding</td>
-                          <td className="px-4 py-2 text-right font-bold tabular-nums" style={{ color: "var(--color-accent)" }} data-testid="text-invoice-outstanding"><MoneyDisplay value={viewInvoice.status.toLowerCase() === "void" ? 0 : Number(viewInvoice.total) - Number(viewInvoice.paidAmount)} currency={viewInvoice?.currency || "USD"} /></td>
+                          <td className="px-4 py-2 text-right font-semibold tabular-nums" style={{ color: "var(--lux-text)" }} data-testid="text-invoice-outstanding"><MoneyDisplay value={viewInvoice.status.toLowerCase() === "void" ? 0 : Number(viewInvoice.total) - Number(viewInvoice.paidAmount)} currency={viewInvoice?.currency || "USD"} /></td>
                         </tr>
                       </>
                     )}
@@ -2043,9 +2025,9 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
                   <table className="w-full text-sm" data-testid="table-payment-history">
                     <thead>
                       <tr style={{ background: "var(--lux-table-header-bg)" }}>
-                        <th className="text-left px-4 py-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Date</th>
-                        <th className="text-right px-4 py-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Amount</th>
-                        <th className="text-left px-4 py-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Method</th>
+                        <th className="text-left px-4 py-2 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Date</th>
+                        <th className="text-right px-4 py-2 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Amount</th>
+                        <th className="text-left px-4 py-2 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Method</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2409,22 +2391,22 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
                   </TableHead>
                 )}
                 <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("number")} data-testid="th-sort-number">
-                  <span className="flex items-center text-[11px] font-semibold uppercase tracking-wider">Invoice # <SortIcon field="number" /></span>
+                  <span className="flex items-center text-xs font-medium">Invoice # <SortIcon field="number" /></span>
                 </TableHead>
                 <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("clientName")} data-testid="th-sort-client">
-                  <span className="flex items-center text-[11px] font-semibold uppercase tracking-wider">Client <SortIcon field="clientName" /></span>
+                  <span className="flex items-center text-xs font-medium">Client <SortIcon field="clientName" /></span>
                 </TableHead>
                 <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("status")} data-testid="th-sort-status">
-                  <span className="flex items-center text-[11px] font-semibold uppercase tracking-wider">Status <SortIcon field="status" /></span>
+                  <span className="flex items-center text-xs font-medium">Status <SortIcon field="status" /></span>
                 </TableHead>
                 <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("dueDate")} data-testid="th-sort-due">
-                  <span className="flex items-center text-[11px] font-semibold uppercase tracking-wider">Due Date <SortIcon field="dueDate" /></span>
+                  <span className="flex items-center text-xs font-medium">Due Date <SortIcon field="dueDate" /></span>
                 </TableHead>
                 <TableHead className="cursor-pointer select-none text-right" onClick={() => toggleSort("total")} data-testid="th-sort-total">
-                  <span className="flex items-center justify-end text-[11px] font-semibold uppercase tracking-wider">Total <SortIcon field="total" /></span>
+                  <span className="flex items-center justify-end text-xs font-medium">Total <SortIcon field="total" /></span>
                 </TableHead>
-                <TableHead className="text-right text-[11px] font-semibold uppercase tracking-wider">Outstanding</TableHead>
-                {canManage && <TableHead className="w-24 text-[11px] font-semibold uppercase tracking-wider">Actions</TableHead>}
+                <TableHead className="text-right text-xs font-medium">Outstanding</TableHead>
+                {canManage && <TableHead className="w-24 text-xs font-medium">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -2484,7 +2466,7 @@ export default function InvoicesPage({ initialInvoiceId }: { initialInvoiceId?: 
                     </TableCell>
                     <TableCell className="text-right"><MoneyDisplay value={inv.total} currency={inv.currency || "USD"} /></TableCell>
                     <TableCell className="text-right">
-                      {outstanding > 0 ? <MoneyDisplay value={outstanding} currency={inv.currency || "USD"} color="negative" /> : <span style={{ color: "var(--lux-text-muted)" }}>—</span>}
+                      {outstanding > 0 ? <MoneyDisplay value={outstanding} currency={inv.currency || "USD"} /> : <span style={{ color: "var(--lux-text-muted)" }}>—</span>}
                     </TableCell>
                     {canManage && (
                       <TableCell>

@@ -218,7 +218,7 @@ export default function CompaniesListPage() {
                         {c.name}
                       </Link>
                       {c.deletedAt && (
-                        <span className="ml-2 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ background: "var(--lux-border)", color: "var(--lux-text-muted)" }} data-testid={`badge-deleted-${c.id}`}>
+                        <span className="ml-2 text-xs px-1.5 py-0.5 rounded" style={{ background: "var(--lux-border)", color: "var(--lux-text-muted)" }} data-testid={`badge-deleted-${c.id}`}>
                           Deleted
                         </span>
                       )}

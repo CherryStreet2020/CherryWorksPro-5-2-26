@@ -89,7 +89,7 @@ export default function ChangePasswordPage() {
             <form onSubmit={handleSubmit} className="space-y-5">
               {!isTempPassword && (
                 <div className="space-y-2">
-                  <Label className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Current Password</Label>
+                  <Label className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Current Password</Label>
                   <Input
                     type="password"
                     value={currentPassword}
@@ -105,7 +105,7 @@ export default function ChangePasswordPage() {
                 </div>
               )}
               <div className="space-y-2">
-                <Label className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>New Password</Label>
+                <Label className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>New Password</Label>
                 <Input
                   type="password"
                   value={newPassword}
@@ -118,7 +118,7 @@ export default function ChangePasswordPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Confirm Password</Label>
+                <Label className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Confirm Password</Label>
                 <Input
                   type="password"
                   value={confirmPassword}

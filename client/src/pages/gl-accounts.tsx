@@ -121,9 +121,6 @@ export default function GLAccountsPage() {
       />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(var(--lux-accent-rgb),0.15) 0%, rgba(var(--lux-accent-rgb),0.05) 100%)" }}>
-            <BookOpen className="w-6 h-6" style={{ color: "var(--lux-accent)" }} />
-          </div>
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--lux-text)" }} data-testid="text-page-title">
@@ -205,11 +202,11 @@ export default function GLAccountsPage() {
         <Table>
           <TableHeader>
             <TableRow style={{ background: "var(--lux-table-header-bg)" }}>
-              <TableHead className="w-[100px] text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Account #</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Name</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Type</TableHead>
-              <TableHead className="text-right text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Balance</TableHead>
-              <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Status</TableHead>
+              <TableHead className="w-[100px] text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Account #</TableHead>
+              <TableHead className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Name</TableHead>
+              <TableHead className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Type</TableHead>
+              <TableHead className="text-right text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Balance</TableHead>
+              <TableHead className="text-center text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Status</TableHead>
               <TableHead className="w-[80px]" />
             </TableRow>
           </TableHeader>

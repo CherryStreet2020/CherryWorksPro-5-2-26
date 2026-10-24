@@ -89,7 +89,7 @@ function FunnelRow({
     >
       <div className="flex items-baseline justify-between">
         <h4
-          className="text-xs font-semibold uppercase tracking-wide"
+          className="text-xs font-medium"
           style={{ color: "var(--lux-text-muted)" }}
         >
           Last {window.days} days
@@ -442,7 +442,7 @@ function DailyTrend({
     >
       <div className="flex items-baseline justify-between">
         <h4
-          className="text-xs font-semibold uppercase tracking-wide"
+          className="text-xs font-medium"
           style={{ color: "var(--lux-text-muted)" }}
         >
           Daily trend ({series.days}d)
@@ -511,7 +511,7 @@ function DailyTrend({
             data-testid="section-marketing-os-telemetry-daily-rates"
           >
             <h5
-              className="text-[11px] font-semibold uppercase tracking-wide pb-0.5"
+              className="text-xs font-medium pb-0.5"
               style={{ color: "var(--lux-text-muted)" }}
             >
               Conversion rates
@@ -914,7 +914,7 @@ export function MarketingOsTelemetryCard() {
                 <div className="space-y-1">
                   <Label
                     htmlFor="select-marketing-os-telemetry-daily-range"
-                    className="text-[11px] font-semibold uppercase tracking-wide"
+                    className="text-xs font-medium"
                     style={{ color: "var(--lux-text-muted)" }}
                   >
                     Range
@@ -948,7 +948,7 @@ export function MarketingOsTelemetryCard() {
                     <div className="space-y-1">
                       <Label
                         htmlFor="input-marketing-os-telemetry-daily-from"
-                        className="text-[11px] font-semibold uppercase tracking-wide"
+                        className="text-xs font-medium"
                         style={{ color: "var(--lux-text-muted)" }}
                       >
                         From
@@ -966,7 +966,7 @@ export function MarketingOsTelemetryCard() {
                     <div className="space-y-1">
                       <Label
                         htmlFor="input-marketing-os-telemetry-daily-to"
-                        className="text-[11px] font-semibold uppercase tracking-wide"
+                        className="text-xs font-medium"
                         style={{ color: "var(--lux-text-muted)" }}
                       >
                         To
@@ -1005,7 +1005,7 @@ export function MarketingOsTelemetryCard() {
                   <div className="space-y-1">
                     <Label
                       htmlFor="select-marketing-os-telemetry-daily-compare-preset"
-                      className="text-[11px] font-semibold uppercase tracking-wide"
+                      className="text-xs font-medium"
                       style={{ color: "var(--lux-text-muted)" }}
                     >
                       Comparison
@@ -1040,7 +1040,7 @@ export function MarketingOsTelemetryCard() {
                     <div className="space-y-1">
                       <Label
                         htmlFor="input-marketing-os-telemetry-daily-compare-from"
-                        className="text-[11px] font-semibold uppercase tracking-wide"
+                        className="text-xs font-medium"
                         style={{ color: "var(--lux-text-muted)" }}
                       >
                         Compare from
@@ -1058,7 +1058,7 @@ export function MarketingOsTelemetryCard() {
                     <div className="space-y-1">
                       <Label
                         htmlFor="input-marketing-os-telemetry-daily-compare-to"
-                        className="text-[11px] font-semibold uppercase tracking-wide"
+                        className="text-xs font-medium"
                         style={{ color: "var(--lux-text-muted)" }}
                       >
                         Compare to

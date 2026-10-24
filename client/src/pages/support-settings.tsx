@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Settings2, Copy, Check } from "lucide-react";
+import { Copy, Check } from "lucide-react";
 
 interface Policy { firstResponseHours: number; resolutionHours: number; businessHoursOnly: boolean; businessStartHour: number; businessEndHour: number; timezone: string }
 interface SlaResponse { policy: Policy; isDefault: boolean; supportInboundAddress: string | null; mailbox?: { provider: string; connected: boolean; status: string; canReadInbox: boolean; requiredScope: string; senderAddress: string | null } }
@@ -52,9 +52,6 @@ export default function SupportSettingsPage() {
     <div className="px-6 lg:px-8 xl:px-10 py-6 max-w-4xl mx-auto space-y-6">
       <PageBreadcrumbs page="Settings" items={[{ label: "Dashboard", href: "/", withBackArrow: true }, { label: "Support Cases", href: "/support/cases" }]} showDashboard={false} />
       <div className="flex items-center gap-4">
-        <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(var(--lux-accent-rgb),0.15) 0%, rgba(var(--lux-accent-rgb),0.05) 100%)" }}>
-          <Settings2 className="w-6 h-6" style={{ color: "var(--lux-accent)" }} />
-        </div>
         <div>
           <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--lux-text)" }}>Support settings</h1>
           <p className="text-sm mt-0.5" style={muted}>Service levels, the Help Center and Customer Portal links, and the mailbox that turns emails into cases.</p>
@@ -63,7 +60,7 @@ export default function SupportSettingsPage() {
 
       <section className="rounded-2xl p-5 border-0 space-y-4" style={card}>
         <div>
-          <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Help Center</h2>
+          <h2 className="text-xs font-medium" style={muted}>Help Center</h2>
           <p className="text-sm mt-1" style={{ color: "var(--lux-text-secondary)" }}>Support cases only — never invoices. Share this one link with a customer's whole team: anyone whose address is on that client's approved email domains signs in with a one-time link and is added as a contact automatically. Customer admins (set per contact on the client) see every case for their company, set priority, close and reopen, and invite colleagues.</p>
           <div className="flex items-center gap-2 mt-2">
             <Input readOnly value={portal?.helpUrl ?? ""} style={fieldStyle} data-testid="input-help-url" />
@@ -73,7 +70,7 @@ export default function SupportSettingsPage() {
           </div>
         </div>
         <div>
-          <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Customer Portal</h2>
+          <h2 className="text-xs font-medium" style={muted}>Customer Portal</h2>
           <p className="text-sm mt-1" style={{ color: "var(--lux-text-secondary)" }}>Invoices, estimates and payments. Only contacts with billing access (per contact on the client) can sign in here; send it from the client's Contacts tab.</p>
           <div className="flex items-center gap-2 mt-2">
             <Input readOnly value={portal?.portalUrl ?? ""} style={fieldStyle} data-testid="input-portal-url" />
@@ -85,7 +82,7 @@ export default function SupportSettingsPage() {
       </section>
 
       <section className="rounded-2xl p-5 border-0 space-y-3" style={card}>
-        <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Service levels</h2>
+        <h2 className="text-xs font-medium" style={muted}>Service levels</h2>
         {isLoading || !p ? <Skeleton className="h-24 rounded-lg" /> : (
           <form className="space-y-4" onSubmit={e => { e.preventDefault(); savePolicy.mutate(); }}>
             <p className="text-sm" style={{ color: "var(--lux-text-secondary)" }}>
@@ -131,7 +128,7 @@ export default function SupportSettingsPage() {
       <JiraImportCard card={card} muted={muted} fieldStyle={fieldStyle} />
 
       <section className="rounded-2xl p-5 border-0 space-y-3" style={card} data-testid="card-email-to-case">
-        <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Email to case (Microsoft 365)</h2>
+        <h2 className="text-xs font-medium" style={muted}>Email to case (Microsoft 365)</h2>
         <p className="text-sm" style={{ color: "var(--lux-text-secondary)" }}>
           CherryWorks reads your connected Microsoft 365 inbox every two minutes. Unread mail sent to the address below becomes a case (from a known contact) or a reply (when the subject carries the case key, which every case email includes). File attachments come along. Processed mail is marked read.
         </p>
@@ -215,7 +212,7 @@ function JiraImportCard({ card, muted, fieldStyle }: { card: React.CSSProperties
 
   return (
     <section className="rounded-2xl p-5 border-0 space-y-3" style={card} data-testid="card-jira-import">
-      <h2 className="text-[11px] font-bold uppercase tracking-wider" style={muted}>Import from Jira Service Management</h2>
+      <h2 className="text-xs font-medium" style={muted}>Import from Jira Service Management</h2>
       <p className="text-sm" style={{ color: "var(--lux-text-secondary)" }}>
         Moving from Jira Service Management? Connect your Jira Cloud site once and import a project: every issue comes over with its comments, status history and attachments, keeps its key and dates, and case numbering continues from there. Run it again any time to pick up what's new. The API token is stored encrypted — create one at id.atlassian.com → Security → API tokens (use the same Atlassian account email).
       </p>

@@ -171,7 +171,7 @@ export default function PublicInvoicePage({ token }: { token: string }) {
 
             <div className="grid grid-cols-2 gap-4 text-sm mb-6">
               <div>
-                <p style={{ color: "var(--lux-text-muted)" }} className="text-[11px] uppercase tracking-wider font-semibold">
+                <p style={{ color: "var(--lux-text-muted)" }} className="text-xs font-medium">
                   Issue Date
                 </p>
                 <p style={{ color: "var(--lux-text-secondary)" }} data-testid="text-issue-date" className="font-medium">
@@ -179,7 +179,7 @@ export default function PublicInvoicePage({ token }: { token: string }) {
                 </p>
               </div>
               <div>
-                <p style={{ color: "var(--lux-text-muted)" }} className="text-[11px] uppercase tracking-wider font-semibold">
+                <p style={{ color: "var(--lux-text-muted)" }} className="text-xs font-medium">
                   Due Date
                 </p>
                 <p style={{ color: "var(--lux-text-secondary)" }} data-testid="text-due-date" className="font-medium">
@@ -193,25 +193,25 @@ export default function PublicInvoicePage({ token }: { token: string }) {
                 <thead>
                   <tr style={{ background: "var(--lux-table-header-bg, #f8f9fb)" }}>
                     <th
-                      className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider"
+                      className="text-left px-4 py-2.5 text-xs font-medium"
                       style={{ color: "var(--lux-text-muted)" }}
                     >
                       Description
                     </th>
                     <th
-                      className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider"
+                      className="text-right px-4 py-2.5 text-xs font-medium"
                       style={{ color: "var(--lux-text-muted)" }}
                     >
                       Qty
                     </th>
                     <th
-                      className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider"
+                      className="text-right px-4 py-2.5 text-xs font-medium"
                       style={{ color: "var(--lux-text-muted)" }}
                     >
                       Rate
                     </th>
                     <th
-                      className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider"
+                      className="text-right px-4 py-2.5 text-xs font-medium"
                       style={{ color: "var(--lux-text-muted)" }}
                     >
                       Amount
@@ -288,7 +288,7 @@ export default function PublicInvoicePage({ token }: { token: string }) {
                         >
                           <td
                             colSpan={4}
-                            className="px-4 py-2 text-sm font-bold uppercase tracking-wider"
+                            className="px-4 py-2 text-sm font-medium"
                             style={{ color: "var(--lux-text)" }}
                           >
                             Additional worklog (unbilled time for this client)

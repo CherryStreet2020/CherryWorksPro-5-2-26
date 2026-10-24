@@ -23,7 +23,6 @@ export function StatCard({ icon: Icon, label, value, subValue, trend, color, tes
       style={{
         background: "var(--lux-surface)",
         borderColor: "var(--lux-border)",
-        borderLeft: "var(--lux-stat-accent-border, 1px solid var(--lux-border))",
         boxShadow: "var(--lux-card-shadow)",
       }}
       onClick={onClick}
@@ -32,11 +31,11 @@ export function StatCard({ icon: Icon, label, value, subValue, trend, color, tes
       <div className="flex items-center gap-2 mb-1">
         {Icon && (
           <Icon
-            size={16}
+            size={15}
             style={{ color: color || "var(--lux-text-muted)" }}
           />
         )}
-        <span className="text-xs font-medium uppercase tracking-wider lux-stat-label" style={{ color: "var(--lux-text-muted)", letterSpacing: "0.08em" }}>
+        <span className="text-[13px] font-medium lux-stat-label" style={{ color: "var(--lux-text-muted)" }}>
           {label}
         </span>
         {tooltip && (
@@ -50,7 +49,7 @@ export function StatCard({ icon: Icon, label, value, subValue, trend, color, tes
           </Tooltip>
         )}
       </div>
-      <span className="text-2xl font-bold tabular-nums" style={{ color: color || "var(--lux-text)", fontVariantNumeric: "tabular-nums" }}>
+      <span className="text-2xl font-semibold tracking-tight tabular-nums" style={{ color: "var(--lux-text)", fontVariantNumeric: "tabular-nums" }}>
         {value}
       </span>
       {subValue && (

@@ -168,9 +168,6 @@ export default function GLJournalEntriesPage() {
       />
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(var(--lux-accent-rgb),0.15) 0%, rgba(var(--lux-accent-rgb),0.05) 100%)" }}>
-            <BookMarked className="w-6 h-6" style={{ color: "var(--lux-accent)" }} />
-          </div>
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--lux-text)" }} data-testid="text-page-title">
@@ -291,12 +288,12 @@ export default function GLJournalEntriesPage() {
           <TableHeader>
             <TableRow style={{ background: "var(--lux-table-header-bg)" }}>
               <TableHead className="w-8" />
-              <TableHead className="w-[70px] text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>JE #</TableHead>
-              <TableHead className="w-[100px] text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Date</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Memo</TableHead>
-              <TableHead className="w-[100px] text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Source</TableHead>
-              <TableHead className="text-right w-[110px] text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Debit Total</TableHead>
-              <TableHead className="text-right w-[110px] text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Credit Total</TableHead>
+              <TableHead className="w-[70px] text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>JE #</TableHead>
+              <TableHead className="w-[100px] text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Date</TableHead>
+              <TableHead className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Memo</TableHead>
+              <TableHead className="w-[100px] text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Source</TableHead>
+              <TableHead className="text-right w-[110px] text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Debit Total</TableHead>
+              <TableHead className="text-right w-[110px] text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Credit Total</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -394,10 +391,10 @@ export default function GLJournalEntriesPage() {
                             <table className="w-full text-sm">
                               <thead>
                                 <tr style={{ borderBottom: "1px solid var(--lux-border)" }}>
-                                  <th className="text-left px-4 py-2 pl-14 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Account</th>
-                                  <th className="text-left px-4 py-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Memo</th>
-                                  <th className="text-right px-4 py-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Debit</th>
-                                  <th className="text-right px-4 py-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Credit</th>
+                                  <th className="text-left px-4 py-2 pl-14 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Account</th>
+                                  <th className="text-left px-4 py-2 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Memo</th>
+                                  <th className="text-right px-4 py-2 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Debit</th>
+                                  <th className="text-right px-4 py-2 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Credit</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -569,10 +566,10 @@ function JournalEntryForm({ accounts, onSuccess }: { accounts: GlAccount[]; onSu
           <table className="w-full text-sm">
             <thead>
               <tr style={{ background: "var(--lux-bg)", borderBottom: "1px solid var(--lux-border)" }}>
-                <th className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Account</th>
-                <th className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-wider w-28" style={{ color: "var(--lux-text-muted)" }}>Debit</th>
-                <th className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-wider w-28" style={{ color: "var(--lux-text-muted)" }}>Credit</th>
-                <th className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Memo</th>
+                <th className="text-left px-3 py-2 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Account</th>
+                <th className="text-left px-3 py-2 text-xs font-medium w-28" style={{ color: "var(--lux-text-muted)" }}>Debit</th>
+                <th className="text-left px-3 py-2 text-xs font-medium w-28" style={{ color: "var(--lux-text-muted)" }}>Credit</th>
+                <th className="text-left px-3 py-2 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Memo</th>
                 <th className="w-10" />
               </tr>
             </thead>

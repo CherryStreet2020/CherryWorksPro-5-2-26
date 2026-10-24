@@ -280,21 +280,21 @@ export default function ExpenseReportsPage() {
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="rounded-xl p-4" style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }}>
-          <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Total Reports</p>
+          <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Total Reports</p>
           <p className="text-xl font-bold mt-1 tabular-nums" style={{ color: "var(--lux-text)" }}>{(reports || []).length}</p>
         </div>
         <div className="rounded-xl p-4" style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }}>
-          <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Total Amount</p>
+          <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Total Amount</p>
           <p className="text-xl font-bold mt-1 tabular-nums" style={{ color: "var(--lux-text)" }}>{formatMoney(totalAmount, baseCurrency)}</p>
         </div>
         {canManage && (
           <div className="rounded-xl p-4" style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }}>
-            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Pending Review</p>
+            <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Pending Review</p>
             <p className="text-xl font-bold mt-1 tabular-nums" style={{ color: pendingCount > 0 ? "#3b82f6" : "var(--lux-text)" }}>{pendingCount}</p>
           </div>
         )}
         <div className="rounded-xl p-4" style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }}>
-          <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>{canManage ? "Awaiting Reimbursement" : "Drafts"}</p>
+          <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>{canManage ? "Awaiting Reimbursement" : "Drafts"}</p>
           <p className="text-xl font-bold mt-1 tabular-nums" style={{ color: (canManage ? approvedCount : draftCount) > 0 ? "#f59e0b" : "var(--lux-text)" }}>{canManage ? approvedCount : draftCount}</p>
         </div>
       </div>
@@ -310,13 +310,13 @@ export default function ExpenseReportsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr style={{ background: "var(--lux-table-header-bg)" }}>
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Report</th>
-                    {canManage && <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Submitted By</th>}
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Period</th>
-                    <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Expenses</th>
-                    <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Total</th>
-                    <th className="text-center px-4 py-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Status</th>
-                    <th className="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Actions</th>
+                    <th className="text-left px-4 py-3 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Report</th>
+                    {canManage && <th className="text-left px-4 py-3 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Submitted By</th>}
+                    <th className="text-left px-4 py-3 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Period</th>
+                    <th className="text-right px-4 py-3 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Expenses</th>
+                    <th className="text-right px-4 py-3 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Total</th>
+                    <th className="text-center px-4 py-3 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Status</th>
+                    <th className="text-right px-4 py-3 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -487,7 +487,7 @@ export default function ExpenseReportsPage() {
               {/* Linked Expenses */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Linked Expenses</h4>
+                  <h4 className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Linked Expenses</h4>
                   {canEditReport(reportDetail.status) && (
                     <Button size="sm" variant="outline" onClick={() => { setSelectedExpenseIds(new Set()); setShowAddExpenses(true); }} data-testid="button-add-expenses">
                       <Plus className="w-3.5 h-3.5 mr-1" /> Add Expenses
@@ -684,7 +684,7 @@ export default function ExpenseReportsPage() {
 function SummaryItem({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="rounded-lg p-3" style={{ background: "var(--lux-surface-alt)", border: "1px solid var(--lux-border)" }}>
-      <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>{label}</p>
+      <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>{label}</p>
       <p className="text-sm font-bold mt-1 tabular-nums truncate" style={{ color: accent ? "var(--color-accent)" : "var(--lux-text)" }}>{value}</p>
     </div>
   );

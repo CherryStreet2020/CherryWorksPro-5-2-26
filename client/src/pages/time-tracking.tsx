@@ -990,7 +990,7 @@ function SelectedDayEntries(props: SelectedDayEntriesProps) {
     <div className="space-y-3 view-enter" data-testid="selected-day-entries">
       <div className="flex items-center gap-3 px-1">
         <div className="flex-1 flex items-center gap-2">
-          <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-secondary)" }}>
+          <span className="text-xs font-medium" style={{ color: "var(--lux-text-secondary)" }}>
             {dateLabel}
           </span>
           <div className="flex-1 h-px" style={{ background: "var(--lux-border)" }} />

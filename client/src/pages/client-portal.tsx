@@ -250,7 +250,7 @@ export default function ClientPortalPage({ token }: { token: string }) {
             <CardContent className="p-4">
               <div className="flex items-center gap-2 mb-1">
                 <FileText className="w-4 h-4" style={{ color: "var(--lux-text-muted)" }} />
-                <span className="text-[11px] font-medium uppercase tracking-wider" data-testid="stat-label-billed" style={{ color: "var(--lux-text-muted)" }}>Total Billed</span>
+                <span className="text-xs font-medium" data-testid="stat-label-billed" style={{ color: "var(--lux-text-muted)" }}>Total Billed</span>
               </div>
               <p className="text-xl font-bold" style={{ color: "var(--lux-text)" }} data-testid="text-total-billed">{formatCurrency(data.totalBilled)}</p>
             </CardContent>
@@ -259,7 +259,7 @@ export default function ClientPortalPage({ token }: { token: string }) {
             <CardContent className="p-4">
               <div className="flex items-center gap-2 mb-1">
                 <Check className="w-4 h-4" style={{ color: "#22c55e" }} />
-                <span className="text-[11px] font-medium uppercase tracking-wider" data-testid="stat-label-paid" style={{ color: "#4ade80" }}>Total Paid</span>
+                <span className="text-xs font-medium" data-testid="stat-label-paid" style={{ color: "#4ade80" }}>Total Paid</span>
               </div>
               <p className="text-xl font-bold" style={{ color: "#22c55e" }} data-testid="text-total-paid">{formatCurrency(data.totalPaid)}</p>
             </CardContent>
@@ -268,7 +268,7 @@ export default function ClientPortalPage({ token }: { token: string }) {
             <CardContent className="p-4">
               <div className="flex items-center gap-2 mb-1">
                 <Clock className="w-4 h-4" style={{ color: "#f59e0b" }} />
-                <span className="text-[11px] font-medium uppercase tracking-wider" data-testid="stat-label-outstanding" style={{ color: "#fbbf24" }}>Outstanding</span>
+                <span className="text-xs font-medium" data-testid="stat-label-outstanding" style={{ color: "#fbbf24" }}>Outstanding</span>
               </div>
               <p className="text-xl font-bold" style={{ color: Number(data.outstanding) > 0 ? "#f59e0b" : "var(--lux-text)" }} data-testid="text-outstanding">
                 {formatCurrency(data.outstanding)}
@@ -279,7 +279,7 @@ export default function ClientPortalPage({ token }: { token: string }) {
             <CardContent className="p-4">
               <div className="flex items-center gap-2 mb-1">
                 <AlertTriangle className="w-4 h-4" style={{ color: overdueAmount > 0 ? "#ef4444" : "var(--lux-text-muted)" }} />
-                <span className="text-[11px] font-medium uppercase tracking-wider" data-testid="stat-label-overdue" style={{ color: "#f87171" }}>Overdue</span>
+                <span className="text-xs font-medium" data-testid="stat-label-overdue" style={{ color: "#f87171" }}>Overdue</span>
               </div>
               <p className="text-xl font-bold" style={{ color: overdueAmount > 0 ? "#ef4444" : "var(--lux-text)" }} data-testid="text-overdue-amount">
                 {formatCurrency(overdueAmount)}
@@ -513,11 +513,11 @@ export default function ClientPortalPage({ token }: { token: string }) {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Issued</p>
+                  <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Issued</p>
                   <p className="font-medium" style={{ color: "var(--lux-text)" }}>{formatDate(selectedInvoice.issuedDate)}</p>
                 </div>
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Due Date</p>
+                  <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Due Date</p>
                   <p className="font-medium" style={{ color: isOverdue(selectedInvoice) ? "#ef4444" : "var(--lux-text)" }}>
                     {formatDate(selectedInvoice.dueDate)}
                     {isOverdue(selectedInvoice) && ` (${daysOverdue(selectedInvoice)}d overdue)`}
@@ -544,7 +544,7 @@ export default function ClientPortalPage({ token }: { token: string }) {
 
               {invoicePayments.length > 0 && (
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--lux-text-muted)" }}>Payment History</p>
+                  <p className="text-xs font-medium mb-2" style={{ color: "var(--lux-text-muted)" }}>Payment History</p>
                   <div className="space-y-1">
                     {invoicePayments.map(pmt => (
                       <div key={pmt.id} className="flex items-center justify-between py-1.5 px-3 rounded text-sm" style={{ background: "var(--lux-bg, #f8fafc)" }}>

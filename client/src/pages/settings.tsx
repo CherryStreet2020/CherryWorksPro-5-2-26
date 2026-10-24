@@ -81,7 +81,7 @@ function MailboxErrorDetails({
       data-testid="container-mailbox-settings-error"
     >
       <div className="flex items-center justify-between gap-2">
-        <div className="font-medium uppercase tracking-wide text-[11px]" style={{ color: "var(--lux-text-muted)" }}>
+        <div className="font-medium text-xs" style={{ color: "var(--lux-text-muted)" }}>
           {providerLabel} reported{lastErrorAt ? ` · ${new Date(lastErrorAt).toLocaleString()}` : ""}
         </div>
         <button
@@ -1183,7 +1183,7 @@ export default function SettingsPage() {
 
                     {inactiveCats.length > 0 && (
                       <div className="pt-2 border-t" style={{ borderColor: "var(--lux-border)" }}>
-                        <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--lux-text-muted)" }}>Inactive</p>
+                        <p className="text-xs font-medium mb-2" style={{ color: "var(--lux-text-muted)" }}>Inactive</p>
                         {inactiveCats.map(cat => (
                           <div key={cat.id} className="flex items-center justify-between rounded-lg px-3 py-2 opacity-50" style={{ background: "var(--lux-surface-alt)" }}>
                             <div className="flex items-center gap-3">

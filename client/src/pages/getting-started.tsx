@@ -237,7 +237,7 @@ function WelcomeScreen({ onStart, role }: { onStart: () => void; role?: string }
 
         <button
           onClick={onStart}
-          className="inline-flex items-center gap-3 px-10 py-4 text-lg font-bold text-white rounded-2xl cursor-pointer transition-all hover:scale-[1.03]"
+          className="inline-flex items-center gap-3 px-10 py-4 text-lg font-bold text-white rounded-2xl cursor-pointer transition-all"
           style={{ background: "linear-gradient(135deg, #cf3339, #e74c3c)", boxShadow: "0 4px 30px rgba(207,51,57,0.4)" }}
           data-testid="button-get-started"
         >
@@ -452,7 +452,7 @@ function StepFirmProfile({ onNext }: { onNext: () => void }) {
       <button
         onClick={handleSave}
         disabled={save.isPending}
-        className="w-full flex items-center justify-center gap-2 h-14 text-base font-bold mc-text rounded-xl cursor-pointer transition-all hover:scale-[1.01] disabled:opacity-50"
+        className="w-full flex items-center justify-center gap-2 h-14 text-base font-bold mc-text rounded-xl cursor-pointer transition-all disabled:opacity-50"
         style={{ background: "linear-gradient(135deg, #cf3339, #e74c3c)", boxShadow: "0 4px 20px rgba(207,51,57,0.3)" }}
       >
         {save.isPending ? "Saving..." : "Save & Continue"} <ArrowRight className="w-5 h-5" />
@@ -506,7 +506,7 @@ function StepServices({ onNext }: { onNext: () => void }) {
       )}
 
       <div className="rounded-xl p-5" style={{ background: "var(--mc-surface)", border: "1px solid var(--mc-border-subtle)" }}>
-        <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: "var(--mc-text-faint)" }}>Add a service</p>
+        <p className="text-xs font-medium mb-3" style={{ color: "var(--mc-text-faint)" }}>Add a service</p>
         <div className="flex gap-3">
           <Input value={name} onChange={e => setName(e.target.value)} placeholder="Service name (e.g. Strategy)" className="flex-1 h-12 text-base rounded-xl" style={{ background: "var(--mc-surface)", border: "1px solid var(--mc-border)", color: "#fff" }} data-testid="input-service-name" />
           <Input value={rate} onChange={e => setRate(e.target.value)} placeholder="$/hr" className="w-24 h-12 text-base rounded-xl" type="number" style={{ background: "var(--mc-surface)", border: "1px solid var(--mc-border)", color: "#fff" }} data-testid="input-service-rate" />
@@ -527,7 +527,7 @@ function StepServices({ onNext }: { onNext: () => void }) {
         )}
       </div>
 
-      <button onClick={onNext} className="mt-8 w-full flex items-center justify-center gap-2 h-14 text-base font-bold text-white rounded-xl cursor-pointer transition-all hover:scale-[1.01] disabled:opacity-30" style={{ background: "linear-gradient(135deg, #cf3339, #e74c3c)", boxShadow: "0 4px 20px rgba(207,51,57,0.3)" }} data-testid="button-services-continue">
+      <button onClick={onNext} className="mt-8 w-full flex items-center justify-center gap-2 h-14 text-base font-bold text-white rounded-xl cursor-pointer transition-all disabled:opacity-30" style={{ background: "linear-gradient(135deg, #cf3339, #e74c3c)", boxShadow: "0 4px 20px rgba(207,51,57,0.3)" }} data-testid="button-services-continue">
         Continue (or skip) <ArrowRight className="w-5 h-5" />
       </button>
     </div>
@@ -571,7 +571,7 @@ function StepClients({ onNext }: { onNext: () => void }) {
       )}
 
       <div className="rounded-xl p-5" style={{ background: "var(--mc-surface)", border: "1px solid var(--mc-border-subtle)" }}>
-        <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: "var(--mc-text-faint)" }}>Add a client</p>
+        <p className="text-xs font-medium mb-3" style={{ color: "var(--mc-text-faint)" }}>Add a client</p>
         <div className="space-y-3">
           <Input value={name} onChange={e => setName(e.target.value)} placeholder="Client name" className="h-12 text-base rounded-xl" style={{ background: "var(--mc-surface)", border: "1px solid var(--mc-border)", color: "#fff" }} data-testid="input-client-name" />
           <div className="grid grid-cols-2 gap-3">
@@ -586,7 +586,7 @@ function StepClients({ onNext }: { onNext: () => void }) {
         </div>
       </div>
 
-      <button onClick={onNext} className="mt-8 w-full flex items-center justify-center gap-2 h-14 text-base font-bold text-white rounded-xl cursor-pointer transition-all hover:scale-[1.01] disabled:opacity-30" style={{ background: "linear-gradient(135deg, #cf3339, #e74c3c)", boxShadow: "0 4px 20px rgba(207,51,57,0.3)" }} data-testid="button-clients-continue">
+      <button onClick={onNext} className="mt-8 w-full flex items-center justify-center gap-2 h-14 text-base font-bold text-white rounded-xl cursor-pointer transition-all disabled:opacity-30" style={{ background: "linear-gradient(135deg, #cf3339, #e74c3c)", boxShadow: "0 4px 20px rgba(207,51,57,0.3)" }} data-testid="button-clients-continue">
         Continue (or skip) <ArrowRight className="w-5 h-5" />
       </button>
     </div>
@@ -641,7 +641,7 @@ function StepInvoice({ onNext }: { onNext: () => void }) {
         This is the moment everything comes together. Once your team logs time, you can generate professional invoices with one click — grouped by team member, with automatic tax and multi-currency support.
       </p>
       <div className="rounded-xl p-6 mb-8 text-left" style={{ background: "var(--mc-surface)", border: "1px solid var(--mc-border-subtle)" }}>
-        <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: "var(--mc-text-faint)" }}>What happens when you invoice</p>
+        <p className="text-xs font-medium mb-3" style={{ color: "var(--mc-text-faint)" }}>What happens when you invoice</p>
         {[
           { step: "1", text: "Approved billable hours auto-populate as line items" },
           { step: "2", text: "PDF generates with your firm details and branding" },
@@ -721,7 +721,7 @@ function StepComplete() {
       <div className="flex gap-3 justify-center">
         <button
           onClick={() => navigate("/")}
-          className="inline-flex items-center gap-3 px-10 py-4 text-lg font-bold text-white rounded-2xl cursor-pointer transition-all hover:scale-[1.03]"
+          className="inline-flex items-center gap-3 px-10 py-4 text-lg font-bold text-white rounded-2xl cursor-pointer transition-all"
           style={{ background: "linear-gradient(135deg, #cf3339, #e74c3c)", boxShadow: "0 4px 30px rgba(207,51,57,0.4)" }}
           data-testid="button-go-dashboard"
         >
@@ -780,7 +780,7 @@ function NonAdminComplete({ firstName, role }: { firstName?: string; role?: stri
           <button
             key={i}
             onClick={() => navigate(t.href)}
-            className="rounded-xl p-4 text-center cursor-pointer transition-all hover:scale-[1.03]"
+            className="rounded-xl p-4 text-center cursor-pointer transition-all"
             style={{ background: "var(--mc-surface)", border: "1px solid var(--mc-border-subtle)" }}
             data-testid={t.testId}
           >
@@ -791,7 +791,7 @@ function NonAdminComplete({ firstName, role }: { firstName?: string; role?: stri
       </div>
       <button
         onClick={() => navigate("/")}
-        className="inline-flex items-center gap-3 px-10 py-4 text-lg font-bold text-white rounded-2xl cursor-pointer transition-all hover:scale-[1.03]"
+        className="inline-flex items-center gap-3 px-10 py-4 text-lg font-bold text-white rounded-2xl cursor-pointer transition-all"
         style={{ background: "linear-gradient(135deg, #cf3339, #e74c3c)", boxShadow: "0 4px 30px rgba(207,51,57,0.4)" }}
         data-testid="button-go-dashboard"
       >
@@ -901,7 +901,7 @@ function DiscoverTab() {
         return (
           <button
             key={i}
-            className="rounded-xl p-5 cursor-pointer transition-all hover:scale-[1.02] text-left"
+            className="rounded-xl p-5 cursor-pointer transition-all text-left"
             style={{
               background: "var(--mc-surface)",
               border: "1px solid var(--mc-border-subtle)",
@@ -941,7 +941,7 @@ function WhatsNewTab() {
                 <div className="flex-1 rounded-xl p-4" style={{ background: "var(--mc-surface)", border: "1px solid var(--mc-border-subtle)" }}>
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-[10px] font-bold tabular-nums" style={{ color: "var(--mc-text-faint)" }}>{entry.date}</span>
-                    <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ background: `${catColor}15`, color: catColor }}>
+                    <span className="text-xs font-medium px-1.5 py-0.5 rounded" style={{ background: `${catColor}15`, color: catColor }}>
                       {entry.category}
                     </span>
                   </div>
@@ -996,7 +996,7 @@ function QuickActionsTab() {
           <button
             key={i}
             onClick={() => navigate(action.link)}
-            className="rounded-xl p-5 text-center cursor-pointer transition-all hover:scale-[1.04]"
+            className="rounded-xl p-5 text-center cursor-pointer transition-all"
             style={{
               background: "var(--mc-surface)",
               border: "1px solid var(--mc-border-subtle)",
@@ -1653,20 +1653,20 @@ export default function GettingStartedPage() {
                 <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold mc-text tabular-nums">{progressPct}%</span>
               </div>
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--mc-text-faint)" }}>Setup</p>
+                <p className="text-xs font-medium" style={{ color: "var(--mc-text-faint)" }}>Setup</p>
                 <p className="text-sm font-bold mc-text tabular-nums">{completedCount}/{steps.length}</p>
               </div>
             </div>
             <div className="rounded-xl p-4" style={{ background: "var(--mc-surface)", border: "1px solid var(--mc-border-subtle)" }} data-testid="stat-clients">
-              <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--mc-text-faint)" }}>Clients</p>
+              <p className="text-xs font-medium mb-1" style={{ color: "var(--mc-text-faint)" }}>Clients</p>
               <p className="text-xl font-bold mc-text tabular-nums">{totalClients}</p>
             </div>
             <div className="rounded-xl p-4" style={{ background: "var(--mc-surface)", border: "1px solid var(--mc-border-subtle)" }} data-testid="stat-invoiced">
-              <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--mc-text-faint)" }}>Invoiced (This Month)</p>
+              <p className="text-xs font-medium mb-1" style={{ color: "var(--mc-text-faint)" }}>Invoiced (This Month)</p>
               <p className="text-xl font-bold mc-text tabular-nums">${totalInvoiced.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
             </div>
             <div className="rounded-xl p-4" style={{ background: "var(--mc-surface)", border: "1px solid var(--mc-border-subtle)" }} data-testid="stat-hours">
-              <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--mc-text-faint)" }}>Hours This Month</p>
+              <p className="text-xs font-medium mb-1" style={{ color: "var(--mc-text-faint)" }}>Hours This Month</p>
               <p className="text-xl font-bold mc-text tabular-nums">{hoursThisMonth.toFixed(1)}</p>
             </div>
           </div>

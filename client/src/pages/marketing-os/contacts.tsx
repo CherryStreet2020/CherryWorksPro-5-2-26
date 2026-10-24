@@ -545,7 +545,7 @@ export default function ContactsListPage() {
             data-testid="row-tag-filter-chips"
           >
             <span
-              className="text-xs uppercase tracking-wider mr-1"
+              className="text-xs mr-1"
               style={{ color: "var(--lux-text-muted)" }}
             >
               Tags:
@@ -727,7 +727,7 @@ export default function ContactsListPage() {
                       </span>
                       {c.unsubscribedAt && (
                         <span
-                          className="ml-2 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                          className="ml-2 text-xs px-1.5 py-0.5 rounded inline-flex items-center gap-1"
                           style={{ background: "var(--lux-border)", color: "var(--lux-text-muted)" }}
                           data-testid={`badge-unsubscribed-${c.id}`}
                         >
@@ -1091,7 +1091,7 @@ function BulkTagPicker({
           </p>
         ) : (
           <>
-            <p className="text-xs uppercase tracking-wider mb-2" style={{ color: "var(--lux-text-muted)" }}>
+            <p className="text-xs mb-2" style={{ color: "var(--lux-text-muted)" }}>
               Pick tag(s) to {mode === "assign" ? "add" : "remove"}
             </p>
             <div className="max-h-56 overflow-y-auto space-y-1">

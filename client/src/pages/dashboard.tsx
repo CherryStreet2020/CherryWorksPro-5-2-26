@@ -169,7 +169,7 @@ function ThRow({ children }: { children: any }) {
 
 function Th({ children, align }: { children: any; align?: "left" | "right" }) {
   return (
-    <th className={`${align === "right" ? "text-right" : "text-left"} px-6 py-2 font-semibold text-xs uppercase tracking-wider`} style={{ color: "var(--lux-text-muted)" }}>
+    <th className={`${align === "right" ? "text-right" : "text-left"} px-6 py-2 font-medium text-xs`} style={{ color: "var(--lux-text-muted)" }}>
       {children}
     </th>
   );
@@ -729,18 +729,18 @@ function TeamMemberDashboard() {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
             <div className="rounded-lg px-4 py-3" style={{ background: "var(--lux-surface-alt)" }} data-testid="stat-unbilled">
-              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Unbilled</p>
-              <p className="text-lg font-bold tabular-nums" style={{ color: "#f59e0b" }} data-testid="text-unbilled-amount">{formatMoney(unbilled.amount, baseCurrency)}</p>
+              <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Unbilled</p>
+              <p className="text-lg font-semibold tracking-tight tabular-nums" style={{ color: "var(--lux-text)" }} data-testid="text-unbilled-amount">{formatMoney(unbilled.amount, baseCurrency)}</p>
               <p className="text-xs" style={{ color: "var(--lux-text-muted)" }} data-testid="text-unbilled-hours">{formatHours(unbilled.hours)}h not yet invoiced</p>
             </div>
             <div className="rounded-lg px-4 py-3" style={{ background: "var(--lux-surface-alt)" }} data-testid="stat-awaiting-payout">
-              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Awaiting Payout</p>
-              <p className="text-lg font-bold tabular-nums" style={{ color: "#3b82f6" }} data-testid="text-awaiting-amount">{formatMoney(awaiting.amount, baseCurrency)}</p>
+              <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Awaiting Payout</p>
+              <p className="text-lg font-semibold tracking-tight tabular-nums" style={{ color: "var(--lux-text)" }} data-testid="text-awaiting-amount">{formatMoney(awaiting.amount, baseCurrency)}</p>
               <p className="text-xs" style={{ color: "var(--lux-text-muted)" }} data-testid="text-awaiting-hours">{formatHours(awaiting.hours)}h invoiced, not yet paid to you</p>
             </div>
             <div className="rounded-lg px-4 py-3" style={{ background: "var(--lux-surface-alt)" }} data-testid="stat-paid">
-              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Paid to You</p>
-              <p className="text-lg font-bold tabular-nums" style={{ color: "#22c55e" }} data-testid="text-paid-amount">{formatMoney(totalReceived, baseCurrency)}</p>
+              <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Paid to You</p>
+              <p className="text-lg font-semibold tracking-tight tabular-nums" style={{ color: "var(--lux-text)" }} data-testid="text-paid-amount">{formatMoney(totalReceived, baseCurrency)}</p>
               <p className="text-xs" style={{ color: "var(--lux-text-muted)" }} data-testid="text-paid-hours">
                 {formatHours(paid.hours)}h tracked
                 {withoutLinked.count > 0 && <span> · {formatMoney(withoutLinked.amount, baseCurrency)} with no tracked hours linked</span>}
@@ -1064,8 +1064,8 @@ function AdminDashboard() {
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         <div className="lux-kpi-card rounded-xl p-4 cursor-pointer hover:shadow-md transition-shadow" style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }} onClick={() => setDrillDown({ title: "Total Revenue", type: "revenue" })} data-testid="kpi-revenue" role="region" aria-label={`Revenue MTD: ${kpiMoney(kpis?.revenueThisMonth || 0)}`}>
-          <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Revenue (MTD)</p>
-          <p className="text-xl font-bold mt-1" style={{ color: "#22c55e" }}>{kpiMoney(kpis?.revenueThisMonth || 0)}</p>
+          <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Revenue (MTD)</p>
+          <p className="text-xl font-semibold tracking-tight tabular-nums mt-1" style={{ color: "var(--lux-text)" }}>{kpiMoney(kpis?.revenueThisMonth || 0)}</p>
           {kpis?.revenueChange !== 0 && kpis?.revenueLastMonth !== 0 ? (
             <p className="text-[10px] mt-1" style={{ color: (kpis?.revenueChange || 0) >= 0 ? "#22c55e" : "#ef4444" }}>
               {(kpis?.revenueChange || 0) >= 0 ? "↑" : "↓"} {formatPercent(Math.abs(kpis?.revenueChange || 0))} vs same period last month
@@ -1075,28 +1075,28 @@ function AdminDashboard() {
           ) : null}
         </div>
         <div className="lux-kpi-card rounded-xl p-4 cursor-pointer hover:shadow-md transition-shadow" style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }} onClick={() => setDrillDown({ title: "Collected Payments", type: "collected" })} data-testid="kpi-collected" role="region" aria-label={`Collected MTD: ${kpiMoney(kpis?.collectedThisMonth || 0)}`}>
-          <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Collected (MTD)</p>
-          <p className="text-xl font-bold mt-1" style={{ color: "#3b82f6" }}>{kpiMoney(kpis?.collectedThisMonth || 0)}</p>
+          <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Collected (MTD)</p>
+          <p className="text-xl font-semibold tracking-tight tabular-nums mt-1" style={{ color: "var(--lux-text)" }}>{kpiMoney(kpis?.collectedThisMonth || 0)}</p>
         </div>
         <div className="lux-kpi-card rounded-xl p-4 cursor-pointer hover:shadow-md transition-shadow" style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }} onClick={() => setDrillDown({ title: "Outstanding Invoices", type: "outstanding" })} data-testid="kpi-outstanding" role="region" aria-label={`Outstanding: ${kpiMoney(kpis?.totalOutstanding || 0)}`}>
-          <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Outstanding</p>
-          <p className="text-xl font-bold mt-1" style={{ color: "#f59e0b" }}>{kpiMoney(kpis?.totalOutstanding || 0)}</p>
+          <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Outstanding</p>
+          <p className="text-xl font-semibold tracking-tight tabular-nums mt-1" style={{ color: "var(--lux-text)" }}>{kpiMoney(kpis?.totalOutstanding || 0)}</p>
         </div>
         <div className="lux-kpi-card rounded-xl p-4 cursor-pointer hover:shadow-md transition-shadow" style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }} onClick={() => setDrillDown({ title: "Overdue Invoices", type: "overdue" })} data-testid="kpi-overdue" role="region" aria-label={`Overdue: ${kpiMoney(kpis?.overdueAmount || 0)}`}>
-          <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Overdue</p>
-          <p className="text-xl font-bold mt-1" style={{ color: "#ef4444" }}>{kpiMoney(kpis?.overdueAmount || 0)}</p>
+          <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Overdue</p>
+          <p className="text-xl font-semibold tracking-tight tabular-nums mt-1" style={{ color: "var(--lux-text)" }}>{kpiMoney(kpis?.overdueAmount || 0)}</p>
           {(kpis?.overdueCount || 0) > 0 && (
             <p className="text-[10px] mt-1" style={{ color: "#ef4444" }}>{kpis?.overdueCount} invoice{kpis?.overdueCount !== 1 ? "s" : ""}</p>
           )}
         </div>
         <div className="lux-kpi-card rounded-xl p-4" style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }} data-testid="kpi-net-cash" role="region" aria-label={`Net Cash MTD: ${kpiMoney(kpis?.netCashThisMonth || 0)}`}>
-          <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Net Cash (MTD)</p>
-          <p className="text-xl font-bold mt-1" style={{ color: (kpis?.netCashThisMonth || 0) >= 0 ? "#22c55e" : "#ef4444" }}>{kpiMoney(kpis?.netCashThisMonth || 0)}</p>
+          <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Net Cash (MTD)</p>
+          <p className="text-xl font-semibold tracking-tight tabular-nums mt-1" style={{ color: "var(--lux-text)" }}>{kpiMoney(kpis?.netCashThisMonth || 0)}</p>
           <p className="text-[10px] mt-1" style={{ color: "var(--lux-text-muted)" }}>In − Out</p>
         </div>
         <div className="lux-kpi-card rounded-xl p-4" style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }} data-testid="kpi-team" role="region" aria-label={`Team: ${kpis?.teamActive || 0} active`}>
-          <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Team</p>
-          <p className="text-xl font-bold mt-1" style={{ color: "var(--lux-text)" }}>{kpis?.teamActive || 0}</p>
+          <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Team</p>
+          <p className="text-xl font-semibold tracking-tight tabular-nums mt-1" style={{ color: "var(--lux-text)" }}>{kpis?.teamActive || 0}</p>
           <p className="text-[10px] mt-1" style={{ color: "var(--lux-text-muted)" }}>{kpis?.teamIndependents || 0} independents · {kpis?.teamEmployees || 0} W-2</p>
         </div>
       </div>

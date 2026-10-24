@@ -91,9 +91,6 @@ export default function SystemHubPage() {
     <div className="px-6 lg:px-8 xl:px-10 py-6 space-y-6">
       <PageBreadcrumbs page="System" showDashboard={false} />
       <div className="flex items-center gap-4">
-        <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(var(--lux-accent-rgb),0.15) 0%, rgba(var(--lux-accent-rgb),0.05) 100%)" }}>
-          <Settings className="w-6 h-6" style={{ color: "var(--lux-accent)" }} />
-        </div>
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--lux-text)" }} data-testid="text-page-title">

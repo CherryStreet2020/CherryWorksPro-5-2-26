@@ -49,15 +49,15 @@
   --lux-border-strong: rgba(0, 0, 0, 0.14);
   --lux-gold: #b8942e;
   --lux-gold-rgb: 184, 148, 46;
-  --lux-gauge-track: rgba(15, 43, 91, 0.12);
+  --lux-gauge-track: rgba(0, 0, 0, 0.08);
   --lux-text: #1a1a2e;
   --lux-text-secondary: #374151;
   --lux-text-muted: #555b66;
   --lux-card-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.04);
   --lux-card-shadow-hover: 0 2px 6px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.1), 0 16px 48px rgba(0,0,0,0.06);
-  --lux-table-header-bg: #f0f4fa;
-  --lux-table-stripe: rgba(15,43,91,0.015);
-  --lux-table-hover: rgba(15,43,91,0.04);
+  --lux-table-header-bg: #faf9f7;
+  --lux-table-stripe: rgba(0,0,0,0.012);
+  --lux-table-hover: rgba(0,0,0,0.03);
   --lux-accent: #cf3339;
   --lux-accent-hover: #b82d32;
   --lux-accent-rgb: 207, 51, 57;
@@ -68,7 +68,6 @@
   --lux-sidebar-active-bg: rgba(0,0,0,0.06);
   --lux-sidebar-active-text: #1a1a2e;
   --lux-sidebar-hover-bg: rgba(0,0,0,0.04);
-  --lux-stat-accent-border: 3px solid rgba(207, 51, 57, 0.25);
   --lux-focus-ring: 0 0 0 2px rgba(207, 51, 57, 0.25);
   --lux-outline-btn-border: rgba(207, 51, 57, 0.2);
 }
@@ -100,7 +99,6 @@
   --lux-sidebar-active-bg: hsl(var(--sidebar-accent));
   --lux-sidebar-active-text: var(--lux-text);
   --lux-sidebar-hover-bg: rgba(255,255,255,0.05);
-  --lux-stat-accent-border: none;
   --lux-focus-ring: none;
   --lux-outline-btn-border: var(--button-outline);
 
@@ -150,19 +148,11 @@ body {
   outline: none;
 }
 
-:root:not(.dark) .cherry-app .lux-kpi-card {
-  border-left: 3px solid rgba(207, 51, 57, 0.25);
-}
-
-:root:not(.dark) .cherry-app .lux-stat-label {
-  color: #1a4480 !important;
-}
-
 :root:not(.dark) .cherry-app table thead th,
 :root:not(.dark) .cherry-app table thead td,
 :root:not(.dark) .cherry-app [role="columnheader"] {
-  color: #173d6e !important;
-  font-weight: 600 !important;
+  color: var(--lux-text-muted) !important;
+  font-weight: 500 !important;
 }
 
 :root:not(.dark) .cherry-app table tbody tr:nth-child(even) {
@@ -171,59 +161,6 @@ body {
 
 :root:not(.dark) .cherry-app table tbody tr:hover {
   background: var(--lux-table-hover) !important;
-}
-
-:root:not(.dark) .cherry-app {
-  --lux-text: #0f2b5b;
-  --lux-text-secondary: #1a4480;
-  --lux-text-muted: #2e6399;
-  --lux-sidebar-section-color: #2b5ea7;
-  --lux-sidebar-active-bg: rgba(15,43,91,0.08);
-  --lux-sidebar-active-text: #0f2b5b;
-  --lux-sidebar-hover-bg: rgba(15,43,91,0.05);
-  --color-text-1: #0f2b5b;
-  --color-text-2: #1a4480;
-  --color-text-3: #2e6399;
-  --color-text-4: #2e6399;
-  --foreground: 218 72% 21%;
-  --card-foreground: 218 72% 21%;
-  --sidebar-foreground: 211 65% 30%;
-  --muted-foreground: 211 55% 39%;
-  --secondary-foreground: 211 65% 30%;
-  --accent-foreground: 218 72% 21%;
-  --popover-foreground: 218 72% 21%;
-}
-
-:root:not(.dark) .cherry-app h1,
-:root:not(.dark) .cherry-app h2,
-:root:not(.dark) .cherry-app h3,
-:root:not(.dark) .cherry-app h4 {
-  color: #0f2b5b !important;
-}
-
-:root:not(.dark) .cherry-app .text-muted-foreground {
-  color: #2e6399 !important;
-}
-
-:root:not(.dark) .cherry-app .text-card-foreground {
-  color: #0f2b5b !important;
-}
-
-:root:not(.dark) .cherry-app .text-sidebar-foreground {
-  color: #1a4480 !important;
-}
-
-:root:not(.dark) .cherry-app .tracking-wider {
-  color: #2b5ea7 !important;
-}
-
-:root:not(.dark) .cherry-app th {
-  color: #173d6e !important;
-  font-weight: 600;
-}
-
-:root:not(.dark) .cherry-app [data-sidebar="menu-button"] {
-  color: #1a4480 !important;
 }
 
 @keyframes shimmer-slide {

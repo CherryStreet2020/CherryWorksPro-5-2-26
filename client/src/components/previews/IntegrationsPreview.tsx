@@ -12,7 +12,7 @@ export function IntegrationsPreview() {
       <div className="grid grid-cols-2 gap-4">
         <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--lux-surface-alt)", border: "1px solid var(--lux-border)" }}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-secondary)" }}>API Key</span>
+            <span className="text-xs font-medium" style={{ color: "var(--lux-text-secondary)" }}>API Key</span>
             <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">Active</span>
           </div>
           <div className="h-9 rounded-lg px-3 flex items-center gap-2 font-mono text-xs" style={{ background: "var(--lux-bg-muted)", border: "1px solid var(--lux-border)" }}>
@@ -22,7 +22,7 @@ export function IntegrationsPreview() {
         </div>
         <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--lux-surface-alt)", border: "1px solid var(--lux-border)" }}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-secondary)" }}>Webhooks</span>
+            <span className="text-xs font-medium" style={{ color: "var(--lux-text-secondary)" }}>Webhooks</span>
             <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">3 Active</span>
           </div>
           {[

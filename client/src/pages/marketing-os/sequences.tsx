@@ -610,7 +610,7 @@ function SequenceEditor({
         <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "var(--lux-text-muted)" }}>
+              <h2 className="text-sm font-medium" style={{ color: "var(--lux-text-muted)" }}>
                 Steps ({steps.length})
               </h2>
               <Button size="sm" variant="outline" onClick={addStep} data-testid="button-add-step">
@@ -746,7 +746,7 @@ function SequenceEditor({
           </div>
 
           <div>
-            <div className="mb-3 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--lux-text-muted)" }}>
+            <div className="mb-3 text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>
               Live preview · Step {activeStepIdx + 1}
             </div>
             <EmailPreview
@@ -926,7 +926,7 @@ function EnrollmentsPanel({ sequence, brandId }: { sequence: MarketingSequence; 
                       )}
                     </td>
                     <td className="px-4 py-2" data-testid={`text-enrollment-status-${r.id}`}>
-                      <span className="text-xs uppercase tracking-wide" style={{ color: r.status === "active" ? "var(--lux-text)" : "var(--lux-text-muted)" }}>
+                      <span className="text-xs" style={{ color: r.status === "active" ? "var(--lux-text)" : "var(--lux-text-muted)" }}>
                         {r.status}
                       </span>
                     </td>

@@ -102,16 +102,16 @@ export default function PublicEstimatePage({ token }: { token: string }) {
 
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <span className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--lux-text-muted)" }}>Client</span>
+                <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Client</span>
                 <p className="font-medium" style={{ color: "var(--lux-text)" }} data-testid="text-public-estimate-client">{estimate.clientName}</p>
               </div>
               <div>
-                <span className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--lux-text-muted)" }}>Issued</span>
+                <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Issued</span>
                 <p className="font-medium" style={{ color: "var(--lux-text)" }}>{formatDate(estimate.issuedDate)}</p>
               </div>
               {estimate.expiryDate && (
                 <div>
-                  <span className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--lux-text-muted)" }}>Expires</span>
+                  <span className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Expires</span>
                   <p className="font-medium" style={{ color: "var(--lux-text)" }}>{formatDate(estimate.expiryDate)}</p>
                 </div>
               )}
@@ -121,10 +121,10 @@ export default function PublicEstimatePage({ token }: { token: string }) {
               <Table>
                 <TableHeader>
                   <TableRow style={{ background: "var(--lux-table-header-bg, #f8f9fb)" }}>
-                    <TableHead className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--lux-text-muted)" }}>Description</TableHead>
-                    <TableHead className="text-right text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--lux-text-muted)" }}>Qty</TableHead>
-                    <TableHead className="text-right text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--lux-text-muted)" }}>Rate</TableHead>
-                    <TableHead className="text-right text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--lux-text-muted)" }}>Amount</TableHead>
+                    <TableHead className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Description</TableHead>
+                    <TableHead className="text-right text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Qty</TableHead>
+                    <TableHead className="text-right text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Rate</TableHead>
+                    <TableHead className="text-right text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Amount</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -155,7 +155,7 @@ export default function PublicEstimatePage({ token }: { token: string }) {
 
             {estimate.notes && (
               <div className="pt-4" style={{ borderTop: "1px solid var(--lux-border, #e2e8f0)" }}>
-                <p className="text-[11px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--lux-text-muted)" }}>Notes</p>
+                <p className="text-xs font-medium mb-1" style={{ color: "var(--lux-text-muted)" }}>Notes</p>
                 <p className="text-sm" style={{ color: "var(--lux-text-secondary)" }}>{estimate.notes}</p>
               </div>
             )}

@@ -168,11 +168,6 @@ export default function RecurringTemplatesPage() {
       />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="relative">
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(var(--lux-accent-rgb),0.15) 0%, rgba(var(--lux-accent-rgb),0.05) 100%)" }}>
-              <RefreshCw className="w-6 h-6" style={{ color: "var(--lux-accent)" }} />
-            </div>
-          </div>
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--lux-text)" }} data-testid="text-page-title">
@@ -361,7 +356,7 @@ export default function RecurringTemplatesPage() {
 
       <Card className="border-0" style={{ background: "var(--lux-surface)", boxShadow: "var(--lux-card-shadow)" }}>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider" style={{ color: "var(--lux-text-secondary)" }}>
+          <CardTitle className="flex items-center gap-2 text-sm font-medium" style={{ color: "var(--lux-text-secondary)" }}>
             <RefreshCw className="w-4 h-4" /> Recurring Templates
           </CardTitle>
         </CardHeader>
@@ -380,12 +375,12 @@ export default function RecurringTemplatesPage() {
             <Table>
               <TableHeader>
                 <TableRow style={{ background: "var(--lux-table-header-bg)" }}>
-                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Client</TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Frequency</TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Next Issue</TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Lines</TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Status</TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--lux-text-muted)" }}>Actions</TableHead>
+                  <TableHead className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Client</TableHead>
+                  <TableHead className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Frequency</TableHead>
+                  <TableHead className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Next Issue</TableHead>
+                  <TableHead className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Lines</TableHead>
+                  <TableHead className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Status</TableHead>
+                  <TableHead className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

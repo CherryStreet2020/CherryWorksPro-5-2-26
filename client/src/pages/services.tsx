@@ -131,9 +131,6 @@ export default function ServicesPage() {
       <PageBreadcrumbs group="Management" page="Services" />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, rgba(var(--lux-accent-rgb),0.15) 0%, rgba(var(--lux-accent-rgb),0.05) 100%)" }}>
-            <Tag className="w-6 h-6" style={{ color: "var(--lux-accent)" }} />
-          </div>
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--lux-text)" }} data-testid="text-services-title">Services</h1>
@@ -148,12 +145,12 @@ export default function ServicesPage() {
           <div className="flex items-center gap-4">
             <div className="text-center">
               <p className="text-2xl font-bold" style={{ color: "var(--lux-text)" }} data-testid="text-active-count">{activeServices.length}</p>
-              <p className="text-[10px] uppercase tracking-wider font-bold" style={{ color: "var(--lux-text-muted)" }}>Active</p>
+              <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Active</p>
             </div>
             {inactiveServices.length > 0 && (
               <div className="text-center">
                 <p className="text-2xl font-bold" style={{ color: "var(--lux-text-muted)" }} data-testid="text-inactive-count">{inactiveServices.length}</p>
-                <p className="text-[10px] uppercase tracking-wider font-bold" style={{ color: "var(--lux-text-muted)" }}>Inactive</p>
+                <p className="text-xs font-medium" style={{ color: "var(--lux-text-muted)" }}>Inactive</p>
               </div>
             )}
           </div>
@@ -179,7 +176,7 @@ export default function ServicesPage() {
               <button
                 key={i}
                 onClick={() => addTemplate(t)}
-                className="text-left rounded-xl p-4 transition-all cursor-pointer hover:scale-[1.02] hover:shadow-md"
+                className="text-left rounded-xl p-4 transition-all cursor-pointer hover:shadow-md"
                 style={{ background: "var(--color-surface-0)", border: "1px solid var(--lux-border)" }}
                 data-testid={`button-template-${i}`}
               >
@@ -209,7 +206,7 @@ export default function ServicesPage() {
               <button
                 key={i}
                 onClick={() => addTemplate(t)}
-                className="text-left rounded-lg p-3 transition-all cursor-pointer hover:scale-[1.02]"
+                className="text-left rounded-lg p-3 transition-all cursor-pointer"
                 style={{ background: "var(--color-surface-0)", border: "1px solid var(--lux-border)" }}
                 data-testid={`button-avail-template-${i}`}
               >
