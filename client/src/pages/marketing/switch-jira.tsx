@@ -1,6 +1,8 @@
 import { SEO } from "@/components/seo";
+import { SCREENS } from "@/components/marketing/screens";
 import {
-  ButtonLink, Container, Display, Eyebrow, Fact, Heading, Lede, MarketingShell, PageHero, Screenshot, Section, TextLink,
+  ButtonLink, Closing, Container, Ctas, Display, Eyebrow, Fact, Heading, Lede, MarketingShell, Note, PageHero, Scene,
+  Section, Shot, TextLink,
 } from "@/components/marketing/kit";
 
 const PAINS = [
@@ -62,23 +64,18 @@ export default function SwitchJiraPage() {
 
       <PageHero>
         <Container>
-          <div className="max-w-3xl">
-            <Eyebrow>Switch from Jira Service Management</Eyebrow>
-            <Display testId="switch-jira-h1" className="mt-5">Jira runs a service desk. Your firm bills for service.</Display>
-            <Lede className="mt-6 max-w-2xl">
-              If every support hour should end up on an invoice, a help desk that knows nothing about your clients’
-              contracts is the wrong shape. Bring the project across with its comments, attachments and keys, and run
-              support where you already bill.
-            </Lede>
-            <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
-              <ButtonLink href="/signup" size="lg" arrow testId="switch-jira-cta-signup">Start your 14-day trial</ButtonLink>
-              <ButtonLink href="/client-support" size="lg" variant="secondary" testId="switch-jira-cta-support">See Client Support</ButtonLink>
-            </div>
-            <p className="mt-5 text-sm text-[#5F6672]">
-              Imports from Jira Cloud · <span className="whitespace-nowrap">On the Professional and Business plans</span>
-            </p>
-          </div>
-          <div className="mt-14 grid grid-cols-1 gap-x-8 gap-y-8 border-t border-[#E6E2DA] pt-10 sm:grid-cols-3" data-testid="section-jira-facts">
+          <Eyebrow>Moving from Jira Service Management</Eyebrow>
+          <Display testId="switch-jira-h1" className="mt-4">Jira runs a service desk. Your firm bills for service.</Display>
+          <Lede size="hero" className="mt-6">
+            If every support hour should end up on an invoice, a help desk that knows nothing about your clients’ contracts is the wrong shape. Bring the project across with its comments, attachments and keys, and run support where you already bill.
+          </Lede>
+          <Ctas>
+            <ButtonLink href="/signup" testId="switch-jira-cta-signup">Start your trial</ButtonLink>
+            <ButtonLink href="/client-support" variant="secondary" testId="switch-jira-cta-support">See the support desk</ButtonLink>
+          </Ctas>
+          <Note>Imports from Jira Cloud · Professional and up</Note>
+          <Scene screen={SCREENS.supportCases} priority className="mt-14 md:mt-20" testId="switch-jira-hero-screen" />
+          <div className="mt-14 grid gap-x-8 gap-y-10 sm:grid-cols-3 md:mt-20" data-testid="section-jira-facts">
             <Fact value="Original keys" label="kept on every case, and new cases carry on the numbering" />
             <Fact value="Closed issues" label="imported with their history, not just the open ones" />
             <Fact value="Run it again" label="later runs pick up new issues and skip the ones already here" />
@@ -86,18 +83,15 @@ export default function SwitchJiraPage() {
         </Container>
       </PageHero>
 
-      <Section tone="white" testId="section-pains">
+      <Section testId="section-pains">
         <Container>
-          <div className="grid gap-12 lg:grid-cols-12 lg:gap-16">
-            <div className="lg:col-span-4">
-              <Eyebrow>Why firms move</Eyebrow>
-              <Heading className="mt-4">Where Jira stops fitting a services firm</Heading>
-            </div>
-            <dl className="divide-y divide-[#E6E2DA] border-y border-[#E6E2DA] lg:col-span-8">
+          <div className="grid grid-cols-1 gap-12 lg:grid-cols-[5fr_7fr] lg:gap-[72px]">
+            <Heading>Where Jira stops fitting a services firm.</Heading>
+            <dl className="border-t border-[#E6E3DD] lg:mt-2">
               {PAINS.map((p, i) => (
-                <div key={p.pain} data-testid={`pain-row-${i}`} className="grid gap-2 py-6 sm:grid-cols-[14rem_1fr] sm:gap-8">
-                  <dt className="font-semibold text-[#15171C]">{p.pain}</dt>
-                  <dd className="text-[15px] leading-relaxed text-[#3D4350]">{p.fix}</dd>
+                <div key={p.pain} data-testid={`pain-row-${i}`} className="grid gap-2 border-b border-[#E6E3DD] py-6 sm:grid-cols-[14rem_1fr] sm:gap-8">
+                  <dt className="text-[17px] font-medium text-[#15171C]">{p.pain}</dt>
+                  <dd className="text-[15.5px] leading-[1.55] text-[#5C606A]">{p.fix}</dd>
                 </div>
               ))}
             </dl>
@@ -107,11 +101,8 @@ export default function SwitchJiraPage() {
 
       <Section testId="section-comparison">
         <Container>
-          <div className="max-w-2xl">
-            <Eyebrow>Side by side</Eyebrow>
-            <Heading className="mt-4">What each one is built to do</Heading>
-          </div>
-          <div className="mt-12 overflow-hidden rounded-xl border border-[#E6E2DA] bg-white">
+          <Heading>What each one is built to do.</Heading>
+          <div className="mt-10 md:mt-14">
             <table className="w-full table-fixed border-collapse text-left">
               <colgroup>
                 <col />
@@ -119,73 +110,56 @@ export default function SwitchJiraPage() {
                 <col className="w-[26%] sm:w-[24%]" />
               </colgroup>
               <thead>
-                <tr className="border-b border-[#E6E2DA] bg-[#FBFAF7] text-[12px] font-semibold uppercase tracking-[0.08em] text-[#5F6672]">
-                  <th scope="col" className="py-3.5 pl-4 pr-2 sm:px-6"><span className="sr-only">Capability</span></th>
-                  <th scope="col" className="px-2 py-3.5 text-[#15171C] sm:px-6">CherryWorks Pro</th>
-                  <th scope="col" className="px-2 py-3.5 sm:px-6">Jira SM</th>
+                <tr className="border-b border-[#15171C] text-[14px] font-medium text-[#5C606A]">
+                  <th scope="col" className="py-3 pr-2"><span className="sr-only">Capability</span></th>
+                  <th scope="col" className="px-2 py-3 text-[#15171C] sm:px-4">CherryWorks Pro</th>
+                  <th scope="col" className="px-2 py-3 sm:px-4">Jira SM</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E6E2DA]">
+              <tbody>
                 {COMPARISON.map((c) => (
-                  <tr key={c.row}>
-                    <th scope="row" className="py-4 pl-4 pr-2 align-top text-[14px] font-medium text-[#15171C] sm:px-6 sm:text-[15px]">{c.row}</th>
-                    <td className="px-2 py-4 align-top text-[13px] leading-snug text-[#15171C] sm:px-6 sm:text-[15px]">{c.cw}</td>
-                    <td className="px-2 py-4 align-top text-[13px] leading-snug text-[#5F6672] sm:px-6 sm:text-[15px]">{c.jira}</td>
+                  <tr key={c.row} className="border-b border-[#E6E3DD]">
+                    <th scope="row" className="py-4 pr-2 align-top text-[14px] font-medium text-[#15171C] sm:text-[15.5px]">{c.row}</th>
+                    <td className="px-2 py-4 align-top text-[13px] leading-snug text-[#15171C] sm:px-4 sm:text-[15.5px]">{c.cw}</td>
+                    <td className="px-2 py-4 align-top text-[13px] leading-snug text-[#5C606A] sm:px-4 sm:text-[15.5px]">{c.jira}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <p className="mt-4 max-w-3xl text-sm leading-relaxed text-[#5F6672]">
-            Jira Service Management as described on Atlassian’s site for its cloud plans, October 2026. Marketplace apps can
-            add time tracking and invoicing to Jira.
+          <p className="mt-5 max-w-3xl text-[14px] leading-relaxed text-[#6E727B]">
+            Jira Service Management as described on Atlassian’s site for its cloud plans, October 2026. Marketplace apps can add time tracking and invoicing to Jira.
           </p>
         </Container>
       </Section>
 
-      <Section tone="white" testId="section-import">
+      <Section testId="section-import">
         <Container>
-          <div className="grid gap-12 lg:grid-cols-12 lg:gap-16">
-            <div className="lg:col-span-5">
-              <Eyebrow>Moving a project</Eyebrow>
-              <Heading className="mt-4">Four steps, and Jira stays on until you’re ready</Heading>
-              <ol className="mt-10">
+          <div className="grid grid-cols-1 gap-12 lg:grid-cols-[5fr_7fr] lg:gap-[72px]">
+            <div>
+              <Heading>Move a project while Jira stays on.</Heading>
+              <ul className="mt-10 border-t border-[#E6E3DD]">
                 {STEPS.map((s, i) => (
-                  <li
-                    key={s.title}
-                    data-testid={`import-step-${i}`}
-                    className="grid grid-cols-[2.25rem_1fr] gap-3 border-t border-[#E6E2DA] py-6 first:border-t-0 first:pt-0"
-                  >
-                    <span className="font-display text-lg font-semibold text-[#B32A30]">{i + 1}</span>
-                    <div>
-                      <h3 className="text-lg font-semibold text-[#15171C]">{s.title}</h3>
-                      <p className="mt-1.5 text-[15px] leading-relaxed text-[#3D4350]">{s.body}</p>
-                    </div>
+                  <li key={s.title} data-testid={`import-step-${i}`} className="border-b border-[#E6E3DD] py-6">
+                    <h3 className="text-[17px] font-medium text-[#15171C]">{s.title}</h3>
+                    <p className="mt-2 text-[15.5px] leading-[1.55] text-[#5C606A]">{s.body}</p>
                   </li>
                 ))}
-              </ol>
+              </ul>
             </div>
-            <div className="space-y-10 lg:col-span-7 lg:pt-2">
-              <Screenshot
-                src="/marketing/screens/case-detail.webp"
-                width={2000}
-                height={1521}
-                url="cherryworkspro.com/support/cases/BL-1"
-                alt="One support case: the client's report, a reply and an internal note, and the hours logged on the case with how many are billable, unbilled and invoiced."
-              />
-              <div className="grid gap-8 sm:grid-cols-2">
-                <div className="border-t border-[#15171C] pt-5">
-                  <h3 className="font-semibold text-[#15171C]">Run it again before you switch off</h3>
-                  <p className="mt-2 text-[15px] leading-relaxed text-[#3D4350]">
-                    Each run picks up new issues and skips the ones already imported. The last run can also copy
-                    attachments on closed issues.
+            <div className="lg:pt-2">
+              <Shot screen={SCREENS.caseDetail} />
+              <div className="mt-10 grid gap-x-10 sm:grid-cols-2">
+                <div className="border-t border-[#E6E3DD] pb-6 pt-5">
+                  <h3 className="text-[17px] font-medium text-[#15171C]">Run it again before you switch off</h3>
+                  <p className="mt-2 text-[15.5px] leading-[1.55] text-[#5C606A]">
+                    Each run picks up new issues and skips the ones already imported. The last run can also copy attachments on closed issues.
                   </p>
                 </div>
-                <div className="border-t border-[#15171C] pt-5">
-                  <h3 className="font-semibold text-[#15171C]">What stays behind</h3>
-                  <p className="mt-2 text-[15px] leading-relaxed text-[#3D4350]">
-                    Queues, automation rules and SLA settings don’t come across; you set SLA targets per client here.
-                    Jira Data Center and Server sites aren’t supported.
+                <div className="border-t border-[#E6E3DD] pb-6 pt-5">
+                  <h3 className="text-[17px] font-medium text-[#15171C]">What stays behind</h3>
+                  <p className="mt-2 text-[15.5px] leading-[1.55] text-[#5C606A]">
+                    Queues, automation rules and SLA settings don’t come across; you set SLA targets per client here. Jira Data Center and Server sites aren’t supported.
                   </p>
                 </div>
               </div>
@@ -194,25 +168,12 @@ export default function SwitchJiraPage() {
         </Container>
       </Section>
 
-      <Section tone="night" testId="section-cta">
-        <Container>
-          <div className="max-w-3xl">
-            <h2 className="font-display text-3xl font-semibold leading-[1.12] tracking-[-0.015em] text-white text-balance md:text-5xl">
-              Bring the project. Keep the history.
-            </h2>
-            <p className="mt-5 text-lg text-white/70">
-              14-day trial on the Professional plan, Jira import included. You won’t be charged until day 15 · Cancel anytime.
-            </p>
-            <div className="mt-9 flex flex-wrap gap-3">
-              <ButtonLink href="/signup" size="lg" arrow testId="cta-start-trial">Start free trial</ButtonLink>
-              <ButtonLink href="/demo" size="lg" variant="onNight" testId="cta-book-demo">Book a demo</ButtonLink>
-            </div>
-            <TextLink href="/client-support" testId="link-switch-jira-support" className="mt-7 !text-white decoration-white/40 hover:decoration-white">
-              How Client Support works
-            </TextLink>
-          </div>
-        </Container>
-      </Section>
+      <Closing
+        heading="Bring the project. Keep the history."
+        body={<>The trial runs on Professional, Jira import included. Or read <TextLink href="/client-support" testId="link-switch-jira-support">how the support desk works</TextLink>.</>}
+        primary={{ href: "/signup", label: "Start your trial", testId: "cta-start-trial" }}
+        secondary={{ href: "/demo", label: "Book a demo", testId: "cta-book-demo" }}
+      />
     </MarketingShell>
   );
 }

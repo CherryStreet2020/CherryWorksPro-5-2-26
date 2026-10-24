@@ -2,9 +2,9 @@ import { SEO } from "@/components/seo";
 import { Container, Display, Eyebrow, MarketingShell, PageHero } from "@/components/marketing/kit";
 
 // Legal text is reproduced as written. Only the presentation lives here.
-const SECTION = "border-t border-[#E6E2DA] py-8 md:py-10";
-const H2 = "mb-4 font-display text-xl md:text-2xl font-semibold leading-snug tracking-[-0.01em] text-[#15171C]";
-const LINK = "font-medium text-[#15171C] underline decoration-[#D9D4CB] underline-offset-4 hover:decoration-[#15171C]";
+const SECTION = "border-t border-[#E6E3DD] py-8 md:py-10";
+const H2 = "mb-4 text-[20px] font-medium leading-snug tracking-[-0.015em] md:text-[24px] text-[#15171C]";
+const LINK = "font-medium text-[#15171C] underline decoration-[#CFCBC3] underline-offset-4 hover:decoration-[#15171C]";
 
 export default function TermsPage() {
   return (
@@ -13,12 +13,12 @@ export default function TermsPage() {
       <PageHero className="pb-10 md:pb-12">
         <Container>
           <Eyebrow>Legal</Eyebrow>
-          <Display className="mt-5">Terms of Service</Display>
-          <p className="mt-5 text-sm text-[#5F6672]">Last updated: March 29, 2026</p>
+          <Display className="mt-4">Terms of Service</Display>
+          <p className="mt-5 text-[14px] text-[#6E727B]">Last updated: March 29, 2026</p>
         </Container>
       </PageHero>
       <Container className="pb-24 md:pb-32">
-          <div className="max-w-[70ch] text-base leading-[1.75] text-[#3D4350] [&_strong]:font-semibold [&_strong]:text-[#15171C]">
+          <div className="max-w-[70ch] text-base leading-[1.75] text-[#5C606A] [&_strong]:font-medium [&_strong]:text-[#15171C]">
             <section className={SECTION}>
               <h2 className={H2}>1. Agreement to Terms</h2>
               <p>These Terms of Service ("Terms") constitute a legally binding agreement between you ("Subscriber," "you," or "your") and CherryWorks Pro ("Company," "we," "us," or "our"), governing your access to and use of the CherryWorks Pro platform, including all related software, websites, APIs, and documentation (collectively, the "Service").</p>

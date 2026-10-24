@@ -1,6 +1,5 @@
-import { Link } from "wouter";
 import { SEO } from "@/components/seo";
-import { Container, Display, Eyebrow, Lede, MarketingShell, PageHero, Section } from "@/components/marketing/kit";
+import { Container, Display, Eyebrow, Heading, Lede, MarketingShell, PageHero, Section, TextLink } from "@/components/marketing/kit";
 
 /**
  * Every line below is something the product does today and can be pointed to
@@ -79,60 +78,41 @@ export default function SecurityPage() {
 
       <PageHero>
         <Container>
-          <div className="max-w-3xl">
-            <Eyebrow>Security</Eyebrow>
-            <Display testId="heading-security-title" className="mt-5">Security at CherryWorks Pro</Display>
-            <Lede className="mt-6 max-w-2xl">
-              <span data-testid="text-security-subtitle">Built for firms that handle their clients’ money.</span>{" "}
-              This page lists how the product protects your data today, in plain terms. If you need something it doesn’t cover, ask us.
-            </Lede>
-          </div>
+          <Eyebrow>Security</Eyebrow>
+          <Display testId="heading-security-title" className="mt-4">How CherryWorks Pro protects your data.</Display>
+          <Lede size="hero" className="mt-6">
+            <span data-testid="text-security-subtitle">Built for firms that handle their clients’ money.</span>{" "}
+            This page lists what the product does today, in plain terms. If you need something it doesn’t cover, ask us.
+          </Lede>
         </Container>
       </PageHero>
 
-      <Section tone="white" className="!py-0">
+      <Section>
         <Container>
-          <ol className="divide-y divide-[#E6E2DA]">
+          <ul className="border-t border-[#E6E3DD]">
             {sections.map((section, idx) => (
               <li
                 key={section.title}
                 data-testid={`section-security-${idx + 1}`}
-                className="grid gap-4 py-10 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] md:gap-12 md:py-12"
+                className="grid gap-4 border-b border-[#E6E3DD] py-10 md:grid-cols-[5fr_7fr] md:gap-[72px] md:py-12"
               >
-                <div className="flex items-baseline gap-4">
-                  <span className="font-display text-sm font-semibold tabular-nums text-[#B32A30]" aria-hidden="true">
-                    {String(idx + 1).padStart(2, "0")}
-                  </span>
-                  <h2 className="font-display text-2xl font-semibold leading-snug tracking-[-0.01em] text-[#15171C] md:text-[1.75rem]">
-                    {section.title}
-                  </h2>
-                </div>
-                <ul className="space-y-3 text-base leading-relaxed text-[#3D4350]">
+                <Heading as="h2" className="!text-[22px] !leading-[1.2] !tracking-[-0.015em] md:!text-[26px]">{section.title}</Heading>
+                <ul className="space-y-3 text-[16px] leading-[1.6] text-[#5C606A]">
                   {section.points.map((point) => (
-                    <li key={point} className="flex gap-3">
-                      <span className="mt-[0.7em] h-1 w-1 shrink-0 rounded-full bg-[#9AA0AA]" aria-hidden="true" />
-                      <span>{point}</span>
-                    </li>
+                    <li key={point}>{point}</li>
                   ))}
                 </ul>
               </li>
             ))}
-          </ol>
+          </ul>
         </Container>
       </Section>
 
-      <Section>
+      <Section className="pb-24 md:pb-[152px]">
         <Container>
-          <p className="max-w-2xl text-lg leading-relaxed text-[#3D4350]" data-testid="text-security-cta">
+          <p className="max-w-2xl text-[19px] leading-[1.5] text-[#15171C]" data-testid="text-security-cta">
             Questions about security or compliance, or a questionnaire to fill in?{" "}
-            <Link
-              href="/contact"
-              className="font-semibold text-[#15171C] underline decoration-[#CF3339]/40 underline-offset-[5px] hover:decoration-[#CF3339]"
-              data-testid="link-security-contact"
-            >
-              Send us a message
-            </Link>
-            .
+            <TextLink href="/contact" testId="link-security-contact">Send us a message</TextLink>.
           </p>
         </Container>
       </Section>

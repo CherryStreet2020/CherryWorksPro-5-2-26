@@ -4,21 +4,20 @@ import { Eye, EyeOff, Check, X, ArrowLeft } from "lucide-react";
 import { BrandLockup } from "@/components/shared/brand-lockup";
 import { SEO } from "@/components/seo";
 import { MarketingChatBubble } from "@/components/marketing/marketing-chat-bubble";
-import { Display, Eyebrow } from "@/components/marketing/kit";
+import { Display, Eyebrow, FORM } from "@/components/marketing/kit";
 import { isValidStripeUrl } from "@/lib/url-validation";
 import { PLAN_PRICING, annualPerMonth, type PlanId } from "@shared/plan-pricing";
 
 const plans = [
   { id: "STARTER", name: "Starter", monthly: PLAN_PRICING.STARTER.monthly, annual: annualPerMonth("STARTER"), capacity: "Up to 5 clients · Unlimited users", features: "5 clients · 3 projects · Full GL" },
   { id: "PROFESSIONAL", name: "Professional", monthly: PLAN_PRICING.PROFESSIONAL.monthly, annual: annualPerMonth("PROFESSIONAL"), capacity: "Unlimited clients · Unlimited users", popular: true, features: "Unlimited clients · Support · Payouts" },
-  { id: "BUSINESS", name: "Business", monthly: PLAN_PRICING.BUSINESS.monthly, annual: annualPerMonth("BUSINESS"), capacity: "Unlimited clients · Unlimited users", features: "Marketing Hub · Period closes" },
+  { id: "BUSINESS", name: "Business", monthly: PLAN_PRICING.BUSINESS.monthly, annual: annualPerMonth("BUSINESS"), capacity: "Unlimited clients · Unlimited users", features: "Marketing Hub · Period closes · Dunning · Multi-entity" },
 ];
 
-const LABEL = "block text-sm font-medium text-[#15171C]";
-const FIELD =
-  "mt-2 block h-12 w-full rounded-lg border border-[#D9D4CB] bg-white px-4 text-[15px] text-[#15171C] placeholder:text-[#8A909A] transition-colors hover:border-[#B9B3A8] focus:border-[#CF3339] focus:outline-none focus:ring-2 focus:ring-[#CF3339]/25";
-const NOTICE = "mb-5 rounded-lg border border-[#E6E2DA] bg-[#FBFAF7] px-4 py-3 text-sm leading-relaxed text-[#3D4350]";
-const NOTICE_LINK = "font-medium text-[#15171C] underline decoration-[#D9D4CB] underline-offset-4 hover:decoration-[#15171C]";
+const LABEL = FORM.label;
+const FIELD = `${FORM.field} ${FORM.border} h-12`;
+const NOTICE = "mb-5 border-l-2 border-[#15171C] bg-[#F2F0EB] px-4 py-3 text-[14px] leading-relaxed text-[#5C606A]";
+const NOTICE_LINK = "font-medium text-[#15171C] underline decoration-[#CFCBC3] underline-offset-4 hover:decoration-[#15171C]";
 
 const reassurance = [
   "A 14-day trial on the plan you pick. Professional is selected to start.",
@@ -41,7 +40,7 @@ function PasswordChecks({ password }: { password: string }) {
           {c.met
             ? <Check className="h-3.5 w-3.5 text-[#2F7D4F]" aria-hidden="true" />
             : <X className="h-3.5 w-3.5 text-[#9AA0AA]" aria-hidden="true" />}
-          <span className={`text-[13px] ${c.met ? "text-[#2F7D4F]" : "text-[#5F6672]"}`}>{c.label}</span>
+          <span className={`text-[13px] ${c.met ? "text-[#2F7D4F]" : "text-[#6E727B]"}`}>{c.label}</span>
         </div>
       ))}
     </div>
@@ -169,7 +168,7 @@ export default function SignupPage() {
   );
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#FBFAF7] text-[#3D4350] antialiased">
+    <div className="flex min-h-screen flex-col bg-[#FBFAF8] font-display text-[#5C606A] antialiased">
       <SEO path="/signup" />
 
       <header className="mx-auto flex h-20 w-full max-w-6xl items-center justify-between px-5 sm:px-8">
@@ -178,7 +177,7 @@ export default function SignupPage() {
         </Link>
         <Link
           href="/"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-[#5F6672] hover:text-[#15171C]"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-[#6E727B] hover:text-[#15171C]"
           data-testid="link-back-to-home"
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
@@ -191,16 +190,16 @@ export default function SignupPage() {
           <div className="grid gap-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-20">
             <div className="lg:sticky lg:top-10 lg:self-start lg:pt-4">
               <Eyebrow>Free for 14 days</Eyebrow>
-              <Display testId="text-signup-headline" className="mt-4 !text-[2.3rem] sm:!text-5xl md:!text-[3.4rem]">
+              <Display testId="text-signup-headline" className="mt-4 !text-[40px] md:!text-[56px]">
                 Start your trial
               </Display>
-              <p className="mt-5 max-w-md text-lg leading-relaxed text-[#3D4350]">
+              <p className="mt-5 max-w-md text-[18px] leading-[1.5] text-[#5C606A] md:text-[19px]">
                 Set up your firm’s workspace and choose a plan. You can invite your team once you’re in.
               </p>
-              <ul className="mt-8 max-w-md divide-y divide-[#E6E2DA] border-y border-[#E6E2DA]">
+              <ul className="mt-8 max-w-md border-t border-[#E6E3DD]">
                 {reassurance.map((line) => (
-                  <li key={line} className="flex gap-3 py-3.5 text-[15px] leading-relaxed text-[#15171C]">
-                    <Check className="mt-1 h-4 w-4 shrink-0 text-[#B32A30]" aria-hidden="true" />
+                  <li key={line} className="flex gap-3 border-b border-[#E6E3DD] py-3.5 text-[15.5px] leading-[1.55] text-[#15171C]">
+                    <Check className="mt-1 h-4 w-4 shrink-0 text-[#CF3339]" aria-hidden="true" />
                     {line}
                   </li>
                 ))}
@@ -209,18 +208,18 @@ export default function SignupPage() {
 
             <div>
               <div
-                className="rounded-xl border border-[#E6E2DA] bg-white p-6 shadow-[0_1px_2px_rgba(16,20,27,0.04),0_12px_32px_-12px_rgba(16,20,27,0.12)] sm:p-8"
+                className="border-t border-[#15171C] pt-6"
                 data-testid="signup-form-card"
               >
-                <h2 className="font-display text-2xl font-semibold tracking-[-0.01em] text-[#15171C]">
+                <h2 className="text-[24px] font-medium tracking-[-0.015em] text-[#15171C]">
                   {resume ? "Finish setting up billing" : "Create your account"}
                 </h2>
-                <p className="mb-6 mt-1.5 text-[15px] leading-relaxed text-[#5F6672]">
+                <p className="mb-6 mt-1.5 text-[15px] leading-relaxed text-[#6E727B]">
                   {resume ? `Welcome back, ${resume.name}. Your workspace is ready — pick a plan to continue.` : "Next you add a card on Stripe’s checkout page. Nothing is charged today."}
                 </p>
                 {closed && !resume && (
                   <div className={NOTICE} data-testid="signup-closed-notice">
-                    <strong className="font-semibold text-[#15171C]">Signups are closed for the moment.</strong> {closed} Want a heads-up when they reopen? <a href="/contact" className={NOTICE_LINK}>Get in touch</a>.
+                    <strong className="font-medium text-[#15171C]">Signups are closed for the moment.</strong> {closed} Want a heads-up when they reopen? <a href="/contact" className={NOTICE_LINK}>Get in touch</a>.
                   </div>
                 )}
                 {resume && (
@@ -230,7 +229,7 @@ export default function SignupPage() {
                 )}
 
                 {error && (
-                  <div role="alert" className="mb-5 rounded-lg border border-[#F3C7C4] bg-[#FDF3F2] px-4 py-3 text-sm text-[#B42318]" data-testid="signup-error">
+                  <div role="alert" className={`mb-5 ${FORM.alert}`} data-testid="signup-error">
                     {error}
                   </div>
                 )}
@@ -241,8 +240,8 @@ export default function SignupPage() {
                     <label htmlFor="signup-firm-name" className={LABEL}>Firm or company name</label>
                     <input id="signup-firm-name" type="text" value={firmName} onChange={(e) => setFirmName(e.target.value)} required className={FIELD} placeholder="Your firm name" data-testid="input-firm-name" />
                     {generatedSlug && (
-                      <p className="mt-1.5 text-[13px] text-[#5F6672]" data-testid="text-slug-preview">
-                        Your firm slug will be: <strong className="font-semibold text-[#15171C]">{generatedSlug}</strong>
+                      <p className="mt-1.5 text-[13px] text-[#6E727B]" data-testid="text-slug-preview">
+                        Your firm slug will be: <strong className="font-medium text-[#15171C]">{generatedSlug}</strong>
                       </p>
                     )}
                   </div>
@@ -267,7 +266,7 @@ export default function SignupPage() {
                     <label htmlFor="signup-password" className={LABEL}>Password</label>
                     <div className="relative">
                       <input id="signup-password" type={showPass ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} className={`${FIELD} pr-11`} placeholder="8+ chars, upper, lower, number" autoComplete="new-password" data-testid="input-signup-password" />
-                      <button type="button" onClick={() => setShowPass(!showPass)} aria-label={showPass ? "Hide password" : "Show password"} className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-[#5F6672] hover:text-[#15171C] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#CF3339]">
+                      <button type="button" onClick={() => setShowPass(!showPass)} aria-label={showPass ? "Hide password" : "Show password"} className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-[#6E727B] hover:text-[#15171C] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#CF3339]">
                         {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                     </div>
@@ -280,57 +279,57 @@ export default function SignupPage() {
                     <p className={LABEL}>Plan</p>
                     <div className="mt-2 space-y-2">
                       {plans.map((plan) => (
-                        <button key={plan.id} type="button" onClick={() => setSelectedPlan(plan.id)} aria-pressed={selectedPlan === plan.id} className={`flex w-full items-center justify-between gap-4 rounded-lg border bg-white px-4 py-3 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#CF3339] ${selectedPlan === plan.id ? "border-[#15171C] ring-1 ring-[#15171C]" : "border-[#D9D4CB] hover:border-[#B9B3A8]"}`} data-testid={`plan-select-${plan.id.toLowerCase()}`}>
+                        <button key={plan.id} type="button" onClick={() => setSelectedPlan(plan.id)} aria-pressed={selectedPlan === plan.id} className={`flex w-full items-center justify-between gap-4 rounded-lg border bg-white px-4 py-3 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#CF3339] ${selectedPlan === plan.id ? "border-[#15171C] ring-1 ring-[#15171C]" : "border-[#D5D2CB] hover:border-[#B5B1A9]"}`} data-testid={`plan-select-${plan.id.toLowerCase()}`}>
                           <span className="flex min-w-0 items-start gap-3">
-                            <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${selectedPlan === plan.id ? "border-[#CF3339]" : "border-[#B9B3A8]"}`} aria-hidden="true">
+                            <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${selectedPlan === plan.id ? "border-[#CF3339]" : "border-[#B5B1A9]"}`} aria-hidden="true">
                               {selectedPlan === plan.id && <span className="h-2 w-2 rounded-full bg-[#CF3339]" />}
                             </span>
                             <span className="min-w-0">
-                              <span className="block text-[15px] font-semibold text-[#15171C]">{plan.name}</span>
-                              <span className="block text-[13px] text-[#5F6672]">{plan.features}</span>
+                              <span className="block text-[15px] font-medium text-[#15171C]">{plan.name}</span>
+                              <span className="block text-[13px] text-[#6E727B]">{plan.features}</span>
                             </span>
                           </span>
-                          <span className="shrink-0 text-[15px] font-semibold tabular-nums text-[#15171C]">${annual ? plan.annual : plan.monthly}<span className="text-[13px] font-normal text-[#5F6672]">/mo</span></span>
+                          <span className="shrink-0 text-[15px] font-medium tabular-nums text-[#15171C]">${annual ? plan.annual : plan.monthly}<span className="text-[13px] font-normal text-[#6E727B]">/mo</span></span>
                         </button>
                       ))}
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between gap-4 rounded-lg border border-[#E6E2DA] bg-[#FBFAF7] px-4 py-3">
+                  <div className="flex items-center justify-between gap-4 rounded-lg border border-[#E6E3DD] bg-white px-4 py-3">
                     <div className="flex min-w-0 flex-col">
-                      <span className="text-sm font-semibold text-[#15171C]">
+                      <span className="text-sm font-medium text-[#15171C]">
                         {annual ? "Annual billing" : "Monthly billing"}
                       </span>
-                      <span className="mt-0.5 text-[13px] text-[#5F6672]">
+                      <span className="mt-0.5 text-[13px] text-[#6E727B]">
                         {annual
                           ? `$${PLAN_PRICING[selectedPlan as PlanId].annual.toLocaleString()}/yr — billed once per year`
                           : `$${plans.find(p => p.id === selectedPlan)?.monthly ?? 0}/mo — billed each month`}
                       </span>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      {annual && <span className="text-[13px] font-semibold text-[#2F7D4F]">Save {annualSaving}%</span>}
-                      <span className="text-[13px] font-medium text-[#5F6672]">Annual</span>
+                      {annual && <span className="text-[13px] font-medium text-[#2F7D4F]">Save {annualSaving}%</span>}
+                      <span className="text-[13px] font-medium text-[#6E727B]">Annual</span>
                       <button type="button" onClick={() => setAnnual(!annual)} role="switch" aria-checked={annual} aria-label="Bill annually" className="inline-flex h-11 items-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#CF3339]" data-testid="toggle-annual">
-                        <span className={`relative block h-6 w-11 rounded-full transition-colors ${annual ? "bg-[#CF3339]" : "bg-[#D9D4CB]"}`} aria-hidden="true">
+                        <span className={`relative block h-6 w-11 rounded-full transition-colors ${annual ? "bg-[#15171C]" : "bg-[#D5D2CB]"}`} aria-hidden="true">
                           <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${annual ? "translate-x-5" : "translate-x-0"}`} />
                         </span>
                       </button>
                     </div>
                   </div>
 
-                  <button type="submit" disabled={loading || (!!closed && !resume) || (!resume && (!firmName || !firstName || !lastName || !email || !passwordValid))} className="inline-flex h-12 w-full items-center justify-center rounded-lg bg-[#CF3339] px-6 text-[15px] font-semibold text-white shadow-[0_1px_0_rgba(0,0,0,0.08)] transition-colors hover:bg-[#B32A30] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#CF3339] disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-signup-submit">
+                  <button type="submit" disabled={loading || (!!closed && !resume) || (!resume && (!firmName || !firstName || !lastName || !email || !passwordValid))} className={FORM.submit} data-testid="button-signup-submit">
                     {loading ? (resume ? "Opening checkout…" : "Creating your account…") : "Continue to payment"}
                   </button>
                 </form>
 
-                <p className="mt-4 text-center text-[13px] text-[#5F6672]">
+                <p className="mt-4 text-center text-[13px] text-[#6E727B]">
                   {resume ? resume.chargeNote : "You won’t be charged until day 15 · Cancel anytime"}
                 </p>
 
-                <div className="mt-6 border-t border-[#E6E2DA] pt-5 text-center">
-                  <p className="text-sm text-[#5F6672]">
+                <div className="mt-6 border-t border-[#E6E3DD] pt-5 text-center">
+                  <p className="text-sm text-[#6E727B]">
                     Already have an account?{" "}
-                    <Link href="/login" className="font-semibold text-[#15171C] underline decoration-[#CF3339]/40 underline-offset-4 hover:decoration-[#CF3339]" data-testid="link-login">Log in</Link>
+                    <Link href="/login" className="font-medium text-[#15171C] underline decoration-[#CFCBC3] underline-offset-4 hover:decoration-[#15171C]" data-testid="link-login">Log in</Link>
                   </p>
                 </div>
               </div>
@@ -339,8 +338,8 @@ export default function SignupPage() {
         </div>
       </main>
 
-      <footer className="border-t border-[#E6E2DA]">
-        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-6 text-[13px] text-[#5F6672] sm:px-8">
+      <footer className="border-t border-[#E6E3DD]">
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-6 text-[13px] text-[#6E727B] sm:px-8">
           <p>&copy; {new Date().getFullYear()} CherryWorks Pro</p>
           <nav aria-label="Legal" className="flex gap-5">
             <Link href="/terms" className="hover:text-[#15171C]">Terms</Link>

@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { SEO } from "@/components/seo";
 import {
-  MarketingShell, Container, Section, PageHero, Eyebrow, Display, Heading, Lede, ButtonLink,
+  ButtonLink, Container, Ctas, Display, Eyebrow, Heading, Lede, MarketingShell, Note, PageHero, Section, TRIAL_NOTE,
 } from "@/components/marketing/kit";
 import { MarketingHubBand, ClosingCta } from "@/components/marketing/switch-page";
 import { PLAN_PRICING } from "@shared/plan-pricing";
@@ -299,6 +299,7 @@ const FILTERS: { id: string; label: string }[] = [
   ...COMPETITORS.map((c) => ({ id: c.id, label: c.name })),
 ];
 
+
 function CompareTable({ selected }: { selected: string }) {
   const single = selected !== "all";
   const columns = [CHERRY, ...COMPETITORS.filter((c) => !single || c.id === selected)];
@@ -307,38 +308,36 @@ function CompareTable({ selected }: { selected: string }) {
     : "CherryWorks Pro and eight other products compared";
 
   if (single) {
-    // Two products: a readable three-column table that stacks into cards on phones.
+    // Two products: a readable three-column table that stacks on phones.
     const other = columns[1];
-    const cell = "align-top px-6 py-5 max-md:block max-md:p-0";
-    const colLabel = "mb-1 block text-[12px] font-semibold uppercase tracking-[0.1em] md:hidden";
+    const cell = "align-top py-5 pr-8 max-md:block max-md:p-0";
+    const colLabel = "mb-1 block text-[14px] font-medium md:hidden";
     return (
-      <div className="overflow-hidden rounded-xl border border-[#E6E2DA] bg-white">
-        <table data-testid="comparison-table" className="w-full border-collapse text-left text-[15px] leading-relaxed max-md:block">
-          <caption className="sr-only">{caption}</caption>
-          <thead className="max-md:hidden">
-            <tr className="border-b border-[#E6E2DA] bg-[#FBFAF7]">
-              <th scope="col" className="w-[24%] px-6 py-4"><span className="sr-only">Feature</span></th>
-              <th scope="col" className="w-[38%] px-6 py-4 text-[13px] font-semibold uppercase tracking-[0.1em] text-[#B32A30]">{CHERRY.name}</th>
-              <th scope="col" className="w-[38%] px-6 py-4 text-[13px] font-semibold uppercase tracking-[0.1em] text-[#5F6672]">{other.name}</th>
+      <table data-testid="comparison-table" className="w-full border-collapse text-left text-[16px] leading-[1.55] max-md:block">
+        <caption className="sr-only">{caption}</caption>
+        <thead className="max-md:hidden">
+          <tr className="border-b border-[#15171C]">
+            <th scope="col" className="w-[24%] pb-4 pr-8"><span className="sr-only">Feature</span></th>
+            <th scope="col" className="w-[38%] pb-4 pr-8 text-[15px] font-medium text-[#15171C]">{CHERRY.name}</th>
+            <th scope="col" className="w-[38%] pb-4 text-[15px] font-medium text-[#5C606A]">{other.name}</th>
+          </tr>
+        </thead>
+        <tbody className="max-md:block max-md:border-t max-md:border-[#15171C]">
+          {ROWS.map((r) => (
+            <tr key={r.key} className="border-b border-[#E6E3DD] max-md:block max-md:space-y-4 max-md:py-6">
+              <th scope="row" className={`${cell} font-medium text-[#15171C]`}>{r.label}</th>
+              <td className={`${cell} text-[#15171C]`}>
+                <span className={`${colLabel} text-[#CF3339]`}>{CHERRY.name}</span>
+                {CHERRY.cells[r.key]}
+              </td>
+              <td className={`${cell} text-[#5C606A] md:pr-0`}>
+                <span className={`${colLabel} text-[#6E727B]`}>{other.name}</span>
+                {other.cells[r.key]}
+              </td>
             </tr>
-          </thead>
-          <tbody className="max-md:block">
-            {ROWS.map((r) => (
-              <tr key={r.key} className="border-b border-[#E6E2DA] last:border-0 max-md:block max-md:space-y-4 max-md:px-5 max-md:py-6">
-                <th scope="row" className={`${cell} font-semibold text-[#15171C]`}>{r.label}</th>
-                <td className={`${cell} text-[#3D4350]`}>
-                  <span className={`${colLabel} text-[#B32A30]`}>{CHERRY.name}</span>
-                  {CHERRY.cells[r.key]}
-                </td>
-                <td className={`${cell} text-[#3D4350]`}>
-                  <span className={`${colLabel} text-[#5F6672]`}>{other.name}</span>
-                  {other.cells[r.key]}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </table>
     );
   }
 
@@ -346,31 +345,31 @@ function CompareTable({ selected }: { selected: string }) {
   // It fits from about 1130px wide and scrolls sideways below that.
   return (
     <>
-      <p className="mb-3 text-sm text-[#5F6672] min-[1130px]:hidden" aria-hidden="true">
+      <p className="mb-3 text-[14px] text-[#6E727B] min-[1130px]:hidden" aria-hidden="true">
         Scroll sideways to see all nine products.
       </p>
       <div
         role="region"
         aria-label={`${caption}. Scroll sideways to see every column.`}
         tabIndex={0}
-        className="overflow-x-auto rounded-xl border border-[#E6E2DA] bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#CF3339]"
+        className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#CF3339]"
       >
-        <table data-testid="comparison-table" className="w-full min-w-[1060px] table-fixed border-collapse text-left text-[13.5px] leading-snug">
+        <table data-testid="comparison-table" className="w-full min-w-[1060px] table-fixed border-collapse text-left text-[14px] leading-snug">
           <caption className="sr-only">{caption}</caption>
           <colgroup>
             <col className="w-[120px] md:w-[140px]" />
             {columns.map((c) => <col key={c.id} />)}
           </colgroup>
           <thead>
-            <tr className="border-b border-[#E6E2DA] bg-[#FBFAF7]">
-              <th scope="col" className="sticky left-0 z-10 bg-[#FBFAF7] px-3 py-4 shadow-[1px_0_0_#E6E2DA] md:px-4">
+            <tr className="border-b border-[#15171C]">
+              <th scope="col" className="sticky left-0 z-10 bg-white pb-4 pr-3">
                 <span className="sr-only">Feature</span>
               </th>
               {columns.map((c, i) => (
                 <th
                   key={c.id}
                   scope="col"
-                  className={`px-3 py-4 align-bottom text-[13px] font-semibold leading-tight ${i === 0 ? "bg-[#F8EDEC] text-[#B32A30]" : "text-[#15171C]"}`}
+                  className={`px-3 pb-4 align-bottom text-[14px] font-medium leading-tight ${i === 0 ? "text-[#CF3339]" : "text-[#15171C]"}`}
                 >
                   {c.name}
                 </th>
@@ -379,12 +378,12 @@ function CompareTable({ selected }: { selected: string }) {
           </thead>
           <tbody>
             {ROWS.map((r) => (
-              <tr key={r.key} className="border-b border-[#E6E2DA] last:border-0">
-                <th scope="row" className="sticky left-0 z-10 bg-white px-3 py-4 align-top font-semibold text-[#15171C] shadow-[1px_0_0_#E6E2DA] md:px-4">
+              <tr key={r.key} className="border-b border-[#E6E3DD]">
+                <th scope="row" className="sticky left-0 z-10 bg-white py-4 pr-3 align-top font-medium text-[#15171C]">
                   {r.label}
                 </th>
                 {columns.map((c, i) => (
-                  <td key={c.id} className={`px-3 py-4 align-top ${i === 0 ? "bg-[#FBF4F3] text-[#15171C]" : "text-[#3D4350]"}`}>
+                  <td key={c.id} className={`px-3 py-4 align-top ${i === 0 ? "text-[#15171C]" : "text-[#5C606A]"}`}>
                     {c.brief[r.key]}
                   </td>
                 ))}
@@ -406,32 +405,27 @@ export default function SwitchFreshBooksPage() {
 
       <PageHero>
         <Container>
-          <div className="max-w-3xl">
-            <Eyebrow>Compare</Eyebrow>
-            <Display className="mt-5">How CherryWorks{"\u00a0"}Pro compares</Display>
-            <Lede className="mt-6 text-pretty">
-              CherryWorks Pro keeps time, invoicing, the general ledger, contractor payouts and client support in one place, priced
-              per firm. Here’s how it lines up against eight tools firms often use, by their published list prices and features.
-            </Lede>
-            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-              <ButtonLink href="/signup" size="lg" arrow testId="cta-start-trial">Start free trial</ButtonLink>
-              <ButtonLink href="/tour" size="lg" variant="secondary" testId="cta-take-tour">Take the tour</ButtonLink>
-            </div>
-            <p className="mt-5 text-sm text-[#5F6672]">You won’t be charged until day 15 · Cancel anytime</p>
-          </div>
+          <Eyebrow>Compare</Eyebrow>
+          <Display className="mt-4">How CherryWorks{" "}Pro compares.</Display>
+          <Lede size="hero" className="mt-6">
+            CherryWorks Pro runs support cases, time, invoicing, contractor payouts and the general ledger in one system, with
+            Marketing Hub on Business, priced per firm. Here’s how it lines up against eight tools firms often use, by their
+            published list prices and features.
+          </Lede>
+          <Ctas>
+            <ButtonLink href="/signup" testId="cta-start-trial">Start your trial</ButtonLink>
+            <ButtonLink href="/tour" variant="secondary" testId="cta-take-tour">Take the tour</ButtonLink>
+          </Ctas>
+          <Note>{TRIAL_NOTE}</Note>
         </Container>
       </PageHero>
 
-      <Section tone="white" testId="section-comparison">
+      <Section testId="section-comparison">
         <Container>
-          <div className="max-w-3xl">
-            <Heading>Side by side</Heading>
-            <p className="mt-5 text-pretty text-[17px] leading-relaxed text-[#3D4350]">
-              Pick a product to see it next to CherryWorks Pro in more detail, or view all eight at once.
-            </p>
-          </div>
+          <Heading>Side by side.</Heading>
+          <Lede className="mt-5">Pick a product to see it next to CherryWorks Pro in more detail, or view all eight at once.</Lede>
 
-          <div role="group" aria-label="Choose a product to compare" className="mt-10 flex flex-wrap gap-2">
+          <div role="group" aria-label="Choose a product to compare" className="mt-10 flex flex-wrap gap-x-6 gap-y-1 border-b border-[#E6E3DD]">
             {FILTERS.map((f) => {
               const on = selected === f.id;
               return (
@@ -441,10 +435,8 @@ export default function SwitchFreshBooksPage() {
                   aria-pressed={on}
                   data-testid={`compare-filter-${f.id}`}
                   onClick={() => setSelected(f.id)}
-                  className={`rounded-full border px-3.5 py-1.5 text-sm font-medium md:px-4 md:py-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#CF3339] ${
-                    on
-                      ? "border-[#15171C] bg-[#15171C] text-white"
-                      : "border-[#D9D4CB] bg-white text-[#3D4350] hover:border-[#15171C] hover:text-[#15171C]"
+                  className={`-mb-px border-b py-3 text-[15px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#CF3339] ${
+                    on ? "border-[#15171C] text-[#15171C]" : "border-transparent text-[#6E727B] hover:text-[#15171C]"
                   }`}
                 >
                   {f.label}
@@ -453,11 +445,11 @@ export default function SwitchFreshBooksPage() {
             })}
           </div>
 
-          <div className="mt-8">
+          <div className="mt-10">
             <CompareTable selected={selected} />
           </div>
 
-          <div className="mt-6 max-w-3xl space-y-3 text-pretty text-sm leading-relaxed text-[#5F6672]">
+          <div className="mt-6 max-w-3xl space-y-3 text-[14px] leading-relaxed text-[#6E727B]">
             <p>
               Monthly list prices in US dollars, as of October 2026. Several vendors charge less for annual billing. A dash means we
               found no built-in feature in the vendor’s published plans; many of these products connect to other tools that fill
@@ -467,7 +459,12 @@ export default function SwitchFreshBooksPage() {
               Vendor pricing:{" "}
               {SOURCES.map((s, i) => (
                 <span key={s.href}>
-                  <a href={s.href} target="_blank" rel="noopener noreferrer" className="underline decoration-[#D9D4CB] underline-offset-4 hover:text-[#15171C] hover:decoration-[#15171C]">
+                  <a
+                    href={s.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="border-b border-[#CFCBC3] text-[#5C606A] transition-colors hover:border-[#15171C] hover:text-[#15171C]"
+                  >
                     {s.label}
                   </a>
                   {i < SOURCES.length - 1 ? " · " : ""}
@@ -478,41 +475,42 @@ export default function SwitchFreshBooksPage() {
         </Container>
       </Section>
 
-      <Section tone="paper" testId="section-switch-guides">
+      <Section testId="section-switch-guides">
         <Container>
-          <div className="max-w-3xl">
-            <Heading>Switching guides</Heading>
-            <p className="mt-5 text-pretty text-[17px] leading-relaxed text-[#3D4350]">
-              Each guide covers what that product does well, where firms run into limits, and how its exports come across in the
-              import wizard. Nothing is written to your books until you’ve reviewed a dry run.
-            </p>
-          </div>
-          <ul className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {GUIDES.map((g) => (
-              <li key={g.id}>
-                <Link
-                  href={g.href}
-                  className="group block h-full rounded-xl border border-[#E6E2DA] bg-white p-6 transition-colors hover:border-[#15171C] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#CF3339]"
-                >
-                  <span data-testid={`switch-link-${g.id}`} className="flex h-full flex-col">
-                    <span className="block text-[13px] font-semibold uppercase tracking-[0.12em] text-[#5F6672]">Switching from</span>
-                    <span className="mt-2 block font-display text-xl font-semibold text-[#15171C]">{g.name}</span>
-                    <span className="mt-3 block flex-1 text-[15px] leading-relaxed text-[#3D4350]">{g.summary}</span>
-                    <span className="mt-5 block text-sm font-semibold text-[#B32A30] group-hover:text-[#15171C]">
-                      Read the guide <span aria-hidden="true">→</span>
+          <div className="grid gap-10 lg:grid-cols-[4fr_8fr] lg:gap-[72px]">
+            <div>
+              <Heading>Switching guides.</Heading>
+              <Lede className="mt-5">
+                Each guide covers what that product does well, where firms run into limits, and how its exports come across in
+                the import wizard. Nothing is written to your books until you’ve reviewed a dry run.
+              </Lede>
+            </div>
+            <ul className="grid gap-x-10 border-t border-[#E6E3DD] sm:grid-cols-2 lg:mt-2">
+              {GUIDES.map((g) => (
+                <li key={g.id} className="border-b border-[#E6E3DD]">
+                  <Link
+                    href={g.href}
+                    className="group block py-6 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#CF3339]"
+                  >
+                    <span data-testid={`switch-link-${g.id}`} className="block">
+                      <span className="flex items-baseline justify-between gap-4">
+                        <span className="text-[17px] font-medium text-[#15171C]">From {g.name}</span>
+                        <span aria-hidden="true" className="text-[#6E727B] transition-transform group-hover:translate-x-0.5 group-hover:text-[#15171C]">→</span>
+                      </span>
+                      <span className="mt-2 block text-[15.5px] leading-[1.55] text-[#5C606A]">{g.summary}</span>
                     </span>
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
         </Container>
       </Section>
 
-      <MarketingHubBand tone="white" />
+      <MarketingHubBand />
 
       <ClosingCta
-        heading="Try it with your own data"
+        heading="Try it with your own data."
         body="Fourteen days on Professional, import wizard included. Bring your history across and see what your team is owed."
       />
     </MarketingShell>

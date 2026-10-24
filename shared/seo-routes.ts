@@ -24,8 +24,8 @@ const BUSINESS = `$${PLAN_PRICING.BUSINESS.monthly}`;
 
 export const PUBLIC_ROUTES: Record<string, PublicRouteSeo> = {
   "/": {
-    title: "CherryWorks Pro — Time, Billing, Payouts and Client Support",
-    description: `Time tracking, invoicing, contractor payouts, a general ledger and client support for services firms. Unlimited users, ${REPORT_COUNT} reports, from ${STARTER}/mo.`,
+    title: "CherryWorks Pro — Time, Billing, Books, Support & Marketing",
+    description: `Time, invoicing, payouts, a general ledger, a support desk and Marketing Hub for services businesses. Unlimited users, ${REPORT_COUNT} reports, from ${STARTER}/mo.`,
   },
   "/features": {
     title: "Features — Time, Billing, Books & Payouts | CherryWorks Pro",

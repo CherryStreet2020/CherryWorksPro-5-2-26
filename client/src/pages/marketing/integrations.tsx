@@ -1,24 +1,25 @@
-import { Link } from "wouter";
 import { SEO } from "@/components/seo";
 import {
-  ButtonLink, Container, Display, Eyebrow, Heading, Lede, MarketingShell, PageHero, Section, TextLink,
+  Closing, Container, Display, Eyebrow, Heading, Lede, MarketingShell, PageHero, Section, TextLink,
 } from "@/components/marketing/kit";
 
 /**
  * Only connections that are built and working are listed here, each one
  * traceable to code (server/email/*, server/routes/bank-routes.ts,
  * server/support-jira.ts, server/routes/integration-routes.ts, server/webhooks.ts).
- * Plan notes match requirePlanTier() gates. Add a card only with the code behind it.
+ * Plan notes match requirePlanTier() gates. Add an entry only with the code behind it.
+ * The webhook events are the ones fireWebhookEvent() actually sends, not the
+ * longer WEBHOOK_EVENT_TYPES list an endpoint can subscribe to.
  */
 type Integration = { id: string; name: string; plan?: string; body: string; points?: string[] };
 type Group = { title: string; intro: string; items: Integration[] };
 
-const PRO_UP = "Professional and Business";
+const PRO_UP = "Professional and up";
 
 const groups: Group[] = [
   {
     title: "Email",
-    intro: "Invoices go out from your firm’s own mailbox, so clients see your address, not ours.",
+    intro: "Invoices, estimates and case replies go out from your firm’s own mailbox, so clients see your address, not ours.",
     items: [
       {
         id: "microsoft-365",
@@ -67,7 +68,7 @@ const groups: Group[] = [
     items: [
       {
         id: "imports",
-        name: "Imports from 8 platforms",
+        name: "Imports from eight platforms",
         plan: PRO_UP,
         body: "Import from FreshBooks, QuickBooks, Harvest, Xero, Wave, BigTime, Scoro and Paymo. You see a preview before anything is written.",
         points: ["These are file imports. There is no live, two-way sync with QuickBooks or any other accounting system."],
@@ -112,40 +113,33 @@ export default function IntegrationsPage() {
 
       <PageHero>
         <Container>
-          <div className="max-w-3xl">
-            <Eyebrow>Integrations</Eyebrow>
-            <Display className="mt-5">What CherryWorks Pro connects to</Display>
-            <Lede className="mt-6 max-w-2xl">
-              This page lists only the connections that are built and working today. If a tool you rely on isn’t here, it isn’t built yet.
-            </Lede>
-          </div>
+          <Eyebrow>Integrations</Eyebrow>
+          <Display className="mt-4">Your mailbox, your Stripe account, your bank.</Display>
+          <Lede size="hero" className="mt-6">
+            CherryWorks Pro sends from the email address your clients already know, takes payments and pays your team through Stripe, reads your bank feed, and talks to your own systems through an API and webhooks.
+          </Lede>
         </Container>
       </PageHero>
 
-      <Section tone="white" className="!py-0">
+      <Section>
         <Container>
-          <div className="divide-y divide-[#E6E2DA]">
+          <div className="space-y-16 md:space-y-24">
             {groups.map((group) => (
-              <div
-                key={group.title}
-                className="grid gap-6 py-12 md:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] md:gap-12 md:py-16"
-              >
+              <div key={group.title} className="grid gap-6 md:grid-cols-[4fr_8fr] md:gap-[72px]">
                 <div>
-                  <h2 className="font-display text-2xl font-semibold leading-snug tracking-[-0.01em] text-[#15171C] md:text-[1.75rem]">
-                    {group.title}
-                  </h2>
-                  <p className="mt-3 max-w-sm text-base leading-relaxed text-[#5F6672]">{group.intro}</p>
+                  <Heading>{group.title}</Heading>
+                  <p className="mt-4 max-w-sm text-[17px] leading-[1.6] text-[#5C606A]">{group.intro}</p>
                 </div>
-                <ul className="grid gap-px overflow-hidden rounded-xl border border-[#E6E2DA] bg-[#E6E2DA]">
+                <ul className="border-t border-[#E6E3DD] md:mt-2">
                   {group.items.map((item) => (
-                    <li key={item.id} data-testid={`card-integration-${item.id}`} className="bg-white p-6 md:p-7">
+                    <li key={item.id} data-testid={`card-integration-${item.id}`} className="border-b border-[#E6E3DD] py-6">
                       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                        <h3 className="text-lg font-semibold text-[#15171C]">{item.name}</h3>
-                        {item.plan && <p className="text-[13px] font-medium text-[#5F6672]">{item.plan}</p>}
+                        <h3 className="text-[17px] font-medium tracking-[-0.005em] text-[#15171C]">{item.name}</h3>
+                        {item.plan && <p className="text-[13px] text-[#6E727B]">{item.plan}</p>}
                       </div>
-                      <p className="mt-2 text-[15px] leading-relaxed text-[#3D4350]">{item.body}</p>
+                      <p className="mt-2 text-[15.5px] leading-[1.55] text-[#5C606A]">{item.body}</p>
                       {item.points?.map((point) => (
-                        <p key={point} className="mt-3 border-l-2 border-[#E6E2DA] pl-3 text-sm leading-relaxed text-[#5F6672]">
+                        <p key={point} className="mt-3 text-[14px] leading-relaxed text-[#6E727B]">
                           {point}
                         </p>
                       ))}
@@ -158,75 +152,48 @@ export default function IntegrationsPage() {
         </Container>
       </Section>
 
+      <Section testId="section-marketing-os-addon">
+        <Container>
+          <div className="grid gap-6 md:grid-cols-[4fr_8fr] md:gap-[72px]">
+            <div>
+              <p data-testid="badge-marketing-os-addon" className="text-[15px] font-medium text-[#CF3339]">
+                Marketing Hub <span className="font-normal text-[#6E727B]">· Business plan</span>
+              </p>
+              <Heading className="mt-3">Prospects stay apart from billing.</Heading>
+            </div>
+            <div className="md:mt-2">
+              <p className="max-w-xl text-[17px] leading-[1.6] text-[#5C606A]">
+                Contacts, companies, tags, segments, campaigns and email sequences live in their own tables, separate from the clients you bill. A prospect becomes a client only when you convert them.
+              </p>
+              <p className="mt-6 text-[15px]">
+                <TextLink href="/marketing" testId="link-marketing-os">Tour Marketing Hub</TextLink>
+              </p>
+            </div>
+          </div>
+        </Container>
+      </Section>
+
       <Section>
         <Container>
-          <div className="grid gap-6 md:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] md:gap-12">
-            <h2 className="font-display text-2xl font-semibold leading-snug tracking-[-0.01em] text-[#15171C] md:text-[1.75rem]">
-              Not built yet
-            </h2>
-            <div>
-              <p className="text-base leading-relaxed text-[#3D4350]">
-                People ask about these. None of them is available today:
-              </p>
-              <p className="mt-3 text-base leading-relaxed text-[#15171C]">{notYet.join(" · ")}</p>
-              <p className="mt-6 text-base leading-relaxed text-[#3D4350]">
-                <Link
-                  href="/contact"
-                  data-testid="link-zapier"
-                  className="font-medium text-[#15171C] underline decoration-[#D9D4CB] underline-offset-4 hover:decoration-[#15171C]"
-                >
-                  Zapier: not yet — tell us if you need it
-                </Link>
-                . The same goes for anything else on this list. Requests decide what gets built next.
+          <div className="grid gap-6 border-t border-[#E6E3DD] pt-10 md:grid-cols-[4fr_8fr] md:gap-[72px]">
+            <h2 className="text-[20px] font-medium tracking-[-0.01em] text-[#15171C]">Asked for, not built yet</h2>
+            <div className="text-[15.5px] leading-[1.6] text-[#5C606A]">
+              <p>{notYet.join(" · ")}</p>
+              <p className="mt-4">
+                <TextLink href="/contact" testId="link-zapier">Tell us which one you need</TextLink>
+                <span>. Requests decide what gets built next.</span>
               </p>
             </div>
           </div>
         </Container>
       </Section>
 
-      <Section tone="white" testId="section-marketing-os-addon">
-        <Container>
-          <div className="grid gap-8 md:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] md:items-end md:gap-12">
-            <div>
-              <p
-                data-testid="badge-marketing-os-addon"
-                className="inline-flex items-center gap-2 text-[13px] font-semibold text-[#B32A30]"
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-[#CF3339]" aria-hidden="true" />
-                Included in Business plan
-              </p>
-              <Heading className="mt-4">Marketing Hub keeps prospects apart from billing</Heading>
-              <p className="mt-5 max-w-xl text-lg leading-relaxed text-[#3D4350]">
-                Prospects, companies, tags, segments, campaigns and email sequences live in their own tables, separate from your
-                billing clients. Prospects are never copied into your client list automatically.
-              </p>
-            </div>
-            <div className="md:justify-self-end">
-              <TextLink href="/marketing" testId="link-marketing-os">Tour Marketing Hub</TextLink>
-            </div>
-          </div>
-        </Container>
-      </Section>
-
-      <Section tone="night">
-        <Container>
-          <div className="max-w-2xl">
-            <h2 className="font-display text-3xl font-semibold leading-[1.12] tracking-[-0.015em] text-white md:text-5xl">
-              Connect your own mailbox and Stripe account in the trial
-            </h2>
-            <p className="mt-5 text-lg leading-relaxed text-white/70">
-              Professional and Business include the REST API, webhooks, imports and bank accounts. Start a trial on either to try them.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <ButtonLink href="/signup" size="lg" arrow testId="button-start-trial-integrations">
-                Start your 14-day trial
-              </ButtonLink>
-              <ButtonLink href="/demo" size="lg" variant="onNight">Book a demo</ButtonLink>
-            </div>
-            <p className="mt-5 text-sm text-white/50">You won’t be charged until day 15 · Cancel anytime</p>
-          </div>
-        </Container>
-      </Section>
+      <Closing
+        heading="Connect your own mailbox and Stripe account in the trial."
+        body="The trial runs on Professional, which includes the REST API, webhooks, imports and bank feeds."
+        primary={{ href: "/signup", label: "Start your trial", testId: "button-start-trial-integrations" }}
+        secondary={{ href: "/demo", label: "Book a demo" }}
+      />
     </MarketingShell>
   );
 }
