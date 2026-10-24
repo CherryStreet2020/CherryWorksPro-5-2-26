@@ -133,3 +133,17 @@ jobs:
           ROLLBACK: ${{ github.event.inputs.image_tag }}
           REHEARSAL: ${{ github.event.inputs.rehearsal }}
         run: bash scripts/azure/deploy_gate.sh
+
+      # IndexNow (Bing and the other members; Google does not take part) hears
+      # about every sitemap URL once the gate above has verified the new
+      # revision. Runs only after a verified forward deploy: an `if:` without a
+      # status function keeps the implicit success(), and a rollback is skipped
+      # because nothing new shipped and an older image may not serve the key
+      # file. It can NEVER fail the deploy — the script exits 0 on every
+      # failure with a ::warning::, continue-on-error backs that up, and the
+      # timeout stops a hung request from holding the cwp-deploy group.
+      - name: Tell IndexNow about the sitemap URLs (never fails the deploy)
+        if: github.event.inputs.image_tag == ''
+        continue-on-error: true
+        timeout-minutes: 3
+        run: bash scripts/indexnow-ping.sh
