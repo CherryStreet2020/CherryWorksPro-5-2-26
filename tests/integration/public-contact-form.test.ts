@@ -18,6 +18,43 @@ describe("POST /api/public/contact", () => {
     expect((await post({ name: "A", email: "not-an-email", message: "Hello" })).status).toBe(400);
     expect((await post({ name: ["A"], email: "a@b.co", message: "Hello" })).status).toBe(400);
   });
+  it("rejects a message over 4,000 characters instead of cutting it", async () => {
+    const email = `long-contact-${Date.now()}@example.com`;
+    const r = await post({ name: "Al", email, message: "x".repeat(4001) });
+    expect(r.status).toBe(400);
+    expect((await r.json()).message).toMatch(/4,000 characters/);
+    // nothing recorded: the visitor is told, so no half of the inquiry is stored
+    const rows = await db.execute(sql`SELECT 1 FROM marketing_prospects WHERE email = ${email}`);
+    expect(rows.rows).toHaveLength(0);
+    expect((await post({ name: "Al", email, message: "x".repeat(4000) })).status).toBe(200);
+  });
+  it("files the activity under the prospect's own brand", async () => {
+    const email = `brand-contact-${Date.now()}@example.com`;
+    expect((await post({ name: "Cy", email, message: "First." })).status).toBe(200);
+    // Move the prospect to another brand, then write again. The brand sits in a throwaway
+    // workspace: one added to the operator's could be picked as its default brand by the
+    // demo-request test running alongside.
+    const slug = `brand-test-${Date.now()}`;
+    const org = await db.execute(sql`INSERT INTO orgs (name, slug) VALUES ('Brand test', ${slug}) RETURNING id`);
+    const orgId = (org.rows[0] as { id: string }).id;
+    const made = await db.execute(sql`INSERT INTO brands (org_id, name, slug) VALUES (${orgId}, 'Second brand', ${slug}) RETURNING id`);
+    const brandId = (made.rows[0] as { id: string }).id;
+    const before = await db.execute(sql`SELECT brand_id FROM marketing_prospects WHERE email = ${email}`);
+    const original = (before.rows[0] as { brand_id: string | null }).brand_id;
+    await db.execute(sql`UPDATE marketing_prospects SET brand_id = ${brandId} WHERE email = ${email}`);
+    try {
+      expect((await post({ name: "Cy", email, message: "Second." })).status).toBe(200);
+      const acts = await db.execute(sql`
+        SELECT a.brand_id FROM contact_activities a JOIN marketing_prospects p ON p.id = a.prospect_id
+         WHERE p.email = ${email} AND a.type = 'form_submitted' AND a.payload->>'message' = 'Second.'`);
+      expect(acts.rows).toEqual([{ brand_id: brandId }]);
+    } finally {
+      await db.execute(sql`DELETE FROM contact_activities WHERE brand_id = ${brandId}`);
+      await db.execute(sql`UPDATE marketing_prospects SET brand_id = ${original} WHERE email = ${email}`);
+      await db.execute(sql`DELETE FROM brands WHERE id = ${brandId}`);
+      await db.execute(sql`DELETE FROM orgs WHERE id = ${orgId}`);
+    }
+  });
   it("accepts a complete message", async () => {
     const email = `ada-contact-${Date.now()}@example.com`;
     const r = await post({ name: "Ada", email, message: "Do you import from Harvest?" });

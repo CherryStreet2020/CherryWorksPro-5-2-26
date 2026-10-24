@@ -9,6 +9,8 @@ const FIELD =
 const fieldBorder = (invalid: boolean) =>
   invalid ? "border-[#C2272D] focus:border-[#C2272D]" : "border-[#D9D4CB] hover:border-[#B9B3A8] focus:border-[#CF3339]";
 const FIELD_ERROR = "mt-1.5 text-sm text-[#B42318]";
+// The server rejects longer messages; the counter shows once the limit is close.
+const MAX_MESSAGE = 4000;
 
 const topics = [
   "Moving from another tool, and what comes across",
@@ -128,10 +130,16 @@ export default function ContactPage() {
                         value={message}
                         onChange={(e) => { const v = e.target.value; setMessage(v); if (touched) setFieldErrors(validateWith(name, email, v)); }}
                         rows={6}
+                        maxLength={MAX_MESSAGE}
                         className={`${FIELD} resize-y py-3 leading-relaxed ${fieldBorder(Boolean(touched && fieldErrors.message))}`}
                         placeholder="Tell us about your firm and what you’re looking for"
                         data-testid="input-contact-message"
                       />
+                      {message.length > MAX_MESSAGE - 400 && (
+                        <p className="mt-1.5 text-xs text-[#5F6672]" data-testid="contact-message-count">
+                          {message.length.toLocaleString("en-US")} of {MAX_MESSAGE.toLocaleString("en-US")} characters
+                        </p>
+                      )}
                       {touched && fieldErrors.message && <p className={FIELD_ERROR} data-testid="error-contact-message">{fieldErrors.message}</p>}
                     </div>
                     <button

@@ -13,6 +13,11 @@ describe("POST /api/public/demo-request", () => {
     expect((await post({ email: "a@b.co" })).status).toBe(400);
     expect((await post({ name: "A", email: "not-an-email", company: "Firm" })).status).toBe(400);
   });
+  it("rejects a message over 4,000 characters instead of cutting it", async () => {
+    const r = await post({ name: "Al", email: `long-demo-${Date.now()}@example.com`, company: "Firm", message: "x".repeat(4001) });
+    expect(r.status).toBe(400);
+    expect((await r.json()).message).toMatch(/4,000 characters/);
+  });
   it("accepts a complete request", async () => {
     const r = await post({ name: "Ada", email: "ada@example.com", company: "Example Consulting", teamSize: "6-15", message: "We use Harvest + Jira." });
     expect(r.status).toBe(200);

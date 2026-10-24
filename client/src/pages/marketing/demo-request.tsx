@@ -6,6 +6,8 @@ import { Container, Display, Eyebrow, Lede, MarketingShell, PageHero, TextLink }
 type State = { kind: "idle" } | { kind: "sending" } | { kind: "sent" } | { kind: "error"; message: string };
 
 const LABEL = "block text-sm font-medium text-[#15171C]";
+// The server rejects longer messages; the counter shows once the limit is close.
+const MAX_MESSAGE = 4000;
 const OPTIONAL = "font-normal text-[#5F6672]";
 
 export default function DemoRequestPage() {
@@ -83,7 +85,12 @@ export default function DemoRequestPage() {
                     </div>
                     <div>
                       <label htmlFor="demo-message" className={LABEL}>Your setup today <span className={OPTIONAL}>(optional)</span></label>
-                      <textarea id="demo-message" className={`${field} resize-y py-3 leading-relaxed`} rows={4} placeholder="What do you use today, and what is not working?" value={form.message} onChange={set("message")} data-testid="demo-message" />
+                      <textarea id="demo-message" className={`${field} resize-y py-3 leading-relaxed`} rows={4} maxLength={MAX_MESSAGE} placeholder="What do you use today, and what is not working?" value={form.message} onChange={set("message")} data-testid="demo-message" />
+                      {form.message.length > MAX_MESSAGE - 400 && (
+                        <p className="mt-1.5 text-xs text-[#5F6672]" data-testid="demo-message-count">
+                          {form.message.length.toLocaleString("en-US")} of {MAX_MESSAGE.toLocaleString("en-US")} characters
+                        </p>
+                      )}
                     </div>
                     {state.kind === "error" && (
                       <p role="alert" className="rounded-lg border border-[#F3C7C4] bg-[#FDF3F2] px-4 py-3 text-sm text-[#B42318]" data-testid="demo-error">

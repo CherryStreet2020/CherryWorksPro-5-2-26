@@ -543,6 +543,11 @@ app.post("/api/admin/test-email", requireAdmin, async (req, res) => {
   }
 });
 
+// The public contact and demo forms cap the message (their textareas enforce the same
+// limit). Over the cap is a 400, never a silent cut: a truncated inquiry is a lost lead.
+const MAX_FORM_MESSAGE = 4000;
+const TOO_LONG = "Keep your message under 4,000 characters, or email info@cherrystconsulting.com.";
+
 // ── Public contact form → Marketing Hub ──
 // Same contract as the demo request below: the message is recorded as a prospect
 // (created, or updated — email is unique per workspace) in the operator workspace's
@@ -554,8 +559,9 @@ app.post("/api/public/contact", apiLimiter, async (req, res) => {
     const { name, email, message } = req.body ?? {};
     const clean = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/[\r\n]+/g, " ").trim().slice(0, max) : "");
     const n = clean(name, 120), e = clean(email, 320).toLowerCase();
-    const m = typeof message === "string" ? message.trim().slice(0, 4000) : "";
+    const m = typeof message === "string" ? message.trim() : "";
     if (!n || !e || !m) return res.status(400).json({ message: "Name, email, and message are required" });
+    if (m.length > MAX_FORM_MESSAGE) return res.status(400).json({ message: TOO_LONG });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return res.status(400).json({ message: "Enter a valid email address" });
 
     const slug = (process.env.PLATFORM_MAILBOX_ORG_SLUG || "").trim();
@@ -599,7 +605,7 @@ app.post("/api/public/contact", apiLimiter, async (req, res) => {
     if (!prospect) throw new Error("prospect row missing after write");
     await storage.createActivity({
       orgId: operator.id,
-      brandId,
+      brandId: prospect.brandId ?? brandId, // an existing prospect keeps its own brand; its feed is per brand
       prospectId: prospect.id,
       type: "form_submitted",
       payload: { form: "contact", subject: "Contact form", name: n, email: e, message: m, source: "website" },
@@ -645,8 +651,9 @@ app.post("/api/public/demo-request", apiLimiter, async (req, res) => {
     const { name, email, company, teamSize, message } = req.body ?? {};
     const clean = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/[\r\n]+/g, " ").trim().slice(0, max) : "");
     const n = clean(name, 120), e = clean(email, 320).toLowerCase(), c = clean(company, 160), t = clean(teamSize, 10);
-    const m = typeof message === "string" ? message.trim().slice(0, 4000) : "";
+    const m = typeof message === "string" ? message.trim() : "";
     if (!n || !e || !c) return res.status(400).json({ message: "Name, work email and firm are required" });
+    if (m.length > MAX_FORM_MESSAGE) return res.status(400).json({ message: TOO_LONG });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return res.status(400).json({ message: "Enter a valid email address" });
 
     const slug = (process.env.PLATFORM_MAILBOX_ORG_SLUG || "").trim();
@@ -695,7 +702,7 @@ app.post("/api/public/demo-request", apiLimiter, async (req, res) => {
     if (!prospect) throw new Error("prospect row missing after write");
     await storage.createActivity({
       orgId: operator.id,
-      brandId,
+      brandId: prospect.brandId ?? brandId, // an existing prospect keeps its own brand; its feed is per brand
       prospectId: prospect.id,
       type: "demo_request",
       payload: { name: n, email: e, company: c, teamSize: t || null, message: m || null, source: "website" },
