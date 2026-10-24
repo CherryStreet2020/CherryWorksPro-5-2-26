@@ -4,16 +4,15 @@ import { Menu, X, LayoutDashboard, ArrowRight } from "lucide-react";
 import { BrandLockup } from "@/components/shared/brand-lockup";
 
 const navLinks = [
-  { label: "Features", href: "/features" },
+  { label: "Product", href: "/features" },
   { label: "Tour", href: "/tour" },
   { label: "Client Support", href: "/client-support" },
-  { label: "Compare", href: "/compare" },
   { label: "Pricing", href: "/pricing" },
-  { label: "Marketing Hub", href: "/marketing" },
-  { label: "Integrations", href: "/integrations" },
+  { label: "Compare", href: "/compare" },
   { label: "About", href: "/about" },
 ];
 
+// The bar is 36px and the nav 64px: pages that clear them with pt-[100px] rely on both.
 export function MarketingNav() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [location] = useLocation();
@@ -36,128 +35,122 @@ export function MarketingNav() {
   return (
     <>
       <div
-        className="fixed top-0 left-0 right-0 overflow-hidden transition-all duration-300"
-        style={{
-          zIndex: "var(--z-sticky)",
-          background: "linear-gradient(90deg, #0a0f1c 0%, #1a0a0a 50%, #0a0f1c 100%)",
-          borderBottom: "1px solid rgba(207,51,57,0.15)",
-          maxHeight: scrolled ? "0px" : "36px",
-          opacity: scrolled ? 0 : 1,
-        }}
+        className="fixed top-0 left-0 right-0 overflow-hidden bg-[#15171C] transition-all duration-300"
+        style={{ zIndex: "var(--z-sticky)", maxHeight: scrolled ? "0px" : "36px", opacity: scrolled ? 0 : 1 }}
         data-testid="announcement-bar"
       >
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-center h-9 gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.5)" }}>NEW</span>
-            <span className="text-xs" style={{ color: "rgba(255,255,255,0.6)" }}>AI Receipt Scanner, Expense Reports, ACH Payments, and more.</span>
-            <Link href="/features">
-              <span className="inline-flex items-center gap-1 text-xs font-semibold cursor-pointer" style={{ color: "#cf3339" }} data-testid="link-announcement-features">
-                See what's new <ArrowRight className="w-3 h-3" />
-              </span>
+        <div className="mx-auto max-w-6xl px-5 sm:px-8">
+          <div className="flex h-9 items-center justify-center gap-2 text-[13px]">
+            <span className="hidden text-white/70 sm:inline">Harvest renewal gone up?</span>
+            <Link
+              href="/switch-from-harvest"
+              className="inline-flex items-center gap-1 font-semibold text-white underline decoration-white/30 underline-offset-4 hover:decoration-white"
+              data-testid="link-announcement"
+            >
+              Flat pricing, every user included <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
             </Link>
           </div>
         </div>
       </div>
 
       <nav
-        className="fixed left-0 right-0 border-b transition-all duration-300"
+        className="fixed left-0 right-0 border-b backdrop-blur-md transition-all duration-300"
         style={{
           zIndex: "var(--z-sticky)",
           top: scrolled ? "0px" : "36px",
-          background: scrolled ? "rgba(10,15,28,0.97)" : "rgba(10,15,28,0.92)",
-          backdropFilter: "blur(20px)",
-          borderColor: scrolled ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.06)",
-          boxShadow: scrolled ? "0 4px 30px rgba(0,0,0,0.3)" : "none",
+          background: scrolled ? "rgba(251,250,247,0.96)" : "rgba(251,250,247,0.88)",
+          borderColor: scrolled ? "#E6E2DA" : "transparent",
         }}
+        aria-label="Main"
         data-testid="marketing-nav"
       >
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <Link href="/">
-              <BrandLockup iconSize={34} textSize="base" />
+        <div className="mx-auto max-w-6xl px-5 sm:px-8">
+          <div className="flex h-16 items-center justify-between">
+            <Link href="/" aria-label="CherryWorks Pro home" data-testid="link-nav-home">
+              <BrandLockup iconSize={30} textSize="base" tone="light" />
             </Link>
 
-            <div className="hidden md:flex items-center gap-1">
-              {navLinks.map((link) => (
-                <Link key={link.href} href={link.href}>
-                  <span
-                    className="px-3 py-2 text-sm font-medium rounded-md transition-colors cursor-pointer"
-                    style={{
-                      color: location === link.href ? "#cf3339" : "rgba(255,255,255,0.6)",
-                    }}
+            <div className="hidden items-center gap-0.5 lg:flex">
+              {navLinks.map((link) => {
+                const active = location === link.href;
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    aria-current={active ? "page" : undefined}
+                    className={`rounded-md px-3 py-2 text-[14px] font-medium transition-colors ${active ? "text-[#15171C]" : "text-[#4A505C] hover:text-[#15171C]"}`}
+                    data-testid={`link-nav-${link.href.slice(1)}`}
                   >
-                    {link.label}
-                  </span>
-                </Link>
-              ))}
+                    <span className={active ? "border-b-2 border-[#CF3339] pb-1" : ""}>{link.label}</span>
+                  </Link>
+                );
+              })}
             </div>
 
-            <div className="hidden md:flex items-center gap-3">
+            <div className="hidden items-center gap-2 lg:flex">
               {isAuthenticated ? (
-                <Link href="/">
-                  <span className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-lg cursor-pointer transition-opacity hover:opacity-90" style={{ background: "linear-gradient(135deg, #cf3339, #e74c3c)" }}>
-                    <LayoutDashboard className="w-4 h-4" />
-                    Dashboard
-                  </span>
+                <Link
+                  href="/"
+                  className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#CF3339] px-4 text-sm font-semibold text-white hover:bg-[#B32A30]"
+                  data-testid="link-nav-dashboard"
+                >
+                  <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
+                  Dashboard
                 </Link>
               ) : (
                 <>
-                  <Link href="/login">
-                    <span className="text-sm font-medium cursor-pointer" style={{ color: "rgba(255,255,255,0.6)" }}>Log In</span>
+                  <Link href="/login" className="rounded-md px-3 py-2 text-[14px] font-medium text-[#4A505C] hover:text-[#15171C]" data-testid="link-nav-login">
+                    Log in
                   </Link>
-                  <Link href="/signup">
-                    <span
-                      className="inline-flex items-center px-4 py-2 text-sm font-semibold text-white rounded-lg cursor-pointer transition-opacity hover:opacity-90"
-                      style={{ background: "linear-gradient(135deg, #cf3339, #e74c3c)" }}
-                    >
-                      Start Free Trial
-                    </span>
+                  <Link
+                    href="/signup"
+                    className="inline-flex h-9 items-center rounded-lg bg-[#CF3339] px-4 text-sm font-semibold text-white hover:bg-[#B32A30]"
+                    data-testid="link-nav-signup"
+                  >
+                    Start free trial
                   </Link>
                 </>
               )}
             </div>
 
-            <button className="md:hidden p-2" onClick={() => setMobileOpen(!mobileOpen)}>
-              {mobileOpen
-                ? <X className="w-5 h-5 text-white" />
-                : <Menu className="w-5 h-5 text-white" />
-              }
+            <button
+              type="button"
+              className="-mr-2 rounded-md p-2 text-[#15171C] lg:hidden"
+              onClick={() => setMobileOpen(!mobileOpen)}
+              aria-label={mobileOpen ? "Close menu" : "Open menu"}
+              aria-expanded={mobileOpen}
+              data-testid="button-mobile-menu"
+            >
+              {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
           </div>
         </div>
 
         {mobileOpen && (
-          <div className="md:hidden border-t px-4 py-4 space-y-2" style={{ background: "rgba(10,15,28,0.98)", borderColor: "rgba(255,255,255,0.06)" }}>
+          <div className="space-y-1 border-t border-[#E6E2DA] bg-[#FBFAF7] px-5 py-4 lg:hidden">
             {navLinks.map((link) => (
-              <Link key={link.href} href={link.href}>
-                <span
-                  className="block px-3 py-2 text-sm font-medium rounded-md cursor-pointer"
-                  style={{ color: location === link.href ? "#cf3339" : "rgba(255,255,255,0.6)" }}
-                  onClick={() => setMobileOpen(false)}
-                >
-                  {link.label}
-                </span>
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={() => setMobileOpen(false)}
+                className={`block rounded-md px-3 py-2.5 text-[15px] font-medium ${location === link.href ? "bg-white text-[#15171C]" : "text-[#4A505C]"}`}
+              >
+                {link.label}
               </Link>
             ))}
-            <div className="pt-3 flex flex-col gap-2 border-t" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+            <div className="mt-3 flex flex-col gap-2 border-t border-[#E6E2DA] pt-4">
               {isAuthenticated ? (
-                <Link href="/">
-                  <span className="block text-center px-4 py-2 text-sm font-semibold text-white rounded-lg cursor-pointer" style={{ background: "linear-gradient(135deg, #cf3339, #e74c3c)" }} onClick={() => setMobileOpen(false)}>
-                    <LayoutDashboard className="w-4 h-4 inline mr-2" />
-                    Go to Dashboard
-                  </span>
+                <Link href="/" onClick={() => setMobileOpen(false)} className="flex h-11 items-center justify-center gap-2 rounded-lg bg-[#CF3339] text-sm font-semibold text-white">
+                  <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
+                  Go to Dashboard
                 </Link>
               ) : (
                 <>
-                  <Link href="/login">
-                    <span className="block text-center px-4 py-2 text-sm font-medium rounded-lg cursor-pointer" style={{ color: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.1)" }} onClick={() => setMobileOpen(false)}>
-                      Log In
-                    </span>
+                  <Link href="/login" onClick={() => setMobileOpen(false)} className="flex h-11 items-center justify-center rounded-lg border border-[#D9D4CB] bg-white text-sm font-semibold text-[#15171C]">
+                    Log in
                   </Link>
-                  <Link href="/signup">
-                    <span className="block text-center px-4 py-2 text-sm font-semibold text-white rounded-lg cursor-pointer" style={{ background: "linear-gradient(135deg, #cf3339, #e74c3c)" }} onClick={() => setMobileOpen(false)}>
-                      Start Free Trial
-                    </span>
+                  <Link href="/signup" onClick={() => setMobileOpen(false)} className="flex h-11 items-center justify-center rounded-lg bg-[#CF3339] text-sm font-semibold text-white">
+                    Start free trial
                   </Link>
                 </>
               )}

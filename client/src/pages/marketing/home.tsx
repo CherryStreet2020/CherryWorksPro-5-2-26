@@ -1,415 +1,434 @@
-
-import { useFadeIn } from "@/hooks/use-fade-in";
+import { useState } from "react";
 import { Link } from "wouter";
-import { ArrowRight, BookOpen, CheckCircle, Clock, LifeBuoy, Lock, Server, Shield, ShieldCheck, Upload, Users, Zap } from "lucide-react";
-import { BrandLockup } from "@/components/shared/brand-lockup";
-import { SEO } from "@/components/seo";
-import { MarketingNav } from "@/components/marketing/marketing-nav";
-import { MarketingFooter } from "@/components/marketing/marketing-footer";
+import { BookOpen, Clock, LifeBuoy, Users, Plus } from "lucide-react";
+import { SEO, FAQStructuredData } from "@/components/seo";
+import { PLAN_PRICING } from "@shared/plan-pricing";
+import { REPORT_COUNT } from "@shared/seo-routes";
+import {
+  ButtonLink, Container, Display, Eyebrow, Fact, Heading, Lede, MarketingShell, PageHero, Screenshot, Section, TextLink,
+} from "@/components/marketing/kit";
 
+const SCREENS = "/marketing/screens";
 
-function DashboardMockup() {
-  return (
-    <div className="rounded-2xl overflow-hidden" style={{ background: "rgba(11,18,34,0.85)", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 25px 80px rgba(0,0,0,0.5), 0 0 60px rgba(207,51,57,0.06), inset 0 1px 0 rgba(255,255,255,0.05)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
-      <div className="flex items-center px-4 py-2" style={{ background: "rgba(7,13,24,0.9)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-        <div className="flex gap-1.5 mr-4">
-          <div className="w-[10px] h-[10px] rounded-full" style={{ background: "#ff5f57" }} />
-          <div className="w-[10px] h-[10px] rounded-full" style={{ background: "#febc2e" }} />
-          <div className="w-[10px] h-[10px] rounded-full" style={{ background: "#28c840" }} />
-        </div>
-        <div className="flex-1 flex justify-center">
-          <div className="px-8 py-1 rounded-md text-xs" style={{ background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.25)" }}>cherryworkspro.com/dashboard</div>
-        </div>
-      </div>
-      <div className="flex">
-        <div className="hidden md:block w-[160px] flex-shrink-0 py-3 px-3" style={{ background: "rgba(7,13,24,0.7)", borderRight: "1px solid rgba(255,255,255,0.06)", backdropFilter: "blur(12px)" }}>
-          <div className="px-2 mb-4">
-            <BrandLockup iconSize={20} textSize="sm" />
-          </div>
-          {["Dashboard", "Clients", "Projects", "Time", "Invoices", "Payments", "Payouts", "Reports", "Expenses", "Team"].map((item, i) => (
-            <div key={i} className="flex items-center gap-1.5 px-2 py-[5px] rounded text-[10px]" style={{ background: i === 0 ? "rgba(207,51,57,0.12)" : "transparent", color: i === 0 ? "#f87171" : "rgba(255,255,255,0.35)" }}>
-              <div className="w-2.5 h-2.5 rounded" style={{ background: i === 0 ? "rgba(207,51,57,0.3)" : "rgba(255,255,255,0.08)" }} />
-              {item}
-            </div>
-          ))}
-          <div className="mt-4 mx-2 pt-3" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-            <div className="flex items-center gap-1.5">
-              <div className="w-5 h-5 rounded-full flex items-center justify-center text-[12px] font-bold" style={{ background: "#cf3339", color: "#fff" }}>AM</div>
-              <div>
-                <p className="text-[10px] font-medium text-white">Alex M.</p>
-                <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>ADMIN</p>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="flex-1 p-3">
-          <div className="grid grid-cols-3 md:grid-cols-6 gap-1.5 mb-3">
-            {[
-              { label: "REVENUE MTD", value: "$47,850", sub: "+14% vs last month", color: "#22c55e" },
-              { label: "COLLECTED", value: "$38,200", sub: "", color: "#3b82f6" },
-              { label: "OUTSTANDING", value: "$12,650", sub: "6 invoices", color: "#f59e0b" },
-              { label: "OVERDUE", value: "$3,200", sub: "2 invoices", color: "#ef4444" },
-              { label: "NET CASH", value: "$34,100", sub: "+11%", color: "#22c55e" },
-              { label: "TEAM", value: "12", sub: "3 pending", color: "#a855f7" },
-            ].map((kpi, i) => (
-              <div key={i} className="kpi-card rounded-lg p-2 relative overflow-hidden" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", backdropFilter: "blur(8px)" }}>
-                <div className="absolute inset-0 pointer-events-none" style={{ background: "linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.04) 50%, transparent 60%)", animationName: "kpiShimmer", animationDuration: "3s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite", animationDelay: `${i * 0.3}s` }} />
-                <p className="text-[12px] font-bold uppercase tracking-wider mb-0.5 relative" style={{ color: "rgba(255,255,255,0.3)" }}>{kpi.label}</p>
-                <p className="text-[13px] font-bold tabular-nums relative" style={{ color: kpi.color }}>{kpi.value}</p>
-                {kpi.sub && <p className="text-[11px] relative" style={{ color: "rgba(255,255,255,0.25)" }}>{kpi.sub}</p>}
-              </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-2 gap-1.5 mb-3">
-            <div className="rounded-lg p-2.5" style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.04)" }}>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[10px] font-bold uppercase" style={{ color: "rgba(255,255,255,0.3)" }}>Revenue Trend</p>
-                <span className="text-[11px] px-1 py-0.5 rounded" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e" }}>+12%</span>
-              </div>
-              <svg viewBox="0 0 240 65" className="w-full">
-                <defs>
-                  <linearGradient id="rg" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#cf3339" stopOpacity="0.25" />
-                    <stop offset="100%" stopColor="#cf3339" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                {[0,40,80,120,160,200,240].map(x => (
-                  <line key={x} x1={x} y1="0" x2={x} y2="65" stroke="rgba(255,255,255,0.03)" strokeWidth="0.5" />
-                ))}
-                {[0,16,32,48,65].map(y => (
-                  <line key={y} x1="0" y1={y} x2="240" y2={y} stroke="rgba(255,255,255,0.03)" strokeWidth="0.5" />
-                ))}
-                <path d="M0,55 C20,52 30,48 50,45 C70,42 80,46 100,40 C120,34 140,30 160,24 C180,18 200,14 220,11 L240,8" fill="none" stroke="#cf3339" strokeWidth="1.5" />
-                <path d="M0,55 C20,52 30,48 50,45 C70,42 80,46 100,40 C120,34 140,30 160,24 C180,18 200,14 220,11 L240,8 L240,65 L0,65Z" fill="url(#rg)" />
-                {[[0,55],[50,45],[100,40],[160,24],[240,8]].map(([x,y],i) => (
-                  <circle key={i} cx={x} cy={y} r="2" fill="#cf3339" />
-                ))}
-              </svg>
-              <div className="flex justify-between mt-1">
-                {["Oct","Nov","Dec","Jan","Feb","Mar"].map(m => (
-                  <span key={m} className="text-[11px]" style={{ color: "rgba(255,255,255,0.2)" }}>{m}</span>
-                ))}
-              </div>
-            </div>
-            <div className="rounded-lg p-2.5" style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.04)" }}>
-              <p className="text-[10px] font-bold uppercase mb-2" style={{ color: "rgba(255,255,255,0.3)" }}>Team Utilization</p>
-              <div className="space-y-2">
-                {[
-                  { name: "Sarah Kim", init: "SK", pct: 92, color: "#22c55e" },
-                  { name: "Mike Rivera", init: "MR", pct: 85, color: "#22c55e" },
-                  { name: "Anna Lopez", init: "AL", pct: 68, color: "#f59e0b" },
-                  { name: "James Torres", init: "JT", pct: 54, color: "#f59e0b" },
-                  { name: "Li Chen", init: "LC", pct: 41, color: "#ef4444" },
-                ].map((p, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded-full flex items-center justify-center text-[11px] font-bold" style={{ background: `${p.color}20`, color: p.color }}>{p.init}</div>
-                    <span className="text-[12px] w-14 truncate" style={{ color: "rgba(255,255,255,0.5)" }}>{p.name}</span>
-                    <div className="flex-1 h-[5px] rounded-full" style={{ background: "rgba(255,255,255,0.06)" }}>
-                      <div className="h-full rounded-full transition-all" style={{ width: `${p.pct}%`, background: p.color }} />
-                    </div>
-                    <span className="text-[12px] font-sans tabular-nums w-6 text-right" style={{ color: p.color }}>{p.pct}%</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className="rounded-lg p-2.5" style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.04)" }}>
-            <p className="text-[10px] font-bold uppercase mb-2" style={{ color: "rgba(255,255,255,0.3)" }}>Needs Attention</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              {[
-                { label: "Pending Timesheets", value: "3", color: "#f59e0b" },
-                { label: "Pending Payouts", value: "$2,450", color: "#ef4444" },
-                { label: "Overdue Invoices", value: "1", color: "#ef4444" },
-                { label: "Unbilled Hours", value: "42.5h", color: "#3b82f6" },
-              ].map((a, i) => (
-                <div key={i} className="flex items-center gap-2 p-1.5 rounded" style={{ background: `${a.color}08` }}>
-                  <div className="w-1 h-6 rounded-full" style={{ background: a.color }} />
-                  <div>
-                    <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.4)" }}>{a.label}</p>
-                    <p className="text-xs font-bold" style={{ color: a.color }}>{a.value}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function TrustBadges() {
-  const fadeRef = useFadeIn();
-  const badges = [
-    { icon: Lock, label: "AES-256 Encryption" },
-    { icon: ShieldCheck, label: "Org-Scoped Isolation" },
-    { icon: Server, label: "Daily Backups" },
-    { icon: Shield, label: "MFA & Audit Logging" },
-  ];
-  return (
-    <div ref={fadeRef} className="py-10 fade-in-section" style={{ background: "rgba(255,255,255,0.015)" }}>
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-wrap items-center justify-center gap-4">
-          {badges.map((b, i) => (
-            <div key={i} className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(207,51,57,0.1)", border: "1px solid rgba(207,51,57,0.15)" }}>
-                <b.icon className="w-4 h-4" style={{ color: "#cf3339" }} />
-              </div>
-              <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.55)" }}>{b.label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SetupSection() {
-  const fadeRef = useFadeIn();
-  return (
-    <section ref={fadeRef} className="py-8 md:py-12 relative overflow-hidden fade-in-section" style={{ background: "linear-gradient(135deg, #0a0f1c 0%, #111827 100%)" }}>
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full opacity-10 pointer-events-none" style={{ background: "radial-gradient(circle, #22c55e 0%, transparent 70%)", filter: "blur(80px)" }} />
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 relative">
-        <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold text-white tracking-tight">
-            Most firms are up and running before their coffee gets cold
-          </h2>
-          <p className="mt-4 text-base max-w-2xl mx-auto" style={{ color: "rgba(255,255,255,0.5)" }}>
-            Starting fresh or switching from another platform &mdash; either way, a guided wizard walks you through every step. No implementation specialists. No training videos. No 6-week rollout.
-          </p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto mb-14">
-          <div className="rounded-2xl p-8 text-center" style={{ background: "rgba(34,197,94,0.04)", border: "1px solid rgba(34,197,94,0.12)" }}>
-            <div className="w-14 h-14 rounded-2xl mx-auto mb-4 flex items-center justify-center" style={{ background: "rgba(34,197,94,0.1)" }}>
-              <Zap className="w-7 h-7" style={{ color: "#22c55e" }} />
-            </div>
-            <h3 className="text-lg font-bold text-white mb-2">Starting Fresh?</h3>
-            <p className="text-base leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>
-              The setup wizard walks you through everything: firm profile, services, your first client, team invites. No existing data required. You'll be billing clients in minutes.
-            </p>
-          </div>
-          <div className="rounded-2xl p-8 text-center" style={{ background: "rgba(59,130,246,0.04)", border: "1px solid rgba(59,130,246,0.12)" }}>
-            <div className="w-14 h-14 rounded-2xl mx-auto mb-4 flex items-center justify-center" style={{ background: "rgba(59,130,246,0.1)" }}>
-              <Upload className="w-7 h-7" style={{ color: "#3b82f6" }} />
-            </div>
-            <h3 className="text-lg font-bold text-white mb-2">Switching Platforms?</h3>
-            <p className="text-base leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>
-              Import wizards for FreshBooks, QuickBooks, Harvest, Xero, Wave, BigTime, Scoro, and Paymo. Upload, preview, execute. Your history comes with you.
-            </p>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 max-w-4xl mx-auto">
-          {[
-            { step: "1", time: "60 sec", title: "Sign Up", desc: "Name, email, password. That's it. No sales call. No 'let us get back to you.'" },
-            { step: "2", time: "3 min", title: "Setup Wizard", desc: "The guided wizard walks you through firm details, services, your first client, and team invites. Skip what you don't need." },
-            { step: "3", time: "2 min", title: "Import or Build", desc: "Bring data from another platform, or start building from scratch. Either way, it takes minutes." },
-            { step: "4", time: "Day 1", title: "You're Live", desc: "Your team tracks time. You generate invoices. Clients pay online. Reports run themselves. Payouts calculated automatically." },
-          ].map((s, i) => (
-            <div key={i} className="text-center">
-              <div className="w-12 h-12 rounded-2xl mx-auto mb-3 flex items-center justify-center text-lg font-bold" style={{ background: "rgba(34,197,94,0.12)", color: "#22c55e" }}>{s.step}</div>
-              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e" }}>{s.time}</span>
-              <h4 className="text-base font-bold text-white mt-3 mb-2">{s.title}</h4>
-              <p className="text-base leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>{s.desc}</p>
-            </div>
-          ))}
-        </div>
-        <div className="text-center mt-12">
-          <p className="text-sm font-medium mb-6" style={{ color: "rgba(255,255,255,0.4)" }}>
-            Switching from FreshBooks, QuickBooks, Harvest, Xero, Wave, BigTime, Scoro, or Paymo? Import wizards included.
-          </p>
-          <Link href="/signup">
-            <span className="inline-flex items-center gap-2 px-7 py-4 text-base font-bold text-white rounded-xl cursor-pointer transition-all hover:scale-[1.03]" style={{ background: "linear-gradient(135deg, #cf3339, #e74c3c)", boxShadow: "0 4px 30px rgba(207,51,57,0.4)" }}>
-              Start Now — You'll Be Live Today <ArrowRight className="w-4 h-4" />
-            </span>
-          </Link>
-        </div>
-      </div>
-    </section>
-  );
-}
+const WORKFLOW = [
+  {
+    n: "01",
+    title: "A client emails support. It becomes a case.",
+    body: "Connect the Microsoft 365 mailbox your clients already write to. Every message opens or updates a case with a key, a priority, an owner and an SLA clock, so nothing sits unanswered in someone’s inbox.",
+    img: { src: `${SCREENS}/support-cases.webp`, width: 1600, height: 1217, alt: "The Support Cases list: open cases for several clients with status, priority, assignee and SLA due times." },
+    url: "app.cherryworkspro.com/support/cases",
+  },
+  {
+    n: "02",
+    title: "The hours go on the timesheet.",
+    body: "Your team logs time against the case or the project, by timer or on the weekly timesheet. Support work and project work land in the same place, at the right rate for each client.",
+    img: { src: `${SCREENS}/time.webp`, width: 1600, height: 1041, alt: "A weekly timesheet with hours logged per client and project, day by day." },
+    url: "app.cherryworkspro.com/time",
+  },
+  {
+    n: "03",
+    title: "Approved time becomes the invoice.",
+    body: "Generate the invoice from approved hours and send it from your own mailbox: Microsoft 365, Google or SMTP. Clients pay by card or ACH, and the payment posts to your ledger by itself.",
+    img: { src: `${SCREENS}/invoices.webp`, width: 1600, height: 1136, alt: "The Invoices page: totals invoiced, outstanding and paid this month, and a list of sent and paid invoices." },
+    url: "app.cherryworkspro.com/invoices",
+  },
+  {
+    n: "04",
+    title: "Everyone gets paid what they’re owed.",
+    body: "Payouts are worked out from the hours each person logged at their rate, and team members can see which of their hours have been invoiced and paid. Pay contractors through Stripe Connect or record a payment you made elsewhere.",
+    img: { src: `${SCREENS}/payouts.webp`, width: 1600, height: 852, alt: "The Payouts page: unpaid time value and the balance owed to each team member, with a Pay button per person." },
+    url: "app.cherryworkspro.com/payouts",
+  },
+];
 
 const PILLARS = [
   {
     icon: Clock, title: "Time & Billing", href: "/features",
-    desc: "Track time, approve timesheets, turn approved hours into invoices — recurring, multi-currency, sent from your own mailbox.",
-    points: ["Timer or manual entry, per-project rates", "Weekly approval workflow, locked after approval", "Invoices generated from approved time"],
+    desc: "Track time, approve timesheets and turn approved hours into invoices.",
+    points: ["Timer or weekly timesheet, rates per project", "Recurring and multi-currency invoices", "Card and ACH payments online"],
   },
   {
     icon: BookOpen, title: "Books", href: "/features",
-    desc: "A real general ledger under everything: every invoice, payment, expense and payout posts itself. Close periods. Reconcile the bank.",
-    points: ["Full GL with journal entries and trial balance", "AR aging, cash flow, close periods", "AI receipt scanning → posted expense"],
+    desc: "A real general ledger under everything. Invoices, payments, expenses and payouts post themselves.",
+    points: ["Chart of accounts, journals, trial balance", "AR aging, cash flow and P&L", "Receipt scanning that posts the expense"],
   },
   {
     icon: Users, title: "Team & Payouts", href: "/features",
-    desc: "1099 contractors, W-2 staff and corp-to-corp on one team. Payouts computed from what was actually billed and collected.",
-    points: ["Unlimited users on every plan", "Payouts + reimbursements, one balance per person", "1099 export at year end"],
+    desc: "Contractors, W-2 staff and corp-to-corp partners on one team, with no charge per person.",
+    points: ["Unlimited users on every plan", "Payouts and reimbursements in one balance", "1099 records at year end"],
   },
   {
-    icon: LifeBuoy, title: "Client Support", href: "/client-support", featured: true,
-    desc: "A support desk that knows your clients, your projects and your billing. Cases, SLAs, a passwordless client portal, email-to-case.",
-    points: ["Cases from email, portal or your team", "SLAs per client, business hours aware", "Support time flows straight to invoices"],
+    icon: LifeBuoy, title: "Client Support", href: "/client-support",
+    desc: "A support desk that knows your clients, their contracts and who pays the invoice.",
+    points: ["Cases from email, the Help Center or your team", "SLA targets per client, business-hours aware", "Support time flows to the invoice"],
   },
 ];
 
-function HeroSection() {
+const IMPORTS = [
+  { label: "QuickBooks", href: "/switch-from-quickbooks" },
+  { label: "FreshBooks", href: "/switch-from-freshbooks" },
+  { label: "Harvest", href: "/switch-from-harvest" },
+  { label: "Xero", href: "/switch-from-xero" },
+  { label: "Wave", href: "/switch-from-wave" },
+  { label: "BigTime", href: "/switch-from-bigtime" },
+  { label: "Scoro", href: "/switch-from-scoro" },
+  { label: "Paymo", href: "/switch-from-paymo" },
+  { label: "Jira Service Management", href: "/switch-from-jira-service-management" },
+];
+
+const FAQS = [
+  {
+    q: "Who is CherryWorks Pro for?",
+    a: "Consultancies, agencies, IT and managed service firms that bill clients for time, including support time, and pay a team of employees, contractors or both.",
+  },
+  {
+    q: "How does the free trial work?",
+    a: "You get 14 days of the Professional plan with everything switched on. We take a card at sign-up so your account carries on without interruption, but you won’t be charged until day 15, and you can cancel any time before then.",
+  },
+  {
+    q: "Are users really unlimited?",
+    a: "Yes, on every plan. Add 1099 contractors, W-2 staff and corp-to-corp partners without a per-person fee. Client contacts who use your Help Center are not users either.",
+  },
+  {
+    q: "Can I bring my data from the tool I use now?",
+    a: "Yes. Import wizards cover QuickBooks, FreshBooks, Harvest, Xero, Wave, BigTime, Scoro and Paymo, with a dry-run preview before anything is written. Support cases can be imported from Jira with their comments and attachments. Imports are on the Professional plan and up, which is what the trial runs on.",
+  },
+  {
+    q: "Does it replace my accounting software?",
+    a: "Every plan includes a full general ledger: chart of accounts, journal entries, trial balance and P&L, with invoices, payments, expenses and payouts posting automatically. Whether you also keep a separate accounting package is up to you and your accountant.",
+  },
+  {
+    q: "How are team payouts worked out?",
+    a: "From the hours each person logged at their cost rate. Every hour moves from unbilled to invoiced to paid, and team members can see where theirs stand. Contractors can be paid through Stripe Connect on the Professional plan and up; W-2 staff are paid through your payroll as usual.",
+  },
+];
+
+function money(n: number) {
+  return `$${Math.round(n).toLocaleString("en-US")}`;
+}
+
+/**
+ * Lets a visitor price their own team: the per-user figure is theirs to type,
+ * so the page never quotes a competitor's price that may have changed.
+ */
+function SeatCalculator() {
+  const [team, setTeam] = useState(8);
+  const [seat, setSeat] = useState("15");
+  const flat = PLAN_PRICING.PROFESSIONAL.monthly;
+  const perUser = Math.max(0, Number(seat) || 0);
+  const perSeat = team * perUser;
+  const saving = perSeat - flat;
+  const breakEven = perUser > 0 ? Math.floor(flat / perUser) + 1 : null;
+
   return (
-    <section className="relative overflow-hidden pt-[100px] pb-8 md:pb-10" style={{ background: "linear-gradient(135deg, #0a0f1c 0%, #111827 50%, #1a0a0a 100%)" }}>
-      <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full opacity-20 pointer-events-none" style={{ background: "radial-gradient(circle, #cf3339 0%, transparent 70%)" }} />
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-2 pb-8 md:pt-4 md:pb-10">
-        <div className="max-w-3xl">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] mb-4" style={{ color: "#f87171" }}>For agencies, consultancies and service firms</p>
-          <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-white leading-[1.08] tracking-tight" data-testid="home-h1">
-            The professional services platform with a <span style={{ color: "#cf3339" }}>support desk built in</span>
-          </h1>
-          <p className="mt-6 text-lg md:text-xl leading-relaxed" style={{ color: "rgba(255,255,255,0.65)" }}>
-            Time, invoicing, books, payouts and client support in one system — so the hour your team spends on a client&rsquo;s ticket ends up on the invoice, in the ledger and in the payout, without anyone re-typing it.
-          </p>
-          <div className="mt-8 flex flex-col sm:flex-row items-start gap-4">
-            <Link href="/signup">
-              <span className="inline-flex items-center gap-2 px-7 py-4 text-base font-bold text-white rounded-xl cursor-pointer transition-all hover:scale-[1.03]" style={{ background: "linear-gradient(135deg, #cf3339, #a3282d)", boxShadow: "0 8px 30px rgba(207,51,57,0.35)" }} data-testid="hero-cta-signup">
-                Start free — 14 days, unlimited users
-                <ArrowRight className="w-4.5 h-4.5" />
-              </span>
-            </Link>
-            <Link href="/demo">
-              <span className="inline-flex items-center gap-2 px-7 py-4 text-base font-semibold rounded-xl cursor-pointer transition-colors hover:bg-white/5" style={{ color: "rgba(255,255,255,0.8)", border: "1px solid rgba(255,255,255,0.15)" }} data-testid="hero-cta-demo">
-                Request a demo
-              </span>
-            </Link>
+    <div className="grid gap-px overflow-hidden rounded-xl border border-[#E6E2DA] bg-[#E6E2DA] md:grid-cols-2" data-testid="seat-calculator">
+      <div className="bg-white p-6 md:p-8">
+        <label htmlFor="calc-team" className="flex items-baseline justify-between text-sm font-semibold text-[#15171C]">
+          People on your team
+          <span className="font-display text-2xl" data-testid="calc-team-value">{team}</span>
+        </label>
+        <input
+          id="calc-team"
+          type="range"
+          min={1}
+          max={50}
+          value={team}
+          onChange={(e) => setTeam(Number(e.target.value))}
+          className="mt-4 w-full accent-[#CF3339]"
+          data-testid="input-calc-team"
+        />
+        <label htmlFor="calc-seat" className="mt-8 block text-sm font-semibold text-[#15171C]">
+          What your current tool charges per user, per month
+        </label>
+        <div className="mt-2 flex h-12 items-center rounded-lg border border-[#D9D4CB] bg-white px-4 focus-within:border-[#15171C]">
+          <span className="text-[#5F6672]">$</span>
+          <input
+            id="calc-seat"
+            type="number"
+            inputMode="decimal"
+            min={0}
+            step={1}
+            value={seat}
+            onChange={(e) => setSeat(e.target.value)}
+            className="w-full bg-transparent pl-1 text-[15px] text-[#15171C] outline-none"
+            data-testid="input-calc-seat"
+          />
+        </div>
+        <p className="mt-3 text-sm text-[#5F6672]">Check your last invoice. Add-ons charged per user count too.</p>
+      </div>
+
+      <div className="flex flex-col justify-between bg-[#FBFAF7] p-6 md:p-8" data-testid="calc-result" aria-live="polite">
+        <dl className="space-y-5">
+          <div className="flex items-baseline justify-between gap-4 border-b border-[#E6E2DA] pb-5">
+            <dt className="text-sm text-[#3D4350]">Per-user pricing</dt>
+            <dd className="text-right">
+              <span className="font-display text-3xl font-semibold text-[#15171C]">{money(perSeat)}</span>
+              <span className="text-sm text-[#5F6672]"> /mo</span>
+            </dd>
           </div>
-          <p className="mt-4 text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>Flat pricing from $39/mo · No per-user fees · Import from 8 platforms</p>
-        </div>
-      </div>
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-16">
-        <DashboardMockup />
-      </div>
-    </section>
-  );
-}
-
-function FourPillars() {
-  const fadeRef = useFadeIn();
-  return (
-    <section ref={fadeRef} className="py-12 md:py-16 fade-in-section" style={{ background: "#0a0f1c" }} data-testid="section-pillars">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-5xl font-bold tracking-tight text-white">Four things every services firm runs on. One place.</h2>
-          <p className="mt-4 text-lg max-w-2xl mx-auto" style={{ color: "rgba(255,255,255,0.5)" }}>Most tools do one of these and hand you a CSV for the rest. CherryWorks Pro does all four on the same records.</p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {PILLARS.map((p) => (
-            <Link key={p.title} href={p.href}>
-              <div className="h-full rounded-2xl p-7 transition-all duration-300 hover:-translate-y-1 cursor-pointer" style={{ background: p.featured ? "linear-gradient(135deg, rgba(207,51,57,0.16), rgba(255,255,255,0.03))" : "rgba(255,255,255,0.03)", border: p.featured ? "1px solid rgba(207,51,57,0.45)" : "1px solid rgba(255,255,255,0.08)" }} data-testid={`pillar-${p.title.toLowerCase().replace(/[^a-z]+/g, "-")}`}>
-                <div className="flex items-center gap-3 mb-3">
-                  <p.icon className="w-6 h-6" style={{ color: "#cf3339" }} />
-                  <h3 className="text-xl font-bold text-white">{p.title}</h3>
-                  {p.featured && <span className="ml-auto text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md" style={{ background: "#cf3339", color: "#fff" }}>New</span>}
-                </div>
-                <p className="text-base leading-relaxed mb-4" style={{ color: "rgba(255,255,255,0.6)" }}>{p.desc}</p>
-                <ul className="space-y-1.5">
-                  {p.points.map((pt) => (
-                    <li key={pt} className="flex items-start gap-2 text-sm" style={{ color: "rgba(255,255,255,0.5)" }}><CheckCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "#22c55e" }} />{pt}</li>
-                  ))}
-                </ul>
-              </div>
-            </Link>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function SupportSpotlight() {
-  const fadeRef = useFadeIn();
-  const steps = [
-    { n: "1", title: "A client emails support", desc: "The message lands in your shared mailbox and becomes a case with a key like ABS-158 — no forwarding, no copy-paste." },
-    { n: "2", title: "Your team works it", desc: "Priority, assignee, SLA clock (first response and resolution, business-hours aware), internal notes vs. client-visible replies, attachments." },
-    { n: "3", title: "The client follows along", desc: "A branded portal, signed in by magic link — no passwords to reset. They see status, replies and their invoices in one place." },
-    { n: "4", title: "The time gets billed", desc: "Hours logged on the case flow to the client&rsquo;s invoice and into payouts, like every other hour in the system." },
-  ];
-  return (
-    <section ref={fadeRef} className="py-12 md:py-16 fade-in-section" style={{ background: "linear-gradient(180deg, #111827 0%, #0a0f1c 100%)" }} data-testid="section-support">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.2em] mb-4" style={{ color: "#f87171" }}>Client Support</p>
-            <h2 className="text-3xl md:text-4xl font-bold text-white tracking-tight">The help desk that already knows who pays the invoice</h2>
-            <p className="mt-4 text-lg leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>
-              Jira Service Management, Zendesk and Freshdesk were built for support departments. Your firm bills for support. CherryWorks Pro treats a case like what it is: client work with a clock, a contract and an invoice attached.
-            </p>
-            <div className="mt-8 flex flex-col sm:flex-row gap-4">
-              <Link href="/client-support"><span className="inline-flex items-center gap-2 px-6 py-3.5 text-base font-bold text-white rounded-xl cursor-pointer" style={{ background: "linear-gradient(135deg, #cf3339, #a3282d)" }}>See Client Support <ArrowRight className="w-4 h-4" /></span></Link>
-              <Link href="/switch-from-jira-service-management"><span className="inline-flex items-center gap-2 px-6 py-3.5 text-base font-semibold rounded-xl cursor-pointer" style={{ color: "rgba(255,255,255,0.8)", border: "1px solid rgba(255,255,255,0.15)" }}>Moving from Jira? Import your project</span></Link>
-            </div>
+          <div className="flex items-baseline justify-between gap-4">
+            <dt className="text-sm text-[#3D4350]">
+              CherryWorks Pro Professional
+              <span className="block text-[13px] text-[#5F6672]">Unlimited users, clients and projects</span>
+            </dt>
+            <dd className="text-right">
+              <span className="font-display text-3xl font-semibold text-[#15171C]">{money(flat)}</span>
+              <span className="text-sm text-[#5F6672]"> /mo</span>
+            </dd>
           </div>
-          <ol className="space-y-4">
-            {steps.map((s) => (
-              <li key={s.n} className="flex gap-4 rounded-xl p-5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                <span className="w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-sm font-black text-white" style={{ background: "#cf3339" }}>{s.n}</span>
-                <div>
-                  <h3 className="text-base font-bold text-white">{s.title}</h3>
-                  <p className="text-sm leading-relaxed mt-1" style={{ color: "rgba(255,255,255,0.5)" }} dangerouslySetInnerHTML={{ __html: s.desc }} />
-                </div>
-              </li>
-            ))}
-          </ol>
-        </div>
+        </dl>
+        <p className="mt-8 text-[15px] leading-relaxed text-[#15171C]" data-testid="calc-verdict">
+          {perUser === 0
+            ? "Enter your per-user price to compare."
+            : saving > 0
+              ? <>You’d keep <strong>{money(saving)} a month</strong>, {money(saving * 12)} a year, and the gap grows with every hire.</>
+              : <>At {team} {team === 1 ? "person" : "people"}, per-user pricing costs less. Flat pricing pulls ahead at {breakEven} people and stays flat after that.</>}
+        </p>
       </div>
-    </section>
-  );
-}
-
-function ProofStrip() {
-  const facts = [
-    { value: "Unlimited", label: "users on every plan" },
-    { value: "19", label: "built-in reports across 6 categories" },
-    { value: "8", label: "platforms you can import from" },
-    { value: "$39", label: "per month, flat, to start" },
-  ];
-  return (
-    <section className="py-10" style={{ background: "#0a0f1c", borderTop: "1px solid rgba(255,255,255,0.06)", borderBottom: "1px solid rgba(255,255,255,0.06)" }} data-testid="section-proof">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
-        {facts.map((f) => (
-          <div key={f.label}>
-            <p className="text-3xl md:text-4xl font-black text-white">{f.value}</p>
-            <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.45)" }}>{f.label}</p>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function CtaSection() {
-  return (
-    <section className="py-12 md:py-16" style={{ background: "linear-gradient(135deg, #1a0505 0%, #0a0f1c 50%, #1a0a0a 100%)" }}>
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-        <h2 className="text-3xl md:text-4xl font-bold text-white tracking-tight">Run the whole firm on one set of records</h2>
-        <p className="mt-4 text-lg" style={{ color: "rgba(255,255,255,0.55)" }}>Fourteen days free with everything on. Import your clients, projects, time and invoices from the tool you use today.</p>
-        <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-          <Link href="/signup"><span className="inline-flex items-center gap-2 px-8 py-4 text-lg font-bold text-white rounded-xl cursor-pointer transition-all hover:scale-[1.03]" style={{ background: "linear-gradient(135deg, #cf3339, #a3282d)", boxShadow: "0 8px 30px rgba(207,51,57,0.35)" }}>Start free <ArrowRight className="w-5 h-5" /></span></Link>
-          <Link href="/demo"><span className="inline-flex items-center gap-2 px-8 py-4 text-lg font-semibold rounded-xl cursor-pointer transition-colors hover:bg-white/5" style={{ color: "rgba(255,255,255,0.8)", border: "1px solid rgba(255,255,255,0.15)" }}>Request a demo</span></Link>
-        </div>
-        <p className="mt-5 text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>You won&rsquo;t be charged until day 15 · Cancel anytime · Your data exports with you</p>
-      </div>
-    </section>
+    </div>
   );
 }
 
 export default function HomePage() {
   return (
-    <div>
-      <MarketingNav />
+    <MarketingShell>
       <SEO path="/" />
-      <HeroSection />
-      <FourPillars />
-      <SupportSpotlight />
-      <ProofStrip />
-      <SetupSection />
-      <TrustBadges />
-      <CtaSection />
-      <MarketingFooter />
-    </div>
+      <FAQStructuredData faqs={FAQS} />
+
+      <PageHero className="pb-0 md:pb-0">
+        <Container>
+          <div className="max-w-3xl">
+            <Eyebrow>For consultancies, agencies and IT service firms</Eyebrow>
+            <Display testId="home-h1" className="mt-5">
+              <span className="block sm:inline">Client work in.</span>{" "}
+              <span className="block sm:inline">Invoices out.</span>{" "}
+              <span className="block">Your team paid.</span>
+            </Display>
+            <Lede className="mt-6 max-w-2xl">
+              CherryWorks Pro runs the whole loop in one system. Client emails become support cases, the hours your team logs become invoices, and each person’s payout is worked out from the hours that were billed.
+            </Lede>
+            <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <ButtonLink href="/signup" size="lg" arrow testId="hero-cta-signup">Start your 14-day trial</ButtonLink>
+              <ButtonLink href="/tour" size="lg" variant="secondary" testId="hero-cta-tour">Take the product tour</ButtonLink>
+            </div>
+            <p className="mt-5 text-sm text-[#5F6672]">
+              Unlimited users on every plan · From {money(PLAN_PRICING.STARTER.monthly)}/mo flat ·{" "}
+              <Link href="/demo" className="whitespace-nowrap font-medium text-[#15171C] underline decoration-[#D9D4CB] underline-offset-4 hover:decoration-[#15171C]" data-testid="hero-cta-demo">
+                or book a demo
+              </Link>
+            </p>
+          </div>
+        </Container>
+        <div className="relative mt-14 md:mt-16">
+          <div className="absolute inset-x-0 bottom-0 top-1/2 border-t border-[#E6E2DA] bg-white" aria-hidden="true" />
+          <Container className="relative">
+            <Screenshot
+              src={`${SCREENS}/case-detail.webp`}
+              width={2000}
+              height={1521}
+              priority
+              fade
+              url="app.cherryworkspro.com/support/cases/BL-1"
+              alt="A support case in CherryWorks Pro: the client's report, a reply and an internal note, and the hours logged on the case with how many are billed."
+              testId="hero-screenshot"
+            />
+          </Container>
+        </div>
+      </PageHero>
+
+      <section className="bg-white pb-20 pt-14 md:pb-24 md:pt-16" data-testid="section-origin">
+        <Container>
+          <div className="mx-auto max-w-3xl text-center">
+            <p className="font-display text-2xl leading-snug text-[#15171C] md:text-[1.9rem]">
+              We built CherryWorks Pro to run our own consulting firm. We bill our clients, work their support cases and pay our contractors with it every month.
+            </p>
+            <TextLink href="/about" className="mt-6" testId="link-home-about">Why we built it</TextLink>
+          </div>
+        </Container>
+      </section>
+
+      <Section testId="section-workflow">
+        <Container>
+          <div className="max-w-2xl">
+            <Eyebrow>How it works</Eyebrow>
+            <Heading className="mt-4">One record, from the first email to the last payout</Heading>
+            <Lede className="mt-5">
+              Most firms stitch this together from a help desk, a timesheet app, an invoicing tool and a spreadsheet for paying people. Here it’s the same record the whole way through, so nobody re-types anything.
+            </Lede>
+          </div>
+          <ol className="mt-16 space-y-20 md:mt-20 md:space-y-28">
+            {WORKFLOW.map((step, i) => (
+              <li key={step.n} className="grid items-center gap-8 md:grid-cols-12 md:gap-12" data-testid={`workflow-step-${i + 1}`}>
+                <div className={`md:col-span-5 ${i % 2 === 1 ? "md:order-2" : ""}`}>
+                  <p className="font-display text-sm font-semibold tracking-[0.08em] text-[#B32A30]">{step.n}</p>
+                  <h3 className="mt-3 font-display text-2xl font-semibold leading-snug tracking-[-0.01em] text-[#15171C] md:text-[1.75rem]">{step.title}</h3>
+                  <p className="mt-4 text-[17px] leading-relaxed text-[#3D4350]">{step.body}</p>
+                </div>
+                <div className={`md:col-span-7 ${i % 2 === 1 ? "md:order-1" : ""}`}>
+                  <Screenshot {...step.img} url={step.url} />
+                </div>
+              </li>
+            ))}
+          </ol>
+        </Container>
+      </Section>
+
+      <Section tone="white" testId="section-pillars">
+        <Container>
+          <div className="max-w-2xl">
+            <Eyebrow>What’s inside</Eyebrow>
+            <Heading className="mt-4">Four things every services firm runs on</Heading>
+            <Lede className="mt-5">Most tools do one of these and hand you a CSV for the rest. CherryWorks Pro does all four on the same records.</Lede>
+          </div>
+          <div className="mt-14 grid gap-px overflow-hidden rounded-xl border border-[#E6E2DA] bg-[#E6E2DA] sm:grid-cols-2 lg:grid-cols-4">
+            {PILLARS.map((p) => (
+              <Link
+                key={p.title}
+                href={p.href}
+                className="group flex flex-col bg-white p-7 transition-colors hover:bg-[#FBFAF7]"
+                data-testid={`pillar-${p.title.toLowerCase().replace(/[^a-z]+/g, "-")}`}
+              >
+                <p.icon className="h-5 w-5 text-[#CF3339]" aria-hidden="true" />
+                <h3 className="mt-5 text-lg font-semibold text-[#15171C]">{p.title}</h3>
+                <p className="mt-2 text-[15px] leading-relaxed text-[#3D4350]">{p.desc}</p>
+                <ul className="mt-5 space-y-2 border-t border-[#ECE8E1] pt-5">
+                  {p.points.map((pt) => (
+                    <li key={pt} className="text-sm leading-snug text-[#5F6672]">{pt}</li>
+                  ))}
+                </ul>
+                <span className="mt-auto pt-6 text-sm font-semibold text-[#15171C] underline decoration-[#CF3339]/40 underline-offset-4 group-hover:decoration-[#CF3339]">
+                  Learn more
+                </span>
+              </Link>
+            ))}
+          </div>
+          <div className="mt-14 grid grid-cols-2 gap-x-8 gap-y-10 border-t border-[#E6E2DA] pt-12 md:grid-cols-4" data-testid="section-proof">
+            <Fact value="Unlimited" label="users on every plan" />
+            <Fact value={String(REPORT_COUNT)} label="built-in reports" />
+            <Fact value="8" label="platforms you can import from" />
+            <Fact value="Full GL" label="general ledger on every plan" />
+          </div>
+        </Container>
+      </Section>
+
+      <Section testId="section-support">
+        <Container>
+          <div className="grid gap-12 lg:grid-cols-12">
+            <div className="lg:col-span-5">
+              <Eyebrow>Client Support</Eyebrow>
+              <Heading className="mt-4">The help desk that knows who pays the invoice</Heading>
+              <Lede className="mt-5">
+                Jira Service Management, Zendesk and Freshdesk were built for support departments. Your firm bills for support. Here a case is client work with a clock, a contract and an invoice attached.
+              </Lede>
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                <ButtonLink href="/client-support" variant="secondary" arrow testId="link-home-client-support">See Client Support</ButtonLink>
+              </div>
+              <p className="mt-5 text-sm text-[#5F6672]">
+                Leaving Jira?{" "}
+                <Link href="/switch-from-jira-service-management" className="font-medium text-[#15171C] underline decoration-[#D9D4CB] underline-offset-4 hover:decoration-[#15171C]" data-testid="link-home-jira">
+                  Import your project with its history
+                </Link>
+              </p>
+            </div>
+            <dl className="grid content-start gap-x-10 gap-y-8 sm:grid-cols-2 lg:col-span-7 lg:pt-2">
+              {[
+                { t: "No passwords for your clients", d: "Approve a client’s email domain and anyone there signs in to your Help Center with a one-time link." },
+                { t: "Customer admins", d: "A lead at each client can see every case their company has open, not just their own." },
+                { t: "SLAs that respect business hours", d: "First-response and resolution targets per client, with the clock paused outside working hours." },
+                { t: "Bring your Jira history", d: "Issues come across with their comments, attachments and original keys, closed cases included." },
+              ].map((f) => (
+                <div key={f.t} className="border-t border-[#E6E2DA] pt-5">
+                  <dt className="font-semibold text-[#15171C]">{f.t}</dt>
+                  <dd className="mt-2 text-[15px] leading-relaxed text-[#3D4350]">{f.d}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </Container>
+      </Section>
+
+      <Section tone="white" testId="section-pricing-calc">
+        <Container>
+          <div className="grid gap-12 lg:grid-cols-12 lg:items-center">
+            <div className="lg:col-span-4">
+              <Eyebrow>Flat pricing</Eyebrow>
+              <Heading className="mt-4">Stop paying more every time you hire</Heading>
+              <Lede className="mt-5">
+                Per-user pricing charges you for growing. Ours doesn’t change when your team does. Starter is {money(PLAN_PRICING.STARTER.monthly)}/mo for up to 5 clients; Professional removes the limits.
+              </Lede>
+              <TextLink href="/pricing" className="mt-7" testId="link-home-pricing">See every plan</TextLink>
+            </div>
+            <div className="lg:col-span-8">
+              <SeatCalculator />
+            </div>
+          </div>
+        </Container>
+      </Section>
+
+      <Section testId="section-imports" className="md:py-24">
+        <Container>
+          <div className="grid gap-10 lg:grid-cols-12 lg:items-end">
+            <div className="lg:col-span-5">
+              <Eyebrow>Switching</Eyebrow>
+              <Heading className="mt-4">Bring your history with you</Heading>
+              <Lede className="mt-5">Clients, projects, time and invoices come across from the tool you use today. Preview the import before anything is written.</Lede>
+            </div>
+            <ul className="flex flex-wrap gap-2.5 lg:col-span-7">
+              {IMPORTS.map((imp) => (
+                <li key={imp.href}>
+                  <Link
+                    href={imp.href}
+                    className="inline-flex h-10 items-center rounded-full border border-[#D9D4CB] bg-white px-4 text-sm font-medium text-[#15171C] transition-colors hover:border-[#15171C]"
+                    data-testid={`link-import-${imp.href.replace("/switch-from-", "")}`}
+                  >
+                    {imp.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Container>
+      </Section>
+
+      <Section tone="white" testId="section-faq">
+        <Container>
+          <div className="grid gap-12 lg:grid-cols-12">
+            <div className="lg:col-span-4">
+              <Heading>Questions firms ask us</Heading>
+              <p className="mt-5 text-[15px] leading-relaxed text-[#3D4350]">
+                Something else? <Link href="/contact" className="font-medium text-[#15171C] underline decoration-[#D9D4CB] underline-offset-4 hover:decoration-[#15171C]">Ask us directly</Link>. A person who uses the product every day will answer.
+              </p>
+            </div>
+            <div className="divide-y divide-[#E6E2DA] border-y border-[#E6E2DA] lg:col-span-8">
+              {FAQS.map((f, i) => (
+                <details key={f.q} className="group py-5" data-testid={`faq-${i}`}>
+                  <summary className="flex cursor-pointer list-none items-start justify-between gap-6 text-[17px] font-semibold text-[#15171C] [&::-webkit-details-marker]:hidden">
+                    {f.q}
+                    <Plus className="mt-1 h-5 w-5 shrink-0 text-[#5F6672] transition-transform group-open:rotate-45" aria-hidden="true" />
+                  </summary>
+                  <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-[#3D4350]">{f.a}</p>
+                </details>
+              ))}
+            </div>
+          </div>
+        </Container>
+      </Section>
+
+      <Section tone="night" testId="section-cta">
+        <Container>
+          <div className="mx-auto max-w-2xl text-center">
+            <h2 className="font-display text-3xl font-semibold leading-tight tracking-[-0.015em] text-white md:text-5xl">Try it on your own work</h2>
+            <p className="mt-5 text-lg leading-relaxed text-white/70">
+              Fourteen days with everything on. Import your clients, projects and time, send a real invoice, and see what your team is owed.
+            </p>
+            <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <ButtonLink href="/signup" size="lg" arrow testId="cta-start-free-trial">Start your 14-day trial</ButtonLink>
+              <ButtonLink href="/demo" size="lg" variant="onNight" testId="cta-book-demo">Book a demo</ButtonLink>
+            </div>
+            <p className="mt-6 text-sm text-white/50">You won’t be charged until day 15 · Cancel anytime · Your data exports with you</p>
+          </div>
+        </Container>
+      </Section>
+    </MarketingShell>
   );
 }
