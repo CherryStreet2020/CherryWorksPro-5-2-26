@@ -3,6 +3,7 @@ import {
   BASE_URL, SITE_NAME, REPORT_COUNT, PUBLIC_ROUTES, classifyPath, sitemapPaths, type RouteClass,
 } from "@shared/seo-routes";
 import { PLAN_PRICING } from "@shared/plan-pricing";
+import { INDEXNOW_KEY } from "@shared/indexnow";
 
 const OG_IMAGE = `${BASE_URL}/og-preview.png`;
 
@@ -125,7 +126,7 @@ export function sendShell(req: Request, res: Response, rawHtml: string): void {
   res.status(decision.status).set({ "Content-Type": "text/html", "Cache-Control": NO_STORE }).end(html);
 }
 
-/** The one sitemap and the one robots.txt, both derived from the shared route map. */
+/** The one sitemap and the one robots.txt, both derived from the shared route map, plus the IndexNow key file. */
 export function registerSeoRoutes(app: Express): void {
   app.get("/sitemap.xml", (_req, res) => {
     const urls = sitemapPaths()
@@ -157,6 +158,14 @@ export function registerSeoRoutes(app: Express): void {
           "",
         ].join("\n"),
       );
+  });
+  // IndexNow ownership proof: the body must be exactly the key — no newline — or
+  // Bing answers the post-deploy ping (scripts/indexnow-ping.sh) with 403.
+  app.get(`/${INDEXNOW_KEY}.txt`, (_req, res) => {
+    res
+      .status(200)
+      .set({ "Content-Type": "text/plain", "Cache-Control": "public, max-age=86400" })
+      .send(INDEXNOW_KEY);
   });
 }
 
