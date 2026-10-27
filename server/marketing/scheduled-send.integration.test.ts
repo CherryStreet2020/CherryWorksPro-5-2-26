@@ -42,8 +42,10 @@ vi.mock("../email/smtp-transport", () => ({
 import {
   processScheduledCampaigns,
   processScheduledSequenceEnrollments,
+  resolveCampaignRecipients,
   runScheduledSendTick,
 } from "./scheduled-send";
+import { storage } from "../storage";
 import { MissingMailboxError } from "../email/types";
 import { db, pool } from "../db";
 import { flushSequenceFailureDigest } from "../notifications/marketing-failures";
@@ -412,6 +414,41 @@ describe("processScheduledCampaigns — long-running sends", () => {
     expect(ours).toHaveLength(2);
     expect(sleeps.length).toBeGreaterThanOrEqual(1);
     expect(sleeps.every((ms) => ms === 2_100)).toBe(true);
+  });
+});
+
+describe("resolveCampaignRecipients — segments", () => {
+  it("walks every page of a large segment, not just the first 50", async () => {
+    const all = Array.from({ length: 1_203 }, (_, i) => ({
+      id: `p${i}`,
+      email: `s${i}@example.com`,
+      unsubscribeToken: `t${i}`,
+      unsubscribedAt: null,
+      bouncedAt: null,
+    }));
+    const segSpy = vi.spyOn(storage, "getSegment").mockResolvedValue({
+      id: "seg",
+      orgId: ORG_ID,
+      brandId: BRAND_ID,
+      filter: { tagIds: [], search: "" },
+    } as any);
+    const pageSpy = vi.spyOn(storage, "resolveSegmentProspects").mockImplementation(
+      async (_o, _b, _f, page = {}) =>
+        all.slice(page.offset ?? 0, (page.offset ?? 0) + (page.limit ?? 50)) as any,
+    );
+    try {
+      const recipients = await resolveCampaignRecipients({
+        orgId: ORG_ID,
+        brandId: BRAND_ID,
+        audienceType: "segment",
+        audienceSegmentId: "seg",
+      });
+      expect(recipients).toHaveLength(1_203);
+      expect(pageSpy).toHaveBeenCalledTimes(3);
+    } finally {
+      segSpy.mockRestore();
+      pageSpy.mockRestore();
+    }
   });
 });
 

@@ -144,6 +144,7 @@ describe("resolveCampaignRecipients (Task #234)", () => {
       "org-1",
       "brand-1",
       { tagIds: ["tag-a"], search: "vip" },
+      { limit: 500, offset: 0 },
     );
   });
 

@@ -235,11 +235,20 @@ export async function resolveCampaignRecipients(
     const segment = await storage.getSegment(campaign.audienceSegmentId, campaign.orgId);
     if (!segment || segment.brandId !== campaign.brandId) return [];
     const filter = (segment.filter ?? {}) as { tagIds?: string[]; search?: string };
-    const contacts = await storage.resolveSegmentProspects(
-      campaign.orgId,
-      campaign.brandId,
-      { tagIds: filter.tagIds ?? [], search: filter.search ?? "" },
-    );
+    // listProspectsByFilter pages (default 50, max 500): walk every page or
+    // a segment campaign silently stops at the first 50 contacts.
+    const PAGE = 500;
+    const contacts: Awaited<ReturnType<typeof storage.resolveSegmentProspects>> = [];
+    for (let offset = 0; ; offset += PAGE) {
+      const page = await storage.resolveSegmentProspects(
+        campaign.orgId,
+        campaign.brandId,
+        { tagIds: filter.tagIds ?? [], search: filter.search ?? "" },
+        { limit: PAGE, offset },
+      );
+      contacts.push(...page);
+      if (page.length < PAGE) break;
+    }
     // Unsubscribed and bounced prospects never get marketing mail.
     return contacts
       .filter((c) => !!c.email && !c.unsubscribedAt && !c.bouncedAt)
@@ -339,22 +348,26 @@ function classifyFailure(
   };
 }
 
-async function getLatestCampaignAttempt(
+// One query per campaign, not per recipient: a resumed campaign re-walks its
+// whole audience every tick, and per-recipient lookups for thousands of
+// already-sent rows could eat the tick budget before a single new send.
+async function getLatestCampaignAttempts(
   orgId: string,
   campaignId: string,
-  prospectId: string,
-): Promise<EmailSendAttempt | null> {
-  const [row] = await db
+): Promise<Map<string, EmailSendAttempt>> {
+  const rows = await db
     .select()
     .from(emailSendAttempts)
     .where(and(
       eq(emailSendAttempts.orgId, orgId),
       eq(emailSendAttempts.campaignId, campaignId),
-      eq(emailSendAttempts.prospectId, prospectId),
     ))
-    .orderBy(desc(emailSendAttempts.attemptedAt))
-    .limit(1);
-  return row ?? null;
+    .orderBy(desc(emailSendAttempts.attemptedAt));
+  const latest = new Map<string, EmailSendAttempt>();
+  for (const row of rows) {
+    if (row.prospectId && !latest.has(row.prospectId)) latest.set(row.prospectId, row);
+  }
+  return latest;
 }
 
 async function getLatestSequenceAttempt(
@@ -439,7 +452,9 @@ export async function processScheduledCampaigns(
     const policy = await getPolicy(campaign.orgId);
     const brand = await getBrand(campaign.brandId, campaign.orgId);
     const fromName = (campaign.fromName || brand?.fromName || "").trim() || null;
+    const fromEmail = (campaign.fromEmail || brand?.fromEmail || "").trim() || null;
     const replyTo = (campaign.replyTo || brand?.replyTo || "").trim() || null;
+    const latestAttempts = await getLatestCampaignAttempts(campaign.orgId, campaign.id);
 
     let mailboxMissing = false;
     let outOfTime = false;
@@ -452,12 +467,7 @@ export async function processScheduledCampaigns(
         outOfTime = true;
         break;
       }
-      const latest = await getLatestCampaignAttempt(
-        campaign.orgId,
-        campaign.id,
-        r.id,
-      );
-      const decision = decideRecipientAction(latest, now, policy.maxAttempts);
+      const decision = decideRecipientAction(latestAttempts.get(r.id) ?? null, now, policy.maxAttempts);
       if (decision.action === "skip-done") continue;
       if (decision.action === "skip-pending") {
         pendingRetries++;
@@ -480,6 +490,7 @@ export async function processScheduledCampaigns(
           text: (campaign.body ?? "") + unsubscribeFooterText(footer),
           replyTo,
           fromName,
+          fromEmail,
           headers: listUnsubscribeHeaders(r.unsubscribeToken),
         });
         lastTransport = result.transport;
