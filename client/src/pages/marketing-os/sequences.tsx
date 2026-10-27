@@ -418,6 +418,21 @@ function SequenceEditor({
     },
   });
 
+  // Delivered / opened / clicked per step position (first-party tracking).
+  // Opens arrive at any time, so refetch on open and on focus, not from cache.
+  const { data: engagement = {} } = useQuery<Record<number, { sent: number; opened: number; clicked: number }>>({
+    queryKey: ["/api/marketing/sequences", sequenceId, "engagement"],
+    enabled: !!sequenceId,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    queryFn: async () => {
+      const res = await fetch(`/api/marketing/sequences/${sequenceId}/engagement`, { credentials: "include" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    },
+  });
+
   const [form, setForm] = useState<SequenceForm>(EMPTY_FORM);
   const [steps, setSteps] = useState<StepDraft[]>([]);
   const [activeStepIdx, setActiveStepIdx] = useState(0);
@@ -697,6 +712,25 @@ function SequenceEditor({
               })}
             </div>
 
+            {Object.keys(engagement).length > 0 && (
+              <div className="rounded-lg border p-3 space-y-1" style={{ borderColor: "var(--lux-border)" }} data-testid="section-step-engagement">
+                <h3 className="text-sm font-semibold" style={{ color: "var(--lux-text)" }}>Engagement by step position</h3>
+                {Object.entries(engagement)
+                  .map(([k, v]) => [Number(k), v] as const)
+                  .sort(([a], [b]) => a - b)
+                  .map(([pos, eng]) => (
+                    <div key={pos} className="text-xs" style={{ color: "var(--lux-text-muted)" }} data-testid={`row-step-engagement-${pos}`}>
+                      Step {pos + 1} — Sent {eng.sent} · Opened <span data-testid={`text-step-opened-${pos}`}>{eng.opened}</span>
+                      {" · "}Clicked <span data-testid={`text-step-clicked-${pos}`}>{eng.clicked}</span>
+                    </div>
+                  ))}
+                <p className="text-xs pt-1" style={{ color: "var(--lux-text-muted)" }}>
+                  Counted by the step&apos;s position when each email went out. Reordering or replacing steps later does
+                  not move past counts, and removing an enrollment removes its sends from these totals.
+                </p>
+              </div>
+            )}
+
             {activeStep && (
               <div className="rounded-lg border p-4 space-y-3" style={{ borderColor: "var(--lux-border)" }} data-testid={`step-editor-${activeStepIdx}`}>
                 <h3 className="text-sm font-semibold" style={{ color: "var(--lux-text)" }}>
@@ -857,6 +891,8 @@ function EnrollmentsPanel({ sequence, brandId }: { sequence: MarketingSequence; 
     try {
       await apiRequest("DELETE", `/api/marketing/sequences/${sequence.id}/enrollments/${id}`);
       await queryClient.invalidateQueries({ queryKey: ["/api/marketing/sequences", sequence.id, "enrollments"] });
+      // Its sends leave the engagement totals with it.
+      await queryClient.invalidateQueries({ queryKey: ["/api/marketing/sequences", sequence.id, "engagement"] });
       toast({ title: "Contact removed from sequence" });
     } catch (e: unknown) {
       toast({ title: "Remove failed", description: e instanceof Error ? e.message : "", variant: "destructive" });

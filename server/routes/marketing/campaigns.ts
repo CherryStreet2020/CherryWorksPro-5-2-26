@@ -676,6 +676,24 @@ export function registerMarketingCampaignRoutes(app: Express) {
     },
   );
 
+  // Per-step delivered / opened / clicked counts for the sequence editor.
+  app.get(
+    "/api/marketing/sequences/:id/engagement",
+    flagGate,
+    requireAdminOrManager,
+    async (req: Request, res: Response) => {
+      try {
+        const id = paramId(req);
+        const orgId = req.session.orgId!;
+        const seq = await storage.getSequence(id, orgId);
+        if (!seq) return res.status(404).json({ message: "Sequence not found" });
+        return res.json(await storage.getSequenceStepEngagement(orgId, id));
+      } catch (err: unknown) {
+        return res.status(400).json({ message: errMsg(err) });
+      }
+    },
+  );
+
   app.delete(
     "/api/marketing/sequences/:id/enrollments/:enrollmentId",
     flagGate,

@@ -50,7 +50,7 @@ import { storage } from "../storage";
 import { MissingMailboxError } from "../email/types";
 import { db, pool } from "../db";
 import { flushSequenceFailureDigest } from "../notifications/marketing-failures";
-import { recordOpen } from "./tracking-record";
+import { recordClick, recordOpen } from "./tracking-record";
 import {
   orgs,
   brands,
@@ -148,6 +148,7 @@ async function makeStep(opts: {
   stepOrder: number;
   delayDays: number;
   subject?: string;
+  body?: string;
 }): Promise<string> {
   const id = randomUUID();
   await db.insert(marketingSequenceSteps).values({
@@ -157,7 +158,7 @@ async function makeStep(opts: {
     stepOrder: opts.stepOrder,
     delayDays: opts.delayDays,
     subject: opts.subject ?? `Step ${opts.stepOrder}`,
-    body: `<p>Step ${opts.stepOrder} body</p>`,
+    body: opts.body ?? `<p>Step ${opts.stepOrder} body</p>`,
   });
   createdStepIds.push(id);
   return id;
@@ -213,6 +214,10 @@ afterAll(async () => {
       .where(inArray(marketingSequenceSteps.id, createdStepIds));
   }
   if (createdSequenceIds.length) {
+    // replaceSequenceSteps writes rows the createdStepIds list never sees.
+    await db
+      .delete(marketingSequenceSteps)
+      .where(inArray(marketingSequenceSteps.sequenceId, createdSequenceIds));
     await db
       .delete(marketingSequences)
       .where(inArray(marketingSequences.id, createdSequenceIds));
@@ -1253,5 +1258,245 @@ describe("processScheduledCampaigns — open / click tracking", () => {
 
     const rows = await db.select().from(emailTrackingLinks).where(eq(emailTrackingLinks.campaignId, campaignId));
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe("processScheduledSequenceEnrollments — open / click tracking", () => {
+  async function seqContact(): Promise<typeof marketingProspects.$inferSelect> {
+    const id = await makeContact({ email: `seqtrack-${randomUUID().slice(0, 8)}@example.com` });
+    const [p] = await db.select().from(marketingProspects).where(eq(marketingProspects.id, id));
+    return p;
+  }
+
+  async function enrollDue(sequenceId: string, contactId: string, currentStepIndex = 0): Promise<string> {
+    return makeEnrollment({ sequenceId, contactId, currentStepIndex, nextSendAt: new Date(Date.now() - 60_000) });
+  }
+
+  function linksFor(prospectId: string) {
+    return db.select().from(emailTrackingLinks)
+      .where(and(eq(emailTrackingLinks.prospectId, prospectId), eq(emailTrackingLinks.kind, "sequence")));
+  }
+
+  function attemptsFor(sequenceId: string, prospectId: string) {
+    return db.select().from(emailSendAttempts)
+      .where(and(eq(emailSendAttempts.sequenceId, sequenceId), eq(emailSendAttempts.prospectId, prospectId)));
+  }
+
+  function activitiesOf(prospectId: string, type: string) {
+    return db.select().from(contactActivities)
+      .where(and(eq(contactActivities.prospectId, prospectId), eq(contactActivities.type, type)));
+  }
+
+  it("writes a sequence link row before delivery, rewrites links, keeps unsubscribe raw, and records open + click", async () => {
+    const seqId = await makeSequence();
+    await makeStep({
+      sequenceId: seqId, stepOrder: 0, delayDays: 0,
+      body: `<html><body><p>Read <a href="https://example.com/seq?a=1&amp;b=2">this</a></p></body></html>`,
+    });
+    await makeStep({ sequenceId: seqId, stepOrder: 1, delayDays: 30 });
+    const prospect = await seqContact();
+    await enrollDue(seqId, prospect.id);
+
+    let seen: { html: string; row: typeof emailTrackingLinks.$inferSelect | undefined } | null = null;
+    sendMock.mockImplementation(async (input: { html: string; to: string }) => {
+      if (input.to !== prospect.email) return okSendResult("seqtrack");
+      const [row] = await linksFor(prospect.id);
+      seen = { html: input.html, row };
+      // An image proxy fetching the pixel before the attempt row exists.
+      expect(await recordOpen(row!.token)).toBe(true);
+      return okSendResult("seqtrack");
+    });
+
+    await processScheduledSequenceEnrollments(new Date());
+
+    expect(seen).not.toBeNull();
+    const { html, row } = seen!;
+    expect(row!.campaignId).toBeNull();
+    expect(row!.links).toEqual(["https://example.com/seq?a=1&b=2"]);
+    expect(html).toContain(`/api/public/email/c/${row!.token}/0"`);
+    expect(html).toContain(`/api/public/email/o/${row!.token}.gif"`);
+    expect(html).not.toContain("https://example.com/seq");
+    expect(html).toContain(`/unsubscribe/${prospect.unsubscribeToken}"`);
+
+    const [attempt] = await attemptsFor(seqId, prospect.id);
+    expect(attempt.status).toBe("success");
+    expect(attempt.kind).toBe("sequence");
+    expect(attempt.id).toBe(row!.attemptId);
+
+    // The early open had no attempt row to name the sequence from; a later click does.
+    const [opened] = await activitiesOf(prospect.id, "email_opened");
+    expect(opened.payload).toMatchObject({ sequence_id: null, step_index: null, attempt_id: attempt.id });
+    expect(await recordClick(row!.token, "https://example.com/seq?a=1&b=2")).toBe(true);
+    const [clicked] = await activitiesOf(prospect.id, "email_clicked");
+    expect(clicked.payload).toMatchObject({
+      sequence_id: seqId, sequence_name: `t236 Seq ${RUN}`, step_index: 0,
+      attempt_id: attempt.id, url: "https://example.com/seq?a=1&b=2",
+    });
+
+    expect(await storage.getSequenceStepEngagement(ORG_ID, seqId)).toEqual({ 0: { sent: 1, opened: 1, clicked: 1 } });
+    // Org-scoped: another org asking for this sequence sees nothing.
+    expect(await storage.getSequenceStepEngagement(randomUUID(), seqId)).toEqual({});
+  });
+
+  it("with tracking off, sends the step body as written and writes no link row", async () => {
+    const body = `<p><a href="https://example.com/seq-plain">plain</a></p>`;
+    const seqId = await makeSequence();
+    await makeStep({ sequenceId: seqId, stepOrder: 0, delayDays: 0, body });
+    const prospect = await seqContact();
+    await enrollDue(seqId, prospect.id);
+    let html: string | undefined;
+    sendMock.mockImplementation(async (input: { html: string; to: string }) => {
+      if (input.to === prospect.email) html = input.html;
+      return okSendResult("seqtrack");
+    });
+
+    process.env.MARKETING_EMAIL_TRACKING_ENABLED = "false";
+    try {
+      await processScheduledSequenceEnrollments(new Date());
+    } finally {
+      process.env.MARKETING_EMAIL_TRACKING_ENABLED = "true";
+    }
+
+    expect(html!.startsWith(body)).toBe(true);
+    expect(html).not.toContain("/api/public/email/");
+    expect(await linksFor(prospect.id)).toEqual([]);
+    expect(await storage.getSequenceStepEngagement(ORG_ID, seqId)).toEqual({ 0: { sent: 1, opened: 0, clicked: 0 } });
+  });
+
+  it("sends untracked when the step body cannot be parsed", async () => {
+    // parse5 overflows its stack on this (50k chars, inside the body limit).
+    const deep = "<template>".repeat(4999);
+    const seqId = await makeSequence();
+    await makeStep({ sequenceId: seqId, stepOrder: 0, delayDays: 0, body: deep });
+    const prospect = await seqContact();
+    await enrollDue(seqId, prospect.id);
+    let html: string | undefined;
+    sendMock.mockImplementation(async (input: { html: string; to: string }) => {
+      if (input.to === prospect.email) html = input.html;
+      return okSendResult("seqtrack");
+    });
+
+    await processScheduledSequenceEnrollments(new Date());
+
+    expect(html!.startsWith(deep)).toBe(true);
+    expect(html).not.toContain("/api/public/email/");
+    expect(html).toContain(`/unsubscribe/${prospect.unsubscribeToken}"`);
+    expect(await linksFor(prospect.id)).toEqual([]);
+    const [attempt] = await attemptsFor(seqId, prospect.id);
+    expect(attempt.status).toBe("success");
+  });
+
+  it("drops the link row when the org has no connected mailbox and leaves the step pending", async () => {
+    const seqId = await makeSequence();
+    await makeStep({ sequenceId: seqId, stepOrder: 0, delayDays: 0, body: `<p><a href="https://example.com/m">m</a></p>` });
+    const prospect = await seqContact();
+    const enrId = await enrollDue(seqId, prospect.id);
+    sendMock.mockImplementation(async () => {
+      throw new MissingMailboxError("m365", ORG_ID);
+    });
+
+    await processScheduledSequenceEnrollments(new Date());
+
+    expect(await linksFor(prospect.id)).toEqual([]);
+    expect(await attemptsFor(seqId, prospect.id)).toEqual([]);
+    const [enr] = await db.select().from(marketingSequenceEnrollments).where(eq(marketingSequenceEnrollments.id, enrId));
+    expect(enr.currentStepIndex).toBe(0);
+  });
+
+  it("keeps a delivered step `success` and does not send it again when the email_sent activity write fails", async () => {
+    const seqId = await makeSequence();
+    await makeStep({ sequenceId: seqId, stepOrder: 0, delayDays: 0 });
+    const prospect = await seqContact();
+    const enrId = await enrollDue(seqId, prospect.id);
+    let sends = 0;
+    sendMock.mockImplementation(async (input: { to: string }) => {
+      if (input.to === prospect.email) sends++;
+      return okSendResult("seqtrack");
+    });
+    const real = storage.createActivity.bind(storage);
+    const spy = vi.spyOn(storage, "createActivity").mockImplementation(async (data, opts) => {
+      if (data.type === "email_sent" && data.prospectId === prospect.id) throw new Error("timeline down");
+      return real(data, opts);
+    });
+    try {
+      await processScheduledSequenceEnrollments(new Date());
+      await processScheduledSequenceEnrollments(new Date());
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(sends).toBe(1);
+    const attempts = await attemptsFor(seqId, prospect.id);
+    expect(attempts.map((a) => a.status)).toEqual(["success"]);
+    expect(await linksFor(prospect.id)).toHaveLength(1);
+    const [enr] = await db.select().from(marketingSequenceEnrollments).where(eq(marketingSequenceEnrollments.id, enrId));
+    expect(enr.status).toBe("completed");
+  });
+
+  it("does not count engagement on a step send that ends up failed", async () => {
+    const seqId = await makeSequence();
+    await makeStep({ sequenceId: seqId, stepOrder: 0, delayDays: 0 });
+    const prospect = await seqContact();
+    await enrollDue(seqId, prospect.id);
+    sendMock.mockImplementation(async (input: { to: string }) => {
+      if (input.to !== prospect.email) return okSendResult("seqtrack");
+      for (const r of await linksFor(prospect.id)) await recordOpen(r.token);
+      throw Object.assign(new Error("ETIMEDOUT upstream"), { code: "ETIMEDOUT" });
+    });
+
+    await processScheduledSequenceEnrollments(new Date());
+
+    const attempts = await attemptsFor(seqId, prospect.id);
+    expect(attempts.length).toBeGreaterThan(0);
+    expect(attempts.every((a) => a.status !== "success")).toBe(true);
+    // A hit on a failed send's link is not recorded once the attempt row says so.
+    const [link] = await linksFor(prospect.id);
+    expect(await recordOpen(link.token)).toBe(false);
+    expect(await storage.getSequenceStepEngagement(ORG_ID, seqId)).toEqual({});
+  });
+
+  it("keeps counts at the step position they were sent from after the steps are reordered", async () => {
+    const seqId = await makeSequence();
+    await makeStep({ sequenceId: seqId, stepOrder: 0, delayDays: 0, subject: "First" });
+    await makeStep({ sequenceId: seqId, stepOrder: 1, delayDays: 30, subject: "Second" });
+    const prospect = await seqContact();
+    await enrollDue(seqId, prospect.id);
+    sendMock.mockImplementation(async () => okSendResult("seqtrack"));
+    await processScheduledSequenceEnrollments(new Date());
+    const [link] = await linksFor(prospect.id);
+    expect(await recordOpen(link.token)).toBe(true);
+
+    const steps = await db.select().from(marketingSequenceSteps).where(eq(marketingSequenceSteps.sequenceId, seqId));
+    const bySubject = new Map(steps.map((x) => [x.subject, x]));
+    await storage.replaceSequenceSteps(seqId, ORG_ID, ["Second", "First"].map((subject) => {
+      const x = bySubject.get(subject)!;
+      return { delayDays: x.delayDays, subject: x.subject, body: x.body };
+    }));
+
+    expect(await storage.getSequenceStepEngagement(ORG_ID, seqId)).toEqual({ 0: { sent: 1, opened: 1, clicked: 0 } });
+  });
+
+  it("drops a removed enrollment's sends from the totals, keeps its link working, and counts a re-enrollment", async () => {
+    const seqId = await makeSequence();
+    await makeStep({ sequenceId: seqId, stepOrder: 0, delayDays: 0 });
+    const prospect = await seqContact();
+    const enrId = await enrollDue(seqId, prospect.id);
+    sendMock.mockImplementation(async () => okSendResult("seqtrack"));
+    await processScheduledSequenceEnrollments(new Date());
+    const [first] = await linksFor(prospect.id);
+    expect(await recordOpen(first.token)).toBe(true);
+    expect(await storage.getSequenceStepEngagement(ORG_ID, seqId)).toEqual({ 0: { sent: 1, opened: 1, clicked: 0 } });
+
+    expect(await storage.deleteSequenceEnrollment(enrId, ORG_ID, seqId)).toBe(true);
+    expect(await storage.getSequenceStepEngagement(ORG_ID, seqId)).toEqual({});
+    // The delivered link still records on its own row, but no longer enters the totals.
+    expect(await recordClick(first.token, first.links[0] ?? "https://example.com")).toBe(true);
+    const [after] = await db.select().from(emailTrackingLinks).where(eq(emailTrackingLinks.token, first.token));
+    expect(after.clickCount).toBe(1);
+    expect(await storage.getSequenceStepEngagement(ORG_ID, seqId)).toEqual({});
+
+    await enrollDue(seqId, prospect.id);
+    await processScheduledSequenceEnrollments(new Date());
+    expect(await storage.getSequenceStepEngagement(ORG_ID, seqId)).toEqual({ 0: { sent: 1, opened: 0, clicked: 0 } });
   });
 });

@@ -37,6 +37,7 @@ import {
   marketingProspects,
   contactActivities,
   marketingCampaigns,
+  marketingSequences,
   emailSendAttempts,
   emailTrackingLinks,
   expenseCategories,
@@ -114,6 +115,42 @@ async function makeSend(opts: {
   return { token, campaignId, prospectId, attemptId };
 }
 
+/** A sequence-step email: link row `kind='sequence'` (no campaign), attempt named by its sequence. */
+async function makeSequenceSend(opts: {
+  status?: "success" | "failed" | null;
+  attemptKind?: "campaign" | "sequence";
+  linkKind?: string;
+} = {}) {
+  const prospectId = await makeContact();
+  const sequenceId = randomUUID();
+  await db.insert(marketingSequences).values({ id: sequenceId, orgId: ORG_ID, brandId: BRAND_ID, name: `track Seq ${RUN}` });
+  const attemptId = randomUUID();
+  const token = newTrackingToken();
+  await db.insert(emailTrackingLinks).values({
+    token,
+    orgId: ORG_ID,
+    kind: opts.linkKind ?? "sequence",
+    campaignId: null,
+    prospectId,
+    attemptId,
+    links: ["https://example.com/s"],
+  });
+  if (opts.status !== null) {
+    await db.insert(emailSendAttempts).values({
+      id: attemptId,
+      orgId: ORG_ID,
+      kind: opts.attemptKind ?? "sequence",
+      sequenceId,
+      stepIndex: 2,
+      prospectId,
+      recipientEmail: "x@example.com",
+      attemptNumber: 1,
+      status: opts.status ?? "success",
+    });
+  }
+  return { token, sequenceId, prospectId, attemptId };
+}
+
 async function linkRow(token: string) {
   const [row] = await db.select().from(emailTrackingLinks).where(eq(emailTrackingLinks.token, token));
   return row;
@@ -139,6 +176,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await db.delete(emailTrackingLinks).where(eq(emailTrackingLinks.orgId, ORG_ID));
   await db.delete(emailSendAttempts).where(eq(emailSendAttempts.orgId, ORG_ID));
+  await db.delete(marketingSequences).where(eq(marketingSequences.orgId, ORG_ID));
   if (createdCampaignIds.length) {
     await db.delete(marketingCampaigns).where(inArray(marketingCampaigns.id, createdCampaignIds));
   }
@@ -215,6 +253,50 @@ describe("recording — recordOpen / recordClick", () => {
       expect(row.clickCount).toBe(0);
       expect(await activities(c.prospectId, "email_opened")).toHaveLength(0);
     }
+  });
+
+  it("records a sequence-step send's open and click, naming the sequence and step", async () => {
+    const { token, sequenceId, prospectId, attemptId } = await makeSequenceSend();
+    expect(await recordOpen(token)).toBe(true);
+    expect(await recordClick(token, "https://example.com/s")).toBe(true);
+    const row = await linkRow(token);
+    expect(row.openCount).toBe(1);
+    expect(row.clickCount).toBe(1);
+    const source = { sequence_id: sequenceId, sequence_name: `track Seq ${RUN}`, step_index: 2, attempt_id: attemptId };
+    const [opened] = await activities(prospectId, "email_opened");
+    expect(opened.payload).toEqual(source);
+    const [clicked] = await activities(prospectId, "email_clicked");
+    expect(clicked.payload).toEqual({ ...source, url: "https://example.com/s" });
+  });
+
+  it("records a sequence-step hit that lands before its attempt row, without sequence fields", async () => {
+    const { token, prospectId, attemptId } = await makeSequenceSend({ status: null });
+    expect(await recordOpen(token)).toBe(true);
+    const [opened] = await activities(prospectId, "email_opened");
+    expect(opened.payload).toEqual({ sequence_id: null, sequence_name: null, step_index: null, attempt_id: attemptId });
+  });
+
+  it("records nothing for a failed sequence send, a kind mismatch, or an unknown link kind", async () => {
+    const cases = [
+      await makeSequenceSend({ status: "failed" }),
+      await makeSequenceSend({ attemptKind: "campaign" }),
+      await makeSequenceSend({ linkKind: "other" }),
+    ];
+    for (const c of cases) {
+      expect(await recordOpen(c.token)).toBe(false);
+      expect(await recordClick(c.token, "https://example.com/s")).toBe(false);
+      const row = await linkRow(c.token);
+      expect(row.openCount).toBe(0);
+      expect(row.clickCount).toBe(0);
+      expect(await activities(c.prospectId, "email_opened")).toHaveLength(0);
+    }
+  });
+
+  it("records nothing for an unsubscribed recipient of a sequence send", async () => {
+    const { token, prospectId } = await makeSequenceSend();
+    await db.update(marketingProspects).set({ unsubscribedAt: new Date() }).where(eq(marketingProspects.id, prospectId));
+    expect(await recordOpen(token)).toBe(false);
+    expect((await linkRow(token)).openCount).toBe(0);
   });
 
   it("an unsubscribe that commits while a hit waits on the prospect lock wins", async () => {

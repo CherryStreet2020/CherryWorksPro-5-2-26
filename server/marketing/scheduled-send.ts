@@ -353,37 +353,35 @@ function classifyFailure(
 }
 
 /**
- * The campaign body with links rewritten for click tracking and the open
- * pixel added. The link row is committed BEFORE the send, so every rewritten
- * link in a delivered email resolves even if the attempt insert never
- * happens. Tracking is best-effort: if the body cannot be parsed, or that
- * insert fails or cannot finish within the tracking bounds, the email goes
- * out untracked rather than late or not at all. The unsubscribe footer is
- * added by the caller afterwards, so it is never rewritten.
+ * A campaign or sequence-step body with links rewritten for click tracking
+ * and the open pixel added. The link row is committed BEFORE the send, so
+ * every rewritten link in a delivered email resolves even if the attempt
+ * insert never happens. Tracking is best-effort: if the body cannot be
+ * parsed, or that insert fails or cannot finish within the tracking bounds,
+ * the email goes out untracked rather than late or not at all. The
+ * unsubscribe footer is added by the caller afterwards, so it is never
+ * rewritten.
  */
-async function trackedCampaignHtml(
-  campaign: MarketingCampaign,
-  prospectId: string,
-  attemptId: string,
+async function trackedHtml(
+  body: string,
+  link: {
+    orgId: string;
+    kind: "campaign" | "sequence";
+    campaignId: string | null;
+    prospectId: string;
+    attemptId: string;
+  },
+  logLabel: string,
 ): Promise<{ html: string; token: string | null }> {
-  const body = campaign.body ?? "";
   if (!isEmailTrackingEnabled()) return { html: body, token: null };
   const token = newTrackingToken();
   try {
     const tracked = withTracking(body, token);
-    await saveTrackingLinks({
-      token,
-      orgId: campaign.orgId,
-      kind: "campaign",
-      campaignId: campaign.id,
-      prospectId,
-      attemptId,
-      links: tracked.links,
-    });
+    await saveTrackingLinks({ token, ...link, links: tracked.links });
     return { html: tracked.html, token };
   } catch (err) {
     console.error(
-      `[marketing-scheduled-send] campaign=${campaign.id} contact=${prospectId}: tracking off for this send:`,
+      `[marketing-scheduled-send] ${logLabel}: tracking off for this send:`,
       err instanceof Error ? err.message : err,
     );
     return { html: body, token: null };
@@ -525,7 +523,11 @@ export async function processScheduledCampaigns(
       let outcome: AttemptOutcome;
       let trackingToken: string | null = null;
       try {
-        const tracked = await trackedCampaignHtml(campaign, r.id, attemptId);
+        const tracked = await trackedHtml(
+          campaign.body ?? "",
+          { orgId: campaign.orgId, kind: "campaign", campaignId: campaign.id, prospectId: r.id, attemptId },
+          `campaign=${campaign.id} contact=${r.id}`,
+        );
         trackingToken = tracked.token;
         const html = tracked.html;
         const footer = { token: r.unsubscribeToken, org: await getOrg(campaign.orgId) };
@@ -775,18 +777,28 @@ export async function processScheduledSequenceEnrollments(
 
     if (decision.action === "send") {
       attemptNumber = decision.attemptNumber;
+      const attemptId = randomUUID();
+      let trackingToken: string | null = null;
       try {
+        const tracked = await trackedHtml(
+          step.body ?? "",
+          { orgId: enr.orgId, kind: "sequence", campaignId: null, prospectId: enr.prospectId, attemptId },
+          `enrollment=${enr.id} step=${enr.currentStepIndex}`,
+        );
+        trackingToken = tracked.token;
         const footer = { token: row.contactUnsubscribeToken, org: await getOrg(enr.orgId) };
         const result = await sendViaConnectedMailbox({
           orgId: enr.orgId,
           to: row.contactEmail,
           subject: step.subject || seq.name,
-          html: withUnsubscribeFooter(step.body ?? "", footer),
+          html: withUnsubscribeFooter(tracked.html, footer),
           text: (step.body ?? "") + unsubscribeFooterText(footer),
           replyTo: seq.replyTo || null,
           headers: listUnsubscribeHeaders(row.contactUnsubscribeToken),
         });
         outcome = classifySuccess(result);
+        // The email is out: a timeline write failing here must not turn the
+        // attempt into a failure, which would send the step again next tick.
         await storage.createActivity({
           orgId: enr.orgId,
           brandId: seq.brandId,
@@ -804,7 +816,10 @@ export async function processScheduledSequenceEnrollments(
             attempt_number: attemptNumber,
           },
           actorId: null,
-        });
+        }).catch((err) => console.error(
+          `[marketing-scheduled-send] enrollment=${enr.id} step=${enr.currentStepIndex}: email_sent activity failed:`,
+          err instanceof Error ? err.message : err,
+        ));
         sent++;
         dispatched = true;
         advance = true;
@@ -814,6 +829,11 @@ export async function processScheduledSequenceEnrollments(
             `[marketing-scheduled-send] enrollment=${enr.id} org=${enr.orgId}: ` +
             `mailbox not connected — leaving enrollment pending.`,
           );
+          // No attempt row is written on this path and the step retries
+          // next tick: drop the unsent link row.
+          if (trackingToken) {
+            await dropTrackingLinks(trackingToken);
+          }
           continue;
         }
         outcome = classifyFailure(err, attemptNumber, now, policy.maxAttempts, policy.baseMs);
@@ -830,6 +850,7 @@ export async function processScheduledSequenceEnrollments(
       }
 
       await db.insert(emailSendAttempts).values({
+        id: attemptId,
         orgId: enr.orgId,
         kind: "sequence",
         sequenceId: enr.sequenceId,
