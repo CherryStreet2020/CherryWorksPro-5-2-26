@@ -224,7 +224,23 @@ const AREAS: Area[] = [
   },
 ];
 
-const INDEX = AREAS.map((a) => ({ id: a.id, label: a.name }));
+/** What the one subscription replaces. Each row jumps to its part of the page. */
+const PACKAGE = [
+  { id: "marketing-hub", get: "Marketing Hub", line: "Find the next client.", d: "Contacts, campaigns, sequences, and a chat on your website that turns visitors into leads.", instead: "a CRM and an email tool" },
+  { id: "support", get: "Support desk", line: "Keep the ones you have.", d: "Client emails become cases. The time you spend on them goes on the invoice.", instead: "Jira, Zendesk or a shared inbox" },
+  { id: "time", get: "Time and expenses", line: "Count every hour.", d: "Timesheets, a timer, and receipts that read themselves.", instead: "Harvest or a timesheet app" },
+  { id: "invoicing", get: "Billing", line: "Get paid for all of it.", d: "Invoices built from approved hours, paid by card or ACH, recurring when they should be.", instead: "FreshBooks or an invoicing tool" },
+  { id: "payouts", get: "Payouts", line: "Pay your people right.", d: "Every employee, contractor and partner, and what each one is owed. The 1099s at year end.", instead: "the payout spreadsheet" },
+  { id: "books", get: "Books", line: "Know where you stand.", d: "A real general ledger, bank feeds and month-end close, fed by everything above.", instead: "QuickBooks or Xero" },
+  { id: "books", get: "Reports", line: "See the whole firm.", d: `${REPORT_COUNT} reports, a report builder and an API.`, instead: "exports and pivot tables" },
+];
+
+const EASE = [
+  { t: "Log an hour once.", d: "It lands on the invoice, in the payout and in the books. Nobody types it twice." },
+  { t: "Plug in nothing.", d: "No integrations, no connectors, no sync that breaks on a Tuesday." },
+  { t: "Move in on a Friday.", d: "The import shows you everything before it writes a thing. Don’t like it? Undo it." },
+  { t: "Bring everyone.", d: "Your whole team, contractors too. The price doesn’t move." },
+];
 
 const PLANS = [
   { name: "Starter", price: PLAN_PRICING.STARTER.monthly, d: "Up to 5 clients and 3 projects. Time, expenses, invoicing, payouts, the general ledger and the built-in reports." },
@@ -288,10 +304,11 @@ export default function FeaturesPage() {
       <PageHero>
         <Container>
           <p className="text-[15px] font-medium text-[#CF3339]">Product</p>
-          <Display testId="features-heading" className="mt-4">From the first conversation to the closed month.</Display>
+          <Display testId="features-heading" className="mt-4">You didn’t start a firm to run software.</Display>
           <Lede size="hero" className="mt-5 md:mt-6">
-            CherryWorks Pro runs the front office and the back office of a services business: finding clients, supporting them,
-            tracking time, billing, paying your team and keeping the books. Here is each part, what it does and which plan it’s on.
+            You started it to do good work for people who trust you. Then came the CRM, the timesheet app, the invoicing
+            tool, the payout spreadsheet and the accounting software, and your evenings went with them. CherryWorks Pro
+            is all of it, in one place, at one price. Take your evenings back.
           </Lede>
           <Ctas>
             <ButtonLink href="/signup" testId="features-cta-signup">Start your trial</ButtonLink>
@@ -299,19 +316,52 @@ export default function FeaturesPage() {
           </Ctas>
           <Note>{TRIAL_NOTE}</Note>
 
-          <nav aria-label="On this page" data-testid="category-nav" className="mt-12 border-t border-[#E6E3DD] pt-5">
-            <ul className="flex flex-wrap gap-x-7 gap-y-2.5 text-[15px]">
-              {INDEX.map((item) => (
-                <li key={item.id}>
-                  <a href={`#${item.id}`} className="text-[#5C606A] transition-colors hover:text-[#15171C]">{item.label}</a>
+          <Scene screen={SCREENS.dashboard} priority testId="features-hero-screen" className="mt-12 md:mt-14" />
+        </Container>
+      </PageHero>
+
+      <Section testId="section-features-package">
+        <Container>
+          <Heading>Seven tools. One login.</Heading>
+          <Lede className="mt-5">Everything your firm pays for one by one today, already working together. Cancel the rest.</Lede>
+          <nav aria-label="What you get" data-testid="category-nav" className="mt-10 border-t border-[#15171C] md:mt-14">
+            <ul>
+              {PACKAGE.map((p) => (
+                <li key={p.get} className="border-b border-[#E6E3DD]">
+                  <a
+                    href={`#${p.id}`}
+                    className="group grid gap-x-10 gap-y-2 py-6 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,0.9fr)] md:items-baseline md:py-8"
+                  >
+                    <span>
+                      <span className="block text-[14px] font-medium text-[#CF3339]">{p.get}</span>
+                      <span className="mt-1 block text-[24px] font-medium leading-[1.15] tracking-[-0.02em] text-[#15171C] md:text-[30px]">
+                        {p.line}
+                        <span aria-hidden className="ml-2 inline-block text-[#6E727B] transition-transform group-hover:translate-x-0.5">→</span>
+                      </span>
+                    </span>
+                    <span className="text-[15.5px] leading-[1.55] text-[#5C606A]">{p.d}</span>
+                    <span className="text-[14px] text-[#6E727B]">Replaces {p.instead}</span>
+                  </a>
                 </li>
               ))}
             </ul>
           </nav>
-
-          <Scene screen={SCREENS.dashboard} priority testId="features-hero-screen" className="mt-10" />
         </Container>
-      </PageHero>
+      </Section>
+
+      <Section testId="section-features-ease">
+        <Container>
+          <Heading>Simple is the whole idea.</Heading>
+          <dl className="mt-10 grid gap-x-10 sm:grid-cols-2 md:mt-14 lg:grid-cols-4 lg:gap-x-12">
+            {EASE.map((e) => (
+              <div key={e.t} className="border-t border-[#15171C] pb-8 pt-5">
+                <dt className="text-[17px] font-medium tracking-[-0.005em] text-[#15171C]">{e.t}</dt>
+                <dd className="mt-2 text-[15.5px] leading-[1.55] text-[#5C606A]">{e.d}</dd>
+              </div>
+            ))}
+          </dl>
+        </Container>
+      </Section>
 
       {AREAS.map((area) => (
         <AreaSection key={area.id} area={area} />
