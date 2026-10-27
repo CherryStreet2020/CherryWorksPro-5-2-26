@@ -48,7 +48,7 @@ export default function Error500() {
             </span>
           </Link>
           <a
-            href="mailto:support@cherryworkspro.com"
+            href="mailto:support@cherrystconsulting.com"
             className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg cursor-pointer transition-all hover:opacity-80"
             style={{
               color: "var(--lux-accent)",

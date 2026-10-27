@@ -115,7 +115,7 @@ export default function TrialEndedPage() {
             {billing?.stripeCustomerId && (
               <button onClick={openPortal} className="mt-3 w-full text-xs underline" style={{ color: "var(--lux-text-muted)" }} data-testid="button-trial-ended-portal">Manage existing billing (cards, add-ons, invoices) in Stripe</button>
             )}
-            <p className="mt-3 text-xs text-center" style={{ color: "var(--lux-text-muted)" }}>Questions? Email <a href="mailto:support@cherryworkspro.com" className="underline">support@cherryworkspro.com</a>.</p>
+            <p className="mt-3 text-xs text-center" style={{ color: "var(--lux-text-muted)" }}>Questions? Email <a href="mailto:support@cherrystconsulting.com" className="underline">support@cherrystconsulting.com</a>.</p>
           </>
         ) : (
           <p className="mt-6 text-sm text-center px-3 py-3 rounded-lg" style={{ background: "var(--lux-surface-alt)", color: "var(--lux-text)" }} data-testid="trial-ended-non-admin">

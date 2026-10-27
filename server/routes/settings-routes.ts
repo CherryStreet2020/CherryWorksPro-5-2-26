@@ -63,17 +63,13 @@ app.post("/api/newsletter/subscribe", async (req: Request, res: Response) => {
       .onConflictDoNothing();
 
     try {
-      const { createTransporter } = await import("../email");
-      const transporter = await createTransporter();
-      if (transporter) {
-        await transporter.sendMail({
-          from: process.env.SMTP_USER || "noreply@cherryworkspro.com",
-          to: "info@cherrystconsulting.com",
-          subject: `[CherryWorks Pro] New newsletter subscriber`,
-          text: `New subscriber: ${normalizedEmail}`,
-          html: `<p>New newsletter subscriber: <strong>${normalizedEmail}</strong></p><p>Subscribed at ${new Date().toISOString()}</p>`,
-        });
-      }
+      const { sendPlatformNotice } = await import("../email");
+      await sendPlatformNotice({
+        to: "info@cherrystconsulting.com",
+        subject: `[CherryWorks Pro] New newsletter subscriber`,
+        text: `New subscriber: ${normalizedEmail}`,
+        html: `<p>New newsletter subscriber: <strong>${escapeHtml(normalizedEmail)}</strong></p><p>Subscribed at ${new Date().toISOString()}</p>`,
+      });
     } catch (emailErr: any) {
       console.error("[newsletter] Failed to send subscriber notification:", emailErr.message);
     }
@@ -261,38 +257,37 @@ app.post("/api/support-request", requireAuth, async (req, res) => {
     const planTier = org?.planTier || "STARTER";
     const priorityPrefix = (planTier === "BUSINESS" || planTier === "ENTERPRISE") ? "[PRIORITY] " : "";
 
-    const { createTransporter, wrapEmailLayout: wrapLayout, emailKeyValue: kv, emailDetailCard: detailCard } = await import("../email");
+    const { sendPlatformNotice, wrapEmailLayout: wrapLayout, emailKeyValue: kv, emailDetailCard: detailCard } = await import("../email");
 
     let emailSent = false;
     try {
-      const transporter = await createTransporter();
       const innerHtml = `
         <h2 style="font-size:20px;font-weight:700;color:#1a1a2e;margin:0 0 8px;">New Support Request</h2>
         <p style="font-size:14px;color:#555770;margin:0 0 24px;">Reference: <strong>${referenceId}</strong></p>
         ${detailCard(
-          kv("From", userName) +
-          kv("Email", user.email) +
-          kv("Organization", orgName) +
-          kv("Plan", planTier) +
-          kv("Subject", subject) +
-          kv("Page", pageUrl || "N/A")
+          kv("From", escapeHtml(userName)) +
+          kv("Email", escapeHtml(user.email)) +
+          kv("Organization", escapeHtml(orgName)) +
+          kv("Plan", escapeHtml(planTier)) +
+          kv("Subject", escapeHtml(String(subject))) +
+          kv("Page", escapeHtml(String(pageUrl || "N/A")))
         )}
         <div style="margin:24px 0;">
           <p style="font-size:13px;color:#555770;margin:0 0 8px;font-weight:600;">Message:</p>
-          <p style="font-size:14px;color:#1a1a2e;line-height:1.6;white-space:pre-wrap;">${message}</p>
+          <p style="font-size:14px;color:#1a1a2e;line-height:1.6;white-space:pre-wrap;">${escapeHtml(String(message))}</p>
         </div>
-        ${searchHistory ? `<div style="margin:24px 0;"><p style="font-size:12px;color:#8b8da3;margin:0 0 4px;">Recent searches:</p><p style="font-size:12px;color:#8b8da3;">${searchHistory}</p></div>` : ""}
+        ${searchHistory ? `<div style="margin:24px 0;"><p style="font-size:12px;color:#8b8da3;margin:0 0 4px;">Recent searches:</p><p style="font-size:12px;color:#8b8da3;">${escapeHtml(String(searchHistory))}</p></div>` : ""}
       `;
       const html = wrapLayout(innerHtml, { orgName: "CherryWorks Pro Support" });
 
-      await transporter!.sendMail({
-        from: '"CherryWorks Pro Support" <noreply@cherryworks.com>',
+      const result = await sendPlatformNotice({
         to: "info@cherrystconsulting.com",
         replyTo: user.email,
         subject: `${priorityPrefix}[${referenceId}] ${subject}`,
+        text: `${userName} <${user.email}> (${orgName}, ${planTier})\nPage: ${pageUrl || "N/A"}\n\n${message}`,
         html,
       });
-      emailSent = true;
+      emailSent = result.ok !== false;
     } catch (emailErr: any) {
       console.error("[support] Email send failed:", emailErr.message);
     }

@@ -1,7 +1,7 @@
 import type { Transporter } from "nodemailer";
 import type { SmtpConfig } from "../email";
 import type { EmailTransport, SendableMessage, SendResult } from "./types";
-import { EmailTransportError } from "./types";
+import { EmailTransportError, assertSafeHeaders } from "./types";
 
 const HEADER_INJECTION_RE = /[\r\n\f\v\0]/;
 const EMAIL_RE = /^[^\s@\r\n\f\v\0]+@[^\s@\r\n\f\v\0]+\.[^\s@\r\n\f\v\0]{2,}$/;
@@ -137,6 +137,7 @@ export class SmtpTransport implements EmailTransport {
     }
     checkHeaderInjection(message.to, "to");
     checkHeaderInjection(message.subject, "subject");
+    assertSafeHeaders("smtp", message.headers);
 
     const nodemailer = await import("nodemailer");
     const transporter = await createTransporterForOrg(this.smtpConfig);
@@ -162,6 +163,7 @@ export class SmtpTransport implements EmailTransport {
         content: a.content,
         contentType: a.contentType,
       })),
+      ...(message.headers ? { headers: message.headers } : {}),
     };
 
     if (message.cc && message.cc.length > 0) {

@@ -19,13 +19,18 @@ import {
   insertMarketingSequenceStepSchema,
   refineCampaignAudience,
 } from "@shared/schema";
+import { listUnsubscribeHeaders, withUnsubscribeFooter } from "../../marketing/unsubscribe";
 
 // Sprint 2p — In-memory per-campaign dispatch lock. Prevents two
 // near-simultaneous "Send Now" clicks from broadcasting twice while the
 // first call is still iterating recipients (the sent_at stamp only
-// lands AFTER all sends complete). 60-second TTL is generous for
-// audience sizes seen in this sprint.
-const SEND_NOW_LOCK_TTL_MS = 60_000;
+// lands AFTER all sends complete).
+// Send-now runs in the background and releases the lock when it finishes;
+// the TTL only frees a lock orphaned by a crash mid-send.
+const SEND_NOW_LOCK_TTL_MS = 6 * 60 * 60 * 1000;
+// Exchange Online accepts 30 messages a minute per mailbox; pace Graph sends
+// just under that so a campaign does not spend its time in 429 back-off.
+const GRAPH_SEND_INTERVAL_MS = 2_100;
 const sendNowLocks = new Map<string, number>();
 function acquireSendNowLock(campaignId: string): boolean {
   const now = Date.now();
@@ -295,11 +300,12 @@ export function registerMarketingCampaignRoutes(app: Express) {
   });
 
   // ── Sprint 2p — Immediate-dispatch "Send Now" ────────────────────────
-  // One-shot synchronous broadcast through the workspace's connected mailbox. Resolves the audience
-  // (all-brand or saved segment), iterates recipients sequentially,
-  // writes a terminal email_send_attempts row per recipient, and stamps
-  // campaigns.sent_at on success. No scheduler, no retry, no queueing —
-  // intentionally minimal per Sprint 2p spec.
+  // One-shot broadcast through the workspace's connected mailbox. Validates
+  // and resolves the audience (all-brand or saved segment) in the request,
+  // answers 202, then sends to each recipient in the background (paced for
+  // Microsoft 365), writes a terminal email_send_attempts row per recipient,
+  // and stamps campaigns.sent_at when the run finishes. Every message
+  // carries the unsubscribe footer and List-Unsubscribe headers.
   app.post(
     "/api/marketing/campaigns/:id/send-now",
     flagGate,
@@ -382,7 +388,7 @@ export function registerMarketingCampaignRoutes(app: Express) {
           filterArg.search = segFilter.search ?? "";
         }
 
-        const recipients: Array<{ id: string; email: string }> = [];
+        const recipients: Array<{ id: string; email: string; unsubscribeToken: string }> = [];
         const PAGE = 500;
         for (let offset = 0; ; offset += PAGE) {
           const page = await storage.listProspectsByFilter(
@@ -393,7 +399,7 @@ export function registerMarketingCampaignRoutes(app: Express) {
           );
           for (const r of page) {
             if (r.email && !r.unsubscribedAt && !r.bouncedAt) {
-              recipients.push({ id: r.id, email: r.email });
+              recipients.push({ id: r.id, email: r.email, unsubscribeToken: r.unsubscribeToken });
             }
           }
           if (page.length < PAGE) break;
@@ -417,58 +423,74 @@ export function registerMarketingCampaignRoutes(app: Express) {
         const oauth = transport.kind === "graph" || transport.kind === "gmail";
         const senderEmail = oauth ? ((org as any).emailSenderAddress || null) : (fromEmail || null);
 
-        let sentCount = 0;
-        let failedCount = 0;
-        for (const r of recipients) {
+        // Answer now and send in the background: paced to the mailbox's rate
+        // limit a large audience takes longer than any HTTP timeout. Each
+        // recipient's outcome lands in email_send_attempts (the failures
+        // dialog) and sent_at is stamped when the run finishes.
+        res.status(202).json({ campaignId: id, queued: recipients.length });
+        lockHeld = false;
+        void (async () => {
+          let sentCount = 0;
+          let failedCount = 0;
           try {
-            const result = await transport.send({
-              to: r.email,
-              subject,
-              html,
-              fromName: fromName || null,
-              fromEmail: senderEmail,
-              replyTo: replyTo || null,
-            });
-            if (result.ok === false) throw new Error("This workspace has no working email provider: connect a Microsoft 365 or Google mailbox, or configure SMTP, in Settings → Email.");
-            await storage.recordCampaignSendAttempt({
-              orgId,
-              campaignId: id,
-              prospectId: r.id,
-              recipientEmail: r.email,
-              status: "success",
-              providerMessageId: result.messageId,
-              transport: transport.kind,
-            });
-            sentCount += 1;
-          } catch (sendErr) {
-            const code = "send_error";
-            const message =
-              sendErr instanceof Error ? sendErr.message : String(sendErr);
-            await storage.recordCampaignSendAttempt({
-              orgId,
-              campaignId: id,
-              prospectId: r.id,
-              recipientEmail: r.email,
-              // DRIFT: email_send_attempts.status enum has no 'queued'
-              // value, AND Sprint 2p ships no retry scheduler. We use
-              // 'permanent_failure' so the existing campaign failures
-              // dialog renders these as "Gave up" rather than the
-              // misleading "Pending retry" copy reserved for 'failed'.
-              status: "permanent_failure",
-              errorCode: code,
-              errorMessage: message.slice(0, 500),
-            });
-            failedCount += 1;
+            for (const [i, r] of recipients.entries()) {
+              if (i > 0 && transport.kind === "graph") {
+                await new Promise((resolve) => setTimeout(resolve, GRAPH_SEND_INTERVAL_MS));
+              }
+              const footer = { token: r.unsubscribeToken, org };
+              try {
+                const result = await transport.send({
+                  to: r.email,
+                  subject,
+                  html: withUnsubscribeFooter(html, footer),
+                  fromName: fromName || null,
+                  fromEmail: senderEmail,
+                  replyTo: replyTo || null,
+                  headers: listUnsubscribeHeaders(r.unsubscribeToken),
+                });
+                if (result.ok === false) throw new Error("This workspace has no working email provider: connect a Microsoft 365 or Google mailbox, or configure SMTP, in Settings → Email.");
+                await storage.recordCampaignSendAttempt({
+                  orgId,
+                  campaignId: id,
+                  prospectId: r.id,
+                  recipientEmail: r.email,
+                  status: "success",
+                  providerMessageId: result.messageId,
+                  transport: transport.kind,
+                });
+                sentCount += 1;
+              } catch (sendErr) {
+                const code = "send_error";
+                const message =
+                  sendErr instanceof Error ? sendErr.message : String(sendErr);
+                await storage.recordCampaignSendAttempt({
+                  orgId,
+                  campaignId: id,
+                  prospectId: r.id,
+                  recipientEmail: r.email,
+                  // DRIFT: email_send_attempts.status enum has no 'queued'
+                  // value, AND Sprint 2p ships no retry scheduler. We use
+                  // 'permanent_failure' so the existing campaign failures
+                  // dialog renders these as "Gave up" rather than the
+                  // misleading "Pending retry" copy reserved for 'failed'.
+                  status: "permanent_failure",
+                  errorCode: code,
+                  errorMessage: message.slice(0, 500),
+                });
+                failedCount += 1;
+              }
+            }
+            await storage.markCampaignSent(id, orgId);
+            console.log(
+              `[marketing] send-now campaign=${id} org=${orgId} sent=${sentCount} failed=${failedCount}`,
+            );
+          } catch (runErr) {
+            console.error(`[marketing] send-now campaign=${id} stopped:`, runErr);
+          } finally {
+            releaseSendNowLock(id);
           }
-        }
-
-        const updated = await storage.markCampaignSent(id, orgId);
-        return res.json({
-          campaignId: id,
-          sentCount,
-          failedCount,
-          sentAt: updated?.sentAt ?? null,
-        });
+        })();
+        return;
       } catch (err: unknown) {
         return res.status(400).json({ message: errMsg(err) });
       } finally {

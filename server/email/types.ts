@@ -14,6 +14,11 @@ export interface SendableMessage {
   fromName?: string | null;
   fromEmail?: string | null;
   attachments?: SendableAttachment[];
+  /**
+   * Extra top-level headers (e.g. List-Unsubscribe). SMTP and Gmail send them
+   * as-is; Graph sendMail only accepts X- headers and drops the rest.
+   */
+  headers?: Record<string, string>;
 }
 
 export interface SendResult {
@@ -46,5 +51,17 @@ export class EmailTransportError extends Error {
   constructor(public readonly transport: string, message: string, public readonly cause?: unknown) {
     super(message);
     this.name = "EmailTransportError";
+  }
+}
+
+const HEADER_NAME_RE = /^[A-Za-z0-9-]+$/;
+const HEADER_VALUE_UNSAFE_RE = /[\r\n\f\v\0]/;
+
+/** Rejects extra headers whose name or value could inject further headers. */
+export function assertSafeHeaders(transport: string, headers: Record<string, string> | undefined): void {
+  for (const [name, value] of Object.entries(headers ?? {})) {
+    if (!HEADER_NAME_RE.test(name) || HEADER_VALUE_UNSAFE_RE.test(value)) {
+      throw new EmailTransportError(transport, `Invalid header "${name}"`);
+    }
   }
 }

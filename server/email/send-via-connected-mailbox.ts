@@ -30,6 +30,7 @@ export interface SendViaConnectedMailboxInput {
   text?: string;
   cc?: string[];
   replyTo?: string | null;
+  headers?: Record<string, string>;
 }
 
 export interface SendViaConnectedMailboxResult {
@@ -80,6 +81,7 @@ export async function sendViaConnectedMailbox(
     text: input.text,
     cc: input.cc,
     replyTo: input.replyTo ?? undefined,
+    headers: input.headers,
     fromEmail: senderAddress ?? undefined,
     fromName: orgRecord.name ?? undefined,
   };

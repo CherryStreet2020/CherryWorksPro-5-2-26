@@ -379,19 +379,14 @@ export default function CampaignsPage() {
               "POST",
               `/api/marketing/campaigns/${sendingNow.id}/send-now`,
             );
-            const body = (await res.json()) as {
-              sentCount: number;
-              failedCount: number;
-            };
+            const body = (await res.json()) as { queued: number };
             await queryClient.invalidateQueries({
               queryKey: ["/api/marketing/campaigns"],
             });
             toast({
-              title: `Sent to ${body.sentCount} recipient${body.sentCount === 1 ? "" : "s"}`,
+              title: `Sending to ${body.queued} recipient${body.queued === 1 ? "" : "s"}`,
               description:
-                body.failedCount > 0
-                  ? `${body.failedCount} failed — open the failures dialog for details.`
-                  : undefined,
+                "Emails go out in the background, about 28 a minute from a Microsoft 365 mailbox. Any that fail show in the campaign's failures dialog.",
             });
             setSendingNow(null);
           } catch (err: unknown) {

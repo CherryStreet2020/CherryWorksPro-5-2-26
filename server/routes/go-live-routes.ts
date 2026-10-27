@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { requireAdmin, requireAuth } from "./middleware";
+import { escapeHtml, requireAdmin, requireAuth } from "./middleware";
 import { pool } from "../db";
 import { randomUUID } from "crypto";
 
@@ -387,18 +387,14 @@ export function registerGoLiveRoutes(app: Express) {
     if (!name || !email || !message) return res.status(400).json({ error: "name, email, message required" });
 
     try {
-      const { createTransporter } = await import("../email");
-      const transporter = await createTransporter();
-      if (transporter) {
-        await transporter.sendMail({
-          from: process.env.SMTP_USER || "noreply@cherryworkspro.com",
-          to: "info@cherrystconsulting.com",
-          replyTo: email,
-          subject: `[CherryWorks Pro] Marketing contact: ${name}`,
-          text: `Name: ${name}\nEmail: ${email}\nCompany: ${company || "N/A"}\n\nMessage:\n${message}`,
-          html: `<p><strong>Name:</strong> ${name}</p><p><strong>Email:</strong> ${email}</p><p><strong>Company:</strong> ${company || "N/A"}</p><p><strong>Message:</strong></p><p>${message}</p>`,
-        });
-      }
+      const { sendPlatformNotice } = await import("../email");
+      await sendPlatformNotice({
+        to: "info@cherrystconsulting.com",
+        replyTo: email,
+        subject: `[CherryWorks Pro] Marketing contact: ${name}`,
+        text: `Name: ${name}\nEmail: ${email}\nCompany: ${company || "N/A"}\n\nMessage:\n${message}`,
+        html: `<p><strong>Name:</strong> ${escapeHtml(String(name))}</p><p><strong>Email:</strong> ${escapeHtml(String(email))}</p><p><strong>Company:</strong> ${escapeHtml(String(company || "N/A"))}</p><p><strong>Message:</strong></p><p>${escapeHtml(String(message))}</p>`,
+      });
     } catch (emailErr: any) {
       console.error("[marketing-contact] Failed to send email:", emailErr.message);
     }

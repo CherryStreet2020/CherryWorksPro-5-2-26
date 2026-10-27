@@ -147,6 +147,22 @@ describe("resolveCampaignRecipients (Task #234)", () => {
     );
   });
 
+  it("drops unsubscribed and bounced segment contacts", async () => {
+    getSegmentMock.mockResolvedValue({ id: "seg-1", brandId: "brand-1", filter: {} });
+    resolveSegmentProspectsMock.mockResolvedValue([
+      { id: "c1", email: "a@x.com", unsubscribeToken: "t1" },
+      { id: "c2", email: "b@x.com", unsubscribedAt: new Date() },
+      { id: "c3", email: "c@x.com", bouncedAt: new Date() },
+    ]);
+    const out = await resolveCampaignRecipients({
+      orgId: "org-1",
+      brandId: "brand-1",
+      audienceType: "segment",
+      audienceSegmentId: "seg-1",
+    });
+    expect(out).toEqual([{ id: "c1", email: "a@x.com", unsubscribeToken: "t1" }]);
+  });
+
   it("falls back to the all-brand query when audienceType=all", async () => {
     const out = await resolveCampaignRecipients({
       orgId: "org-1",
