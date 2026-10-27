@@ -116,7 +116,7 @@ export function log(message: string, source = "express") {
 }
 
 export { structuredLog } from "./lib/logging";
-import { structuredLog } from "./lib/logging";
+import { redactPath, structuredLog } from "./lib/logging";
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -136,7 +136,7 @@ app.use((req, res, next) => {
         level: res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "warn" : "info",
         requestId: req.requestId?.substring(0, 8),
         method: req.method,
-        path,
+        path: redactPath(path),
         status: res.statusCode,
         durationMs: duration,
       };
@@ -174,7 +174,7 @@ app.use((req, res, next) => {
   });
 
   app.all("/api/{*path}", (_req, res) => {
-    res.status(404).json({ error: "API route not found", path: _req.path });
+    res.status(404).json({ error: "API route not found", path: redactPath(_req.path) });
   });
 
   // One sitemap, one robots.txt, from the shared public-route map (before the shell fallback).

@@ -7186,6 +7186,10 @@ export class DatabaseStorage {
     permanentFailure: number;
     totalAttempts: number;
     distinctRecipients: number;
+    opened: number;
+    clicked: number;
+    opens: number;
+    clicks: number;
   }> {
     const rows = await db.execute(sql`
       SELECT status, COUNT(*)::int AS n,
@@ -7216,7 +7220,64 @@ export class DatabaseStorage {
     const distData = (distRows as { rows?: Array<Record<string, unknown>> }).rows
       ?? (distRows as unknown as Array<Record<string, unknown>>);
     const distinctRecipients = Number((distData?.[0]?.n) ?? 0);
-    return { sent, failed, permanentFailure, totalAttempts, distinctRecipients };
+    // Opens / clicks: only sends that were delivered (a `success` attempt)
+    // count; link rows are written before delivery, so failed sends have one too.
+    const engRows = await db.execute(sql`
+      SELECT COUNT(l.opened_at)::int AS opened,
+             COUNT(l.clicked_at)::int AS clicked,
+             COALESCE(SUM(l.open_count), 0)::int AS opens,
+             COALESCE(SUM(l.click_count), 0)::int AS clicks
+      FROM email_send_attempts a
+      JOIN email_tracking_links l ON l.attempt_id = a.id AND l.org_id = a.org_id
+      WHERE a.org_id = ${orgId}
+        AND a.kind = 'campaign'
+        AND a.status = 'success'
+        AND a.campaign_id = ${campaignId}
+    `);
+    const eng = ((engRows as { rows?: Array<Record<string, unknown>> }).rows
+      ?? (engRows as unknown as Array<Record<string, unknown>>))?.[0] ?? {};
+    return {
+      sent, failed, permanentFailure, totalAttempts, distinctRecipients,
+      opened: Number(eng.opened ?? 0),
+      clicked: Number(eng.clicked ?? 0),
+      opens: Number(eng.opens ?? 0),
+      clicks: Number(eng.clicks ?? 0),
+    };
+  }
+
+  /**
+   * Delivered / opened / clicked counts per campaign of one brand, for the
+   * campaigns list. Campaigns with no delivered sends are omitted.
+   */
+  async getCampaignEngagementByBrand(
+    orgId: string,
+    brandId: string,
+  ): Promise<Record<string, { sent: number; opened: number; clicked: number }>> {
+    const rows = await db.execute(sql`
+      SELECT a.campaign_id,
+             COUNT(*)::int AS sent,
+             COUNT(l.opened_at)::int AS opened,
+             COUNT(l.clicked_at)::int AS clicked
+      FROM email_send_attempts a
+      JOIN marketing_campaigns c ON c.id = a.campaign_id AND c.org_id = a.org_id
+      LEFT JOIN email_tracking_links l ON l.attempt_id = a.id AND l.org_id = a.org_id
+      WHERE a.org_id = ${orgId}
+        AND c.brand_id = ${brandId}
+        AND a.kind = 'campaign'
+        AND a.status = 'success'
+      GROUP BY a.campaign_id
+    `);
+    const data = (rows as { rows?: Array<Record<string, unknown>> }).rows
+      ?? (rows as unknown as Array<Record<string, unknown>>);
+    const out: Record<string, { sent: number; opened: number; clicked: number }> = {};
+    for (const r of data ?? []) {
+      out[String(r.campaign_id)] = {
+        sent: Number(r.sent ?? 0),
+        opened: Number(r.opened ?? 0),
+        clicked: Number(r.clicked ?? 0),
+      };
+    }
+    return out;
   }
 
   // ── Sprint 2p: immediate-dispatch "Send Now" helpers ─────────────────

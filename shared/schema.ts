@@ -4183,6 +4183,38 @@ export type EmailSendAttempt = typeof emailSendAttempts.$inferSelect;
 export type EmailSendAttemptKind = (typeof emailSendAttemptKindEnum.enumValues)[number];
 export type EmailSendAttemptStatus = (typeof emailSendAttemptStatusEnum.enumValues)[number];
 
+// First-party open/click tracking (2026-10-27, after Resend). One row per send
+// attempt, written BEFORE the transport is called so every rewritten link in a
+// delivered email resolves even if the attempt insert never happens. The click
+// route redirects only to links[index], so the table is also the open-redirect
+// allow-list. campaign_id and attempt_id carry no FK on purpose: deleting a
+// sent campaign must not break links already sitting in inboxes.
+export const emailTrackingLinks = pgTable(
+  "email_tracking_links",
+  {
+    token: text("token").primaryKey(),
+    orgId: varchar("org_id", { length: 36 }).notNull().references(() => orgs.id),
+    kind: text("kind").notNull().default("campaign"),
+    campaignId: varchar("campaign_id", { length: 36 }),
+    prospectId: varchar("prospect_id", { length: 36 }).references(
+      () => marketingProspects.id,
+      { onDelete: "set null" },
+    ),
+    attemptId: varchar("attempt_id", { length: 36 }),
+    links: jsonb("links").$type<string[]>().notNull(),
+    openedAt: timestamp("opened_at"),
+    openCount: integer("open_count").notNull().default(0),
+    clickedAt: timestamp("clicked_at"),
+    clickCount: integer("click_count").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    attemptIdx: index("email_tracking_links_attempt_idx").on(table.attemptId),
+  }),
+);
+
+export type EmailTrackingLink = typeof emailTrackingLinks.$inferSelect;
+
 /**
  * Task #252 — Persistent masked-recipient suppressions. The admin
  * "Suppressed" tab previously kept these in a process-local Map, which

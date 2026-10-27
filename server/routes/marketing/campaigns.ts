@@ -184,6 +184,30 @@ export function registerMarketingCampaignRoutes(app: Express) {
     },
   );
 
+  // Delivered / opened / clicked per campaign of a brand, for the list's
+  // Engagement column. Registered before `/:id` so "engagement" is not an id.
+  app.get(
+    "/api/marketing/campaigns/engagement",
+    flagGate,
+    requireAdminOrManager,
+    async (req: Request, res: Response) => {
+      let brandId: string;
+      try {
+        brandId = z.string().uuid().parse(req.query.brandId);
+      } catch (err: unknown) {
+        return res.status(400).json({ message: errMsg(err) });
+      }
+      try {
+        const orgId = req.session.orgId!;
+        const brand = await storage.getBrand(brandId, orgId);
+        if (!brand) return res.status(404).json({ message: "Brand not found" });
+        return res.json(await storage.getCampaignEngagementByBrand(orgId, brandId));
+      } catch (err: unknown) {
+        return res.status(500).json({ message: errMsg(err) });
+      }
+    },
+  );
+
   app.get("/api/marketing/campaigns/:id", flagGate, requireAdminOrManager, async (req: Request, res: Response) => {
     try {
       const id = paramId(req);

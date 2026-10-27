@@ -17,6 +17,7 @@
  * tests/integration/marketing-os-telemetry-cleanup.test.ts.
  */
 process.env.MARKETING_OS_ENABLED = "true";
+process.env.MARKETING_EMAIL_TRACKING_ENABLED = "true";
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { randomUUID } from "crypto";
@@ -49,6 +50,7 @@ import { storage } from "../storage";
 import { MissingMailboxError } from "../email/types";
 import { db, pool } from "../db";
 import { flushSequenceFailureDigest } from "../notifications/marketing-failures";
+import { recordOpen } from "./tracking-record";
 import {
   orgs,
   brands,
@@ -58,6 +60,8 @@ import {
   marketingSequences,
   marketingSequenceSteps,
   marketingSequenceEnrollments,
+  emailSendAttempts,
+  emailTrackingLinks,
   expenseCategories,
   orgEntitlements,
   users,
@@ -66,6 +70,9 @@ import {
 const RUN = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const ORG_ID = randomUUID();
 const BRAND_ID = randomUUID();
+// Own brand for the tracking block, so its recipients stay out of the
+// counts the other blocks assert on.
+const TRACK_BRAND_ID = randomUUID();
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -226,7 +233,9 @@ afterAll(async () => {
   if (createdUserIds.length) {
     await db.delete(users).where(inArray(users.id, createdUserIds));
   }
-  await db.delete(brands).where(eq(brands.id, BRAND_ID));
+  // Tracking rows outlive their campaign and prospect, and block the org delete.
+  await db.delete(emailTrackingLinks).where(eq(emailTrackingLinks.orgId, ORG_ID));
+  await db.delete(brands).where(inArray(brands.id, [BRAND_ID, TRACK_BRAND_ID]));
   // Defensive: a parallel test suite or a server-side seeder may have
   // populated rows that reference our org while the test was in flight
   // (e.g. seedExpenseCategories / seedOrgEntitlements iterate every org
@@ -953,5 +962,296 @@ describe("admin failure notifications — integration (Task #305)", () => {
     const mail = ours[0] as Mail;
     expect(mail.text).toContain("VALIDATION_ERROR");
     expect(mail.text).toContain(recipientEmail);
+  });
+});
+
+describe("processScheduledCampaigns — open / click tracking", () => {
+  beforeAll(async () => {
+    await db.insert(brands).values({
+      id: TRACK_BRAND_ID,
+      orgId: ORG_ID,
+      name: `t236 Track Brand ${RUN}`,
+      slug: `t236-track-${RUN}`,
+    });
+  });
+
+  async function trackContact(): Promise<string> {
+    const id = randomUUID();
+    await db.insert(marketingProspects).values({
+      id,
+      orgId: ORG_ID,
+      brandId: TRACK_BRAND_ID,
+      firstName: "Track",
+      lastName: "Contact",
+      email: `track-${id.slice(0, 8)}@example.com`,
+    });
+    createdContactIds.push(id);
+    return id;
+  }
+
+  async function trackCampaign(body: string): Promise<string> {
+    const id = randomUUID();
+    await db.insert(marketingCampaigns).values({
+      id,
+      orgId: ORG_ID,
+      brandId: TRACK_BRAND_ID,
+      name: `t236 Track Campaign ${RUN}`,
+      subject: "Hello",
+      body,
+      sendAt: new Date(Date.now() - 60_000),
+    });
+    createdCampaignIds.push(id);
+    return id;
+  }
+
+  it("writes the link row before delivery, rewrites links, keeps unsubscribe raw, and counts an early pixel", async () => {
+    const prospectId = await trackContact();
+    const [prospect] = await db.select().from(marketingProspects).where(eq(marketingProspects.id, prospectId));
+    const campaignId = await trackCampaign(
+      `<html><body><p>Read <a href="https://example.com/post?a=1&amp;b=2">this</a></p></body></html>`,
+    );
+
+    let seen: { html: string; row: typeof emailTrackingLinks.$inferSelect | undefined } | null = null;
+    sendMock.mockImplementation(async (input: { html: string; to: string }) => {
+      if (input.to !== prospect.email) return okSendResult("track");
+      const [row] = await db.select().from(emailTrackingLinks).where(eq(emailTrackingLinks.campaignId, campaignId));
+      seen = { html: input.html, row };
+      // An image proxy fetching the pixel before the attempt row exists.
+      expect(await recordOpen(row!.token)).toBe(true);
+      return okSendResult("track");
+    });
+
+    await processScheduledCampaigns(new Date());
+
+    expect(seen).not.toBeNull();
+    const { html, row } = seen!;
+    expect(row!.links).toEqual(["https://example.com/post?a=1&b=2"]);
+    expect(row!.prospectId).toBe(prospectId);
+    expect(html).toContain(`/api/public/email/c/${row!.token}/0"`);
+    expect(html).toContain(`/api/public/email/o/${row!.token}.gif"`);
+    expect(html).not.toContain("https://example.com/post");
+    expect(html).toContain(`/unsubscribe/${prospect.unsubscribeToken}"`);
+
+    const [attempt] = await db.select().from(emailSendAttempts).where(eq(emailSendAttempts.campaignId, campaignId));
+    expect(attempt.status).toBe("success");
+    expect(attempt.id).toBe(row!.attemptId);
+
+    const metrics = await storage.getCampaignSendMetrics(ORG_ID, campaignId);
+    expect(metrics).toMatchObject({ sent: 1, opened: 1, clicked: 0, opens: 1, clicks: 0 });
+  });
+
+  it("with tracking off, sends the body as written, and links already delivered still redirect", async () => {
+    // A tracked send while the flag is on: its link is out in someone's inbox.
+    const deliveredId = await trackCampaign(`<p><a href="https://example.com/earlier">earlier</a></p>`);
+    sendMock.mockImplementation(async () => okSendResult("track"));
+    await processScheduledCampaigns(new Date());
+    const [delivered] = await db.select().from(emailTrackingLinks).where(eq(emailTrackingLinks.campaignId, deliveredId));
+    expect(delivered.links).toEqual(["https://example.com/earlier"]);
+
+    process.env.MARKETING_EMAIL_TRACKING_ENABLED = "false";
+    try {
+      const body = `<p><a href="https://example.com/plain">plain</a></p>`;
+      const campaignId = await trackCampaign(body);
+      const htmls: string[] = [];
+      sendMock.mockImplementation(async (input: { html: string }) => {
+        htmls.push(input.html);
+        return okSendResult("track");
+      });
+      await processScheduledCampaigns(new Date());
+      expect(htmls.length).toBeGreaterThan(0);
+      for (const html of htmls) {
+        expect(html.startsWith(body)).toBe(true);
+        expect(html).not.toContain("/api/public/email/");
+      }
+      expect(await db.select().from(emailTrackingLinks).where(eq(emailTrackingLinks.campaignId, campaignId))).toEqual([]);
+
+      // The routes do not depend on the flag: the earlier link still resolves.
+      const express = (await import("express")).default;
+      const { registerMarketingTrackingRoutes } = await import("../routes/marketing/tracking");
+      const app = express();
+      registerMarketingTrackingRoutes(app);
+      const server = app.listen(0);
+      try {
+        const port = (server.address() as { port: number }).port;
+        const res = await fetch(`http://127.0.0.1:${port}/api/public/email/c/${delivered.token}/0`, { redirect: "manual" });
+        expect(res.status).toBe(302);
+        expect(res.headers.get("location")).toBe("https://example.com/earlier");
+      } finally {
+        server.close();
+      }
+    } finally {
+      process.env.MARKETING_EMAIL_TRACKING_ENABLED = "true";
+    }
+  });
+
+  it("does not count engagement on a send that ends up failed", async () => {
+    const campaignId = await trackCampaign("<p>Hi</p>");
+    sendMock.mockImplementation(async () => {
+      const rows = await db.select().from(emailTrackingLinks).where(eq(emailTrackingLinks.campaignId, campaignId));
+      for (const r of rows) await recordOpen(r.token);
+      throw Object.assign(new Error("ETIMEDOUT upstream"), { code: "ETIMEDOUT" });
+    });
+
+    await processScheduledCampaigns(new Date());
+
+    const attempts = await db.select().from(emailSendAttempts).where(eq(emailSendAttempts.campaignId, campaignId));
+    expect(attempts.length).toBeGreaterThan(0);
+    expect(attempts.every((a) => a.status !== "success")).toBe(true);
+    const metrics = await storage.getCampaignSendMetrics(ORG_ID, campaignId);
+    expect(metrics).toMatchObject({ sent: 0, opened: 0, clicked: 0 });
+  });
+
+  it("keeps a delivered send `success` when the email_sent activity write fails", async () => {
+    const campaignId = await trackCampaign("<p>Hi</p>");
+    sendMock.mockImplementation(async () => okSendResult("track"));
+    const real = storage.createActivity.bind(storage);
+    const spy = vi.spyOn(storage, "createActivity").mockImplementation(async (data, opts) => {
+      if (data.type === "email_sent" && data.orgId === ORG_ID) throw new Error("timeline down");
+      return real(data, opts);
+    });
+    try {
+      await processScheduledCampaigns(new Date());
+    } finally {
+      spy.mockRestore();
+    }
+
+    const rows = await db.select().from(emailSendAttempts).where(eq(emailSendAttempts.campaignId, campaignId));
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r) => r.status === "success")).toBe(true);
+  });
+
+  it("sends untracked when the body cannot be parsed or tracking throws", async () => {
+    const tracking = await import("./tracking");
+    // parse5 overflows its stack on this (50k chars, inside the body limit).
+    const deep = "<template>".repeat(4999);
+    const injectedMark = `inject-${randomUUID()}`;
+    const injected = `<p data-mark="${injectedMark}"><a href="https://example.com/i">i</a></p>`;
+
+    const deepId = await trackContact();
+    const injectedId = await trackContact();
+    const deepCampaign = await trackCampaign(deep);
+    const injectedCampaign = await trackCampaign(injected);
+    const emails = new Map(
+      (await db.select().from(marketingProspects).where(inArray(marketingProspects.id, [deepId, injectedId])))
+        .map((p) => [p.email, p]),
+    );
+    const delivered: { html: string; to: string }[] = [];
+    sendMock.mockImplementation(async (input: { html: string; to: string }) => {
+      if (emails.has(input.to)) delivered.push(input);
+      return okSendResult("track");
+    });
+    const original = tracking.withTracking;
+    const inject = vi.spyOn(tracking, "withTracking").mockImplementation((html, token) => {
+      if (html === injected) throw new Error("injected tracking failure");
+      return original(html, token);
+    });
+    try {
+      await processScheduledCampaigns(new Date());
+    } finally {
+      inject.mockRestore();
+    }
+
+    for (const [campaignId, body] of [[deepCampaign, deep], [injectedCampaign, injected]] as const) {
+      const mine = delivered.filter((d) => d.html.startsWith(body));
+      expect(mine.length, campaignId).toBeGreaterThan(0);
+      for (const d of mine) {
+        expect(d.html).not.toContain("/api/public/email/");
+        expect(d.html).toContain(`/unsubscribe/${emails.get(d.to)!.unsubscribeToken}"`);
+      }
+      expect(await db.select().from(emailTrackingLinks).where(eq(emailTrackingLinks.campaignId, campaignId))).toEqual([]);
+      const attempts = await db.select().from(emailSendAttempts).where(eq(emailSendAttempts.campaignId, campaignId));
+      expect(attempts.length).toBeGreaterThan(0);
+      expect(attempts.every((a) => a.status === "success")).toBe(true);
+    }
+  });
+
+  it("sends untracked, promptly, when the link row cannot be written in time, and keeps going", async () => {
+    const ids = [await trackContact(), await trackContact()];
+    const mark = `lock-${randomUUID()}`;
+    const campaignId = await trackCampaign(`<p data-mark="${mark}"><a href="https://example.com/x">x</a></p>`);
+    const emails = (await db.select().from(marketingProspects).where(inArray(marketingProspects.id, ids)))
+      .map((p) => p.email);
+    let sends = 0;
+    const htmls: string[] = [];
+    sendMock.mockImplementation(async (input: { html: string; to: string }) => {
+      sends++;
+      if (emails.includes(input.to) && input.html.includes(mark)) htmls.push(input.html);
+      return okSendResult("track");
+    });
+
+    // Something else holds a lock this campaign's link-row inserts wait on. Only
+    // this campaign: a table lock would also stall tracking-record's tests,
+    // which run in parallel against the same table.
+    const fn = `t236_wait_${RUN.replace(/\W/g, "")}`;
+    await pool.query(`CREATE FUNCTION ${fn}() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN IF NEW.campaign_id = '${campaignId}' THEN PERFORM pg_advisory_xact_lock(hashtext('${campaignId}')); END IF;
+      RETURN NEW; END $$`);
+    await pool.query(`CREATE TRIGGER ${fn} BEFORE INSERT ON email_tracking_links
+      FOR EACH ROW EXECUTE FUNCTION ${fn}()`);
+    const client = await pool.connect();
+    const started = Date.now();
+    try {
+      await client.query("SELECT pg_advisory_lock(hashtext($1))", [campaignId]);
+      await processScheduledCampaigns(new Date());
+    } finally {
+      await client.query("SELECT pg_advisory_unlock(hashtext($1))", [campaignId]);
+      client.release();
+      await pool.query(`DROP TRIGGER ${fn} ON email_tracking_links`);
+      await pool.query(`DROP FUNCTION ${fn}()`);
+    }
+    // Earlier tests' campaigns and contacts go out in the same run. Each send of
+    // this campaign waits at most the 1s lock timeout on its link row.
+    expect(Date.now() - started).toBeLessThan(sends * 1_500 + 3_000);
+    expect(htmls).toHaveLength(2);
+    for (const html of htmls) {
+      expect(html).toContain(`href="https://example.com/x"`);
+      expect(html).not.toContain("/api/public/email/");
+    }
+    const attempts = await db.select().from(emailSendAttempts)
+      .where(and(eq(emailSendAttempts.campaignId, campaignId), inArray(emailSendAttempts.prospectId, ids)));
+    expect(attempts.map((x) => x.status)).toEqual(["success", "success"]);
+    const links = await db.select().from(emailTrackingLinks).where(eq(emailTrackingLinks.campaignId, campaignId));
+    expect(links).toHaveLength(0);
+  });
+
+  it("sends untracked when the link-row insert is rejected", async () => {
+    const id = await trackContact();
+    const [contact] = await db.select().from(marketingProspects).where(eq(marketingProspects.id, id));
+    const campaignId = await trackCampaign(`<p><a href="https://example.com/y">y</a></p>`);
+    // The real insert fails, for this campaign only, as a DB error would.
+    const fn = `t236_reject_${RUN.replace(/\W/g, "")}`;
+    await pool.query(`CREATE FUNCTION ${fn}() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN IF NEW.campaign_id = '${campaignId}' THEN RAISE EXCEPTION 'injected'; END IF; RETURN NEW; END $$`);
+    await pool.query(`CREATE TRIGGER ${fn} BEFORE INSERT ON email_tracking_links
+      FOR EACH ROW EXECUTE FUNCTION ${fn}()`);
+    let html: string | undefined;
+    sendMock.mockImplementation(async (input: { html: string; to: string }) => {
+      if (input.to === contact.email) html = input.html;
+      return okSendResult("track");
+    });
+    try {
+      await processScheduledCampaigns(new Date());
+    } finally {
+      await pool.query(`DROP TRIGGER ${fn} ON email_tracking_links`);
+      await pool.query(`DROP FUNCTION ${fn}()`);
+    }
+    expect(html).toContain(`href="https://example.com/y"`);
+    expect(html).not.toContain("/api/public/email/");
+    const [attempt] = await db.select().from(emailSendAttempts)
+      .where(and(eq(emailSendAttempts.campaignId, campaignId), eq(emailSendAttempts.prospectId, id)));
+    expect(attempt.status).toBe("success");
+  });
+
+  it("drops the link row when the org has no connected mailbox", async () => {
+    await trackContact();
+    const campaignId = await trackCampaign("<p><a href=\"https://example.com/x\">x</a></p>");
+    sendMock.mockImplementation(async () => {
+      throw new MissingMailboxError("m365", ORG_ID);
+    });
+
+    await processScheduledCampaigns(new Date());
+
+    const rows = await db.select().from(emailTrackingLinks).where(eq(emailTrackingLinks.campaignId, campaignId));
+    expect(rows).toHaveLength(0);
   });
 });

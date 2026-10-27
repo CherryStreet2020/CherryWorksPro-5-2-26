@@ -13,7 +13,16 @@ type Metrics = {
   permanentFailure: number;
   totalAttempts: number;
   distinctRecipients: number;
+  opened: number;
+  clicked: number;
+  opens: number;
+  clicks: number;
 };
+
+/** Share of delivered emails, e.g. "60%"; null when nothing was delivered. */
+function rateOf(n: number, sent: number): string | null {
+  return sent > 0 ? `${Math.round((n / sent) * 100)}%` : null;
+}
 
 export default function CampaignDetailPage() {
   const [, params] = useRoute<{ id: string }>("/marketing/campaigns/:id");
@@ -40,8 +49,11 @@ export default function CampaignDetailPage() {
     );
   }
 
-  const tiles = [
-    { label: "Sent",      value: metrics?.sent ?? 0,             testid: "tile-metric-sent" },
+  const sent = metrics?.sent ?? 0;
+  const tiles: Array<{ label: string; value: number; testid: string; rate?: string | null }> = [
+    { label: "Sent",      value: sent,                           testid: "tile-metric-sent" },
+    { label: "Opened",    value: metrics?.opened ?? 0,           testid: "tile-metric-opened", rate: rateOf(metrics?.opened ?? 0, sent) },
+    { label: "Clicked",   value: metrics?.clicked ?? 0,          testid: "tile-metric-clicked", rate: rateOf(metrics?.clicked ?? 0, sent) },
     { label: "Failed",    value: metrics?.failed ?? 0,           testid: "tile-metric-failed" },
     { label: "Permanent", value: metrics?.permanentFailure ?? 0, testid: "tile-metric-permanent" },
     { label: "Recipients", value: metrics?.distinctRecipients ?? 0, testid: "tile-metric-recipients" },
@@ -62,16 +74,24 @@ export default function CampaignDetailPage() {
         {campaign.sentAt ? `Sent ${new Date(campaign.sentAt as unknown as string).toISOString()}` : "Not sent"}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6" data-testid="row-campaign-metrics">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-2" data-testid="row-campaign-metrics">
         {tiles.map((t) => (
           <Card key={t.testid} className="border" data-testid={t.testid}>
             <CardContent className="p-4">
               <div className="text-xs text-muted-foreground">{t.label}</div>
-              <div className="text-2xl font-bold" data-testid={`${t.testid}-value`}>{t.value}</div>
+              <div className="flex items-baseline gap-2">
+                <div className="text-2xl font-bold" data-testid={`${t.testid}-value`}>{t.value}</div>
+                {t.rate && (
+                  <div className="text-sm text-muted-foreground" data-testid={`${t.testid}-rate`}>{t.rate}</div>
+                )}
+              </div>
             </CardContent>
           </Card>
         ))}
       </div>
+      <p className="text-xs text-muted-foreground mb-6" data-testid="text-engagement-note">
+        Opens are approximate: some mail apps load images automatically, others block them. Clicks are the more reliable signal.
+      </p>
 
       <Button asChild variant="outline" data-testid="button-drilldown-failures">
         <Link href={`/marketing/campaigns?failuresFor=${id}`}>View failures</Link>

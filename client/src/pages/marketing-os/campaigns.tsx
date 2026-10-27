@@ -99,6 +99,20 @@ export default function CampaignsPage() {
       (query.state.data ?? []).some(isSending) ? 15_000 : false,
   });
 
+  // Delivered / opened / clicked per campaign (first-party tracking).
+  const { data: engagement = {} } = useQuery<Record<string, { sent: number; opened: number; clicked: number }>>({
+    queryKey: ["/api/marketing/campaigns", "engagement", brandId],
+    enabled: flagOn && !!brandId,
+    queryFn: async () => {
+      const res = await fetch(`/api/marketing/campaigns/engagement?brandId=${encodeURIComponent(brandId!)}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    },
+    refetchInterval: () => (campaigns.some(isSending) ? 15_000 : false),
+  });
+
   // Task #234 — Saved segments for the audience picker. Loaded for the
   // active brand so the picker only shows segments the campaign can target.
   const { data: segments = [] } = useQuery<ContactSegment[]>({
@@ -305,6 +319,7 @@ export default function CampaignsPage() {
                     <th className="px-4 py-2 text-left font-medium" style={{ color: "var(--lux-text-muted)" }}>From</th>
                     <th className="px-4 py-2 text-left font-medium" style={{ color: "var(--lux-text-muted)" }}>Audience</th>
                     <th className="px-4 py-2 text-left font-medium" style={{ color: "var(--lux-text-muted)" }}>Send time</th>
+                    <th className="px-4 py-2 text-left font-medium" style={{ color: "var(--lux-text-muted)" }}>Engagement</th>
                     <th className="px-4 py-2 text-left font-medium" style={{ color: "var(--lux-text-muted)" }}>Updated</th>
                     <th className="px-4 py-2 w-32 text-right font-medium" style={{ color: "var(--lux-text-muted)" }}>Actions</th>
                   </tr>
@@ -327,6 +342,15 @@ export default function CampaignsPage() {
                           : "All brand contacts"}
                       </td>
                       <td className="px-4 py-2" style={{ color: "var(--lux-text-muted)" }} data-testid={`text-campaign-sendat-${c.id}`}>{fmt(c.sendAt)}</td>
+                      <td className="px-4 py-2 whitespace-nowrap" style={{ color: "var(--lux-text-muted)" }} data-testid={`text-campaign-engagement-${c.id}`}>
+                        {engagement[c.id] ? (
+                          <>
+                            Opened <span data-testid={`text-campaign-opened-${c.id}`}>{engagement[c.id].opened}</span>
+                            {" · "}
+                            Clicked <span data-testid={`text-campaign-clicked-${c.id}`}>{engagement[c.id].clicked}</span>
+                          </>
+                        ) : "—"}
+                      </td>
                       <td className="px-4 py-2" style={{ color: "var(--lux-text-muted)" }}>{fmt(c.updatedAt)}</td>
                       <td className="px-4 py-2 text-right">
                         <div className="inline-flex gap-1">

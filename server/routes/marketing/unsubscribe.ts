@@ -21,7 +21,7 @@ import {
   unsubscribeByToken,
 } from "../../marketing/unsubscribe";
 
-function page(title: string, bodyHtml: string): string {
+export function page(title: string, bodyHtml: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>
