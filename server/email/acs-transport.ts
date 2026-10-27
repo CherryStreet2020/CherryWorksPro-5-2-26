@@ -172,6 +172,19 @@ function prunePollWindow(now: number): void {
  * run past `deadline`. Otherwise waits out the pacing interval, counts the GET
  * and returns true.
  */
+/**
+ * Whether a poll slot could be granted at `at` (≥ now) and its GET still end
+ * by `deadline`, as far as can be known now: lets a caller skip a wait that
+ * cannot end in a GET.
+ */
+export function acsPollSlotFeasible(at: number, deadline: number): boolean {
+  if (at < acsPollCooldownUntil) return false;
+  prunePollWindow(Date.now());
+  if (pollTimes.length >= ACS_POLL_BUDGET_PER_HOUR) return false;
+  const slotAt = Math.max(at, lastPollAt + ACS_POLL_INTERVAL_MS);
+  return slotAt + GET_DEADLINE_MS <= deadline;
+}
+
 export async function acquireAcsPollSlot(deadline: number): Promise<boolean> {
   const now = Date.now();
   if (now < acsPollCooldownUntil) return false;

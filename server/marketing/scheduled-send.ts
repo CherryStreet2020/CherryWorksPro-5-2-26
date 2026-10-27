@@ -109,6 +109,7 @@ const GRAPH_SEND_INTERVAL_MS = 2_100;
 const RECONCILE_BUDGET_MS = 10_000;
 const CAMPAIGN_BUDGET_MS = 30_000;
 const SEQUENCE_BUDGET_MS = 15_000;
+const ENROLLMENT_PAGE = 200;
 const CAMPAIGN_PAGE = 50;
 const ACCEPTED_FALLBACK_RETRY_MS = 60_000;
 const PARK_PENDING_MS = 24 * 60 * 60 * 1000;
@@ -513,8 +514,14 @@ function acsCooldownExclusion(
 // Per process; a restart starts from the beginning.
 let campaignCursor: { sendAt: Date; id: string } | null = null;
 
+// The same for due enrollments: ones that make no progress (no connected
+// mailbox) keep their nextSendAt and would otherwise fill every tick's budget
+// ahead of the rest.
+let enrollmentCursor: { nextSendAt: Date; id: string } | null = null;
+
 export function resetCampaignCursorForTests(): void {
   campaignCursor = null;
+  enrollmentCursor = null;
 }
 
 function retryPolicyFor(policy: OrgRetryPolicy, attemptNumber: number): RetryPolicyForAttempt {
@@ -859,6 +866,7 @@ export async function processScheduledSequenceEnrollments(
   acsCtx?: AcsTickContext,
 ): Promise<{ processed: number; sent: number; completed: number; errors: number }> {
   const ctx = acsCtx ?? (await loadAcsTickContext());
+  const cursor = enrollmentCursor;
   // Sprint 2o.0: enrollments now reference marketing_prospects (HR4).
   // Joining marketing_prospects (not client_contacts) for the recipient
   // email + soft-delete check.
@@ -888,10 +896,19 @@ export async function processScheduledSequenceEnrollments(
       eq(marketingSequenceEnrollments.status, "active"),
       isNotNull(marketingSequenceEnrollments.nextSendAt),
       lte(marketingSequenceEnrollments.nextSendAt, now),
+      cursor
+        ? or(
+            gt(marketingSequenceEnrollments.nextSendAt, cursor.nextSendAt),
+            and(
+              eq(marketingSequenceEnrollments.nextSendAt, cursor.nextSendAt),
+              gt(marketingSequenceEnrollments.id, cursor.id),
+            ),
+          )
+        : undefined,
       acsCooldownExclusion(marketingSequences.orgId, marketingSequences.fromEmail, ctx),
     ))
     .orderBy(asc(marketingSequenceEnrollments.nextSendAt), asc(marketingSequenceEnrollments.id))
-    .limit(200);
+    .limit(ENROLLMENT_PAGE);
 
   let processed = 0;
   let sent = 0;
@@ -940,10 +957,18 @@ export async function processScheduledSequenceEnrollments(
 
   const deadline = Date.now() + SEQUENCE_BUDGET_MS;
 
+  // The cursor moves to the last enrollment this tick reached; unreached ones
+  // stay due and are reached first next tick.
+  let lastReached: { nextSendAt: Date; id: string } | null = null;
+  let pageFinished = true;
+
   for (const row of due) {
-    // Unreached enrollments stay due for the next tick.
-    if (Date.now() >= deadline) break;
+    if (Date.now() >= deadline) {
+      pageFinished = false;
+      break;
+    }
     const enr = row.enrollment;
+    if (enr.nextSendAt) lastReached = { nextSendAt: enr.nextSendAt, id: enr.id };
     const seq = row.sequence;
 
     // Soft-deleted, unsubscribed and bounced contacts leave the sequence.
@@ -1183,6 +1208,12 @@ export async function processScheduledSequenceEnrollments(
     });
     if (result.enrollment === "completed") completed++;
     processed++;
+  }
+
+  if (pageFinished && due.length < ENROLLMENT_PAGE) {
+    enrollmentCursor = null;
+  } else if (lastReached) {
+    enrollmentCursor = lastReached;
   }
 
   return { processed, sent, completed, errors };

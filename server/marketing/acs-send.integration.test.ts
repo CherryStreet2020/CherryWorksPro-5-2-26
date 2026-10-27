@@ -280,7 +280,8 @@ describe("campaign send through ACS", () => {
     const contact = await makeContact();
     await onlyMailable([contact]);
     const campaignId = await makeCampaign();
-    // The inline GET finds it already done.
+    // A short Retry-After leaves room for the inline GET, which finds it done.
+    postReply = { status: 202, headers: { "retry-after": "1" } };
     getReplies.set("*", succeeded("*"));
     const origGet = getReplies.get.bind(getReplies);
     getReplies.get = (id: string) => origGet(id) ?? succeeded(id);
@@ -302,6 +303,30 @@ describe("campaign send through ACS", () => {
     const acts = await db.select().from(contactActivities).where(eq(contactActivities.prospectId, contact));
     expect(acts.map((x) => x.type)).toEqual(["email_sent"]);
     getReplies.get = origGet;
+  });
+
+  it("202 with the default 5 s Retry-After ⇒ no inline wait or GET; left accepted for the reconciler", async () => {
+    const contact = await makeContact();
+    await onlyMailable([contact]);
+    const campaignId = await makeCampaign();
+    postReply = { status: 202, headers: { "retry-after": "5" } };
+    const sleeps: number[] = [];
+    (global as any).__emailTestSleep = async (ms: number) => { sleeps.push(ms); };
+
+    await tickCampaigns();
+    const [a] = await attemptsFor({ campaignId });
+    expect(a.status).toBe("accepted");
+    expect(gets).not.toContain(a.id);
+    expect(sleeps).not.toContain(5_000);
+    // Resolve it so later tests start clean.
+    getReplies.set(a.id, succeeded(a.id));
+    await makeDue(a.id);
+    await reconcile();
+    const [done] = await attemptsFor({ campaignId });
+    expect(done.status).toBe("success");
+    await tickCampaigns();
+    const [camp] = await db.select().from(marketingCampaigns).where(eq(marketingCampaigns.id, campaignId));
+    expect(camp.sentAt).not.toBeNull();
   });
 
   it("an ambiguous POST is never POSTed again; the reconciler resolves it (exactly one POST)", async () => {

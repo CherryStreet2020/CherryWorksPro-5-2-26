@@ -25,6 +25,7 @@ import {
   ACS_SEND_INTERVAL_MS,
   ACS_UNRESOLVED_AFTER_MS,
   acquireAcsPollSlot,
+  acsPollSlotFeasible,
   acsCooldownActive,
   acsGetOperation,
   acsPollBackoffMs,
@@ -392,7 +393,7 @@ export async function dispatchAcs(args: {
         nextRetryAt: new Date(Date.now() + Math.max(ra, MIN_ACCEPTED_RETRY_MS)),
       });
       const windowEnd = Math.min(args.deadline, start + INLINE_WINDOW_MS);
-      if (ra <= INLINE_MAX_RETRY_AFTER_MS && Date.now() + ra < windowEnd) {
+      if (ra <= INLINE_MAX_RETRY_AFTER_MS && acsPollSlotFeasible(Date.now() + ra, windowEnd)) {
         await sleep(ra);
         if (await acquireAcsPollSlot(windowEnd)) {
           const op = await acsGetOperation(args.endpoint, intent.attemptId);
