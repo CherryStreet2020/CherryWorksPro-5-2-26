@@ -43,6 +43,7 @@ import { registerContactTagRoutes } from "./routes/marketing/tags";
 import { registerContactSegmentRoutes } from "./routes/marketing/segments";
 import { registerMarketingCampaignRoutes } from "./routes/marketing/campaigns";
 import { registerMarketingUnsubscribeRoutes } from "./routes/marketing/unsubscribe";
+import { registerMarketingTrackingRoutes } from "./routes/marketing/tracking";
 import { registerCompanyRoutes } from "./routes/marketing/companies";
 import { registerProjectRoutes } from "./routes/project-routes";
 import { registerTimeRoutes } from "./routes/time-routes";
@@ -151,6 +152,8 @@ export async function registerRoutes(
     res.setHeader("X-Request-Id", id);
     next();
   });
+  // Ahead of the session + global /api limiters on purpose (see the file).
+  registerMarketingTrackingRoutes(app);
 
   const PgStore = connectPgSimple(session);
 

@@ -221,6 +221,22 @@ container refuses to boot without a real value. Generate one:
 openssl rand -hex 32
 ```
 
+### Turning on campaign open / click tracking
+
+`MARKETING_EMAIL_TRACKING_ENABLED=true` makes campaign sends rewrite their links
+to `/api/public/email/c/…` and add the open pixel. It is off unless set, in two
+steps:
+
+1. Deploy the release that adds the tracking routes **with the variable unset**.
+   Once its live check passes, that image is what a failed later deploy rolls
+   back to, and it serves the tracking routes.
+2. Only then set the variable to `true` on the container app.
+
+The routes do not depend on the variable, so turning it off again keeps every
+delivered link working. **Never roll back past the step-1 image once tracked
+mail has gone out** — an older image has no tracking routes, and every link in
+those emails would 404.
+
 ---
 
 ## Scripts

@@ -19,7 +19,7 @@ export function isUnsubscribeToken(value: unknown): value is string {
 }
 
 /** Absolute origin for links that must resolve from the recipient's mail client. */
-function publicBaseUrl(): string {
+export function publicBaseUrl(): string {
   const base = (process.env.APP_BASE_URL || process.env.BASE_URL || "").trim().replace(/\/$/, "");
   return /^https?:\/\//i.test(base) ? base : "https://cherryworkspro.com";
 }

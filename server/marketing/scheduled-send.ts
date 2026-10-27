@@ -35,6 +35,7 @@
  * terminal state — transient failures push `next_send_at` forward by the
  * computed backoff so the next tick retries.
  */
+import { randomUUID } from "crypto";
 import { db, pool } from "../db";
 import {
   marketingCampaigns,
@@ -55,6 +56,9 @@ import {
   unsubscribeFooterText,
   withUnsubscribeFooter,
 } from "./unsubscribe";
+import { isEmailTrackingEnabled } from "../lib/featureFlags";
+import { newTrackingToken, withTracking } from "./tracking";
+import { dropTrackingLinks, saveTrackingLinks } from "./tracking-record";
 import { MissingMailboxError } from "../email/types";
 import { redactErrorCode } from "../email/failure-tracker";
 import { storage } from "../storage";
@@ -348,6 +352,44 @@ function classifyFailure(
   };
 }
 
+/**
+ * The campaign body with links rewritten for click tracking and the open
+ * pixel added. The link row is committed BEFORE the send, so every rewritten
+ * link in a delivered email resolves even if the attempt insert never
+ * happens. Tracking is best-effort: if the body cannot be parsed, or that
+ * insert fails or cannot finish within the tracking bounds, the email goes
+ * out untracked rather than late or not at all. The unsubscribe footer is
+ * added by the caller afterwards, so it is never rewritten.
+ */
+async function trackedCampaignHtml(
+  campaign: MarketingCampaign,
+  prospectId: string,
+  attemptId: string,
+): Promise<{ html: string; token: string | null }> {
+  const body = campaign.body ?? "";
+  if (!isEmailTrackingEnabled()) return { html: body, token: null };
+  const token = newTrackingToken();
+  try {
+    const tracked = withTracking(body, token);
+    await saveTrackingLinks({
+      token,
+      orgId: campaign.orgId,
+      kind: "campaign",
+      campaignId: campaign.id,
+      prospectId,
+      attemptId,
+      links: tracked.links,
+    });
+    return { html: tracked.html, token };
+  } catch (err) {
+    console.error(
+      `[marketing-scheduled-send] campaign=${campaign.id} contact=${prospectId}: tracking off for this send:`,
+      err instanceof Error ? err.message : err,
+    );
+    return { html: body, token: null };
+  }
+}
+
 // One query per campaign, not per recipient: a resumed campaign re-walks its
 // whole audience every tick, and per-recipient lookups for thousands of
 // already-sent rows could eat the tick budget before a single new send.
@@ -479,14 +521,19 @@ export async function processScheduledCampaigns(
       if (!(await isStillMailable(r.id))) continue;
       if (lastTransport === "graph") await sleep(GRAPH_SEND_INTERVAL_MS);
       const attemptNumber = decision.attemptNumber;
+      const attemptId = randomUUID();
       let outcome: AttemptOutcome;
+      let trackingToken: string | null = null;
       try {
+        const tracked = await trackedCampaignHtml(campaign, r.id, attemptId);
+        trackingToken = tracked.token;
+        const html = tracked.html;
         const footer = { token: r.unsubscribeToken, org: await getOrg(campaign.orgId) };
         const result = await sendViaConnectedMailbox({
           orgId: campaign.orgId,
           to: r.email,
           subject: campaign.subject || campaign.name,
-          html: withUnsubscribeFooter(campaign.body ?? "", footer),
+          html: withUnsubscribeFooter(html, footer),
           text: (campaign.body ?? "") + unsubscribeFooterText(footer),
           replyTo,
           fromName,
@@ -495,6 +542,8 @@ export async function processScheduledCampaigns(
         });
         lastTransport = result.transport;
         outcome = classifySuccess(result);
+        // The email is out: a timeline write failing here must not turn the
+        // attempt into a failure, which would send it again next tick.
         await storage.createActivity({
           orgId: campaign.orgId,
           brandId: campaign.brandId,
@@ -510,12 +559,20 @@ export async function processScheduledCampaigns(
             attempt_number: attemptNumber,
           },
           actorId: null,
-        });
+        }).catch((err) => console.error(
+          `[marketing-scheduled-send] campaign=${campaign.id} contact=${r.id}: email_sent activity failed:`,
+          err instanceof Error ? err.message : err,
+        ));
         sent++;
         dispatchedThisCampaign++;
       } catch (err) {
         if (err instanceof MissingMailboxError) {
           mailboxMissing = true;
+          // No attempt row is written on this path, and the campaign retries
+          // every tick until a mailbox is connected: drop the unsent link row.
+          if (trackingToken) {
+            await dropTrackingLinks(trackingToken);
+          }
           break;
         }
         outcome = classifyFailure(err, attemptNumber, now, policy.maxAttempts, policy.baseMs);
@@ -529,6 +586,7 @@ export async function processScheduledCampaigns(
       }
 
       await db.insert(emailSendAttempts).values({
+        id: attemptId,
         orgId: campaign.orgId,
         kind: "campaign",
         campaignId: campaign.id,

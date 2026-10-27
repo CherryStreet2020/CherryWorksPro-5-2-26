@@ -110,6 +110,7 @@ export async function setup(): Promise<void> {
       VITE_MARKETING_OS_ENABLED: "true",
       EMAIL_OAUTH_ENABLED: "true",
       VITE_EMAIL_OAUTH_ENABLED: "true",
+      MARKETING_EMAIL_TRACKING_ENABLED: "true",
       PORT: String(TEST_PORT),
     },
     stdio: ["ignore", "pipe", "pipe"],

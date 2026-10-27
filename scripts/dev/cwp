@@ -108,6 +108,7 @@ app_env() {
       NODE_ENV=test E2E_SEED_ENABLED=true EMAIL_CAPTURE_DIR="$E2E_MAIL_DIR" \
       MARKETING_OS_ENABLED=true VITE_MARKETING_OS_ENABLED=true \
       EMAIL_OAUTH_ENABLED=true VITE_EMAIL_OAUTH_ENABLED=true \
+      MARKETING_EMAIL_TRACKING_ENABLED=true \
       ADMIN_EMAIL=dean@cherrystconsulting.com \
       PORT=5000 "$@"
 }
