@@ -3,6 +3,9 @@
  *
  *   GET  /unsubscribe/:token              confirm page (a link scanner that
  *                                         prefetches it changes nothing)
+ *   GET  /api/public/unsubscribe/:token   redirects to the confirm page, for
+ *                                         clients that open the List-Unsubscribe
+ *                                         URL instead of POSTing to it
  *   POST /api/public/unsubscribe/:token   the page's button, and the RFC 8058
  *                                         one-click POST mail providers send
  *                                         from the List-Unsubscribe header
@@ -73,6 +76,11 @@ export function registerMarketingUnsubscribeRoutes(app: Express): void {
       console.error("[marketing] unsubscribe page failed:", err);
       return res.status(500).type("html").send(page("Something went wrong", `<h1>Something went wrong</h1><p>Please try the link again in a minute.</p>`));
     }
+  });
+
+  app.get("/api/public/unsubscribe/:token", (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    return res.redirect(302, `/unsubscribe/${encodeURIComponent(String(req.params.token))}`);
   });
 
   app.post("/api/public/unsubscribe/:token", async (req: Request, res: Response) => {

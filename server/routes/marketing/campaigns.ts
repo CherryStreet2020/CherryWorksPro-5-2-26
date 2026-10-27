@@ -22,6 +22,7 @@ import {
 import { db } from "../../db";
 import { and, eq, gt, isNull, or } from "drizzle-orm";
 import { runScheduledSendTick } from "../../marketing/scheduled-send";
+import { selectTransport } from "../../email/transport-selector";
 
 function emailDomain(addr: string): string | null {
   const at = addr.lastIndexOf("@");
@@ -377,6 +378,13 @@ export function registerMarketingCampaignRoutes(app: Express) {
         if (recipients.length === 0) {
           return res.status(422).json({ message: "No deliverable recipients in audience" });
         }
+
+        // Fail now if the mailbox can't send (e.g. a disconnected Microsoft 365
+        // token): the worker would leave the campaign pending forever and the
+        // UI would show "Sending…" with nothing to explain why.
+        const org = await storage.getOrg(orgId);
+        if (!org) return res.status(404).json({ message: "Organization not found" });
+        await selectTransport(org);
 
         // Claim the campaign for the worker. The conditional update is the
         // double-click guard: a campaign already due (sent or mid-send) is
