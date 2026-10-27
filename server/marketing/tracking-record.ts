@@ -127,8 +127,8 @@ interface LockedTarget {
   brandId: string | null;
   prospectId: string;
   attemptId: string;
-  campaignId: string | null;
-  campaignName: string | null;
+  /** What the timeline entry names: the campaign, or the sequence and step. */
+  source: Record<string, unknown>;
 }
 
 /**
@@ -139,31 +139,46 @@ interface LockedTarget {
  * pixel fetched while the send is still in flight would otherwise be lost.
  * Metrics only count link rows joined to a `success` attempt, so a send that
  * ends up failing never shows engagement.
+ *
+ * A sequence link names its sequence and step through the attempt row, so a
+ * hit with no attempt row (the delivery window above, or the enrollment or
+ * sequence deleted since) is recorded without them.
  */
 async function lockTarget(tx: Exec, token: string): Promise<LockedTarget | null> {
   const [row] = rowsOf(await tx.execute(sql`
     SELECT l.org_id, l.attempt_id, l.campaign_id, p.id AS prospect_id, p.brand_id,
            p.deleted_at, p.unsubscribed_at, p.bounced_at,
            l.kind AS link_kind, a.id AS found_attempt_id, a.status, a.kind,
-           c.name AS campaign_name
+           c.name AS campaign_name,
+           a.sequence_id, a.step_index, s.name AS sequence_name
       FROM email_tracking_links l
  LEFT JOIN email_send_attempts a ON a.id = l.attempt_id
       JOIN marketing_prospects p ON p.id = l.prospect_id AND p.org_id = l.org_id
-      LEFT JOIN marketing_campaigns c ON c.id = l.campaign_id
+ LEFT JOIN marketing_campaigns c ON c.id = l.campaign_id
+ LEFT JOIN marketing_sequences s ON s.id = a.sequence_id AND s.org_id = l.org_id
      WHERE l.token = ${token}
        FOR UPDATE OF l, p
   `));
   if (!row) return null;
-  if (row.link_kind !== "campaign") return null;
-  if (row.found_attempt_id && (row.status !== "success" || row.kind !== "campaign")) return null;
+  if (row.link_kind !== "campaign" && row.link_kind !== "sequence") return null;
+  if (row.found_attempt_id && (row.status !== "success" || row.kind !== row.link_kind)) return null;
   if (row.deleted_at || row.unsubscribed_at || row.bounced_at) return null;
+  const source = row.link_kind === "campaign"
+    ? {
+        campaign_id: (row.campaign_id as string | null) ?? null,
+        campaign_name: (row.campaign_name as string | null) ?? null,
+      }
+    : {
+        sequence_id: (row.sequence_id as string | null) ?? null,
+        sequence_name: (row.sequence_name as string | null) ?? null,
+        step_index: row.step_index == null ? null : Number(row.step_index),
+      };
   return {
     orgId: String(row.org_id),
     brandId: (row.brand_id as string | null) ?? null,
     prospectId: String(row.prospect_id),
     attemptId: String(row.attempt_id),
-    campaignId: (row.campaign_id as string | null) ?? null,
-    campaignName: (row.campaign_name as string | null) ?? null,
+    source,
   };
 }
 
@@ -186,8 +201,7 @@ export async function recordOpen(token: string): Promise<boolean> {
         prospectId: target.prospectId,
         type: "email_opened",
         payload: {
-          campaign_id: target.campaignId,
-          campaign_name: target.campaignName,
+          ...target.source,
           attempt_id: target.attemptId,
         },
         actorId: null,
@@ -219,8 +233,7 @@ export async function recordClick(token: string, url: string): Promise<boolean> 
         prospectId: target.prospectId,
         type: "email_clicked",
         payload: {
-          campaign_id: target.campaignId,
-          campaign_name: target.campaignName,
+          ...target.source,
           attempt_id: target.attemptId,
           url,
         },

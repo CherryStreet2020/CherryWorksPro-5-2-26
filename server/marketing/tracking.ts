@@ -193,27 +193,30 @@ function renderPlan(plan: TrackingPlan, token: string): string {
   return out.slice(0, cut) + trackingPixelHtml(token) + out.slice(cut);
 }
 
-// A campaign sends the same body to every recipient; parse it once. A body
-// the parser cannot handle (parse5 recurses on some deep nestings) is
-// remembered as such too, so it is not re-parsed for every recipient.
-let cached: { html: string; plan: TrackingPlan | Error } | null = null;
+// A campaign sends the same body to every recipient, and a sequence tick
+// interleaves a few step bodies; parse each once. A body the parser cannot
+// handle (parse5 recurses on some deep nestings) is remembered as such too,
+// so it is not re-parsed for every recipient.
+const PLAN_CACHE_SIZE = 32;
+const planCache = new Map<string, TrackingPlan | Error>();
 
 function trackingPlanFor(html: string): TrackingPlan {
-  if (cached?.html !== html) {
-    let plan: TrackingPlan | Error;
+  let plan = planCache.get(html);
+  if (plan === undefined) {
     try {
       plan = planTracking(html);
     } catch (err) {
       plan = err instanceof Error ? err : new Error(String(err));
     }
-    cached = { html, plan };
+    if (planCache.size >= PLAN_CACHE_SIZE) planCache.delete(planCache.keys().next().value!);
+    planCache.set(html, plan);
   }
-  if (cached.plan instanceof Error) throw cached.plan;
-  return cached.plan;
+  if (plan instanceof Error) throw plan;
+  return plan;
 }
 
 /**
- * The campaign body as it goes to one recipient: every trackable link
+ * A campaign or sequence-step body as it goes to one recipient: every trackable link
  * rewritten to /api/public/email/c/<token>/N (N indexes the returned `links`,
  * stored for the send) and the pixel added before </body>, or at the end of
  * a fragment. The unsubscribe footer is appended by the caller AFTER this,

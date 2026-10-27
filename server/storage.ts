@@ -7280,6 +7280,43 @@ export class DatabaseStorage {
     return out;
   }
 
+  /**
+   * Delivered / opened / clicked counts per step of one sequence, keyed by
+   * step index. Only delivered sends (a `success` attempt) count; steps
+   * with none are omitted.
+   */
+  async getSequenceStepEngagement(
+    orgId: string,
+    sequenceId: string,
+  ): Promise<Record<number, { sent: number; opened: number; clicked: number }>> {
+    const rows = await db.execute(sql`
+      SELECT a.step_index,
+             COUNT(*)::int AS sent,
+             COUNT(l.opened_at)::int AS opened,
+             COUNT(l.clicked_at)::int AS clicked
+      FROM email_send_attempts a
+      LEFT JOIN email_tracking_links l
+        ON l.attempt_id = a.id AND l.org_id = a.org_id AND l.kind = 'sequence'
+      WHERE a.org_id = ${orgId}
+        AND a.kind = 'sequence'
+        AND a.status = 'success'
+        AND a.sequence_id = ${sequenceId}
+        AND a.step_index IS NOT NULL
+      GROUP BY a.step_index
+    `);
+    const data = (rows as { rows?: Array<Record<string, unknown>> }).rows
+      ?? (rows as unknown as Array<Record<string, unknown>>);
+    const out: Record<number, { sent: number; opened: number; clicked: number }> = {};
+    for (const r of data ?? []) {
+      out[Number(r.step_index)] = {
+        sent: Number(r.sent ?? 0),
+        opened: Number(r.opened ?? 0),
+        clicked: Number(r.clicked ?? 0),
+      };
+    }
+    return out;
+  }
+
   // ── Sprint 2p: immediate-dispatch "Send Now" helpers ─────────────────
   // These two methods support POST /api/marketing/campaigns/:id/send-now
   // which dispatches a campaign synchronously through the workspace mailbox.
