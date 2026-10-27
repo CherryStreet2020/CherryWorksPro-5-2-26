@@ -521,6 +521,7 @@ const REDACT_PATTERNS: RegExp[] = [
 export function redactErrorCode(err: unknown): string {
   if (err instanceof MissingMailboxError) return "MISSING_MAILBOX";
   if (!err) return "UNKNOWN";
+  if (err instanceof EmailTransportError && err.providerCode) return err.providerCode;
 
   const raw =
     err instanceof Error

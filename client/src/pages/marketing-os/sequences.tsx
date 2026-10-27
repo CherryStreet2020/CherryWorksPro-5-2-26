@@ -12,6 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Plus, Workflow, Pencil, Trash2, ChevronUp, ChevronDown, X, Users, Pause, Play, ArrowLeft, AlertTriangle } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { pendingDeliveryCount, pendingDeliveryMessage } from "@/lib/pending-delivery";
 import { useToast } from "@/hooks/use-toast";
 import { useBrand } from "@/hooks/useBrand";
 import { isMarketingOsEnabled } from "@/lib/featureFlags";
@@ -65,6 +66,15 @@ type SequenceForm = {
   fromEmail: string;
   replyTo: string;
 };
+
+function normalizeSteps(list: Array<{ delayDays: number | string | null; subject: string | null; body: string | null }>) {
+  return list.map((s, i) => ({
+    stepOrder: i,
+    delayDays: Math.max(0, Math.floor(Number(s.delayDays) || 0)),
+    subject: s.subject ?? "",
+    body: s.body ?? "",
+  }));
+}
 
 const EMPTY_FORM: SequenceForm = {
   name: "",
@@ -528,15 +538,31 @@ function SequenceEditor({
       } else {
         await apiRequest("PATCH", `/api/marketing/sequences/${sequenceId}`, payload);
       }
-      if (id) {
-        await apiRequest("PUT", `/api/marketing/sequences/${id}/steps`, {
-          steps: steps.map((s, i) => ({
-            stepOrder: i,
-            delayDays: Math.max(0, Math.floor(Number(s.delayDays) || 0)),
-            subject: s.subject,
-            body: s.body,
-          })),
-        });
+      // Only replace the steps when they changed: the server refuses a step
+      // replacement while any of this sequence's sends are still being
+      // confirmed by the provider, and a details-only save must not hit that.
+      const nextSteps = normalizeSteps(steps);
+      const stepsChanged = isCreating ||
+        JSON.stringify(nextSteps) !== JSON.stringify(normalizeSteps(data?.steps ?? []));
+      if (id && stepsChanged) {
+        try {
+          await apiRequest("PUT", `/api/marketing/sequences/${id}/steps`, { steps: nextSteps });
+        } catch (e: unknown) {
+          const pending = pendingDeliveryCount(e);
+          if (pending === null) throw e;
+          // Details were saved; keep the editor open with the step edits intact.
+          // Refresh the list only: refetching this sequence would re-run the
+          // editor's load effect and replace the unsaved steps.
+          await queryClient.invalidateQueries({ queryKey: ["/api/marketing/sequences", brandId], exact: true });
+          toast({
+            title: "Details saved",
+            description:
+              `Step changes can't be saved while ${pending} email${pending === 1 ? "" : "s"} from this ` +
+              "sequence are being confirmed — try again in a few minutes.",
+            variant: "destructive",
+          });
+          return;
+        }
       }
       await queryClient.invalidateQueries({ queryKey: ["/api/marketing/sequences"] });
       toast({ title: isCreating ? "Sequence created" : "Sequence saved" });
@@ -832,7 +858,7 @@ function DeleteSequenceDialog({
       toast({ title: "Sequence deleted" });
       onClose();
     } catch (e: unknown) {
-      toast({ title: "Failed to delete sequence", description: e instanceof Error ? e.message : "", variant: "destructive" });
+      toast({ title: "Failed to delete sequence", description: pendingDeliveryMessage(e), variant: "destructive" });
     } finally {
       setBusy(false);
     }
@@ -895,7 +921,7 @@ function EnrollmentsPanel({ sequence, brandId }: { sequence: MarketingSequence; 
       await queryClient.invalidateQueries({ queryKey: ["/api/marketing/sequences", sequence.id, "engagement"] });
       toast({ title: "Contact removed from sequence" });
     } catch (e: unknown) {
-      toast({ title: "Remove failed", description: e instanceof Error ? e.message : "", variant: "destructive" });
+      toast({ title: "Remove failed", description: pendingDeliveryMessage(e), variant: "destructive" });
     }
   };
 

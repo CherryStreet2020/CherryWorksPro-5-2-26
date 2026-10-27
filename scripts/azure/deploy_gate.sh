@@ -13,6 +13,9 @@
 #
 set -euo pipefail
 
+# shellcheck source=scripts/azure/image_floor.sh
+. "$(dirname "$0")/image_floor.sh"
+
 az config set extension.use_dynamic_install=no
 az extension add --name containerapp --version "$ACA_EXT_VERSION" --upgrade
 
@@ -72,6 +75,10 @@ else
 fi
 echo "rolling to: $REF"
 
+# THE ACS ROLLBACK FLOOR — before anything changes. Every target, forward
+# build or explicit image_tag, must carry cwp.acs-enum=1 (image_floor.sh).
+assert_target_above_floor "$REF" || exit 1
+
 # A PREVIOUS ROLLBACK LEAVES SKIP_DB_PUSH=1 BEHIND. The rollback path sets
 # it so an older image cannot run `push --force` and drop newer columns —
 # but nothing ever cleared it, and the forward path only changes --image.
@@ -115,6 +122,11 @@ rollback_and_fail() {
       echo "::error::previous image is the BOOTSTRAP placeholder ($PREV_IMG) — refusing to roll back onto it. Fix forward, or dispatch a known-good image_tag."
       PREV_IMG="" ;;
   esac
+  # Never restore below the ACS rollback floor, except once: when the image
+  # that just failed is the first one to carry the label (image_floor.sh).
+  if [ -z "$ROLLBACK" ] && [ -n "$PREV_IMG" ] && ! restore_allowed "$PREV_IMG" "$REF"; then
+    PREV_IMG=""
+  fi
   if [ -z "$ROLLBACK" ] && [ -n "$PREV_IMG" ] && [ "$PREV_IMG" != "$REF" ]; then
     echo "::warning::restoring prod to the previous good image $PREV_IMG (with SKIP_DB_PUSH=1 so the older schema cannot drop newer columns)"
     if az containerapp update -n "$APP" -g "$RG" --image "$PREV_IMG" --set-env-vars SKIP_DB_PUSH=1 >/dev/null; then

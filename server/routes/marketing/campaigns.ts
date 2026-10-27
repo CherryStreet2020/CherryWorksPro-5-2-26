@@ -23,6 +23,8 @@ import { db } from "../../db";
 import { and, eq, gt, isNull, or } from "drizzle-orm";
 import { runScheduledSendTick } from "../../marketing/scheduled-send";
 import { selectTransport } from "../../email/transport-selector";
+import { PendingDeliveryError } from "../../marketing/pending-delivery";
+import { effectiveMarketingSender, resolveMarketingRoute } from "../../email/marketing-route";
 
 function emailDomain(addr: string): string | null {
   const at = addr.lastIndexOf("@");
@@ -50,6 +52,13 @@ async function resolveLargeAudienceThreshold(orgId: string): Promise<number> {
 async function assertBrandOwned(brandId: string, orgId: string): Promise<void> {
   const brand = await storage.getBrand(brandId, orgId);
   if (!brand) throw new Error("Invalid brand for this organization");
+}
+
+/** 409 for an item whose ACS sends are still being confirmed (PLAN §4a/§4b). */
+function sendPendingDelivery(res: Response, err: unknown): boolean {
+  if (!(err instanceof PendingDeliveryError)) return false;
+  res.status(409).json({ code: err.code, message: err.message, pending: err.pending });
+  return true;
 }
 
 function errMsg(err: unknown): string {
@@ -300,6 +309,7 @@ export function registerMarketingCampaignRoutes(app: Express) {
       if (!ok) return res.status(404).json({ message: "Campaign not found" });
       return res.json({ ok: true });
     } catch (err: unknown) {
+      if (sendPendingDelivery(res, err)) return;
       return res.status(400).json({ message: errMsg(err) });
     }
   });
@@ -351,10 +361,19 @@ export function registerMarketingCampaignRoutes(app: Express) {
         if (!fromDomain) {
           return res.status(400).json({ message: "From-email is malformed" });
         }
+        const org = await storage.getOrg(orgId);
+        if (!org) return res.status(404).json({ message: "Organization not found" });
+        // ACS is authorized by org + exact sender (PLAN §8), which is narrower
+        // than the brand-domain check; that check would reject a `news.`
+        // sending subdomain, so it runs only on the connected route.
+        const route = resolveMarketingRoute(
+          org,
+          effectiveMarketingSender(campaign.fromEmail, brand.fromEmail),
+        );
         const expectedDomain =
           (brand.domain && brand.domain.trim().toLowerCase()) ||
           (brand.fromEmail ? emailDomain(brand.fromEmail) : null);
-        if (expectedDomain && expectedDomain !== fromDomain) {
+        if (route === "connected" && expectedDomain && expectedDomain !== fromDomain) {
           return res.status(400).json({
             message: `From-email domain (${fromDomain}) does not match brand domain (${expectedDomain})`,
           });
@@ -403,12 +422,10 @@ export function registerMarketingCampaignRoutes(app: Express) {
           return res.status(422).json({ message: "No deliverable recipients in audience" });
         }
 
-        // Fail now if the mailbox can't send (e.g. a disconnected Microsoft 365
+        // Connected route only: fail now if the mailbox can't send (e.g. a disconnected Microsoft 365
         // token): the worker would leave the campaign pending forever and the
         // UI would show "Sending…" with nothing to explain why.
-        const org = await storage.getOrg(orgId);
-        if (!org) return res.status(404).json({ message: "Organization not found" });
-        await selectTransport(org);
+        if (route === "connected") await selectTransport(org);
 
         // Claim the campaign for the worker. The conditional update is the
         // double-click guard: a campaign already due (sent or mid-send) is
@@ -497,6 +514,7 @@ export function registerMarketingCampaignRoutes(app: Express) {
       if (!ok) return res.status(404).json({ message: "Sequence not found" });
       return res.json({ ok: true });
     } catch (err: unknown) {
+      if (sendPendingDelivery(res, err)) return;
       return res.status(400).json({ message: errMsg(err) });
     }
   });
@@ -512,6 +530,7 @@ export function registerMarketingCampaignRoutes(app: Express) {
       const rows = await storage.replaceSequenceSteps(id, orgId, parsed.steps);
       return res.json(rows);
     } catch (err: unknown) {
+      if (sendPendingDelivery(res, err)) return;
       return res.status(400).json({ message: errMsg(err) });
     }
   });
@@ -707,6 +726,7 @@ export function registerMarketingCampaignRoutes(app: Express) {
         if (!ok) return res.status(404).json({ message: "Enrollment not found" });
         return res.json({ ok: true });
       } catch (err: unknown) {
+        if (sendPendingDelivery(res, err)) return;
         return res.status(400).json({ message: errMsg(err) });
       }
     },

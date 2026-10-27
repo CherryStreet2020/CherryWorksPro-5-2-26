@@ -25,13 +25,13 @@ export interface SendResult {
   ok: boolean;
   messageId: string;
   previewUrl?: string;
-  transport: "smtp" | "graph" | "gmail" | "noop";
+  transport: "smtp" | "graph" | "gmail" | "noop" | "acs";
 }
 
 export type EmailProviderType = "smtp" | "m365" | "google";
 
 export interface EmailTransport {
-  readonly kind: "smtp" | "graph" | "gmail" | "noop";
+  readonly kind: "smtp" | "graph" | "gmail" | "noop" | "acs";
   send(message: SendableMessage): Promise<SendResult>;
 }
 
@@ -48,7 +48,13 @@ export class MissingMailboxError extends Error {
 
 export class EmailTransportError extends Error {
   readonly code = "EMAIL_TRANSPORT_ERROR";
-  constructor(public readonly transport: string, message: string, public readonly cause?: unknown) {
+  constructor(
+    public readonly transport: string,
+    message: string,
+    public readonly cause?: unknown,
+    /** A stable code chosen by the transport; `redactErrorCode` prefers it over message parsing. */
+    public readonly providerCode?: string,
+  ) {
     super(message);
     this.name = "EmailTransportError";
   }
@@ -63,5 +69,24 @@ export function assertSafeHeaders(transport: string, headers: Record<string, str
     if (!HEADER_NAME_RE.test(name) || HEADER_VALUE_UNSAFE_RE.test(value)) {
       throw new EmailTransportError(transport, `Invalid header "${name}"`);
     }
+  }
+}
+
+/**
+ * Thrown by `sendViaConnectedMailbox` (and the ACS marketing route) when the recipient is on
+ * the org's masked-recipient suppression list. Callers can map this to
+ * a non-error outcome (e.g. "skipped") rather than treating it as a
+ * transport failure — the suppression counter is incremented separately
+ * by the failure tracker.
+ */
+export class RecipientSuppressedError extends Error {
+  readonly code = "RECIPIENT_SUPPRESSED";
+  readonly recipientHash: string;
+  readonly reason: string;
+  constructor(recipientHash: string, reason: string) {
+    super(`Recipient is on the org suppression list (#${recipientHash})`);
+    this.name = "RecipientSuppressedError";
+    this.recipientHash = recipientHash;
+    this.reason = reason;
   }
 }

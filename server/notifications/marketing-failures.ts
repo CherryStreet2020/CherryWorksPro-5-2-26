@@ -962,3 +962,64 @@ export function stopPendingAdminNotificationProcessor(): void {
     pendingFlushInterval = null;
   }
 }
+
+// ── Degraded marketing transport (ACS) ──────────────────────────────────────
+
+/** Operator support inbox, copied on every degraded-transport alert. */
+export const MARKETING_TRANSPORT_SUPPORT_EMAIL = "support@cherrystconsulting.com";
+const DEGRADED_ALERT_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const degradedAlertSentAt = new Map<string, number>();
+
+const DEGRADED_ALERT_COPY: Record<string, string> = {
+  ACS_AUTH:
+    "The app could not authenticate to Azure Communication Services. Marketing email from the " +
+    "ACS senders is paused (nothing is lost; it resumes once authentication works).",
+  ACS_THROTTLED:
+    "Azure Communication Services has been throttling marketing email for over an hour. Sends " +
+    "resume automatically; consider requesting a quota increase.",
+  ACS_OPERATION_UNRESOLVED:
+    "An email submitted to Azure Communication Services was never confirmed within 24 hours. " +
+    "It was marked failed and will not be sent again.",
+};
+
+/**
+ * Tells the org's admins and the operator support inbox that the marketing
+ * transport is degraded. At most one per org per code per 6 h (in-process).
+ * Never throws: a rejected send or a resolved `ok:false` (e.g. the SMTP
+ * fallback's noop) is logged as undeliverable.
+ */
+export async function notifyMarketingTransportDegraded(
+  orgId: string,
+  code: string,
+  now: number = Date.now(),
+): Promise<void> {
+  const key = `${orgId}:${code}`;
+  const last = degradedAlertSentAt.get(key);
+  if (last !== undefined && now - last < DEGRADED_ALERT_INTERVAL_MS) return;
+  degradedAlertSentAt.set(key, now);
+  try {
+    const { admins, orgName } = await loadOptedInAdmins(orgId);
+    const recipients = new Set<string>(admins.map((a) => a.email.toLowerCase()));
+    recipients.add(MARKETING_TRANSPORT_SUPPORT_EMAIL);
+    const detail = DEGRADED_ALERT_COPY[code] ?? `The marketing email transport reported ${code}.`;
+    const subject = `[${orgName}] Marketing email delivery degraded (${code})`;
+    const text = `${detail}\n\nCode: ${code}\n`;
+    const html = `<p>${escapeHtml(detail)}</p><p>Code: <code>${escapeHtml(code)}</code></p>`;
+    const { sendPlatformNotice } = await import("../email");
+    for (const to of Array.from(recipients)) {
+      try {
+        const result = await sendPlatformNotice({ to, subject, text, html });
+        if (!result?.ok) console.error("[acs] degraded alert undeliverable", code);
+      } catch {
+        console.error("[acs] degraded alert undeliverable", code);
+      }
+    }
+  } catch (e) {
+    console.error("[acs] degraded alert undeliverable", code, e instanceof Error ? e.message : e);
+  }
+}
+
+/** For tests: forget which degraded alerts were sent. */
+export function _resetDegradedAlerts(): void {
+  degradedAlertSentAt.clear();
+}
