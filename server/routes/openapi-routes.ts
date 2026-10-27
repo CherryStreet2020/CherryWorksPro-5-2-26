@@ -9,7 +9,7 @@ function generateOpenAPISpec(): any {
       title: "CherryWorks Pro API",
       version: "1.0.0",
       description: "Full-stack SaaS API for professional services firms — time tracking, invoicing, payments, expenses, GL, Stripe integration.",
-      contact: { name: "CherryWorks Pro Support", email: "support@cherryworkspro.com" },
+      contact: { name: "CherryWorks Pro Support", email: "support@cherrystconsulting.com" },
       license: { name: "Proprietary" },
     },
     servers: [

@@ -5,7 +5,7 @@ import {
   setCachedAccessToken,
 } from "./oauth-token-cache";
 import type { EmailTransport, SendableMessage, SendResult } from "./types";
-import { EmailTransportError, MissingMailboxError } from "./types";
+import { EmailTransportError, MissingMailboxError, assertSafeHeaders } from "./types";
 import type { OrgForTransport } from "./transport-selector";
 import { isOauthAuthError, markMailboxNeedsReconnect } from "./mailbox-status";
 
@@ -119,6 +119,9 @@ export function buildGmailRawMessage(message: SendableMessage): string {
   if (message.cc && message.cc.length > 0) headers.push(`Cc: ${message.cc.join(", ")}`);
   if (message.replyTo) headers.push(`Reply-To: ${message.replyTo}`);
   headers.push(`Subject: ${message.subject}`);
+  for (const [name, value] of Object.entries(message.headers ?? {})) {
+    headers.push(`${name}: ${value}`);
+  }
   headers.push(`MIME-Version: 1.0`);
 
   const attachments = message.attachments ?? [];
@@ -168,6 +171,7 @@ export class GmailTransport implements EmailTransport {
     checkHeader(message.subject, "subject");
     if (message.cc) message.cc.forEach((c) => checkHeader(c, "cc"));
     if (message.replyTo) checkHeader(message.replyTo, "replyTo");
+    assertSafeHeaders("gmail", message.headers);
 
     const cacheKey = `google:${this.org.id}`;
     const raw = buildGmailRawMessage(message);

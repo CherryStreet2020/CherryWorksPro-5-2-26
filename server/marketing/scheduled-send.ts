@@ -50,6 +50,11 @@ import {
 } from "@shared/schema";
 import { and, asc, desc, eq, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { sendViaConnectedMailbox } from "../email/send-via-connected-mailbox";
+import {
+  listUnsubscribeHeaders,
+  unsubscribeFooterText,
+  withUnsubscribeFooter,
+} from "./unsubscribe";
 import { MissingMailboxError } from "../email/types";
 import { redactErrorCode } from "../email/failure-tracker";
 import { storage } from "../storage";
@@ -60,6 +65,20 @@ import {
 
 const ADVISORY_LOCK_KEY = 100007;
 const TICK_MS = Number(process.env.MARKETING_SCHEDULED_SEND_TICK_MS) || 60_000;
+// Exchange Online accepts 30 messages a minute per mailbox; pace Graph sends
+// just under that so a campaign does not spend its time in 429 back-off.
+const GRAPH_SEND_INTERVAL_MS = 2_100;
+// A tick stops starting new campaign sends after this long and leaves the
+// campaign pending; the next tick resumes it (sent recipients are skipped).
+// Keeps a large campaign from holding the advisory lock, and sequences
+// behind it, for half an hour.
+const TICK_SEND_BUDGET_MS = 50_000;
+
+function sleep(ms: number): Promise<void> {
+  // Tests inject an instant sleep; production waits for real.
+  const override = (global as any).__emailTestSleep as ((ms: number) => Promise<void>) | undefined;
+  return override ? override(ms) : new Promise((r) => setTimeout(r, ms));
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -210,32 +229,48 @@ function emptyStats(): ScheduledSendStats {
  */
 export async function resolveCampaignRecipients(
   campaign: Pick<MarketingCampaign, "orgId" | "brandId" | "audienceType" | "audienceSegmentId">,
-): Promise<Array<{ id: string; email: string | null }>> {
+): Promise<Array<{ id: string; email: string | null; unsubscribeToken: string }>> {
   if (campaign.audienceType === "segment") {
     if (!campaign.audienceSegmentId) return [];
     const segment = await storage.getSegment(campaign.audienceSegmentId, campaign.orgId);
     if (!segment || segment.brandId !== campaign.brandId) return [];
     const filter = (segment.filter ?? {}) as { tagIds?: string[]; search?: string };
-    const contacts = await storage.resolveSegmentProspects(
-      campaign.orgId,
-      campaign.brandId,
-      { tagIds: filter.tagIds ?? [], search: filter.search ?? "" },
-    );
+    // listProspectsByFilter pages (default 50, max 500): walk every page or
+    // a segment campaign silently stops at the first 50 contacts.
+    const PAGE = 500;
+    const contacts: Awaited<ReturnType<typeof storage.resolveSegmentProspects>> = [];
+    for (let offset = 0; ; offset += PAGE) {
+      const page = await storage.resolveSegmentProspects(
+        campaign.orgId,
+        campaign.brandId,
+        { tagIds: filter.tagIds ?? [], search: filter.search ?? "" },
+        { limit: PAGE, offset },
+      );
+      contacts.push(...page);
+      if (page.length < PAGE) break;
+    }
+    // Unsubscribed and bounced prospects never get marketing mail.
     return contacts
-      .filter((c) => !!c.email)
-      .map((c) => ({ id: c.id, email: c.email }));
+      .filter((c) => !!c.email && !c.unsubscribedAt && !c.bouncedAt)
+      .map((c) => ({ id: c.id, email: c.email, unsubscribeToken: c.unsubscribeToken }));
   }
   // HR4-FIX-5b1c.1: retargeted to marketingProspects (was clientContacts read on marketing surface).
   // The "all brand contacts" audience for a marketing campaign is the brand's
   // marketing prospects — never PSO client contacts.
   return db
-    .select({ id: marketingProspects.id, email: marketingProspects.email })
+    .select({
+      id: marketingProspects.id,
+      email: marketingProspects.email,
+      unsubscribeToken: marketingProspects.unsubscribeToken,
+    })
     .from(marketingProspects)
     .where(and(
       eq(marketingProspects.orgId, campaign.orgId),
       eq(marketingProspects.brandId, campaign.brandId),
       isNull(marketingProspects.deletedAt),
       isNotNull(marketingProspects.email),
+      isNull(marketingProspects.unsubscribedAt),
+      isNull(marketingProspects.bouncedAt),
     ));
 }
 
@@ -313,22 +348,26 @@ function classifyFailure(
   };
 }
 
-async function getLatestCampaignAttempt(
+// One query per campaign, not per recipient: a resumed campaign re-walks its
+// whole audience every tick, and per-recipient lookups for thousands of
+// already-sent rows could eat the tick budget before a single new send.
+async function getLatestCampaignAttempts(
   orgId: string,
   campaignId: string,
-  prospectId: string,
-): Promise<EmailSendAttempt | null> {
-  const [row] = await db
+): Promise<Map<string, EmailSendAttempt>> {
+  const rows = await db
     .select()
     .from(emailSendAttempts)
     .where(and(
       eq(emailSendAttempts.orgId, orgId),
       eq(emailSendAttempts.campaignId, campaignId),
-      eq(emailSendAttempts.prospectId, prospectId),
     ))
-    .orderBy(desc(emailSendAttempts.attemptedAt))
-    .limit(1);
-  return row ?? null;
+    .orderBy(desc(emailSendAttempts.attemptedAt));
+  const latest = new Map<string, EmailSendAttempt>();
+  for (const row of rows) {
+    if (row.prospectId && !latest.has(row.prospectId)) latest.set(row.prospectId, row);
+  }
+  return latest;
 }
 
 async function getLatestSequenceAttempt(
@@ -351,6 +390,20 @@ async function getLatestSequenceAttempt(
   return row ?? null;
 }
 
+async function isStillMailable(prospectId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: marketingProspects.id })
+    .from(marketingProspects)
+    .where(and(
+      eq(marketingProspects.id, prospectId),
+      isNull(marketingProspects.deletedAt),
+      isNull(marketingProspects.unsubscribedAt),
+      isNull(marketingProspects.bouncedAt),
+    ))
+    .limit(1);
+  return !!row;
+}
+
 export async function processScheduledCampaigns(
   now: Date = new Date(),
 ): Promise<{ processed: number; sent: number; errors: number }> {
@@ -370,48 +423,77 @@ export async function processScheduledCampaigns(
 
   // Task #271 — Resolve each org's retry policy at most once per tick.
   const policyCache = new Map<string, OrgRetryPolicy>();
+  const orgCache = new Map<string, Awaited<ReturnType<typeof storage.getOrg>>>();
+  async function getOrg(orgId: string) {
+    if (!orgCache.has(orgId)) orgCache.set(orgId, await storage.getOrg(orgId));
+    return orgCache.get(orgId);
+  }
   async function getPolicy(orgId: string): Promise<OrgRetryPolicy> {
     const hit = policyCache.get(orgId);
     if (hit) return hit;
-    const org = await storage.getOrg(orgId);
+    const org = await getOrg(orgId);
     const policy = resolveOrgRetryPolicy(org ?? null);
     policyCache.set(orgId, policy);
     return policy;
   }
 
+  const brandCache = new Map<string, Awaited<ReturnType<typeof storage.getBrand>>>();
+  async function getBrand(brandId: string, orgId: string) {
+    if (!brandCache.has(brandId)) brandCache.set(brandId, await storage.getBrand(brandId, orgId));
+    return brandCache.get(brandId);
+  }
+
+  const deadline = Date.now() + TICK_SEND_BUDGET_MS;
+  let lastTransport: string | null = null;
+
   for (const campaign of due) {
+    if (Date.now() >= deadline) break;
     const recipients = await resolveCampaignRecipients(campaign);
     const policy = await getPolicy(campaign.orgId);
+    const brand = await getBrand(campaign.brandId, campaign.orgId);
+    const fromName = (campaign.fromName || brand?.fromName || "").trim() || null;
+    const fromEmail = (campaign.fromEmail || brand?.fromEmail || "").trim() || null;
+    const replyTo = (campaign.replyTo || brand?.replyTo || "").trim() || null;
+    const latestAttempts = await getLatestCampaignAttempts(campaign.orgId, campaign.id);
 
     let mailboxMissing = false;
+    let outOfTime = false;
     let dispatchedThisCampaign = 0;
     let pendingRetries = 0;
 
     for (const r of recipients) {
       if (!r.email) continue;
-      const latest = await getLatestCampaignAttempt(
-        campaign.orgId,
-        campaign.id,
-        r.id,
-      );
-      const decision = decideRecipientAction(latest, now, policy.maxAttempts);
+      if (Date.now() >= deadline) {
+        outOfTime = true;
+        break;
+      }
+      const decision = decideRecipientAction(latestAttempts.get(r.id) ?? null, now, policy.maxAttempts);
       if (decision.action === "skip-done") continue;
       if (decision.action === "skip-pending") {
         pendingRetries++;
         continue;
       }
 
+      // A long campaign spans many minutes: someone who unsubscribed from an
+      // earlier email in the meantime must not get this one.
+      if (!(await isStillMailable(r.id))) continue;
+      if (lastTransport === "graph") await sleep(GRAPH_SEND_INTERVAL_MS);
       const attemptNumber = decision.attemptNumber;
       let outcome: AttemptOutcome;
       try {
+        const footer = { token: r.unsubscribeToken, org: await getOrg(campaign.orgId) };
         const result = await sendViaConnectedMailbox({
           orgId: campaign.orgId,
           to: r.email,
           subject: campaign.subject || campaign.name,
-          html: campaign.body,
-          text: campaign.body,
-          replyTo: campaign.replyTo || null,
+          html: withUnsubscribeFooter(campaign.body ?? "", footer),
+          text: (campaign.body ?? "") + unsubscribeFooterText(footer),
+          replyTo,
+          fromName,
+          fromEmail,
+          headers: listUnsubscribeHeaders(r.unsubscribeToken),
         });
+        lastTransport = result.transport;
         outcome = classifySuccess(result);
         await storage.createActivity({
           orgId: campaign.orgId,
@@ -471,6 +553,14 @@ export async function processScheduledCampaigns(
       continue;
     }
 
+    if (outOfTime) {
+      console.log(
+        `[marketing-scheduled-send] campaign=${campaign.id} dispatched=${dispatchedThisCampaign} — ` +
+        `tick budget spent, resuming next tick.`,
+      );
+      break;
+    }
+
     if (pendingRetries > 0) {
       console.log(
         `[marketing-scheduled-send] campaign=${campaign.id} ` +
@@ -516,6 +606,9 @@ export async function processScheduledSequenceEnrollments(
       sequence: marketingSequences,
       contactEmail: marketingProspects.email,
       contactDeletedAt: marketingProspects.deletedAt,
+      contactUnsubscribedAt: marketingProspects.unsubscribedAt,
+      contactBouncedAt: marketingProspects.bouncedAt,
+      contactUnsubscribeToken: marketingProspects.unsubscribeToken,
     })
     .from(marketingSequenceEnrollments)
     .innerJoin(
@@ -540,10 +633,15 @@ export async function processScheduledSequenceEnrollments(
 
   // Task #271 — Per-org retry policy cache (one lookup per org per tick).
   const policyCache = new Map<string, OrgRetryPolicy>();
+  const orgCache = new Map<string, Awaited<ReturnType<typeof storage.getOrg>>>();
+  async function getOrg(orgId: string) {
+    if (!orgCache.has(orgId)) orgCache.set(orgId, await storage.getOrg(orgId));
+    return orgCache.get(orgId);
+  }
   async function getPolicy(orgId: string): Promise<OrgRetryPolicy> {
     const hit = policyCache.get(orgId);
     if (hit) return hit;
-    const org = await storage.getOrg(orgId);
+    const org = await getOrg(orgId);
     const policy = resolveOrgRetryPolicy(org ?? null);
     policyCache.set(orgId, policy);
     return policy;
@@ -572,7 +670,8 @@ export async function processScheduledSequenceEnrollments(
 
     // Skip soft-deleted contacts: pause the enrollment so it doesn't
     // keep showing up on every tick.
-    if (row.contactDeletedAt || !row.contactEmail) {
+    // Soft-deleted, unsubscribed and bounced contacts leave the sequence.
+    if (row.contactDeletedAt || !row.contactEmail || row.contactUnsubscribedAt || row.contactBouncedAt) {
       await db
         .update(marketingSequenceEnrollments)
         .set({ status: "removed", nextSendAt: null, updatedAt: now })
@@ -619,13 +718,15 @@ export async function processScheduledSequenceEnrollments(
     if (decision.action === "send") {
       attemptNumber = decision.attemptNumber;
       try {
+        const footer = { token: row.contactUnsubscribeToken, org: await getOrg(enr.orgId) };
         const result = await sendViaConnectedMailbox({
           orgId: enr.orgId,
           to: row.contactEmail,
           subject: step.subject || seq.name,
-          html: step.body,
-          text: step.body,
+          html: withUnsubscribeFooter(step.body ?? "", footer),
+          text: (step.body ?? "") + unsubscribeFooterText(footer),
           replyTo: seq.replyTo || null,
+          headers: listUnsubscribeHeaders(row.contactUnsubscribeToken),
         });
         outcome = classifySuccess(result);
         await storage.createActivity({

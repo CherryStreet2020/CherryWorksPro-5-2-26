@@ -1,6 +1,6 @@
 import { storage } from "../storage";
 import { selectTransport, type OrgForTransport } from "./transport-selector";
-import { MissingMailboxError, type SendableMessage, type EmailProviderType } from "./types";
+import { EmailTransportError, MissingMailboxError, type SendableMessage, type EmailProviderType } from "./types";
 import { isRecipientSuppressed, recordSuppressedSend } from "./failure-tracker";
 
 /**
@@ -30,6 +30,14 @@ export interface SendViaConnectedMailboxInput {
   text?: string;
   cc?: string[];
   replyTo?: string | null;
+  headers?: Record<string, string>;
+  /** Display name; defaults to the workspace name. */
+  fromName?: string | null;
+  /**
+   * Sender address for SMTP (e.g. a brand's validated from-address). Ignored
+   * for Microsoft 365 / Google, which send only as the authorised mailbox.
+   */
+  fromEmail?: string | null;
 }
 
 export interface SendViaConnectedMailboxResult {
@@ -71,7 +79,8 @@ export async function sendViaConnectedMailbox(
   }
   const providerType: EmailProviderType =
     (orgRecord.emailProviderType ?? "smtp") as EmailProviderType;
-  const senderAddress = orgRecord.emailSenderAddress ?? null;
+  const oauth = transport.kind === "graph" || transport.kind === "gmail";
+  const senderAddress = (oauth ? null : input.fromEmail) || orgRecord.emailSenderAddress || null;
 
   const message: SendableMessage = {
     to: input.to,
@@ -80,11 +89,20 @@ export async function sendViaConnectedMailbox(
     text: input.text,
     cc: input.cc,
     replyTo: input.replyTo ?? undefined,
+    headers: input.headers,
     fromEmail: senderAddress ?? undefined,
-    fromName: orgRecord.name ?? undefined,
+    fromName: input.fromName || orgRecord.name || undefined,
   };
 
   const result = await transport.send(message);
+  // SMTP with no configuration returns ok:false (transport "noop") rather
+  // than throwing; callers must never record that as a delivered message.
+  if (result.ok === false) {
+    throw new EmailTransportError(
+      result.transport,
+      "This workspace has no working email provider: connect a Microsoft 365 or Google mailbox, or configure SMTP, in Settings → Email.",
+    );
+  }
 
   return {
     ok: true,

@@ -40,6 +40,11 @@ function fmt(d: string | Date | null | undefined): string {
   return t.toLocaleString();
 }
 
+/** Due and not yet stamped sent: the worker is delivering it. */
+function isSending(c: MarketingCampaign): boolean {
+  return !c.sentAt && !!c.sendAt && new Date(c.sendAt).getTime() <= Date.now();
+}
+
 function toDatetimeLocal(d: string | Date | null | undefined): string {
   if (!d) return "";
   const t = typeof d === "string" ? new Date(d) : d;
@@ -88,6 +93,10 @@ export default function CampaignsPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     },
+    // A campaign is delivered by the background worker; keep polling while
+    // one is mid-send so sent_at shows up without a reload.
+    refetchInterval: (query) =>
+      (query.state.data ?? []).some(isSending) ? 15_000 : false,
   });
 
   // Task #234 — Saved segments for the audience picker. Loaded for the
@@ -321,7 +330,16 @@ export default function CampaignsPage() {
                       <td className="px-4 py-2" style={{ color: "var(--lux-text-muted)" }}>{fmt(c.updatedAt)}</td>
                       <td className="px-4 py-2 text-right">
                         <div className="inline-flex gap-1">
-                          {!c.sentAt && (
+                          {isSending(c) && (
+                            <span
+                              className="self-center px-2 text-xs"
+                              style={{ color: "var(--lux-text-muted)" }}
+                              data-testid={`text-campaign-sending-${c.id}`}
+                            >
+                              Sending…
+                            </span>
+                          )}
+                          {!c.sentAt && !isSending(c) && (
                             <Button
                               size="sm"
                               variant="ghost"
@@ -379,19 +397,14 @@ export default function CampaignsPage() {
               "POST",
               `/api/marketing/campaigns/${sendingNow.id}/send-now`,
             );
-            const body = (await res.json()) as {
-              sentCount: number;
-              failedCount: number;
-            };
+            const body = (await res.json()) as { queued: number };
             await queryClient.invalidateQueries({
               queryKey: ["/api/marketing/campaigns"],
             });
             toast({
-              title: `Sent to ${body.sentCount} recipient${body.sentCount === 1 ? "" : "s"}`,
+              title: `Sending to ${body.queued} recipient${body.queued === 1 ? "" : "s"}`,
               description:
-                body.failedCount > 0
-                  ? `${body.failedCount} failed — open the failures dialog for details.`
-                  : undefined,
+                "Emails go out in the background, about 28 a minute from a Microsoft 365 mailbox. Any that fail show in the campaign's failures dialog.",
             });
             setSendingNow(null);
           } catch (err: unknown) {

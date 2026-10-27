@@ -130,6 +130,7 @@ import {
   MS_GRAPH_SEND_URL,
   getMsTokenUrl,
   getGraphSendUrl,
+  graphRetryDelayMs,
 } from "../../server/email/graph-transport";
 import { __clearOauthTokenCacheForTests } from "../../server/email/oauth-token-cache";
 import { encryptSmtpPassword, sendInvoiceEmail } from "../../server/email";
@@ -263,6 +264,97 @@ describeMaybe("GraphTransport.send (I1, I2)", () => {
     expect(result.messageId).toBe("req-after-retry");
     expect(sendCalls).toBe(2);
     expect(tokenCalls).toBe(2);
+  });
+});
+
+describe("graphRetryDelayMs", () => {
+  it("uses Retry-After seconds when given", () => {
+    expect(graphRetryDelayMs("5", 0)).toBe(5000);
+    expect(graphRetryDelayMs("0", 2)).toBe(0);
+  });
+  it("uses a Retry-After HTTP date relative to now", () => {
+    const now = Date.parse("2026-10-27T12:00:00Z");
+    expect(graphRetryDelayMs("Tue, 27 Oct 2026 12:00:10 GMT", 0, now)).toBe(10_000);
+    expect(graphRetryDelayMs("Tue, 27 Oct 2026 11:59:00 GMT", 0, now)).toBe(0);
+  });
+  it("backs off 2s, 4s, 8s without Retry-After", () => {
+    expect([0, 1, 2].map((r) => graphRetryDelayMs(null, r))).toEqual([2000, 4000, 8000]);
+    expect(graphRetryDelayMs("not a date", 1)).toBe(4000);
+  });
+  it("gives up when asked to wait longer than a minute", () => {
+    expect(graphRetryDelayMs("61", 0)).toBeNull();
+    expect(graphRetryDelayMs("60", 0)).toBe(60_000);
+  });
+});
+
+describeMaybe("GraphTransport.send throttling", () => {
+  const sleeps: number[] = [];
+  beforeEach(() => {
+    sleeps.length = 0;
+    (global as any).__emailTestSleep = async (ms: number) => { sleeps.push(ms); };
+  });
+  afterAll(() => {
+    delete (global as any).__emailTestSleep;
+  });
+
+  it("waits out a 429 as Retry-After says, then sends", async () => {
+    let sendCalls = 0;
+    (global as any).__emailTestFetch = vi.fn(async (url: string) => {
+      if (url === getMsTokenUrl()) return jsonResponse(200, { access_token: "AT-1", expires_in: 3600 });
+      sendCalls += 1;
+      if (sendCalls === 1) return emptyResponse(429, { "Retry-After": "3" });
+      return emptyResponse(202, { "x-ms-request-id": "req-after-429" });
+    });
+    const result = await new GraphTransport(org).send(message);
+    expect(result.ok).toBe(true);
+    expect(result.messageId).toBe("req-after-429");
+    expect(sendCalls).toBe(2);
+    expect(sleeps).toEqual([3000]);
+  });
+
+  it("stops after three retries and reports the failure", async () => {
+    let sendCalls = 0;
+    (global as any).__emailTestFetch = vi.fn(async (url: string) => {
+      if (url === getMsTokenUrl()) return jsonResponse(200, { access_token: "AT-1", expires_in: 3600 });
+      sendCalls += 1;
+      return emptyResponse(503);
+    });
+    await expect(new GraphTransport(org).send(message)).rejects.toThrow();
+    expect(sendCalls).toBe(4);
+    expect(sleeps).toEqual([2000, 4000, 8000]);
+  });
+
+  it("does not wait when Retry-After is longer than a minute", async () => {
+    let sendCalls = 0;
+    (global as any).__emailTestFetch = vi.fn(async (url: string) => {
+      if (url === getMsTokenUrl()) return jsonResponse(200, { access_token: "AT-1", expires_in: 3600 });
+      sendCalls += 1;
+      return emptyResponse(429, { "Retry-After": "600" });
+    });
+    await expect(new GraphTransport(org).send(message)).rejects.toThrow();
+    expect(sendCalls).toBe(1);
+    expect(sleeps).toEqual([]);
+  });
+
+  it("forwards only X- custom headers to Graph", async () => {
+    let body: any = null;
+    (global as any).__emailTestFetch = vi.fn(async (url: string, init: RequestInit) => {
+      if (url === getMsTokenUrl()) return jsonResponse(200, { access_token: "AT-1", expires_in: 3600 });
+      body = JSON.parse(String(init.body));
+      return emptyResponse(202);
+    });
+    await new GraphTransport(org).send({
+      ...message,
+      headers: { "List-Unsubscribe": "<https://x.test/u>", "X-Campaign": "c1" },
+    });
+    expect(body.message.internetMessageHeaders).toEqual([{ name: "X-Campaign", value: "c1" }]);
+  });
+
+  it("rejects a header value carrying a line break", async () => {
+    (global as any).__emailTestFetch = vi.fn(async () => emptyResponse(202));
+    await expect(
+      new GraphTransport(org).send({ ...message, headers: { "X-Bad": "a\r\nBcc: evil@x.test" } }),
+    ).rejects.toThrow();
   });
 });
 

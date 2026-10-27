@@ -230,7 +230,7 @@ export default function TimeEntryDialog({
               variant="outline"
               size="sm"
               onClick={() => {
-                navigator.clipboard.writeText("support@cherryworkspro.com");
+                navigator.clipboard.writeText("support@cherrystconsulting.com");
                 toast({ title: "Admin contact copied to clipboard" });
               }}
               data-testid="button-copy-admin-contact"

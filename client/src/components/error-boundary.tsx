@@ -87,7 +87,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 Back to Dashboard
               </button>
               <a
-                href="mailto:support@cherryworkspro.com"
+                href="mailto:support@cherrystconsulting.com"
                 className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-opacity hover:opacity-80"
                 style={{ color: "var(--lux-text-muted, #888)" }}
                 data-testid="link-contact-support"

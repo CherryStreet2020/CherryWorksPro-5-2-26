@@ -42,6 +42,7 @@ import { registerMarketingContactImportRoutes } from "./routes/marketing-contact
 import { registerContactTagRoutes } from "./routes/marketing/tags";
 import { registerContactSegmentRoutes } from "./routes/marketing/segments";
 import { registerMarketingCampaignRoutes } from "./routes/marketing/campaigns";
+import { registerMarketingUnsubscribeRoutes } from "./routes/marketing/unsubscribe";
 import { registerCompanyRoutes } from "./routes/marketing/companies";
 import { registerProjectRoutes } from "./routes/project-routes";
 import { registerTimeRoutes } from "./routes/time-routes";
@@ -706,6 +707,7 @@ export async function registerRoutes(
   registerContactTagRoutes(app);
   registerContactSegmentRoutes(app);
   registerMarketingCampaignRoutes(app);
+  registerMarketingUnsubscribeRoutes(app);
   registerCompanyRoutes(app);
   registerWebhookDashboardRoutes(app);
   registerInvoiceThemesRoutes(app);

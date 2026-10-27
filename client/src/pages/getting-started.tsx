@@ -1264,7 +1264,7 @@ function ImplementationGuideTab() {
           description: "Go to Settings \u2192 Email. Configure outbound email so invoices and reminders come from your domain instead of a generic address.",
           link: "/settings",
           checklist: ["SMTP host and port", "Sender email address (e.g. billing@yourfirm.com)", "Send a test email to verify delivery"],
-          proTip: "If you skip SMTP setup, emails still send from noreply@cherryworkspro.com \u2014 but your own domain looks more professional.",
+          proTip: "Prefer not to manage SMTP? Connect a Microsoft 365 or Google mailbox in Settings \u2192 Email instead. Until one is connected, invoices and reminders cannot be emailed.",
         },
         {
           title: "Initialize Chart of Accounts",

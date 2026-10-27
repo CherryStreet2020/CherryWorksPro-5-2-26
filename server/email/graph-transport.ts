@@ -5,7 +5,7 @@ import {
   setCachedAccessToken,
 } from "./oauth-token-cache";
 import type { EmailTransport, SendableMessage, SendResult } from "./types";
-import { EmailTransportError, MissingMailboxError } from "./types";
+import { EmailTransportError, MissingMailboxError, assertSafeHeaders } from "./types";
 import type { OrgForTransport } from "./transport-selector";
 import { isOauthAuthError, markMailboxNeedsReconnect } from "./mailbox-status";
 import { db } from "../db";
@@ -184,6 +184,12 @@ export function buildGraphPayload(message: SendableMessage): Record<string, any>
     contentBytes: a.content.toString("base64"),
   }));
 
+  // Graph rejects any custom header that does not start with "X-", so
+  // List-Unsubscribe and friends are dropped here.
+  const graphHeaders = Object.entries(message.headers ?? {})
+    .filter(([name]) => /^x-/i.test(name))
+    .map(([name, value]) => ({ name, value }));
+
   const payload: Record<string, any> = {
     message: {
       subject: message.subject,
@@ -194,6 +200,7 @@ export function buildGraphPayload(message: SendableMessage): Record<string, any>
         ? { replyTo: [{ emailAddress: { address: message.replyTo } }] }
         : {}),
       ...(attachments.length > 0 ? { attachments } : {}),
+      ...(graphHeaders.length > 0 ? { internetMessageHeaders: graphHeaders } : {}),
     },
     saveToSentItems: true,
   };
@@ -210,6 +217,35 @@ export function buildGraphPayload(message: SendableMessage): Record<string, any>
   return payload;
 }
 
+/** Retries after a 429 / 503 / 504 before the send is reported as failed. */
+const GRAPH_THROTTLE_RETRIES = 3;
+/** Longest single wait honoured from Retry-After; longer asks fail the send. */
+const GRAPH_MAX_RETRY_WAIT_MS = 60_000;
+
+function sleepOverride(): (ms: number) => Promise<void> {
+  // Tests inject an instant sleep; production waits for real.
+  return (global as any).__emailTestSleep || ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+}
+
+/**
+ * Wait time for a throttled Graph response: Retry-After (seconds or an
+ * HTTP date) when present, otherwise exponential 2s, 4s, 8s. Null when the
+ * server asks for longer than GRAPH_MAX_RETRY_WAIT_MS.
+ */
+export function graphRetryDelayMs(retryAfter: string | null, retry: number, now: number = Date.now()): number | null {
+  let ms = 2000 * 2 ** retry;
+  if (retryAfter) {
+    const secs = Number(retryAfter);
+    if (Number.isFinite(secs) && secs >= 0) {
+      ms = secs * 1000;
+    } else {
+      const at = Date.parse(retryAfter);
+      if (Number.isFinite(at)) ms = Math.max(0, at - now);
+    }
+  }
+  return ms > GRAPH_MAX_RETRY_WAIT_MS ? null : ms;
+}
+
 export class GraphTransport implements EmailTransport {
   readonly kind = "graph" as const;
   constructor(private readonly org: OrgForTransport) {}
@@ -222,6 +258,7 @@ export class GraphTransport implements EmailTransport {
     checkHeader(message.subject, "subject");
     if (message.cc) message.cc.forEach((c) => checkHeader(c, "cc"));
     if (message.replyTo) checkHeader(message.replyTo, "replyTo");
+    assertSafeHeaders("graph", message.headers);
 
     const payload = buildGraphPayload(message);
     const cacheKey = `m365:${this.org.id}`;
@@ -241,6 +278,26 @@ export class GraphTransport implements EmailTransport {
     if (res.status === 401) {
       invalidateCachedAccessToken(cacheKey);
       accessToken = await refreshGraphAccessToken(this.org);
+      res = await fetchOverride()(sendUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+    }
+
+    // 429 (mailbox / app throttling) and 503 / 504 → wait as told, retry.
+    for (let retry = 0; retry < GRAPH_THROTTLE_RETRIES; retry++) {
+      if (res.status !== 429 && res.status !== 503 && res.status !== 504) break;
+      const waitMs = graphRetryDelayMs(res.headers.get("retry-after"), retry);
+      if (waitMs === null) break;
+      console.warn(
+        `[email] Graph sendMail ${res.status} for org=${this.org.id}; retrying in ${waitMs}ms (${retry + 1}/${GRAPH_THROTTLE_RETRIES})`,
+      );
+      await res.text().catch(() => "");
+      await sleepOverride()(waitMs);
       res = await fetchOverride()(sendUrl, {
         method: "POST",
         headers: {

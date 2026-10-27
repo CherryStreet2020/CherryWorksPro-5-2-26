@@ -58,7 +58,7 @@ app.post("/api/expenses/ocr/scan", requireAuth, async (req: Request, res: Respon
       const monthlyUsage = parseInt(usageResult.rows[0]?.cnt || "0", 10);
       if (monthlyUsage >= 200) {
         return res.status(429).json({
-          message: "You've hit this month's receipt scan fair-use limit. Contact support@cherryworkspro.com to discuss your usage or upgrade for unlimited scans.",
+          message: "You've hit this month's receipt scan fair-use limit. Contact support@cherrystconsulting.com to discuss your usage or upgrade for unlimited scans.",
           fairUseLimit: 200,
           upgradeUrl: "/pricing",
         });

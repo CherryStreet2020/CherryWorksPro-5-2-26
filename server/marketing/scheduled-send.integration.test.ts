@@ -42,8 +42,10 @@ vi.mock("../email/smtp-transport", () => ({
 import {
   processScheduledCampaigns,
   processScheduledSequenceEnrollments,
+  resolveCampaignRecipients,
   runScheduledSendTick,
 } from "./scheduled-send";
+import { storage } from "../storage";
 import { MissingMailboxError } from "../email/types";
 import { db, pool } from "../db";
 import { flushSequenceFailureDigest } from "../notifications/marketing-failures";
@@ -353,6 +355,100 @@ describe("processScheduledCampaigns — integration", () => {
       (a) => (a.payload as Record<string, unknown>).campaign_id === campaignId,
     );
     expect(forCampaign).toHaveLength(0);
+  });
+});
+
+describe("processScheduledCampaigns — long-running sends", () => {
+  it("skips a contact who unsubscribes while the campaign is going out", async () => {
+    const a = await makeContact({ email: "first@example.com" });
+    const b = await makeContact({ email: "second@example.com" });
+    let firstTo: string | null = null;
+    sendMock.mockImplementation(async (arg: { orgId: string; to: string }) => {
+      // Earlier tests' contacts share the brand; react only to this test's pair.
+      const mine = arg.to === "first@example.com" || arg.to === "second@example.com";
+      if (arg.orgId === ORG_ID && mine && !firstTo) {
+        firstTo = arg.to;
+        // The other contact unsubscribes from an earlier email mid-run.
+        const other = arg.to === "first@example.com" ? b : a;
+        await db
+          .update(marketingProspects)
+          .set({ unsubscribedAt: new Date() })
+          .where(eq(marketingProspects.id, other));
+      }
+      return okSendResult("unsub");
+    });
+    const campaignId = await makeCampaign({ sendAt: new Date(Date.now() - 60_000) });
+
+    await processScheduledCampaigns(new Date());
+
+    const sentTo = sendMock.mock.calls
+      .map((c) => c[0])
+      .filter((arg) => arg.orgId === ORG_ID && ["first@example.com", "second@example.com"].includes(arg.to))
+      .map((arg) => arg.to);
+    // An earlier test's pending campaign targets the same brand, so firstTo
+    // may appear more than once; the unsubscribed contact must not appear.
+    expect(firstTo).not.toBeNull();
+    expect(new Set(sentTo)).toEqual(new Set([firstTo]));
+    const [campRow] = await db
+      .select()
+      .from(marketingCampaigns)
+      .where(eq(marketingCampaigns.id, campaignId));
+    expect(campRow.sentAt).not.toBeNull();
+  });
+
+  it("paces consecutive Microsoft 365 sends", async () => {
+    await makeContact({ email: "pace1@example.com" });
+    await makeContact({ email: "pace2@example.com" });
+    sendMock.mockImplementation(async () => ({ ...okSendResult("graph"), transport: "graph" as const }));
+    const sleeps: number[] = [];
+    (global as any).__emailTestSleep = async (ms: number) => { sleeps.push(ms); };
+    try {
+      await makeCampaign({ sendAt: new Date(Date.now() - 60_000) });
+      await processScheduledCampaigns(new Date());
+    } finally {
+      delete (global as any).__emailTestSleep;
+    }
+    const ours = sendMock.mock.calls
+      .map((c) => c[0])
+      .filter((arg) => arg.orgId === ORG_ID && arg.to.startsWith("pace"));
+    expect(ours).toHaveLength(2);
+    expect(sleeps.length).toBeGreaterThanOrEqual(1);
+    expect(sleeps.every((ms) => ms === 2_100)).toBe(true);
+  });
+});
+
+describe("resolveCampaignRecipients — segments", () => {
+  it("walks every page of a large segment, not just the first 50", async () => {
+    const all = Array.from({ length: 1_203 }, (_, i) => ({
+      id: `p${i}`,
+      email: `s${i}@example.com`,
+      unsubscribeToken: `t${i}`,
+      unsubscribedAt: null,
+      bouncedAt: null,
+    }));
+    const segSpy = vi.spyOn(storage, "getSegment").mockResolvedValue({
+      id: "seg",
+      orgId: ORG_ID,
+      brandId: BRAND_ID,
+      filter: { tagIds: [], search: "" },
+    } as any);
+    const pageSpy = vi.spyOn(storage, "resolveSegmentProspects").mockImplementation(
+      async (_o, _b, _f, page = {}) =>
+        all.slice(page.offset ?? 0, (page.offset ?? 0) + (page.limit ?? 50)) as any,
+    );
+    try {
+      const recipients = await resolveCampaignRecipients({
+        orgId: ORG_ID,
+        brandId: BRAND_ID,
+        audienceType: "segment",
+        audienceSegmentId: "seg",
+      });
+      expect(recipients).toHaveLength(1_203);
+      expect(pageSpy).toHaveBeenCalledTimes(3);
+    } finally {
+      segSpy.mockRestore();
+      pageSpy.mockRestore();
+    }
   });
 });
 
