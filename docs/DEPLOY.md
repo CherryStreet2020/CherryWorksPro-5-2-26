@@ -237,6 +237,27 @@ delivered link working. **Never roll back past the step-1 image once tracked
 mail has gone out** — an older image has no tracking routes, and every link in
 those emails would 404.
 
+### Rollback floors
+
+Two images are floors. Nothing may roll back below either one:
+
+| Floor | Why |
+|---|---|
+| `bb7ec07` (#92, open/click tracking) | Older images have no tracking routes, so every tracked link already delivered would 404. |
+| The ACS marketing transport release (Dockerfile label `cwp.acs-enum=1`) | Older images treat an `accepted` send attempt as unknown and can re-send it, and their `drizzle-kit push` recreates the status enum without `accepted`/`deferred`, so they fail to boot on any row holding one. |
+
+`deploy_gate.sh` enforces the ACS floor (via `scripts/azure/image_floor.sh`):
+every roll target must carry the label `cwp.acs-enum=1`, whether a forward
+build or an explicit `image_tag`. There is no override. The one exception is the
+automatic restore after a failed deploy of the **first** labeled image itself:
+ACS ships dark, so nothing has written the new statuses yet, and the restore runs
+with `SKIP_DB_PUSH=1`.
+
+**A manual `az containerapp update --image <older>` bypasses the gate and is
+forbidden.** A bug in either release is fixed forward. To stop ACS sending, empty
+`ACS_EMAIL_ORG_SLUGS` on the container app (same image, new revision); leave
+`ACS_EMAIL_ENDPOINT` set so the reconciler keeps confirming sends already accepted.
+
 ---
 
 ## Scripts

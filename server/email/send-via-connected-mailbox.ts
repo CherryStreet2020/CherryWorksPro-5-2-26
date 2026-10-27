@@ -1,26 +1,9 @@
 import { storage } from "../storage";
 import { selectTransport, type OrgForTransport } from "./transport-selector";
-import { EmailTransportError, MissingMailboxError, type SendableMessage, type EmailProviderType } from "./types";
+import { EmailTransportError, MissingMailboxError, RecipientSuppressedError, type SendableMessage, type EmailProviderType } from "./types";
 import { isRecipientSuppressed, recordSuppressedSend } from "./failure-tracker";
 
-/**
- * Thrown by {@link sendViaConnectedMailbox} when the recipient is on
- * the org's masked-recipient suppression list. Callers can map this to
- * a non-error outcome (e.g. "skipped") rather than treating it as a
- * transport failure — the suppression counter is incremented separately
- * by the failure tracker.
- */
-export class RecipientSuppressedError extends Error {
-  readonly code = "RECIPIENT_SUPPRESSED";
-  readonly recipientHash: string;
-  readonly reason: string;
-  constructor(recipientHash: string, reason: string) {
-    super(`Recipient is on the org suppression list (#${recipientHash})`);
-    this.name = "RecipientSuppressedError";
-    this.recipientHash = recipientHash;
-    this.reason = reason;
-  }
-}
+export { RecipientSuppressedError };
 
 export interface SendViaConnectedMailboxInput {
   orgId: string;
@@ -107,7 +90,8 @@ export async function sendViaConnectedMailbox(
   return {
     ok: true,
     provider: providerType,
-    transport: result.transport,
+    // selectTransport never returns the ACS transport (marketing-only).
+    transport: result.transport as SendViaConnectedMailboxResult["transport"],
     senderAddress,
     providerMessageId: result.messageId,
     sentAt: new Date().toISOString(),

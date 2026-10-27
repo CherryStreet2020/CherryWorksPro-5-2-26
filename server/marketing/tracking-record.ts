@@ -122,6 +122,17 @@ export async function dropTrackingLinks(token: string): Promise<void> {
   }, false).catch(() => undefined);
 }
 
+/**
+ * Best-effort removal of every link row written for one send attempt: the
+ * ACS path writes links before the intent row, then drops them when the send
+ * is deferred (it is rebuilt with fresh tokens on the retry).
+ */
+export async function dropTrackingLinksForAttempt(attemptId: string): Promise<void> {
+  await bounded("drop", async (tx) => {
+    await tx.delete(emailTrackingLinks).where(eq(emailTrackingLinks.attemptId, attemptId));
+  }, false).catch(() => undefined);
+}
+
 interface LockedTarget {
   orgId: string;
   brandId: string | null;
@@ -161,7 +172,11 @@ async function lockTarget(tx: Exec, token: string): Promise<LockedTarget | null>
   `));
   if (!row) return null;
   if (row.link_kind !== "campaign" && row.link_kind !== "sequence") return null;
-  if (row.found_attempt_id && (row.status !== "success" || row.kind !== row.link_kind)) return null;
+  // `accepted`: handed to ACS and awaiting its verdict; the mail may already be in the inbox.
+  if (
+    row.found_attempt_id &&
+    ((row.status !== "success" && row.status !== "accepted") || row.kind !== row.link_kind)
+  ) return null;
   if (row.deleted_at || row.unsubscribed_at || row.bounced_at) return null;
   const source = row.link_kind === "campaign"
     ? {

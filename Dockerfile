@@ -121,6 +121,11 @@ RUN chmod +x ./scripts/start_container.sh
 ARG GIT_COMMIT_SHA=unknown
 ENV GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
 
+# The ACS rollback floor (scripts/azure/image_floor.sh). This image knows the
+# `accepted`/`deferred` send-attempt statuses; deploy_gate.sh refuses to roll
+# to any image without this label. Never remove it.
+LABEL cwp.acs-enum="1"
+
 # tmp/imports is created by fs.mkdirSync at MODULE TOP LEVEL during route
 # registration (server/routes/import-routes.ts:22) — i.e. at boot. As USER node
 # against a root-owned layer that throws an uncaught EACCES, the process exits,

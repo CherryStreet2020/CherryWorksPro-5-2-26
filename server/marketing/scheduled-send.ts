@@ -34,10 +34,17 @@
  * Sequence enrollments only advance their step index after the same
  * terminal state — transient failures push `next_send_at` forward by the
  * computed backoff so the next tick retries.
+ *
+ * ACS marketing transport (PLAN r13) — items whose effective sender routes to
+ * ACS (`server/email/marketing-route.ts`) are submitted through
+ * `./acs-send.ts`: an `accepted` intent row is written before the POST and
+ * resolved later by the reconciler, which runs first in every tick.
  */
 import { randomUUID } from "crypto";
 import { db, pool } from "../db";
 import {
+  brands,
+  orgs,
   marketingCampaigns,
   marketingSequences,
   marketingSequenceSteps,
@@ -49,8 +56,32 @@ import {
   type EmailSendAttempt,
   type EmailSendAttemptStatus,
 } from "@shared/schema";
-import { and, asc, desc, eq, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, or, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import { sendViaConnectedMailbox } from "../email/send-via-connected-mailbox";
+import { isRecipientSuppressed, recordSuppressedSend } from "../email/failure-tracker";
+import {
+  WS_SQL_PATTERN,
+  effectiveMarketingSender,
+  stripWs,
+  readAcsRoutingConfig,
+  resolveMarketingRoute,
+  type AcsRoutingConfig,
+} from "../email/marketing-route";
+import {
+  acsCooldownActive,
+  startAcsTokenRefresher,
+  stopAcsTokenRefresher,
+} from "../email/acs-transport";
+import {
+  acsSendWaitMs,
+  checkAcsCooldownAlert,
+  dispatchAcs,
+  reconcileAcsOperations,
+  type AcsDispatchResult,
+  type RetryPolicyForAttempt,
+} from "./acs-send";
+import { finalizeSequenceAttempt } from "./send-finalize";
+import { notifyMarketingTransportDegraded } from "../notifications/marketing-failures";
 import {
   listUnsubscribeHeaders,
   unsubscribeFooterText,
@@ -59,32 +90,34 @@ import {
 import { isEmailTrackingEnabled } from "../lib/featureFlags";
 import { newTrackingToken, withTracking } from "./tracking";
 import { dropTrackingLinks, saveTrackingLinks } from "./tracking-record";
-import { MissingMailboxError } from "../email/types";
+import { MissingMailboxError, RecipientSuppressedError } from "../email/types";
 import { redactErrorCode } from "../email/failure-tracker";
 import { storage } from "../storage";
-import {
-  notifyAdminsOfCampaignFailures,
-  notifyAdminsOfSequenceStepPermanentFailure,
-} from "../notifications/marketing-failures";
+import { notifyAdminsOfCampaignFailures } from "../notifications/marketing-failures";
+
+export { computeNextSendAt } from "./send-finalize";
 
 const ADVISORY_LOCK_KEY = 100007;
 const TICK_MS = Number(process.env.MARKETING_SCHEDULED_SEND_TICK_MS) || 60_000;
 // Exchange Online accepts 30 messages a minute per mailbox; pace Graph sends
 // just under that so a campaign does not spend its time in 429 back-off.
 const GRAPH_SEND_INTERVAL_MS = 2_100;
-// A tick stops starting new campaign sends after this long and leaves the
-// campaign pending; the next tick resumes it (sent recipients are skipped).
-// Keeps a large campaign from holding the advisory lock, and sequences
-// behind it, for half an hour.
-const TICK_SEND_BUDGET_MS = 50_000;
+// Each phase stops starting new work after its budget and leaves the rest
+// due; the next tick resumes it (sent recipients are skipped). Keeps a large
+// campaign from holding the advisory lock, and sequences behind it, for half
+// an hour. Reconciler 10 s + campaigns 30 s + sequences 15 s fit one tick.
+const RECONCILE_BUDGET_MS = 10_000;
+const CAMPAIGN_BUDGET_MS = 30_000;
+const SEQUENCE_BUDGET_MS = 15_000;
+const CAMPAIGN_PAGE = 50;
+const ACCEPTED_FALLBACK_RETRY_MS = 60_000;
+const PARK_PENDING_MS = 24 * 60 * 60 * 1000;
 
 function sleep(ms: number): Promise<void> {
   // Tests inject an instant sleep; production waits for real.
   const override = (global as any).__emailTestSleep as ((ms: number) => Promise<void>) | undefined;
   return override ? override(ms) : new Promise((r) => setTimeout(r, ms));
 }
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Default max attempts (initial + retries) before a recipient is marked
@@ -185,28 +218,6 @@ export interface ScheduledSendStats {
   enrollmentErrors: number;
 }
 
-/**
- * Pure helper: given a sorted-by-stepOrder list of sequence steps, the
- * index of the step that was just dispatched, and the current time,
- * compute (a) the next step index and (b) the next send timestamp. When
- * the dispatched step was the final one, returns `done: true` so the
- * caller marks the enrollment completed.
- */
-export function computeNextSendAt(
-  steps: Array<Pick<MarketingSequenceStep, "delayDays">>,
-  justDispatchedIndex: number,
-  now: Date,
-): { done: true } | { done: false; nextIndex: number; nextSendAt: Date } {
-  const nextIndex = justDispatchedIndex + 1;
-  if (nextIndex >= steps.length) return { done: true };
-  const delayDays = Math.max(0, steps[nextIndex].delayDays ?? 0);
-  return {
-    done: false,
-    nextIndex,
-    nextSendAt: new Date(now.getTime() + delayDays * DAY_MS),
-  };
-}
-
 function emptyStats(): ScheduledSendStats {
   return {
     campaignsProcessed: 0,
@@ -296,6 +307,22 @@ export function decideRecipientAction(
   if (!latest) return { action: "send", attemptNumber: 1 };
   if (latest.status === "success") return { action: "skip-done" };
   if (latest.status === "permanent_failure") return { action: "skip-done" };
+  // An ACS operation still in flight: the reconciler resolves it; never
+  // re-send (PLAN r13 §5).
+  if (latest.status === "accepted") {
+    return {
+      action: "skip-pending",
+      nextRetryAt: latest.nextRetryAt ?? new Date(now.getTime() + ACCEPTED_FALLBACK_RETRY_MS),
+    };
+  }
+  // Deferred before submission (ACS cooldown / throttle): the same attempt
+  // number is sent again once its nextRetryAt passes.
+  if (latest.status === "deferred") {
+    if (latest.nextRetryAt && latest.nextRetryAt > now) {
+      return { action: "skip-pending", nextRetryAt: latest.nextRetryAt };
+    }
+    return { action: "send", attemptNumber: latest.attemptNumber };
+  }
   // status === "failed"
   if (latest.attemptNumber >= maxAttempts) return { action: "skip-done" };
   if (latest.nextRetryAt && latest.nextRetryAt > now) {
@@ -333,8 +360,9 @@ function classifyFailure(
   maxAttempts: number = MAX_SEND_ATTEMPTS,
   baseMs: number = RETRY_BACKOFF_BASE_MS,
 ): AttemptOutcome {
-  const errorCode = redactErrorCode(err);
-  const transient = isTransientErrorCode(errorCode);
+  // A suppressed recipient is never retried (PLAN r13 §6).
+  const errorCode = err instanceof RecipientSuppressedError ? "SUPPRESSED" : redactErrorCode(err);
+  const transient = errorCode !== "SUPPRESSED" && isTransientErrorCode(errorCode);
   const exhausted = attemptNumber >= maxAttempts;
   const permanent = !transient || exhausted;
   const message = err instanceof Error ? err.message : String(err);
@@ -444,18 +472,89 @@ async function isStillMailable(prospectId: string): Promise<boolean> {
   return !!row;
 }
 
+// ── ACS tick context, fairness, campaign cursor (PLAN r13 §6) ───────────────
+
+export interface AcsTickContext {
+  config: AcsRoutingConfig;
+  /** Ids of the orgs named in ACS_EMAIL_ORG_SLUGS (empty when the endpoint is unset). */
+  orgIds: string[];
+}
+
+export async function loadAcsTickContext(): Promise<AcsTickContext> {
+  const config = readAcsRoutingConfig();
+  if (!config.endpoint || config.orgSlugs.length === 0) return { config, orgIds: [] };
+  const rows = await db
+    .select({ id: orgs.id })
+    .from(orgs)
+    .where(inArray(sql`lower(${orgs.slug})`, config.orgSlugs));
+  return { config, orgIds: rows.map((r) => r.id) };
+}
+
+/**
+ * While the ACS send cooldown is active, keep only items whose effective
+ * sender does NOT route to ACS. NULL-safe: an item with no effective sender
+ * routes to the connected mailbox and must stay selected. The expression is
+ * `effectiveMarketingSender` in SQL, built from the same `WS` set.
+ */
+function acsCooldownExclusion(
+  orgIdCol: AnyColumn,
+  itemFromCol: AnyColumn,
+  ctx: AcsTickContext,
+): SQL | undefined {
+  if (!ctx.config.endpoint || ctx.orgIds.length === 0 || ctx.config.senders.length === 0) return undefined;
+  if (!acsCooldownActive()) return undefined;
+  const effective = sql`lower(coalesce(nullif(regexp_replace(${itemFromCol}, ${WS_SQL_PATTERN}, '', 'g'), ''), regexp_replace(${brands.fromEmail}, ${WS_SQL_PATTERN}, '', 'g')))`;
+  const senders = sql.join(ctx.config.senders.map((s) => sql`${s}`), sql`, `);
+  return sql`((${inArray(orgIdCol, ctx.orgIds)}) AND ${effective} IN (${senders})) IS NOT TRUE`;
+}
+
+// Keyset cursor over due campaigns, so campaigns with nothing to dispatch
+// (all recipients pending at the provider) cannot hold the 50-row window.
+// Per process; a restart starts from the beginning.
+let campaignCursor: { sendAt: Date; id: string } | null = null;
+
+export function resetCampaignCursorForTests(): void {
+  campaignCursor = null;
+}
+
+function retryPolicyFor(policy: OrgRetryPolicy, attemptNumber: number): RetryPolicyForAttempt {
+  return { maxAttempts: policy.maxAttempts, backoffMs: computeBackoffMs(attemptNumber, policy.baseMs) };
+}
+
+async function hasAcceptedCampaignAttempt(campaignId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: emailSendAttempts.id })
+    .from(emailSendAttempts)
+    .where(and(eq(emailSendAttempts.campaignId, campaignId), eq(emailSendAttempts.status, "accepted")))
+    .limit(1);
+  return !!row;
+}
+
 export async function processScheduledCampaigns(
   now: Date = new Date(),
+  acsCtx?: AcsTickContext,
 ): Promise<{ processed: number; sent: number; errors: number }> {
-  const due = await db
-    .select()
+  const ctx = acsCtx ?? (await loadAcsTickContext());
+  const cursor = campaignCursor;
+  const page = await db
+    .select({ campaign: marketingCampaigns })
     .from(marketingCampaigns)
+    .leftJoin(brands, eq(brands.id, marketingCampaigns.brandId))
     .where(and(
       isNull(marketingCampaigns.sentAt),
       isNotNull(marketingCampaigns.sendAt),
       lte(marketingCampaigns.sendAt, now),
+      cursor
+        ? or(
+            gt(marketingCampaigns.sendAt, cursor.sendAt),
+            and(eq(marketingCampaigns.sendAt, cursor.sendAt), gt(marketingCampaigns.id, cursor.id)),
+          )
+        : undefined,
+      acsCooldownExclusion(marketingCampaigns.orgId, marketingCampaigns.fromEmail, ctx),
     ))
-    .limit(50);
+    .orderBy(asc(marketingCampaigns.sendAt), asc(marketingCampaigns.id))
+    .limit(CAMPAIGN_PAGE);
+  const due = page.map((r) => r.campaign);
 
   let processed = 0;
   let sent = 0;
@@ -483,21 +582,32 @@ export async function processScheduledCampaigns(
     return brandCache.get(brandId);
   }
 
-  const deadline = Date.now() + TICK_SEND_BUDGET_MS;
+  const deadline = Date.now() + CAMPAIGN_BUDGET_MS;
   let lastTransport: string | null = null;
+  // The cursor moves to the last campaign this tick fully visited; one left
+  // mid-way (out of time) is resumed from the same place next tick.
+  let lastVisited: MarketingCampaign | null = null;
+  let pageFinished = true;
 
   for (const campaign of due) {
-    if (Date.now() >= deadline) break;
+    if (Date.now() >= deadline) {
+      pageFinished = false;
+      break;
+    }
     const recipients = await resolveCampaignRecipients(campaign);
     const policy = await getPolicy(campaign.orgId);
     const brand = await getBrand(campaign.brandId, campaign.orgId);
+    const org = await getOrg(campaign.orgId);
     const fromName = (campaign.fromName || brand?.fromName || "").trim() || null;
     const fromEmail = (campaign.fromEmail || brand?.fromEmail || "").trim() || null;
     const replyTo = (campaign.replyTo || brand?.replyTo || "").trim() || null;
+    const effectiveFrom = effectiveMarketingSender(campaign.fromEmail, brand?.fromEmail);
+    const route = resolveMarketingRoute(org, effectiveFrom, ctx.config);
     const latestAttempts = await getLatestCampaignAttempts(campaign.orgId, campaign.id);
 
     let mailboxMissing = false;
     let outOfTime = false;
+    let stopped = false;
     let dispatchedThisCampaign = 0;
     let pendingRetries = 0;
 
@@ -513,16 +623,29 @@ export async function processScheduledCampaigns(
         pendingRetries++;
         continue;
       }
+      // During a known ACS cooldown nothing is written and ACS is not called.
+      if (route === "acs" && acsCooldownActive()) {
+        pendingRetries++;
+        stopped = true;
+        break;
+      }
 
       // A long campaign spans many minutes: someone who unsubscribed from an
       // earlier email in the meantime must not get this one.
       if (!(await isStillMailable(r.id))) continue;
-      if (lastTransport === "graph") await sleep(GRAPH_SEND_INTERVAL_MS);
+      if (route === "connected" && lastTransport === "graph") await sleep(GRAPH_SEND_INTERVAL_MS);
       const attemptNumber = decision.attemptNumber;
       const attemptId = randomUUID();
       let outcome: AttemptOutcome;
       let trackingToken: string | null = null;
       try {
+        if (route === "acs") {
+          const suppression = await isRecipientSuppressed(campaign.orgId, r.email);
+          if (suppression) {
+            recordSuppressedSend(campaign.orgId, "acs", r.email);
+            throw new RecipientSuppressedError(suppression.hash, suppression.reason);
+          }
+        }
         const tracked = await trackedHtml(
           campaign.body ?? "",
           { orgId: campaign.orgId, kind: "campaign", campaignId: campaign.id, prospectId: r.id, attemptId },
@@ -530,7 +653,55 @@ export async function processScheduledCampaigns(
         );
         trackingToken = tracked.token;
         const html = tracked.html;
-        const footer = { token: r.unsubscribeToken, org: await getOrg(campaign.orgId) };
+        const footer = { token: r.unsubscribeToken, org };
+
+        if (route === "acs") {
+          await sleep(acsSendWaitMs());
+          const result = await dispatchAcs({
+            endpoint: ctx.config.endpoint!,
+            intent: {
+              kind: "campaign",
+              campaignId: campaign.id,
+              attemptId,
+              orgId: campaign.orgId,
+              prospectId: r.id,
+              recipientEmail: r.email,
+              attemptNumber,
+            },
+            senderAddress: effectiveFrom!,
+            message: {
+              to: r.email,
+              subject: campaign.subject || campaign.name,
+              html: withUnsubscribeFooter(html, footer),
+              text: (campaign.body ?? "") + unsubscribeFooterText(footer),
+              replyTo,
+              headers: listUnsubscribeHeaders(r.unsubscribeToken),
+            },
+            trackingToken,
+            deadline,
+            retry: retryPolicyFor(policy, attemptNumber),
+          });
+          lastTransport = "acs";
+          if (result.kind === "aborted") {
+            // The campaign was sent or deleted under the lock: nothing more to do here.
+            stopped = true;
+            break;
+          }
+          if (result.kind === "accepted") {
+            sent++;
+            dispatchedThisCampaign++;
+            pendingRetries++;
+          } else if (result.kind === "deferred") {
+            pendingRetries++;
+            stopped = true;
+            break;
+          } else {
+            errors++;
+          }
+          // dispatchAcs owns the row from its intent insert on.
+          continue;
+        }
+
         const result = await sendViaConnectedMailbox({
           orgId: campaign.orgId,
           to: r.email,
@@ -605,6 +776,16 @@ export async function processScheduledCampaigns(
       });
     }
 
+    if (outOfTime) {
+      console.log(
+        `[marketing-scheduled-send] campaign=${campaign.id} dispatched=${dispatchedThisCampaign} — ` +
+        `tick budget spent, resuming next tick.`,
+      );
+      pageFinished = false;
+      break;
+    }
+    lastVisited = campaign;
+
     if (mailboxMissing) {
       console.warn(
         `[marketing-scheduled-send] campaign=${campaign.id} org=${campaign.orgId}: ` +
@@ -613,15 +794,7 @@ export async function processScheduledCampaigns(
       continue;
     }
 
-    if (outOfTime) {
-      console.log(
-        `[marketing-scheduled-send] campaign=${campaign.id} dispatched=${dispatchedThisCampaign} — ` +
-        `tick budget spent, resuming next tick.`,
-      );
-      break;
-    }
-
-    if (pendingRetries > 0) {
+    if (stopped || pendingRetries > 0) {
       console.log(
         `[marketing-scheduled-send] campaign=${campaign.id} ` +
         `dispatched=${dispatchedThisCampaign} pending_retries=${pendingRetries} — ` +
@@ -629,6 +802,9 @@ export async function processScheduledCampaigns(
       );
       continue;
     }
+
+    // An ACS operation still unresolved keeps the campaign open (PLAN §4).
+    if (await hasAcceptedCampaignAttempt(campaign.id)) continue;
 
     await db
       .update(marketingCampaigns)
@@ -651,12 +827,20 @@ export async function processScheduledCampaigns(
     );
   }
 
+  if (pageFinished && due.length < CAMPAIGN_PAGE) {
+    campaignCursor = null;
+  } else if (lastVisited?.sendAt) {
+    campaignCursor = { sendAt: lastVisited.sendAt, id: lastVisited.id };
+  }
+
   return { processed, sent, errors };
 }
 
 export async function processScheduledSequenceEnrollments(
   now: Date = new Date(),
+  acsCtx?: AcsTickContext,
 ): Promise<{ processed: number; sent: number; completed: number; errors: number }> {
+  const ctx = acsCtx ?? (await loadAcsTickContext());
   // Sprint 2o.0: enrollments now reference marketing_prospects (HR4).
   // Joining marketing_prospects (not client_contacts) for the recipient
   // email + soft-delete check.
@@ -669,6 +853,8 @@ export async function processScheduledSequenceEnrollments(
       contactUnsubscribedAt: marketingProspects.unsubscribedAt,
       contactBouncedAt: marketingProspects.bouncedAt,
       contactUnsubscribeToken: marketingProspects.unsubscribeToken,
+      brandFromEmail: brands.fromEmail,
+      brandReplyTo: brands.replyTo,
     })
     .from(marketingSequenceEnrollments)
     .innerJoin(
@@ -679,11 +865,14 @@ export async function processScheduledSequenceEnrollments(
       marketingProspects,
       eq(marketingProspects.id, marketingSequenceEnrollments.prospectId),
     )
+    .leftJoin(brands, eq(brands.id, marketingSequences.brandId))
     .where(and(
       eq(marketingSequenceEnrollments.status, "active"),
       isNotNull(marketingSequenceEnrollments.nextSendAt),
       lte(marketingSequenceEnrollments.nextSendAt, now),
+      acsCooldownExclusion(marketingSequences.orgId, marketingSequences.fromEmail, ctx),
     ))
+    .orderBy(asc(marketingSequenceEnrollments.nextSendAt), asc(marketingSequenceEnrollments.id))
     .limit(200);
 
   let processed = 0;
@@ -724,18 +913,24 @@ export async function processScheduledSequenceEnrollments(
     return rows;
   }
 
+  async function removeEnrollment(enrollmentId: string): Promise<void> {
+    await db
+      .update(marketingSequenceEnrollments)
+      .set({ status: "removed", nextSendAt: null, updatedAt: now })
+      .where(eq(marketingSequenceEnrollments.id, enrollmentId));
+  }
+
+  const deadline = Date.now() + SEQUENCE_BUDGET_MS;
+
   for (const row of due) {
+    // Unreached enrollments stay due for the next tick.
+    if (Date.now() >= deadline) break;
     const enr = row.enrollment;
     const seq = row.sequence;
 
-    // Skip soft-deleted contacts: pause the enrollment so it doesn't
-    // keep showing up on every tick.
     // Soft-deleted, unsubscribed and bounced contacts leave the sequence.
     if (row.contactDeletedAt || !row.contactEmail || row.contactUnsubscribedAt || row.contactBouncedAt) {
-      await db
-        .update(marketingSequenceEnrollments)
-        .set({ status: "removed", nextSendAt: null, updatedAt: now })
-        .where(eq(marketingSequenceEnrollments.id, enr.id));
+      await removeEnrollment(enr.id);
       continue;
     }
 
@@ -760,141 +955,191 @@ export async function processScheduledSequenceEnrollments(
     const decision = decideRecipientAction(latest, now, policy.maxAttempts);
 
     if (decision.action === "skip-pending") {
-      // Defensive: align enrollment.nextSendAt with the persisted retry
-      // schedule in case a manual edit advanced it earlier than the
-      // backoff. Nothing else to do this tick.
+      // An unresolved ACS operation parks the enrollment out of the due set
+      // (resolution always overwrites it). Otherwise align nextSendAt with
+      // the persisted retry schedule in case a manual edit advanced it
+      // earlier than the backoff.
+      const nextSendAt = latest?.status === "accepted"
+        ? new Date(latest.attemptedAt.getTime() + PARK_PENDING_MS)
+        : decision.nextRetryAt;
       await db
         .update(marketingSequenceEnrollments)
-        .set({ nextSendAt: decision.nextRetryAt, updatedAt: now })
+        .set({ nextSendAt, updatedAt: now })
         .where(eq(marketingSequenceEnrollments.id, enr.id));
       continue;
     }
 
-    let dispatched = false;
-    let advance!: boolean;
-    let outcome: AttemptOutcome | null = null;
-    let attemptNumber!: number;
-
-    if (decision.action === "send") {
-      attemptNumber = decision.attemptNumber;
-      const attemptId = randomUUID();
-      let trackingToken: string | null = null;
-      try {
-        const tracked = await trackedHtml(
-          step.body ?? "",
-          { orgId: enr.orgId, kind: "sequence", campaignId: null, prospectId: enr.prospectId, attemptId },
-          `enrollment=${enr.id} step=${enr.currentStepIndex}`,
-        );
-        trackingToken = tracked.token;
-        const footer = { token: row.contactUnsubscribeToken, org: await getOrg(enr.orgId) };
-        const result = await sendViaConnectedMailbox({
-          orgId: enr.orgId,
-          to: row.contactEmail,
-          subject: step.subject || seq.name,
-          html: withUnsubscribeFooter(tracked.html, footer),
-          text: (step.body ?? "") + unsubscribeFooterText(footer),
-          replyTo: seq.replyTo || null,
-          headers: listUnsubscribeHeaders(row.contactUnsubscribeToken),
-        });
-        outcome = classifySuccess(result);
-        // The email is out: a timeline write failing here must not turn the
-        // attempt into a failure, which would send the step again next tick.
-        await storage.createActivity({
-          orgId: enr.orgId,
-          brandId: seq.brandId,
-          // Sprint 2o.0 (5b1b): sequence enrollments are keyed by prospectId.
-          prospectId: enr.prospectId,
-          type: "email_sent",
-          payload: {
-            sequence_id: seq.id,
-            sequence_name: seq.name,
-            step_id: step.id,
-            step_index: enr.currentStepIndex,
-            subject: step.subject || seq.name,
-            transport: result.transport,
-            provider_message_id: result.providerMessageId,
-            attempt_number: attemptNumber,
-          },
-          actorId: null,
-        }).catch((err) => console.error(
-          `[marketing-scheduled-send] enrollment=${enr.id} step=${enr.currentStepIndex}: email_sent activity failed:`,
-          err instanceof Error ? err.message : err,
-        ));
-        sent++;
-        dispatched = true;
-        advance = true;
-      } catch (err) {
-        if (err instanceof MissingMailboxError) {
-          console.warn(
-            `[marketing-scheduled-send] enrollment=${enr.id} org=${enr.orgId}: ` +
-            `mailbox not connected — leaving enrollment pending.`,
-          );
-          // No attempt row is written on this path and the step retries
-          // next tick: drop the unsent link row.
-          if (trackingToken) {
-            await dropTrackingLinks(trackingToken);
-          }
-          continue;
-        }
-        outcome = classifyFailure(err, attemptNumber, now, policy.maxAttempts, policy.baseMs);
-        errors++;
-        console.error(
-          `[marketing-scheduled-send] enrollment=${enr.id} step=${enr.currentStepIndex} ` +
-          `attempt=${attemptNumber} ${outcome.status} (${outcome.errorCode}): ` +
-          `${err instanceof Error ? err.message : String(err)}`,
-        );
-        // Permanent failures (max attempts hit, or non-transient code)
-        // advance the step so we don't loop forever. Transient failures
-        // re-schedule and stay on the same step.
-        advance = outcome.status === "permanent_failure";
-      }
-
-      await db.insert(emailSendAttempts).values({
-        id: attemptId,
-        orgId: enr.orgId,
-        kind: "sequence",
+    if (decision.action === "skip-done") {
+      // The latest attempt is terminal (written by an older worker that never
+      // advanced): repair through the one finalizer.
+      const result = await finalizeSequenceAttempt({
+        mode: "advance",
         sequenceId: enr.sequenceId,
         enrollmentId: enr.id,
         stepIndex: enr.currentStepIndex,
-        prospectId: enr.prospectId,
-        recipientEmail: row.contactEmail,
-        attemptNumber,
-        status: outcome!.status,
-        errorCode: outcome!.errorCode,
-        errorMessage: outcome!.errorMessage,
-        transport: outcome!.transport,
-        providerMessageId: outcome!.providerMessageId,
-        attemptedAt: now,
-        nextRetryAt: outcome!.nextRetryAt,
+        resolvedAt: now,
       });
-
-      // Task #269 / #304: when retries are exhausted (permanent_failure)
-      // for a sequence step recipient, queue the event for the per-
-      // sequence hourly digest instead of firing one email per failure.
-      // Fire-and-forget; failures are swallowed by the helper so they
-      // cannot break the worker's enrollment-advance bookkeeping below.
-      if (outcome!.status === "permanent_failure") {
-        void notifyAdminsOfSequenceStepPermanentFailure(seq, {
-          stepIndex: enr.currentStepIndex,
-          recipientEmail: row.contactEmail,
-          errorCode: outcome!.errorCode,
-          errorMessage: outcome!.errorMessage,
-          attemptCount: attemptNumber,
-        }).catch((e) =>
-          console.error(
-            `[marketing-scheduled-send] failure-notify sequence=${seq.id} step=${enr.currentStepIndex} failed:`,
-            e,
-          ),
-        );
-      }
-    } else {
-      // skip-done: latest attempt was a terminal state (success or
-      // permanent_failure). Advance the enrollment past this step so we
-      // don't get stuck retrying a recipient we've already given up on.
-      advance = true;
+      if (result.enrollment === "completed") completed++;
+      processed++;
+      continue;
     }
 
-    if (!advance && outcome && outcome.status === "failed" && outcome.nextRetryAt) {
+    // The 200-row snapshot can be minutes old.
+    if (!(await isStillMailable(enr.prospectId))) {
+      await removeEnrollment(enr.id);
+      continue;
+    }
+
+    const org = await getOrg(enr.orgId);
+    const effectiveFrom = effectiveMarketingSender(seq.fromEmail, row.brandFromEmail);
+    const route = resolveMarketingRoute(org, effectiveFrom, ctx.config);
+    // During a known ACS cooldown nothing is written and ACS is not called;
+    // the enrollment stays due.
+    if (route === "acs" && acsCooldownActive()) continue;
+
+    const attemptNumber = decision.attemptNumber;
+    const attemptId = randomUUID();
+    const attemptValues = {
+      id: attemptId,
+      orgId: enr.orgId,
+      kind: "sequence" as const,
+      sequenceId: enr.sequenceId,
+      enrollmentId: enr.id,
+      stepIndex: enr.currentStepIndex,
+      prospectId: enr.prospectId,
+      recipientEmail: row.contactEmail,
+      attemptNumber,
+      attemptedAt: now,
+    };
+    let outcome: AttemptOutcome;
+    let trackingToken: string | null = null;
+    try {
+      if (route === "acs") {
+        const suppression = await isRecipientSuppressed(enr.orgId, row.contactEmail);
+        if (suppression) {
+          recordSuppressedSend(enr.orgId, "acs", row.contactEmail);
+          throw new RecipientSuppressedError(suppression.hash, suppression.reason);
+        }
+      }
+      const tracked = await trackedHtml(
+        step.body ?? "",
+        { orgId: enr.orgId, kind: "sequence", campaignId: null, prospectId: enr.prospectId, attemptId },
+        `enrollment=${enr.id} step=${enr.currentStepIndex}`,
+      );
+      trackingToken = tracked.token;
+      const footer = { token: row.contactUnsubscribeToken, org };
+
+      if (route === "acs") {
+        await sleep(acsSendWaitMs());
+        const replyTo = stripWs(seq.replyTo || row.brandReplyTo || "") || null;
+        const result: AcsDispatchResult = await dispatchAcs({
+          endpoint: ctx.config.endpoint!,
+          intent: {
+            kind: "sequence",
+            sequenceId: enr.sequenceId,
+            enrollmentId: enr.id,
+            stepIndex: enr.currentStepIndex,
+            step: { id: step.id, subject: step.subject, body: step.body },
+            attemptId,
+            orgId: enr.orgId,
+            prospectId: enr.prospectId,
+            recipientEmail: row.contactEmail,
+            attemptNumber,
+          },
+          senderAddress: effectiveFrom!,
+          message: {
+            to: row.contactEmail,
+            subject: step.subject || seq.name,
+            html: withUnsubscribeFooter(tracked.html, footer),
+            text: (step.body ?? "") + unsubscribeFooterText(footer),
+            replyTo,
+            headers: listUnsubscribeHeaders(row.contactUnsubscribeToken),
+          },
+          trackingToken,
+          deadline,
+          retry: retryPolicyFor(policy, attemptNumber),
+        });
+        // aborted: the enrollment stays due and is rebuilt next tick.
+        // accepted: already parked by the intent; resolved by the reconciler.
+        // deferred: moved to the deferral's nextRetryAt.
+        // rejected: finalized (and advanced) by dispatchAcs.
+        if (result.kind === "accepted") {
+          sent++;
+          processed++;
+        } else if (result.kind === "rejected") {
+          errors++;
+          processed++;
+        }
+        continue;
+      }
+
+      const result = await sendViaConnectedMailbox({
+        orgId: enr.orgId,
+        to: row.contactEmail,
+        subject: step.subject || seq.name,
+        html: withUnsubscribeFooter(tracked.html, footer),
+        text: (step.body ?? "") + unsubscribeFooterText(footer),
+        replyTo: seq.replyTo || null,
+        headers: listUnsubscribeHeaders(row.contactUnsubscribeToken),
+      });
+      outcome = classifySuccess(result);
+      // The email is out: a timeline write failing here must not turn the
+      // attempt into a failure, which would send the step again next tick.
+      await storage.createActivity({
+        orgId: enr.orgId,
+        brandId: seq.brandId,
+        // Sprint 2o.0 (5b1b): sequence enrollments are keyed by prospectId.
+        prospectId: enr.prospectId,
+        type: "email_sent",
+        payload: {
+          sequence_id: seq.id,
+          sequence_name: seq.name,
+          step_id: step.id,
+          step_index: enr.currentStepIndex,
+          subject: step.subject || seq.name,
+          transport: result.transport,
+          provider_message_id: result.providerMessageId,
+          attempt_number: attemptNumber,
+        },
+        actorId: null,
+      }).catch((err) => console.error(
+        `[marketing-scheduled-send] enrollment=${enr.id} step=${enr.currentStepIndex}: email_sent activity failed:`,
+        err instanceof Error ? err.message : err,
+      ));
+      sent++;
+    } catch (err) {
+      if (err instanceof MissingMailboxError) {
+        console.warn(
+          `[marketing-scheduled-send] enrollment=${enr.id} org=${enr.orgId}: ` +
+          `mailbox not connected — leaving enrollment pending.`,
+        );
+        // No attempt row is written on this path and the step retries
+        // next tick: drop the unsent link row.
+        if (trackingToken) {
+          await dropTrackingLinks(trackingToken);
+        }
+        continue;
+      }
+      outcome = classifyFailure(err, attemptNumber, now, policy.maxAttempts, policy.baseMs);
+      errors++;
+      console.error(
+        `[marketing-scheduled-send] enrollment=${enr.id} step=${enr.currentStepIndex} ` +
+        `attempt=${attemptNumber} ${outcome.status} (${outcome.errorCode}): ` +
+        `${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    if (outcome.status === "failed") {
+      // Transient: re-schedule and stay on the same step.
+      await db.insert(emailSendAttempts).values({
+        ...attemptValues,
+        status: outcome.status,
+        errorCode: outcome.errorCode,
+        errorMessage: outcome.errorMessage,
+        transport: outcome.transport,
+        providerMessageId: outcome.providerMessageId,
+        nextRetryAt: outcome.nextRetryAt,
+      });
       await db
         .update(marketingSequenceEnrollments)
         .set({ nextSendAt: outcome.nextRetryAt, updatedAt: now })
@@ -903,33 +1148,39 @@ export async function processScheduledSequenceEnrollments(
       continue;
     }
 
-    const next = computeNextSendAt(steps, enr.currentStepIndex, now);
-    if (next.done) {
-      await db
-        .update(marketingSequenceEnrollments)
-        .set({
-          currentStepIndex: enr.currentStepIndex + 1,
-          status: "completed",
-          nextSendAt: null,
-          updatedAt: now,
-        })
-        .where(eq(marketingSequenceEnrollments.id, enr.id));
-      completed++;
-    } else {
-      await db
-        .update(marketingSequenceEnrollments)
-        .set({
-          currentStepIndex: next.nextIndex,
-          nextSendAt: next.nextSendAt,
-          updatedAt: now,
-        })
-        .where(eq(marketingSequenceEnrollments.id, enr.id));
-    }
+    // success / permanent_failure: the attempt row and the enrollment's
+    // advance commit together; a permanent failure queues the admin digest
+    // (Task #269 / #304) from the finalizer.
+    const result = await finalizeSequenceAttempt({
+      mode: "insert",
+      values: {
+        ...attemptValues,
+        transport: outcome.transport,
+        providerMessageId: outcome.providerMessageId,
+      },
+      resolvedAt: now,
+      status: outcome.status as "success" | "permanent_failure",
+      errorCode: outcome.errorCode,
+      errorMessage: outcome.errorMessage,
+    });
+    if (result.enrollment === "completed") completed++;
     processed++;
-    void dispatched;
   }
 
   return { processed, sent, completed, errors };
+}
+
+/** Reconciler retry policy: the attempt's org policy, cached for the tick. */
+function makeRetryFor(): (attempt: EmailSendAttempt) => Promise<RetryPolicyForAttempt> {
+  const cache = new Map<string, OrgRetryPolicy>();
+  return async (attempt) => {
+    let policy = cache.get(attempt.orgId);
+    if (!policy) {
+      policy = resolveOrgRetryPolicy((await storage.getOrg(attempt.orgId)) ?? null);
+      cache.set(attempt.orgId, policy);
+    }
+    return retryPolicyFor(policy, attempt.attemptNumber);
+  };
 }
 
 export async function runScheduledSendTick(): Promise<ScheduledSendStats | null> {
@@ -953,8 +1204,17 @@ export async function runScheduledSendTick(): Promise<ScheduledSendStats | null>
     if (!acquired) return null;
     const stats = emptyStats();
     try {
+      const ctx = await loadAcsTickContext();
+      // Accepted ACS operations are resolved first, whatever the routing
+      // allowlists say (PLAN §4).
+      if (ctx.config.endpoint) {
+        checkAcsCooldownAlert(ctx.orgIds);
+        await reconcileAcsOperations(ctx.config.endpoint, Date.now() + RECONCILE_BUDGET_MS, makeRetryFor())
+          .catch((e) => console.error("[marketing-scheduled-send] acs reconcile failed:", e));
+      }
+
       const now = new Date();
-      const c = await processScheduledCampaigns(now).catch((e) => {
+      const c = await processScheduledCampaigns(now, ctx).catch((e) => {
         console.error("[marketing-scheduled-send] campaigns failed:", e);
         return { processed: 0, sent: 0, errors: 1 };
       });
@@ -962,7 +1222,7 @@ export async function runScheduledSendTick(): Promise<ScheduledSendStats | null>
       stats.campaignEmailsSent = c.sent;
       stats.campaignErrors = c.errors;
 
-      const e = await processScheduledSequenceEnrollments(now).catch((err) => {
+      const e = await processScheduledSequenceEnrollments(new Date(), ctx).catch((err) => {
         console.error("[marketing-scheduled-send] enrollments failed:", err);
         return { processed: 0, sent: 0, completed: 0, errors: 1 };
       });
@@ -993,6 +1253,14 @@ let interval: ReturnType<typeof setInterval> | null = null;
 
 export function startMarketingScheduledSendProcessor(): void {
   if (interval) return;
+  if (readAcsRoutingConfig().endpoint) {
+    // A token that cannot be refreshed is an ACS outage: tell each ACS org.
+    startAcsTokenRefresher(() => {
+      void loadAcsTickContext().then((ctx) =>
+        ctx.orgIds.forEach((id) => void notifyMarketingTransportDegraded(id, "ACS_AUTH")),
+      ).catch(() => {});
+    });
+  }
   // Fire once on boot so a campaign queued during the previous downtime
   // dispatches without waiting for the first tick.
   runScheduledSendTick().catch((e) =>
@@ -1015,6 +1283,7 @@ export function stopMarketingScheduledSendProcessor(): void {
     clearInterval(interval);
     interval = null;
   }
+  stopAcsTokenRefresher();
 }
 
 // Re-export for convenience in tests / admin views.

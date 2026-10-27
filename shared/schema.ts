@@ -4128,7 +4128,11 @@ export const emailSendAttemptKindEnum = pgEnum(
 );
 export const emailSendAttemptStatusEnum = pgEnum(
   "email_send_attempt_status",
-  ["success", "failed", "permanent_failure"],
+  // "accepted" and "deferred" are the ACS marketing transport's states (see
+  // server/email/acs-transport.ts): accepted = submitted, fate unknown, only
+  // the reconciler moves it; deferred = provider refused for its own reasons
+  // (throttle/auth), never sent, does not count toward maxAttempts.
+  ["success", "failed", "permanent_failure", "accepted", "deferred"],
 );
 
 export const emailSendAttempts = pgTable(
@@ -4165,6 +4169,8 @@ export const emailSendAttempts = pgTable(
     providerMessageId: text("provider_message_id"),
     attemptedAt: timestamp("attempted_at").defaultNow().notNull(),
     nextRetryAt: timestamp("next_retry_at"),
+    // ACS operation polls made for an `accepted` row; drives the poll backoff.
+    pollCount: integer("poll_count").notNull().default(0),
   },
   (table) => ({
     enrollmentFk: foreignKey({

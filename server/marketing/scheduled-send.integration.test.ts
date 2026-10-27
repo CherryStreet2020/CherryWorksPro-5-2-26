@@ -21,6 +21,7 @@ process.env.MARKETING_EMAIL_TRACKING_ENABLED = "true";
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { randomUUID } from "crypto";
+import { acquireSendLoopSuiteLock } from "../../tests/helpers/send-loop-lock";
 import { and, eq, inArray } from "drizzle-orm";
 
 const sendMock = vi.hoisted(() => vi.fn());
@@ -188,7 +189,10 @@ async function makeEnrollment(opts: {
   return id;
 }
 
+let releaseSuiteLock: (() => Promise<void>) | null = null;
+
 beforeAll(async () => {
+  releaseSuiteLock = await acquireSendLoopSuiteLock();
   await db.insert(orgs).values({
     id: ORG_ID,
     name: `t236 ${RUN}`,
@@ -200,55 +204,59 @@ beforeAll(async () => {
     name: `t236 Brand ${RUN}`,
     slug: `t236-brand-${RUN}`,
   });
-});
+}, 180_000);
 
 afterAll(async () => {
-  if (createdEnrollmentIds.length) {
-    await db
-      .delete(marketingSequenceEnrollments)
-      .where(inArray(marketingSequenceEnrollments.id, createdEnrollmentIds));
+  try {
+    if (createdEnrollmentIds.length) {
+      await db
+        .delete(marketingSequenceEnrollments)
+        .where(inArray(marketingSequenceEnrollments.id, createdEnrollmentIds));
+    }
+    if (createdStepIds.length) {
+      await db
+        .delete(marketingSequenceSteps)
+        .where(inArray(marketingSequenceSteps.id, createdStepIds));
+    }
+    if (createdSequenceIds.length) {
+      // replaceSequenceSteps writes rows the createdStepIds list never sees.
+      await db
+        .delete(marketingSequenceSteps)
+        .where(inArray(marketingSequenceSteps.sequenceId, createdSequenceIds));
+      await db
+        .delete(marketingSequences)
+        .where(inArray(marketingSequences.id, createdSequenceIds));
+    }
+    if (createdCampaignIds.length) {
+      await db
+        .delete(marketingCampaigns)
+        .where(inArray(marketingCampaigns.id, createdCampaignIds));
+    }
+    if (createdContactIds.length) {
+      await db
+        .delete(contactActivities)
+        .where(inArray(contactActivities.prospectId, createdContactIds));
+      await db
+        .delete(marketingProspects)
+        .where(inArray(marketingProspects.id, createdContactIds));
+    }
+    if (createdUserIds.length) {
+      await db.delete(users).where(inArray(users.id, createdUserIds));
+    }
+    // Tracking rows outlive their campaign and prospect, and block the org delete.
+    await db.delete(emailTrackingLinks).where(eq(emailTrackingLinks.orgId, ORG_ID));
+    await db.delete(brands).where(inArray(brands.id, [BRAND_ID, TRACK_BRAND_ID]));
+    // Defensive: a parallel test suite or a server-side seeder may have
+    // populated rows that reference our org while the test was in flight
+    // (e.g. seedExpenseCategories / seedOrgEntitlements iterate every org
+    // in the DB). Clear them so the FK delete below doesn't trip.
+    await db.delete(expenseCategories).where(eq(expenseCategories.orgId, ORG_ID));
+    await db.delete(orgEntitlements).where(eq(orgEntitlements.orgId, ORG_ID));
+    await db.delete(orgs).where(eq(orgs.id, ORG_ID));
+  } finally {
+    await releaseSuiteLock?.();
   }
-  if (createdStepIds.length) {
-    await db
-      .delete(marketingSequenceSteps)
-      .where(inArray(marketingSequenceSteps.id, createdStepIds));
-  }
-  if (createdSequenceIds.length) {
-    // replaceSequenceSteps writes rows the createdStepIds list never sees.
-    await db
-      .delete(marketingSequenceSteps)
-      .where(inArray(marketingSequenceSteps.sequenceId, createdSequenceIds));
-    await db
-      .delete(marketingSequences)
-      .where(inArray(marketingSequences.id, createdSequenceIds));
-  }
-  if (createdCampaignIds.length) {
-    await db
-      .delete(marketingCampaigns)
-      .where(inArray(marketingCampaigns.id, createdCampaignIds));
-  }
-  if (createdContactIds.length) {
-    await db
-      .delete(contactActivities)
-      .where(inArray(contactActivities.prospectId, createdContactIds));
-    await db
-      .delete(marketingProspects)
-      .where(inArray(marketingProspects.id, createdContactIds));
-  }
-  if (createdUserIds.length) {
-    await db.delete(users).where(inArray(users.id, createdUserIds));
-  }
-  // Tracking rows outlive their campaign and prospect, and block the org delete.
-  await db.delete(emailTrackingLinks).where(eq(emailTrackingLinks.orgId, ORG_ID));
-  await db.delete(brands).where(inArray(brands.id, [BRAND_ID, TRACK_BRAND_ID]));
-  // Defensive: a parallel test suite or a server-side seeder may have
-  // populated rows that reference our org while the test was in flight
-  // (e.g. seedExpenseCategories / seedOrgEntitlements iterate every org
-  // in the DB). Clear them so the FK delete below doesn't trip.
-  await db.delete(expenseCategories).where(eq(expenseCategories.orgId, ORG_ID));
-  await db.delete(orgEntitlements).where(eq(orgEntitlements.orgId, ORG_ID));
-  await db.delete(orgs).where(eq(orgs.id, ORG_ID));
-});
+}, 180_000);
 
 beforeEach(() => {
   sendMock.mockReset();

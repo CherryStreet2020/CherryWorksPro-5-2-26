@@ -10,6 +10,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Plus, Mail, Pencil, Trash2, AlertTriangle, Send } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { pendingDeliveryMessage } from "@/lib/pending-delivery";
 import { useToast } from "@/hooks/use-toast";
 import { useBrand } from "@/hooks/useBrand";
 import { isMarketingOsEnabled } from "@/lib/featureFlags";
@@ -945,7 +946,7 @@ function DeleteCampaignDialog({
       toast({ title: "Campaign deleted" });
       onClose();
     } catch (e: unknown) {
-      toast({ title: "Failed to delete campaign", description: e instanceof Error ? e.message : "", variant: "destructive" });
+      toast({ title: "Failed to delete campaign", description: pendingDeliveryMessage(e), variant: "destructive" });
     } finally {
       setBusy(false);
     }

@@ -1,4 +1,5 @@
 import { eq, and, or, sql, desc, asc, ne, gte, lte, lt, inArray, ilike, isNull, isNotNull, type SQL } from "drizzle-orm";
+import { PendingDeliveryError } from "./marketing/pending-delivery";
 import { db, pool } from "./db";
 import { extractDomainFromEmail, isFreeMailDomain, normalizeDomain } from "./lib/domains";
 import {
@@ -433,6 +434,17 @@ export type CreateStripePaymentResult =
   | { status: "OK"; payment: Payment }
   | { status: "OVERPAYMENT"; currentPaid: number; invoiceTotal: number; attempted: number }
   | { status: "INVOICE_NOT_FOUND" };
+
+type StorageTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Throws `PendingDeliveryError` when any `accepted` attempt matches `scope`. */
+async function assertNoPendingDelivery(tx: StorageTx, scope: SQL): Promise<void> {
+  const [{ n }] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(emailSendAttempts)
+    .where(and(scope, eq(emailSendAttempts.status, "accepted")));
+  if (n > 0) throw new PendingDeliveryError(n);
+}
 
 export class DatabaseStorage {
   async isDateInClosedPeriod(orgId: string, date: string): Promise<boolean> {
@@ -6858,11 +6870,22 @@ export class DatabaseStorage {
   }
 
   async deleteCampaign(id: string, orgId: string): Promise<boolean> {
-    const result = await db
-      .delete(marketingCampaigns)
-      .where(and(eq(marketingCampaigns.id, id), eq(marketingCampaigns.orgId, orgId)))
-      .returning({ id: marketingCampaigns.id });
-    return result.length > 0;
+    return db.transaction(async (tx) => {
+      // Lock first: the worker's ACS intent insert holds the campaign FOR
+      // SHARE, so this either sees its row or runs before it.
+      const [parent] = await tx
+        .select({ id: marketingCampaigns.id })
+        .from(marketingCampaigns)
+        .where(and(eq(marketingCampaigns.id, id), eq(marketingCampaigns.orgId, orgId)))
+        .for("update");
+      if (!parent) return false;
+      await assertNoPendingDelivery(tx, eq(emailSendAttempts.campaignId, id));
+      const result = await tx
+        .delete(marketingCampaigns)
+        .where(eq(marketingCampaigns.id, id))
+        .returning({ id: marketingCampaigns.id });
+      return result.length > 0;
+    });
   }
 
   // ── Sprint 2n: Marketing sequences + steps ───────────────────────────
@@ -6901,11 +6924,20 @@ export class DatabaseStorage {
   }
 
   async deleteSequence(id: string, orgId: string): Promise<boolean> {
-    const result = await db
-      .delete(marketingSequences)
-      .where(and(eq(marketingSequences.id, id), eq(marketingSequences.orgId, orgId)))
-      .returning({ id: marketingSequences.id });
-    return result.length > 0;
+    return db.transaction(async (tx) => {
+      const [parent] = await tx
+        .select({ id: marketingSequences.id })
+        .from(marketingSequences)
+        .where(and(eq(marketingSequences.id, id), eq(marketingSequences.orgId, orgId)))
+        .for("update");
+      if (!parent) return false;
+      await assertNoPendingDelivery(tx, eq(emailSendAttempts.sequenceId, id));
+      const result = await tx
+        .delete(marketingSequences)
+        .where(eq(marketingSequences.id, id))
+        .returning({ id: marketingSequences.id });
+      return result.length > 0;
+    });
   }
 
   async listSequenceSteps(sequenceId: string, orgId: string): Promise<MarketingSequenceStep[]> {
@@ -6925,6 +6957,15 @@ export class DatabaseStorage {
     steps: Array<Omit<InsertMarketingSequenceStep, "sequenceId" | "orgId" | "stepOrder">>,
   ): Promise<MarketingSequenceStep[]> {
     return db.transaction(async (tx) => {
+      // An `accepted` attempt carries only its stepIndex: replacing the steps
+      // under it would let its later success advance past a different message.
+      // Any enrollment status counts (PLAN §4b).
+      await tx
+        .select({ id: marketingSequences.id })
+        .from(marketingSequences)
+        .where(and(eq(marketingSequences.id, sequenceId), eq(marketingSequences.orgId, orgId)))
+        .for("update");
+      await assertNoPendingDelivery(tx, eq(emailSendAttempts.sequenceId, sequenceId));
       await tx
         .delete(marketingSequenceSteps)
         .where(and(
@@ -7078,16 +7119,50 @@ export class DatabaseStorage {
     sequenceId: string,
     status: MarketingSequenceEnrollmentStatus,
   ): Promise<MarketingSequenceEnrollment | undefined> {
-    const [row] = await db
-      .update(marketingSequenceEnrollments)
-      .set({ status, updatedAt: new Date() })
-      .where(and(
-        eq(marketingSequenceEnrollments.id, enrollmentId),
-        eq(marketingSequenceEnrollments.orgId, orgId),
-        eq(marketingSequenceEnrollments.sequenceId, sequenceId),
-      ))
-      .returning();
-    return row;
+    return db.transaction(async (tx) => {
+      // Lock order everywhere: sequence, then enrollment.
+      await tx
+        .select({ id: marketingSequences.id })
+        .from(marketingSequences)
+        .where(and(eq(marketingSequences.id, sequenceId), eq(marketingSequences.orgId, orgId)))
+        .for("share");
+      const [enrollment] = await tx
+        .select()
+        .from(marketingSequenceEnrollments)
+        .where(and(
+          eq(marketingSequenceEnrollments.id, enrollmentId),
+          eq(marketingSequenceEnrollments.orgId, orgId),
+          eq(marketingSequenceEnrollments.sequenceId, sequenceId),
+        ))
+        .for("update");
+      if (!enrollment) return undefined;
+
+      const now = new Date();
+      let nextStatus = status;
+      let nextSendAt = enrollment.nextSendAt;
+      if (status === "active") {
+        // Reactivation schedules (PLAN §4): never leave an active enrollment
+        // with a step still to send and no nextSendAt.
+        const steps = await tx
+          .select({ delayDays: marketingSequenceSteps.delayDays })
+          .from(marketingSequenceSteps)
+          .where(eq(marketingSequenceSteps.sequenceId, sequenceId))
+          .orderBy(asc(marketingSequenceSteps.stepOrder));
+        if (enrollment.currentStepIndex >= steps.length) {
+          nextStatus = "completed";
+          nextSendAt = null;
+        } else if (!nextSendAt) {
+          const delayDays = Math.max(0, steps[enrollment.currentStepIndex].delayDays ?? 0);
+          nextSendAt = new Date(now.getTime() + delayDays * 24 * 60 * 60 * 1000);
+        }
+      }
+      const [row] = await tx
+        .update(marketingSequenceEnrollments)
+        .set({ status: nextStatus, nextSendAt, updatedAt: now })
+        .where(eq(marketingSequenceEnrollments.id, enrollment.id))
+        .returning();
+      return row;
+    });
   }
 
   async deleteSequenceEnrollment(
@@ -7095,14 +7170,28 @@ export class DatabaseStorage {
     orgId: string,
     sequenceId: string,
   ): Promise<boolean> {
-    const result = await db
-      .delete(marketingSequenceEnrollments)
-      .where(and(
-        eq(marketingSequenceEnrollments.id, enrollmentId),
-        eq(marketingSequenceEnrollments.orgId, orgId),
-        eq(marketingSequenceEnrollments.sequenceId, sequenceId),
-      ))
-      .returning({ id: marketingSequenceEnrollments.id });
+    const result = await db.transaction(async (tx) => {
+      await tx
+        .select({ id: marketingSequences.id })
+        .from(marketingSequences)
+        .where(and(eq(marketingSequences.id, sequenceId), eq(marketingSequences.orgId, orgId)))
+        .for("share");
+      const [parent] = await tx
+        .select({ id: marketingSequenceEnrollments.id })
+        .from(marketingSequenceEnrollments)
+        .where(and(
+          eq(marketingSequenceEnrollments.id, enrollmentId),
+          eq(marketingSequenceEnrollments.orgId, orgId),
+          eq(marketingSequenceEnrollments.sequenceId, sequenceId),
+        ))
+        .for("update");
+      if (!parent) return [];
+      await assertNoPendingDelivery(tx, eq(emailSendAttempts.enrollmentId, enrollmentId));
+      return tx
+        .delete(marketingSequenceEnrollments)
+        .where(eq(marketingSequenceEnrollments.id, enrollmentId))
+        .returning({ id: marketingSequenceEnrollments.id });
+    });
     return result.length > 0;
   }
 
