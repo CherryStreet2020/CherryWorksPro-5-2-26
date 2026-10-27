@@ -1,8 +1,13 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 
 import { TEST_BASE as BASE } from "../helpers/base";
 let cookie = "";
 let csrfToken = "";
+// Other test files create and delete clients in the same org while this one
+// runs, and /api/clients lists newest first, so clients[0] was often someone
+// else's temporary client, gone by the time generate looked it up ("Client not
+// found in your organization"). This file uses a client it owns instead.
+let clientId = "";
 
 async function login() {
   const res = await fetch(`${BASE}/api/auth/login`, {
@@ -33,6 +38,17 @@ async function authFetch(url: string, init?: RequestInit) {
 describe("Invoice generate filters", () => {
   beforeAll(async () => {
     await login();
+    const res = await authFetch("/api/clients", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Invoice Filters Test Client" }),
+    });
+    expect(res.status).toBe(200);
+    clientId = (await res.json()).id;
+  });
+
+  afterAll(async () => {
+    if (clientId) await authFetch(`/api/clients/${clientId}`, { method: "DELETE" });
   });
 
   it("unbilled preview includes byTeamMember array", async () => {
@@ -41,7 +57,7 @@ describe("Invoice generate filters", () => {
     if (!clients.length) return;
 
     let found = false;
-    for (const client of clients) {
+    for (const client of [...clients].reverse()) {
       const res = await authFetch(`/api/time-entries/unbilled-preview?clientId=${client.id}`);
       expect(res.ok).toBe(true);
       const data = await res.json();
@@ -60,10 +76,6 @@ describe("Invoice generate filters", () => {
   });
 
   it("unbilled preview entries include teamMemberId", async () => {
-    const clientsRes = await authFetch("/api/clients");
-    const clients = await clientsRes.json();
-    if (!clients.length) return;
-    const clientId = clients[0].id;
     const res = await authFetch(`/api/time-entries/unbilled-preview?clientId=${clientId}`);
     const data = await res.json();
     if (data.entries.length > 0) {
@@ -73,10 +85,6 @@ describe("Invoice generate filters", () => {
   });
 
   it("unbilled preview accepts dateFrom/dateTo filters", async () => {
-    const clientsRes = await authFetch("/api/clients");
-    const clients = await clientsRes.json();
-    if (!clients.length) return;
-    const clientId = clients[0].id;
     const allRes = await authFetch(`/api/time-entries/unbilled-preview?clientId=${clientId}`);
     const allData = await allRes.json();
 
@@ -86,20 +94,12 @@ describe("Invoice generate filters", () => {
   });
 
   it("unbilled preview accepts teamMemberIds filter", async () => {
-    const clientsRes = await authFetch("/api/clients");
-    const clients = await clientsRes.json();
-    if (!clients.length) return;
-    const clientId = clients[0].id;
     const res = await authFetch(`/api/time-entries/unbilled-preview?clientId=${clientId}&teamMemberIds=nonexistent-id`);
     const data = await res.json();
     expect(data.entries.length).toBe(0);
   });
 
   it("generate endpoint accepts teamMemberIds filter", async () => {
-    const clientsRes = await authFetch("/api/clients");
-    const clients = await clientsRes.json();
-    if (!clients.length) return;
-    const clientId = clients[0].id;
     const res = await authFetch("/api/invoices/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json", Cookie: cookie },
@@ -114,10 +114,6 @@ describe("Invoice generate filters", () => {
   });
 
   it("generate endpoint accepts dateFrom/dateTo filter", async () => {
-    const clientsRes = await authFetch("/api/clients");
-    const clients = await clientsRes.json();
-    if (!clients.length) return;
-    const clientId = clients[0].id;
     const res = await authFetch("/api/invoices/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json", Cookie: cookie },
@@ -133,10 +129,6 @@ describe("Invoice generate filters", () => {
   });
 
   it("generate endpoint accepts grouping parameter", async () => {
-    const clientsRes = await authFetch("/api/clients");
-    const clients = await clientsRes.json();
-    if (!clients.length) return;
-    const clientId = clients[0].id;
     const res = await authFetch("/api/invoices/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json", Cookie: cookie },
