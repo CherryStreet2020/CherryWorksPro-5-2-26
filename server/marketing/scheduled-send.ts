@@ -65,6 +65,20 @@ import {
 
 const ADVISORY_LOCK_KEY = 100007;
 const TICK_MS = Number(process.env.MARKETING_SCHEDULED_SEND_TICK_MS) || 60_000;
+// Exchange Online accepts 30 messages a minute per mailbox; pace Graph sends
+// just under that so a campaign does not spend its time in 429 back-off.
+const GRAPH_SEND_INTERVAL_MS = 2_100;
+// A tick stops starting new campaign sends after this long and leaves the
+// campaign pending; the next tick resumes it (sent recipients are skipped).
+// Keeps a large campaign from holding the advisory lock, and sequences
+// behind it, for half an hour.
+const TICK_SEND_BUDGET_MS = 50_000;
+
+function sleep(ms: number): Promise<void> {
+  // Tests inject an instant sleep; production waits for real.
+  const override = (global as any).__emailTestSleep as ((ms: number) => Promise<void>) | undefined;
+  return override ? override(ms) : new Promise((r) => setTimeout(r, ms));
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -363,6 +377,20 @@ async function getLatestSequenceAttempt(
   return row ?? null;
 }
 
+async function isStillMailable(prospectId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: marketingProspects.id })
+    .from(marketingProspects)
+    .where(and(
+      eq(marketingProspects.id, prospectId),
+      isNull(marketingProspects.deletedAt),
+      isNull(marketingProspects.unsubscribedAt),
+      isNull(marketingProspects.bouncedAt),
+    ))
+    .limit(1);
+  return !!row;
+}
+
 export async function processScheduledCampaigns(
   now: Date = new Date(),
 ): Promise<{ processed: number; sent: number; errors: number }> {
@@ -396,16 +424,34 @@ export async function processScheduledCampaigns(
     return policy;
   }
 
+  const brandCache = new Map<string, Awaited<ReturnType<typeof storage.getBrand>>>();
+  async function getBrand(brandId: string, orgId: string) {
+    if (!brandCache.has(brandId)) brandCache.set(brandId, await storage.getBrand(brandId, orgId));
+    return brandCache.get(brandId);
+  }
+
+  const deadline = Date.now() + TICK_SEND_BUDGET_MS;
+  let lastTransport: string | null = null;
+
   for (const campaign of due) {
+    if (Date.now() >= deadline) break;
     const recipients = await resolveCampaignRecipients(campaign);
     const policy = await getPolicy(campaign.orgId);
+    const brand = await getBrand(campaign.brandId, campaign.orgId);
+    const fromName = (campaign.fromName || brand?.fromName || "").trim() || null;
+    const replyTo = (campaign.replyTo || brand?.replyTo || "").trim() || null;
 
     let mailboxMissing = false;
+    let outOfTime = false;
     let dispatchedThisCampaign = 0;
     let pendingRetries = 0;
 
     for (const r of recipients) {
       if (!r.email) continue;
+      if (Date.now() >= deadline) {
+        outOfTime = true;
+        break;
+      }
       const latest = await getLatestCampaignAttempt(
         campaign.orgId,
         campaign.id,
@@ -418,6 +464,10 @@ export async function processScheduledCampaigns(
         continue;
       }
 
+      // A long campaign spans many minutes: someone who unsubscribed from an
+      // earlier email in the meantime must not get this one.
+      if (!(await isStillMailable(r.id))) continue;
+      if (lastTransport === "graph") await sleep(GRAPH_SEND_INTERVAL_MS);
       const attemptNumber = decision.attemptNumber;
       let outcome: AttemptOutcome;
       try {
@@ -428,9 +478,11 @@ export async function processScheduledCampaigns(
           subject: campaign.subject || campaign.name,
           html: withUnsubscribeFooter(campaign.body ?? "", footer),
           text: (campaign.body ?? "") + unsubscribeFooterText(footer),
-          replyTo: campaign.replyTo || null,
+          replyTo,
+          fromName,
           headers: listUnsubscribeHeaders(r.unsubscribeToken),
         });
+        lastTransport = result.transport;
         outcome = classifySuccess(result);
         await storage.createActivity({
           orgId: campaign.orgId,
@@ -488,6 +540,14 @@ export async function processScheduledCampaigns(
         `mailbox not connected — leaving campaign pending.`,
       );
       continue;
+    }
+
+    if (outOfTime) {
+      console.log(
+        `[marketing-scheduled-send] campaign=${campaign.id} dispatched=${dispatchedThisCampaign} — ` +
+        `tick budget spent, resuming next tick.`,
+      );
+      break;
     }
 
     if (pendingRetries > 0) {

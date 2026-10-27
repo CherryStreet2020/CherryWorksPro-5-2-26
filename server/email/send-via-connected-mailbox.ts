@@ -31,6 +31,8 @@ export interface SendViaConnectedMailboxInput {
   cc?: string[];
   replyTo?: string | null;
   headers?: Record<string, string>;
+  /** Display name; defaults to the workspace name. */
+  fromName?: string | null;
 }
 
 export interface SendViaConnectedMailboxResult {
@@ -83,7 +85,7 @@ export async function sendViaConnectedMailbox(
     replyTo: input.replyTo ?? undefined,
     headers: input.headers,
     fromEmail: senderAddress ?? undefined,
-    fromName: orgRecord.name ?? undefined,
+    fromName: input.fromName || orgRecord.name || undefined,
   };
 
   const result = await transport.send(message);

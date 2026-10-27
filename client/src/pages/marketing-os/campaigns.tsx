@@ -40,6 +40,11 @@ function fmt(d: string | Date | null | undefined): string {
   return t.toLocaleString();
 }
 
+/** Due and not yet stamped sent: the worker is delivering it. */
+function isSending(c: MarketingCampaign): boolean {
+  return !c.sentAt && !!c.sendAt && new Date(c.sendAt).getTime() <= Date.now();
+}
+
 function toDatetimeLocal(d: string | Date | null | undefined): string {
   if (!d) return "";
   const t = typeof d === "string" ? new Date(d) : d;
@@ -88,6 +93,10 @@ export default function CampaignsPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     },
+    // A campaign is delivered by the background worker; keep polling while
+    // one is mid-send so sent_at shows up without a reload.
+    refetchInterval: (query) =>
+      (query.state.data ?? []).some(isSending) ? 15_000 : false,
   });
 
   // Task #234 — Saved segments for the audience picker. Loaded for the
@@ -321,7 +330,16 @@ export default function CampaignsPage() {
                       <td className="px-4 py-2" style={{ color: "var(--lux-text-muted)" }}>{fmt(c.updatedAt)}</td>
                       <td className="px-4 py-2 text-right">
                         <div className="inline-flex gap-1">
-                          {!c.sentAt && (
+                          {isSending(c) && (
+                            <span
+                              className="self-center px-2 text-xs"
+                              style={{ color: "var(--lux-text-muted)" }}
+                              data-testid={`text-campaign-sending-${c.id}`}
+                            >
+                              Sending…
+                            </span>
+                          )}
+                          {!c.sentAt && !isSending(c) && (
                             <Button
                               size="sm"
                               variant="ghost"
