@@ -80,7 +80,7 @@ import {
   type AcsDispatchResult,
   type RetryPolicyForAttempt,
 } from "./acs-send";
-import { finalizeSequenceAttempt } from "./send-finalize";
+import { finalizeSequenceAttempt, takeResolvedCampaignIds } from "./send-finalize";
 import { notifyMarketingTransportDegraded } from "../notifications/marketing-failures";
 import {
   listUnsubscribeHeaders,
@@ -536,6 +536,8 @@ export async function processScheduledCampaigns(
 ): Promise<{ processed: number; sent: number; errors: number }> {
   const ctx = acsCtx ?? (await loadAcsTickContext());
   const cursor = campaignCursor;
+  const cooldownExclusion = acsCooldownExclusion(marketingCampaigns.orgId, marketingCampaigns.fromEmail, ctx);
+  const resolvedIds = takeResolvedCampaignIds();
   const page = await db
     .select({ campaign: marketingCampaigns })
     .from(marketingCampaigns)
@@ -550,11 +552,27 @@ export async function processScheduledCampaigns(
             and(eq(marketingCampaigns.sendAt, cursor.sendAt), gt(marketingCampaigns.id, cursor.id)),
           )
         : undefined,
-      acsCooldownExclusion(marketingCampaigns.orgId, marketingCampaigns.fromEmail, ctx),
+      cooldownExclusion,
     ))
     .orderBy(asc(marketingCampaigns.sendAt), asc(marketingCampaigns.id))
     .limit(CAMPAIGN_PAGE);
-  const due = page.map((r) => r.campaign);
+  // A campaign the cooldown hides whose operation just resolved is checked
+  // anyway, ahead of the page: nothing is sent during the cooldown (the
+  // recipient loop stops first), but one with nothing left to send is marked
+  // sent now. These do not move the cursor.
+  const pageIds = new Set(page.map((r) => r.campaign.id));
+  const extraIds = cooldownExclusion ? resolvedIds.filter((id) => !pageIds.has(id)) : [];
+  const extras = extraIds.length === 0 ? [] : await db
+    .select()
+    .from(marketingCampaigns)
+    .where(and(
+      inArray(marketingCampaigns.id, extraIds),
+      isNull(marketingCampaigns.sentAt),
+      isNotNull(marketingCampaigns.sendAt),
+      lte(marketingCampaigns.sendAt, now),
+    ));
+  const extraSet = new Set(extras.map((c) => c.id));
+  const due = [...extras, ...page.map((r) => r.campaign)];
 
   let processed = 0;
   let sent = 0;
@@ -784,7 +802,7 @@ export async function processScheduledCampaigns(
       pageFinished = false;
       break;
     }
-    lastVisited = campaign;
+    if (!extraSet.has(campaign.id)) lastVisited = campaign;
 
     if (mailboxMissing) {
       console.warn(
@@ -827,7 +845,7 @@ export async function processScheduledCampaigns(
     );
   }
 
-  if (pageFinished && due.length < CAMPAIGN_PAGE) {
+  if (pageFinished && page.length < CAMPAIGN_PAGE) {
     campaignCursor = null;
   } else if (lastVisited?.sendAt) {
     campaignCursor = { sendAt: lastVisited.sendAt, id: lastVisited.id };

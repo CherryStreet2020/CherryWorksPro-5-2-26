@@ -261,6 +261,19 @@ async function sequenceSideEffects(
  * visit. On `success`, writes the `email_sent` activity after the update.
  * Returns false when the row was no longer `accepted`.
  */
+// Campaigns whose ACS operation was resolved since the campaign worker last
+// looked. The worker re-checks them even while the send cooldown hides their
+// sender, so a campaign with nothing left to send is marked sent (and its
+// failure digest goes out) without waiting for the cooldown to end. Per
+// process; after a restart that check waits for the cooldown instead.
+const resolvedCampaignIds = new Set<string>();
+
+export function takeResolvedCampaignIds(): string[] {
+  const ids = [...resolvedCampaignIds];
+  resolvedCampaignIds.clear();
+  return ids;
+}
+
 export async function finalizeCampaignAttempt(
   attemptId: string,
   write: TerminalWrite,
@@ -271,6 +284,7 @@ export async function finalizeCampaignAttempt(
     .where(and(eq(emailSendAttempts.id, attemptId), eq(emailSendAttempts.status, "accepted")))
     .returning();
   if (!moved) return false;
+  if (moved.campaignId) resolvedCampaignIds.add(moved.campaignId);
   if (moved.status === "success" && moved.campaignId && moved.prospectId) {
     try {
       const [campaign] = await db

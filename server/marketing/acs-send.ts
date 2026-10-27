@@ -202,15 +202,34 @@ async function finalizeAttempt(attempt: EmailSendAttempt, write: TerminalWrite):
   return finalizeCampaignAttempt(attempt.id, write);
 }
 
-async function moveEnrollmentTo(attempt: EmailSendAttempt, nextSendAt: Date): Promise<void> {
-  if (attempt.kind !== "sequence" || !attempt.enrollmentId || attempt.stepIndex == null) return;
-  await db
-    .update(marketingSequenceEnrollments)
-    .set({ nextSendAt, updatedAt: new Date() })
-    .where(and(
-      eq(marketingSequenceEnrollments.id, attempt.enrollmentId),
-      eq(marketingSequenceEnrollments.currentStepIndex, attempt.stepIndex),
-    ));
+/**
+ * `accepted` → a retryable status, with the parked enrollment moved to the
+ * retry time in the same transaction: a crash between the two would leave a
+ * row the reconciler no longer selects behind an enrollment parked for a day.
+ */
+async function moveAcceptedForRetry(
+  attempt: EmailSendAttempt,
+  set: Partial<typeof emailSendAttempts.$inferInsert>,
+  nextSendAt: Date,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [moved] = await tx
+      .update(emailSendAttempts)
+      .set(set)
+      .where(and(eq(emailSendAttempts.id, attempt.id), eq(emailSendAttempts.status, "accepted")))
+      .returning({ id: emailSendAttempts.id });
+    if (!moved) return false;
+    if (attempt.kind === "sequence" && attempt.enrollmentId && attempt.stepIndex != null) {
+      await tx
+        .update(marketingSequenceEnrollments)
+        .set({ nextSendAt, updatedAt: new Date() })
+        .where(and(
+          eq(marketingSequenceEnrollments.id, attempt.enrollmentId),
+          eq(marketingSequenceEnrollments.currentStepIndex, attempt.stepIndex),
+        ));
+    }
+    return true;
+  });
 }
 
 /**
@@ -224,20 +243,15 @@ async function deferAttempt(
   retryAfterMs: number,
 ): Promise<boolean> {
   const nextRetryAt = new Date(Date.now() + retryAfterMs);
-  const [moved] = await db
-    .update(emailSendAttempts)
-    .set({
-      status: "deferred",
-      errorCode: code,
-      errorMessage: code === "ACS_AUTH" ? "ACS authorization unavailable" : "ACS throttled",
-      nextRetryAt,
-    })
-    .where(and(eq(emailSendAttempts.id, attempt.id), eq(emailSendAttempts.status, "accepted")))
-    .returning({ id: emailSendAttempts.id });
+  const moved = await moveAcceptedForRetry(attempt, {
+    status: "deferred",
+    errorCode: code,
+    errorMessage: code === "ACS_AUTH" ? "ACS authorization unavailable" : "ACS throttled",
+    nextRetryAt,
+  }, nextRetryAt);
   if (!moved) return false;
   extendCooldownTracked(nextRetryAt.getTime());
   await dropTrackingLinksForAttempt(attempt.id);
-  await moveEnrollmentTo(attempt, nextRetryAt);
   if (code === "ACS_AUTH") void notifyMarketingTransportDegraded(attempt.orgId, "ACS_AUTH");
   return true;
 }
@@ -289,13 +303,12 @@ export async function applyOperationOutcome(
         return { stop: false };
       }
       const nextRetryAt = new Date(now + retry.backoffMs);
-      const moved = await updateAccepted(attempt.id, {
+      await moveAcceptedForRetry(attempt, {
         status: "failed",
         errorCode: outcome.code,
         errorMessage: `ACS operation failed (${outcome.code})`,
         nextRetryAt,
-      });
-      if (moved) await moveEnrollmentTo(attempt, nextRetryAt);
+      }, nextRetryAt);
       return { stop: false };
     }
     case "pending":

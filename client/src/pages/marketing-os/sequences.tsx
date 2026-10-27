@@ -551,7 +551,9 @@ function SequenceEditor({
           const pending = pendingDeliveryCount(e);
           if (pending === null) throw e;
           // Details were saved; keep the editor open with the step edits intact.
-          await queryClient.invalidateQueries({ queryKey: ["/api/marketing/sequences"] });
+          // Refresh the list only: refetching this sequence would re-run the
+          // editor's load effect and replace the unsaved steps.
+          await queryClient.invalidateQueries({ queryKey: ["/api/marketing/sequences", brandId], exact: true });
           toast({
             title: "Details saved",
             description:

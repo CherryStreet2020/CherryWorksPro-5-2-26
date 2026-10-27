@@ -553,4 +553,25 @@ describe("ACS cooldown", () => {
     const [e] = await db.select().from(marketingSequenceEnrollments).where(eq(marketingSequenceEnrollments.id, enr));
     expect(e.currentStepIndex).toBe(0);
   });
+  it("a campaign whose last operation resolves during the cooldown is marked sent without a POST", async () => {
+    const contact = await makeContact();
+    await onlyMailable([contact]);
+    const campaignId = await makeCampaign();
+    postReply = { status: 500 };
+    await tickCampaigns();
+    const [a] = await attemptsFor({ campaignId });
+    expect(a.status).toBe("accepted");
+
+    extendAcsCooldown(Date.now() + 10 * 60_000);
+    const postsBefore = posts.length;
+    getReplies.set(a.id, succeeded(a.id));
+    await makeDue(a.id);
+    await reconcile();
+    expect((await attemptsFor({ campaignId }))[0].status).toBe("success");
+
+    await tickCampaigns();
+    const [camp] = await db.select().from(marketingCampaigns).where(eq(marketingCampaigns.id, campaignId));
+    expect(camp.sentAt).not.toBeNull();
+    expect(posts).toHaveLength(postsBefore);
+  });
 });
