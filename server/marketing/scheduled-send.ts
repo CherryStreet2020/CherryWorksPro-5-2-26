@@ -678,7 +678,7 @@ export async function processScheduledCampaigns(
         );
         trackingToken = tracked.token;
         const html = tracked.html;
-        const footer = { token: r.unsubscribeToken, org };
+        const footer = { token: r.unsubscribeToken, org, brandName: brand?.name };
 
         if (route === "acs") {
           await sleep(acsSendWaitMs());
@@ -881,6 +881,7 @@ export async function processScheduledSequenceEnrollments(
       contactUnsubscribeToken: marketingProspects.unsubscribeToken,
       brandFromEmail: brands.fromEmail,
       brandReplyTo: brands.replyTo,
+      brandName: brands.name,
     })
     .from(marketingSequenceEnrollments)
     .innerJoin(
@@ -1070,7 +1071,7 @@ export async function processScheduledSequenceEnrollments(
         `enrollment=${enr.id} step=${enr.currentStepIndex}`,
       );
       trackingToken = tracked.token;
-      const footer = { token: row.contactUnsubscribeToken, org };
+      const footer = { token: row.contactUnsubscribeToken, org, brandName: row.brandName };
 
       if (route === "acs") {
         await sleep(acsSendWaitMs());
