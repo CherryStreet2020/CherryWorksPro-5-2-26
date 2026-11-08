@@ -80,10 +80,22 @@ export function orgPostalAddress(org: FooterOrg | null | undefined): string | nu
 export interface UnsubscribeFooterInput {
   token: string;
   org: FooterOrg | null | undefined;
+  /**
+   * The brand the email went out under. One org can send for several brands,
+   * and the recipient knows the brand, not the workspace behind it, so the
+   * footer names the brand when there is one. The postal address stays the org's.
+   */
+  brandName?: string | null;
 }
 
-export function unsubscribeFooterHtml({ token, org }: UnsubscribeFooterInput): string {
-  const sender = escapeHtml((org?.name ?? "").trim() || "the sender");
+/** Who the footer says the email is from: the brand, else the org, else a neutral fallback. */
+export function footerSenderName({ org, brandName }: Pick<UnsubscribeFooterInput, "org" | "brandName">): string {
+  return (brandName ?? "").trim() || (org?.name ?? "").trim() || "the sender";
+}
+
+export function unsubscribeFooterHtml(input: UnsubscribeFooterInput): string {
+  const { token, org } = input;
+  const sender = escapeHtml(footerSenderName(input));
   const address = orgPostalAddress(org);
   const url = escapeHtml(unsubscribePageUrl(token));
   return (
@@ -96,8 +108,9 @@ export function unsubscribeFooterHtml({ token, org }: UnsubscribeFooterInput): s
   );
 }
 
-export function unsubscribeFooterText({ token, org }: UnsubscribeFooterInput): string {
-  const sender = (org?.name ?? "").trim() || "the sender";
+export function unsubscribeFooterText(input: UnsubscribeFooterInput): string {
+  const { token, org } = input;
+  const sender = footerSenderName(input);
   const address = orgPostalAddress(org);
   return (
     `\n\n--\nYou are receiving this email from ${sender}. ` +

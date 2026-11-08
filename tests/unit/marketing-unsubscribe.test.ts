@@ -89,6 +89,25 @@ describe("marketing unsubscribe helpers", () => {
     expect(text).toContain("1 Main St");
   });
 
+  it("names the brand, not the org, when the email went out under a brand", () => {
+    const org = { name: "Cherry Street Consulting", address: "225 Cherry Street" };
+    const html = unsubscribeFooterHtml({ token: TOKEN, org, brandName: "Venturus<DL>" });
+    expect(html).toContain("from Venturus&lt;DL&gt;.");
+    expect(html).not.toContain("Cherry Street Consulting");
+    expect(html).toContain("225 Cherry Street");
+    const text = unsubscribeFooterText({ token: TOKEN, org, brandName: "VenturusDL" });
+    expect(text).toContain("from VenturusDL.");
+    expect(text).not.toContain("Cherry Street Consulting");
+    expect(text).toContain("225 Cherry Street");
+  });
+
+  it("falls back to the org name when the brand name is blank or missing", () => {
+    const org = { name: "Acme" };
+    expect(unsubscribeFooterText({ token: TOKEN, org, brandName: "  " })).toContain("from Acme.");
+    expect(unsubscribeFooterText({ token: TOKEN, org, brandName: null })).toContain("from Acme.");
+    expect(unsubscribeFooterText({ token: TOKEN, org: null })).toContain("from the sender.");
+  });
+
   it("puts the footer before </body> in a full document, else at the end", () => {
     const input = { token: TOKEN, org: { name: "Acme" } };
     const doc = withUnsubscribeFooter("<html><body><p>Hi</p></BODY></html>", input);
