@@ -175,7 +175,7 @@ app.post("/api/team/invite", userCreationLimiter, requireAdmin, requireVerifiedE
             projectId: pa.projectId,
             userId: user.id,
             hourlyRate: pa.hourlyRate,
-            costRateHourly: "0",
+            costRateHourly: Number(hourlyPayRate) > 0 ? Number(hourlyPayRate).toFixed(2) : "0",
             role: "member",
           });
         }

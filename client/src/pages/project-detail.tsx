@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { fetchDefaultCostRate, costRateForSubmit } from "@/lib/member-cost-rate";
 import { PageHelpLink } from "@/components/page-help-link";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { useLocation } from "wouter";
@@ -250,7 +251,7 @@ export default function ProjectDetailPage({ id }: { id: string }) {
       await apiRequest("POST", `/api/projects/${id}/members`, {
         userId: addMemberUserId,
         hourlyRate: parseFloat(addMemberBillRate) || 0,
-        costRateHourly: parseFloat(addMemberCostRate) || 0,
+        costRateHourly: costRateForSubmit(addMemberCostRate),
       });
     },
     onSuccess: () => {
@@ -897,7 +898,7 @@ export default function ProjectDetailPage({ id }: { id: string }) {
             {showAddMember && (
               <div className="flex flex-col gap-3 mb-4 p-4 rounded-lg" style={{ border: "1px dashed var(--lux-border-strong)" }} data-testid="add-member-form">
                 <div className="flex items-center gap-2">
-                  <Select value={addMemberUserId} onValueChange={setAddMemberUserId}>
+                  <Select value={addMemberUserId} onValueChange={async (uid) => { setAddMemberUserId(uid); const rate = await fetchDefaultCostRate(uid); setAddMemberCostRate(rate); }}>
                     <SelectTrigger className="flex-1" data-testid="select-add-member">
                       <SelectValue placeholder="Select a team member" />
                     </SelectTrigger>

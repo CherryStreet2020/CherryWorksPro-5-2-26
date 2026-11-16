@@ -1710,7 +1710,9 @@ export const addProjectMemberSchema = z.object({
 }).transform((data) => ({
   userId: data.userId,
   hourlyRate: data.billRate ?? data.hourlyRate ?? 0,
-  costRateHourly: data.costRate ?? data.costRateHourly ?? 0,
+  // Left undefined when not given, so the route can fall back to the person's
+  // default hourly pay rate instead of recording $0.
+  costRateHourly: data.costRate ?? data.costRateHourly,
 }));
 
 const dateString = z.string().min(1, "Date is required").refine((val) => {
