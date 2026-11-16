@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { ErrorState } from "@/components/shared/error-state";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { fetchDefaultCostRate, costRateForSubmit } from "@/lib/member-cost-rate";
 import { PageHelpLink } from "@/components/page-help-link";
 import { useAuth } from "@/lib/auth";
 import { Card } from "@/components/ui/card";
@@ -236,7 +237,7 @@ export default function ProjectsPage() {
       userId: newMemberUserId,
       userName: member.name,
       hourlyRate: newMemberRate,
-      costRate: newMemberCostRate || "0",
+      costRate: newMemberCostRate,
     }]);
     setNewMemberUserId("");
     setNewMemberRate("");
@@ -269,7 +270,7 @@ export default function ProjectsPage() {
         await apiRequest("POST", `/api/projects/${project.id}/members`, {
           userId: member.userId,
           hourlyRate: member.hourlyRate,
-          costRateHourly: member.costRate || "0",
+          costRateHourly: costRateForSubmit(member.costRate),
         });
       }
 
@@ -292,7 +293,7 @@ export default function ProjectsPage() {
       await apiRequest("POST", `/api/projects/${projectId}/members`, {
         userId: memberId,
         hourlyRate: memberRate,
-        costRateHourly: memberCostRate || "0",
+        costRateHourly: costRateForSubmit(memberCostRate),
       });
     },
     onSuccess: () => {
@@ -500,7 +501,7 @@ export default function ProjectsPage() {
                   <div className="flex items-end gap-2">
                     <div className="flex-1 space-y-1.5">
                       <Label className="text-xs font-medium">Team Member</Label>
-                      <Select value={newMemberUserId} onValueChange={setNewMemberUserId}>
+                      <Select value={newMemberUserId} onValueChange={async (uid) => { setNewMemberUserId(uid); setNewMemberCostRate(await fetchDefaultCostRate(uid)); }}>
                         <SelectTrigger data-testid="select-pending-member">
                           <SelectValue placeholder="Select team member" />
                         </SelectTrigger>
@@ -533,7 +534,7 @@ export default function ProjectsPage() {
                             <span className="text-sm font-medium" style={{ color: "var(--lux-text)" }}>{m.userName}</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="text-sm tabular-nums" style={{ color: "var(--lux-text-muted)" }}>{formatRate(m.hourlyRate)} bill · {formatRate(m.costRate)} cost</span>
+                            <span className="text-sm tabular-nums" style={{ color: "var(--lux-text-muted)" }}>{formatRate(m.hourlyRate)} bill · {m.costRate ? formatRate(m.costRate) : "default"} cost</span>
                             <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={() => removePendingMember(m.userId)} data-testid={`button-remove-pending-member-${m.userId}`} aria-label="Remove member">
                               <X className="w-3 h-3" />
                             </Button>
@@ -819,7 +820,7 @@ export default function ProjectsPage() {
                                   <div className="space-y-4">
                                     <div className="space-y-2">
                                       <Label>Team Member</Label>
-                                      <Select value={memberId} onValueChange={setMemberId}>
+                                      <Select value={memberId} onValueChange={async (uid) => { setMemberId(uid); setMemberCostRate(await fetchDefaultCostRate(uid)); }}>
                                         <SelectTrigger data-testid="select-team-member">
                                           <SelectValue placeholder="Select team member" />
                                         </SelectTrigger>
